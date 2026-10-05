@@ -54,6 +54,15 @@ describe('first-start compiler authority before native admission', () => {
 		expect({ projects, input }).toEqual(before);
 		for (const allocation of [{ projectPercentages: { foreign: 100 } }, { projectPercentages: { project: 50, 'arbitrary-project': 50 } },
 			{ agentClassPercentages: { foreign: { 'boundary-planner': 100 } } }]) expect(() => canonicalWorkdayShares(allocation, projects)).toThrow();
+		for (const value of [0, -1, '1', null, true, NaN, Infinity, -Infinity]) {
+			for (const allocation of [{ projectPercentages: { project: value } },
+				{ agentClassPercentages: { project: { 'boundary-planner': value } } }]) {
+				const held = structuredClone(allocation); expect(() => canonicalWorkdayShares(allocation, projects)).toThrow();
+				expect(allocation).toEqual(held);
+			}
+		}
+		expect(canonicalWorkdayShares({ projectPercentages: { project: 0.5 }, agentClassPercentages: {} }, projects))
+			.toEqual({ projectPercentages: { project: 0.5 }, agentClassPercentages: {} });
 	});
 	it('preserves identical public manual and nested recurring intent mode selection and original time authority', () => {
 		const original = structuredClone(intent), manual = parsePublicWorkdayIntent('team', original);

@@ -193,6 +193,12 @@ describe('first manual and recurring admission through the same public owning pa
 					body: { ...f.intent, [field]: value }, code: 'workday_intent_derived_fields_forbidden',
 				});
 			}
+			for (const value of [0, -1, '1', null, true, NaN, Infinity, -Infinity]) {
+				for (const allocation of [{ allocationWeight: value }, { projectPercentages: { project: value } },
+					{ agentClassPercentages: { project: { 'boundary-planner': value } } }]) inputs.push({
+					body: { ...f.intent, allocation }, code: 'workday_intent_invalid',
+				});
+			}
 			for (const { body, code } of inputs) {
 				const before = structuredClone(body);
 				await expect(f.publicService.preflight(f.principal, 'team', body)).rejects.toMatchObject({ status: 400, code });

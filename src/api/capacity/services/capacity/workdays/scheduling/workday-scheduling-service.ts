@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { compileWorkday } from '@treeseed/sdk/agent-capacity';
+import { compileWorkday, workdayPolicySchema } from '@treeseed/sdk/agent-capacity';
 import type { CapacityPage } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
@@ -22,6 +22,7 @@ export interface WorkdayScheduleStore extends CapacityGovernanceDatabase {
 	listTeamProjects(teamId: string): Promise<WorkdayProject[]>;
 	listProjectAgentClassesPage(projectId: string, filters: { limit: number }): Promise<CapacityPage<unknown>>;
 	getProjectTreeDxLibrary(projectId: string): Promise<{ repositoryId?: unknown; contentPath?: unknown; contentRepositoryRef?: unknown; metadata?: unknown } | null>;
+	getGovernanceProposal(proposalId: string): Promise<JsonRecord | null>;
 	createCapacityWorkdayEvent(teamId: string, runId: string, input: JsonRecord): Promise<unknown>;
 	updateCapacityWorkdayRun(teamId: string, runId: string, input: JsonRecord): Promise<DurableCapacityWorkdayRun | null>;
 }
@@ -45,8 +46,10 @@ export function canonicalWorkdayShares(parameters: JsonRecord, projects: Workday
 		}
 		return [project.id, value];
 	}));
-	return { projectPercentages: canonical(record(parameters.projectPercentages)),
-		agentClassPercentages: canonical(record(parameters.agentClassPercentages)) as Record<string, Record<string, number>> };
+	return workdayPolicySchema.pick({ projectPercentages: true, agentClassPercentages: true }).parse({
+		projectPercentages: canonical(record(parameters.projectPercentages)),
+		agentClassPercentages: canonical(record(parameters.agentClassPercentages)),
+	});
 }
 
 function workdayTime(parameters: JsonRecord) {
@@ -81,7 +84,7 @@ async function recordRequiredEvent(
 }
 
 export function acceptedLibraryRevision(library: { metadata?: unknown; contentRepositoryRef?: unknown }, projectId: string): string {
-	const immutableRef = text(record(library.metadata).resolvedRef, library.contentRepositoryRef);
+	const immutableRef = text(record(library.metadata).resolvedRef, text(library.contentRepositoryRef));
 	if (!/^[a-f0-9]{40}$/u.test(immutableRef)) throw new CapacityGovernanceError('capacity_workday_library_revision_unresolved',
 		'Project library must be reconciled to an exact commit before scheduling.', 409, { projectId });
 	return immutableRef;
@@ -108,7 +111,7 @@ async function resolveCapacityWorkdayPreflight(
 	const projects = resolveCapacityWorkdayProjects(requestedReferences, await store.listTeamProjects(run.teamId));
 	const contexts = new Map<string, { contentRoot: string; repositoryId: string; immutableRef: string }>();
 	const proposalContexts = new Map<string, Record<string, unknown>>();
-	const selectedProposalIds = Array.isArray(parameters.proposalIds) ? parameters.proposalIds.map(text).filter(Boolean) : [];
+	const selectedProposalIds = Array.isArray(parameters.proposalIds) ? parameters.proposalIds.map(value => text(value)).filter(Boolean) : [];
 	const selectedProposals = await Promise.all(selectedProposalIds.map(async (proposalId) => {
 		const proposal = await store.getGovernanceProposal(proposalId);
 		if (!proposal || text(proposal.teamId) !== run.teamId) throw new CapacityGovernanceError(
