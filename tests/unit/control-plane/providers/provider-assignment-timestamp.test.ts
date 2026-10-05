@@ -92,12 +92,18 @@ describe('provider assignment workday identity', () => {
 			// FK; it is not an advertised offer or qualification receipt.
 			await f.query(`INSERT INTO capacity_execution_providers (id,capacity_provider_id,display_name,adapter,native_unit,max_concurrent_runners,created_at,updated_at)
 				VALUES (?,?,?,?,?,?,?,?)`, [attempt.provider.executionProviderId, 'provider', 'Original controlled executor', 'controlled-input', 'tokens', 1, createdAt, createdAt]);
+			await f.query(`INSERT INTO capacity_reservations (id,idempotency_key,admission_token,membership_id,capacity_provider_id,
+				project_agent_class_id,assignment_id,mode,team_id,project_id,work_day_id,requested_seconds,reserved_seconds,created_at,updated_at)
+				VALUES (?,?,?,?,?,?,?,'acting',?,?,?,?,?,?,?)`, [attempt.reservationId, 'original-diagnostics-reservation', 'controlled-reservation-input',
+					'membership', 'provider', 'class', attempt.id, 'team', 'project', runId, attempt.limits.maximumSeconds, attempt.limits.maximumSeconds, createdAt, createdAt]);
 			await f.query(`INSERT INTO capacity_provider_assignments (id,team_id,project_id,membership_id,capacity_provider_id,
 				project_agent_class_id,work_day_id,execution_provider_id,mode,status,lease_state,lease_token,runner_id,lease_expires_at,
-				attempt_count,assignment_attempt_json,capacity_envelope_json,created_at,updated_at)
-				VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [attempt.id, 'team', 'project', 'membership', 'provider', 'class',
+				attempt_count,assignment_attempt_json,capacity_envelope_json,created_at,updated_at,reservation_id,execution_node_id,execution_node_revision,graph_revision)
+				VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [attempt.id, 'team', 'project', 'membership', 'provider', 'class',
 				runId, attempt.provider.executionProviderId, 'acting', 'leased', 'leased', 'original-lease', 'original-runner', attempt.deadline,
-				attempt.attempt, JSON.stringify(attempt), JSON.stringify({ teamId: 'team', projectId: 'project', mode: 'acting' }), createdAt, createdAt]);
+				attempt.attempt, JSON.stringify(attempt), JSON.stringify({ teamId: 'team', projectId: 'project', mode: 'acting', workDayId: runId,
+					projectAgentClassId: 'class', capacityProviderId: attempt.provider.providerId, executionProviderId: attempt.provider.executionProviderId,
+					reservationId: attempt.reservationId }), createdAt, createdAt, attempt.reservationId, attempt.nodeId, attempt.nodeRevision, attempt.graphRevision]);
 			const service = createProviderAssignmentService(f.store, undefined, f.store, envelopes);
 			const auth = { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership', scopes: ['provider:assignments:write'] } };
 			const body = { id: 'original-protected-event', eventType: 'provider.execution.completed', component: 'execution-provider', status: 'completed',

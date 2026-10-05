@@ -10,7 +10,7 @@ describe('public secondary reads through original SQL authorization delegation a
 				const input = { ...f.input, body: { ...f.input.body, ref, paths: [path] } };
 				expect(await f.invoke(input)).toMatchObject({ result: { resolvedRef: ref, files: [{ path, content: '# Exact secondary bytes\n' }] },
 					receipt: { projectId: secondaryProject, connectionId: 'isolated-connection' } });
-				expect(f.calls.at(-1)).toEqual({ method: 'POST', path: `/api/v1/repos/${secondaryRepository}/files/read`, body: input.body,
+				expect(f.calls.at(-1), JSON.stringify(f.calls.at(-1))).toEqual({ method: 'POST', path: `/api/v1/repos/${secondaryRepository}/files/read`, body: input.body,
 					scope: { treedx_actor_id: 'isolated-service', treedx_tenant_id: 'isolated-tenant', treedx_repo_ids: [secondaryRepository],
 						treedx_capabilities: ['files:read'], treedx_refs: [ref], treedx_paths: [path], treeseed_project_id: secondaryProject,
 						treeseed_connection_id: 'isolated-connection' } });

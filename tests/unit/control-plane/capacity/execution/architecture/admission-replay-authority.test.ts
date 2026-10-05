@@ -6,7 +6,7 @@ import { replayAttempt, replayChanges, replayInput } from './admission-replay-fi
 function replayStore() {
 	const value = replayAttempt();
 	const stored = { id: value.id, teamId: value.teamId, capacityProviderId: 'provider', executionNodeId: value.nodeId,
-		executionNodeRevision: value.nodeRevision, assignmentAttempt: structuredClone(value) };
+		executionNodeRevision: value.nodeRevision, assignmentAttempt: structuredClone(value), explanation: {} };
 	return { stored, store: { getProviderAssignment: async () => stored } as unknown as Parameters<typeof admitLivingExecutionAssignment>[0] };
 }
 

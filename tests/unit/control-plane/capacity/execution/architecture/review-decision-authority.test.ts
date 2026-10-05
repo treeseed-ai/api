@@ -47,6 +47,19 @@ describe('architecture work-review Decision authority units', () => {
 			id: reference.path.endsWith('two.mdx') ? 'review-two' : 'review-one',
 			disposition: reference.path.endsWith('two.mdx') ? 'request-changes' : 'approved' })))
 			.rejects.toMatchObject({ code: 'review_decision_required' });
+		for (const mutation of ['maker', 'project', 'candidate', 'clock']) for (const foreignFirst of [false, true]) {
+			const before = structuredClone(output);
+			const foreign = { ...reviewDecision(),
+				...(mutation === 'maker' ? { decidedByRefs: [{ ...reviewDecision().decidedByRefs[0]!, id: 'unassigned-reviewer' }] } : {}),
+				...(mutation === 'project' ? { projectId: 'foreign-project' } : {}),
+				...(mutation === 'candidate' ? { subjectRef: { ...reviewDecision().subjectRef, commit: 'e'.repeat(40) } } : {}),
+				...(mutation === 'clock' ? { decidedAt: '2026-10-02T12:00:11.000Z' } : {}) };
+			await expect(resolveReviewDisposition(database, reviewAssignment(), output, async reference => ({ ...reviewDecision(),
+				id: reference.path.endsWith('two.mdx') ? 'review-two' : 'review-one',
+				...(reference.path.endsWith('two.mdx') !== foreignFirst ? foreign : {}) })))
+				.rejects.toMatchObject({ code: 'review_decision_required' });
+			expect(output).toEqual(before);
+		}
 	});
 	it('denies review evidence produced before admission or after the returned result', async () => {
 		for (const decidedAt of ['2026-10-02T11:59:00.000Z', '2026-10-02T12:00:11.000Z']) {

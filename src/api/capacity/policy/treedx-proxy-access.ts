@@ -1,4 +1,4 @@
-import type { TreeDxProxyAccessRequest,TreeDxProxyAccessResult } from '@treeseed/sdk/agent-capacity';
+import type { TreeDxProxyHandle, TreeDxProxyAccessRequest, TreeDxProxyAccessResult } from '@treeseed/sdk/agent-capacity';
 function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 const contentExtensions = ['.mdx', '.md', '.markdown', '.json', '.yaml', '.yml', '.toml'];
 export function treeDxScopedPathAllows(pattern: string, candidate: string): boolean {
@@ -39,13 +39,10 @@ export function evaluateTreeDxProxyHandleAccess(handle: TreeDxProxyHandle | Reco
 	if (request.assignmentId && candidate.assignmentId && String(candidate.assignmentId) !== request.assignmentId) {
 		return { ok: false, code: 'treedx_proxy_assignment_mismatch', reason: 'TreeDX proxy handle is bound to a different assignment.', metadata: { assignmentId: request.assignmentId, handleAssignmentId: candidate.assignmentId } };
 	}
-	if (request.repositoryId && candidate.repositoryId && String(candidate.repositoryId) !== request.repositoryId) {
-		return { ok: false, code: 'treedx_proxy_repository_mismatch', reason: 'TreeDX proxy handle is bound to a different repository.', metadata: { repositoryId: request.repositoryId, handleRepositoryId: candidate.repositoryId } };
-	}
-	if (request.workspaceId && candidate.workspaceId && String(candidate.workspaceId) !== request.workspaceId) {
-		return { ok: false, code: 'treedx_proxy_workspace_mismatch', reason: 'TreeDX proxy handle is bound to a different workspace.', metadata: { workspaceId: request.workspaceId, handleWorkspaceId: candidate.workspaceId } };
-	}
-	if (candidate.expiresAt && Date.parse(String(candidate.expiresAt)) <= (request.now ?? new Date()).getTime()) {
+	const expiresAt = candidate.expiresAt, now = (request.now ?? new Date()).getTime();
+	if ((Object.hasOwn(candidate, 'expiresAt') && (typeof expiresAt !== 'string' || !Number.isFinite(Date.parse(expiresAt))))
+		|| !Number.isFinite(now)) return { ok: false, code: 'treedx_proxy_handle_expired', reason: 'TreeDX proxy handle clock is invalid.' };
+	if (typeof expiresAt === 'string' && Date.parse(expiresAt) <= now) {
 		return { ok: false, code: 'treedx_proxy_handle_expired', reason: 'TreeDX proxy handle has expired.' };
 	}
 	if (candidate.token && request.token && String(candidate.token) !== request.token) {
@@ -55,6 +52,12 @@ export function evaluateTreeDxProxyHandleAccess(handle: TreeDxProxyHandle | Reco
 	const allowedOperations = Array.isArray(candidate.allowedOperations) ? candidate.allowedOperations.map(String) : [];
 	if (operation && allowedOperations.length && !allowedOperations.includes(operation) && !allowedOperations.includes('*')) {
 		return { ok: false, code: 'treedx_proxy_operation_denied', reason: 'TreeDX proxy handle does not allow this operation.', metadata: { operation, allowedOperations } };
+	}
+	if (request.repositoryId && candidate.repositoryId && String(candidate.repositoryId) !== request.repositoryId) {
+		return { ok: false, code: 'treedx_proxy_repository_mismatch', reason: 'TreeDX proxy handle is bound to a different repository.', metadata: { repositoryId: request.repositoryId, handleRepositoryId: candidate.repositoryId } };
+	}
+	if (request.workspaceId && candidate.workspaceId && String(candidate.workspaceId) !== request.workspaceId) {
+		return { ok: false, code: 'treedx_proxy_workspace_mismatch', reason: 'TreeDX proxy handle is bound to a different workspace.', metadata: { workspaceId: request.workspaceId, handleWorkspaceId: candidate.workspaceId } };
 	}
 	const path = request.path ? String(request.path).replace(/^\/+/, '') : null;
 	const allowedPaths = treeDxProxyAuthorizedPathPatterns(candidate, operation);

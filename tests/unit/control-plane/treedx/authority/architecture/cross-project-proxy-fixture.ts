@@ -73,8 +73,10 @@ export async function crossProjectProxy() {
 		const createdAt = new Date().toISOString(), deadline = new Date(Date.parse(createdAt) + 60_000).toISOString();
 		const attempt = assignmentAttemptSchema.parse({ ...f.attempt, createdAt, deadline });
 		const budget = emptyCapacityBudget(deadline, attempt.limits.maximumSeconds);
+		const retainedAssignment = await new ProviderAssignmentRepository(f.owner).get(attempt.teamId, attempt.id);
+		if (!retainedAssignment) throw new Error('Original valid assignment custody required before secondary-read inputs.');
 		await f.query('UPDATE capacity_provider_assignments SET created_at=?,claimed_at=?,lease_expires_at=?,assignment_attempt_json=?,capacity_envelope_json=? WHERE id=?',
-			[createdAt, createdAt, deadline, JSON.stringify(attempt), JSON.stringify({ teamId: attempt.teamId, projectId: attempt.projectId, mode: 'acting', budget }), attempt.id]);
+			[createdAt, createdAt, deadline, JSON.stringify(attempt), JSON.stringify({ ...retainedAssignment.capacityEnvelope, budget }), attempt.id]);
 		for (const [project, repository] of [['project', 'primary-library'], [secondaryProject, secondaryRepository]]) {
 			await f.query('INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES (?,?,?,?,?,?)', [project, 'team', project, project, createdAt, createdAt]);
 			await f.query('INSERT INTO treedx_project_libraries (id,team_id,project_id,instance_id,library_id,repository_id,content_repository_ref,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',

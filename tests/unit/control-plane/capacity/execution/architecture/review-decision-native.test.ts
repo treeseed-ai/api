@@ -82,6 +82,18 @@ describe('native classed work-review authority', () => {
 			const before = await fixture.snapshot();
 			await expect(fixture.resolve(first.commit, second.commit)).rejects.toMatchObject({ code: 'review_decision_required' });
 			expect(await fixture.snapshot()).toEqual(before);
+			for (const mutation of ['maker', 'project', 'candidate', 'clock']) for (const foreignFirst of [false, true]) {
+				const foreign = { ...reviewDecision(),
+					...(mutation === 'maker' ? { decidedByRefs: [{ ...reviewDecision().decidedByRefs[0]!, id: 'unassigned-reviewer' }] } : {}),
+					...(mutation === 'project' ? { projectId: 'foreign-project' } : {}),
+					...(mutation === 'candidate' ? { subjectRef: { ...reviewDecision().subjectRef, commit: 'e'.repeat(40) } } : {}),
+					...(mutation === 'clock' ? { decidedAt: '2026-10-02T12:00:11.000Z' } : {}) };
+				const nextFirst = fixture.publishContent('decisions/review-one.mdx', foreignFirst ? foreign : reviewDecision());
+				const nextSecond = fixture.publishContent('decisions/review-two.mdx', { ...(foreignFirst ? reviewDecision() : foreign), id: 'review-two' });
+				const retained = await fixture.snapshot();
+				await expect(fixture.resolve(nextFirst.commit, nextSecond.commit)).rejects.toMatchObject({ code: 'review_decision_required' });
+				expect(await fixture.snapshot()).toEqual(retained);
+			}
 		} finally { await fixture.close(); }
 	});
 	it('denies committed evidence attributed to a different reviewing identity', async () => {

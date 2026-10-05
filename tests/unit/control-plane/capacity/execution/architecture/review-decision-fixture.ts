@@ -37,7 +37,11 @@ export function reviewAssignment() {
 		createdAt: assignedAt, deadline: '2026-10-02T12:01:00.000Z' });
 	return serializeProviderAssignmentRow({ id: 'review-assignment', membership_id: 'membership', team_id: 'team', project_id: 'project',
 		capacity_provider_id: 'provider', project_agent_class_id: 'arbitrary-auditor', mode: 'acting', status: 'running', lease_state: 'leased',
-		capacity_envelope_json: { teamId: 'team', projectId: 'project', mode: 'acting', requestedSeconds: 60, reservedSeconds: 60 },
+		work_day_id: attempt.workdayId, execution_provider_id: attempt.provider.executionProviderId,
+		reservation_id: attempt.reservationId, attempt_count: attempt.attempt, graph_revision: attempt.graphRevision,
+		capacity_envelope_json: { teamId: 'team', projectId: 'project', mode: 'acting', requestedSeconds: 60, reservedSeconds: 60,
+			workDayId: attempt.workdayId, capacityProviderId: attempt.provider.providerId, executionProviderId: attempt.provider.executionProviderId,
+			reservationId: attempt.reservationId, projectAgentClassId: 'arbitrary-auditor' },
 		agent_id: 'arbitrary-auditor', execution_node_id: 'review-node', execution_node_revision: 1,
 		assignment_attempt_json: attempt, assigned_at: assignedAt, created_at: assignedAt, updated_at: assignedAt })!;
 }

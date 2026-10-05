@@ -12,11 +12,13 @@ async function nativeReplay() {
 	try {
 		await fixture.query(`INSERT INTO capacity_provider_assignments (id,membership_id,team_id,project_id,capacity_provider_id,
 			project_agent_class_id,work_day_id,mode,status,lease_state,execution_node_id,execution_node_revision,graph_revision,
-			assignment_attempt_json,capacity_envelope_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			assignment_attempt_json,capacity_envelope_json,created_at,updated_at,execution_provider_id,reservation_id,attempt_count) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			[attempt.id, 'membership', attempt.teamId, attempt.projectId, 'provider', 'configured-builder', 'workday', 'acting', 'pending',
 				'unleased', attempt.nodeId, attempt.nodeRevision, attempt.graphRevision, JSON.stringify(attempt), JSON.stringify({
 					teamId: attempt.teamId, projectId: attempt.projectId, mode: 'acting', requestedSeconds: attempt.limits.maximumSeconds,
-					reservedSeconds: attempt.limits.maximumSeconds }), attempt.createdAt, attempt.createdAt]);
+					reservedSeconds: attempt.limits.maximumSeconds, workDayId: attempt.workdayId, capacityProviderId: attempt.provider.providerId,
+					executionProviderId: attempt.provider.executionProviderId, reservationId: attempt.reservationId, projectAgentClassId: 'configured-builder' }),
+				attempt.createdAt, attempt.createdAt, attempt.provider.executionProviderId, attempt.reservationId, attempt.attempt]);
 		const repository = new ProviderAssignmentRepository(fixture.store as unknown as CapacityGovernanceDatabase);
 		// Establish valid stored custody before any denial assertion. A corrupt fixture
 		// must not masquerade as rejection of the tested replay authority change.
