@@ -1,3 +1,4 @@
+import { readExactDecision } from './executable-proposal.ts';
 type Row = Record<string, unknown>;
 export interface DecisionDependencyReference { projectId: string; decisionId: string }
 export interface DecisionDependencySnapshot extends DecisionDependencyReference { teamId: string; proposalId: string; proposalVersion: number; proposalContentHash: string }
@@ -97,6 +98,9 @@ export async function validateDecisionAuthority(
 	const row = await decisionRow(database, decisionId);
 	const problem = rowProblem(row, expected);
 	if (problem || !row) return { valid: false, code: problem!.code, message: problem!.message, current: null };
+	try { await readExactDecision(database, row); }
+	catch (error) { const failure = error as { code?: string; message?: string };
+		return { valid: false, code: failure.code ?? 'governance_decision_content_unavailable', message: failure.message ?? 'The governed Decision cannot be read.', current: null }; }
 	const nextAncestors = new Set(ancestors).add(decisionId);
 	const recorded = recordedDependencies(row);
 	const references = normalizeDecisionDependencyReferences(recorded);

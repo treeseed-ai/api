@@ -1,6 +1,21 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-decision-demand-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/executable-proposal-source.test.ts
+    testName: "denies accepted demand without native Decision authority while retaining the failed revision and supplied bytes"
+  api.golden.execution-decision-workspace-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/decision-execution-plan-authority.test.ts
+    testName: "retains the original open workspace journal and close failure after native Decision readback instead of reporting successful closure"
+  api.golden.execution-decision-atomic-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/decision-execution-plan-authority.test.ts
+    testName: "keeps the reserved Decision and native identity when atomic projection fails without accepting or separately emitting an event"
   api.golden.execution-unchanged-content-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

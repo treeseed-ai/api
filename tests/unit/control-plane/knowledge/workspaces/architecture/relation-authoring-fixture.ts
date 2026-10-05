@@ -11,6 +11,8 @@ import { resolveKnowledgeGatewayConnection } from '../../../../../../src/api/kno
 import { completedGraphRefresh, requireIndexedSourceClosure, treeDxResult } from '../../../../../../src/operations-runner/knowledge/publication-executor.ts';
 import { loadTeamExactDependencyLinks } from '../../../../../../src/api/capacity/services/capacity/execution/exact-dependency-links.ts';
 import { relationInputs, relationPath } from '../../../capacity/execution/graph/architecture/relations/relation-fixture.ts';
+import { postgresGraph } from '../../../capacity/execution/graph/architecture/living/living-postgres-fixture.ts';
+import { translateControlPlaneSqlToPostgres } from '../../../../../../src/api/support/control-plane-postgres.ts';
 
 type Row = Record<string, unknown>;
 export const object = (value: unknown): Row => { assert.ok(value && typeof value === 'object' && !Array.isArray(value)); return value as Row; };
@@ -22,7 +24,7 @@ export const noteSource = () => `---\n${stringify(relationInputs().note)}---\n\n
 // weaken authorization, print tokens or operate on an existing portfolio repo.
 // Administrative principal and proposal endpoints are supplied inputs; this is
 // not authenticated API HTTP, native proposal creation, provider charges or E2E.
-export async function relationAuthoringDatabase() {
+export async function relationAuthoringDatabase(nativePostgres = false) {
 	const baseUrl = process.env.TREEDX_BASE_URL ?? '', token = process.env.TREEDX_TOKEN ?? '';
 	assert.ok(baseUrl && token, 'Disposable native TreeDX conformance URL and token required; never skip');
 	const url = new URL(baseUrl);
@@ -36,12 +38,18 @@ export async function relationAuthoringDatabase() {
 		assert.ok(!process.env[key] || process.env[key]?.replace(/\/+$/u, '') === baseUrl.replace(/\/+$/u, ''), 'Native server override must not redirect custody');
 	}
 	const client = new TreeDxClient({ baseUrl, transport: new FetchTransport({ baseUrl, token, timeoutMs: 15_000 }) });
-	const db = new PGlite(), repositories: string[] = [], workspaces = new Set<string>();
+	const postgres = nativePostgres ? await postgresGraph() : undefined, lite = postgres ? undefined : new PGlite();
+	const db = postgres ? { query: <T extends Row>(sql: string, params: unknown[] = []) => postgres.left.pool.query<T>(sql, params),
+		exec: (sql: string) => postgres.left.pool.query(sql), close: postgres.close } : lite!;
+	const repositories: string[] = [], workspaces = new Set<string>();
 	const bootstrap = new TreeDxInfrastructureClient(client);
-	const query = (sql: string, params: unknown[] = []) => { let index = 0; return db.query<Row>(sql.replace(/\?/gu, () => `$${++index}`), params); };
+	const query = (sql: string, params: unknown[] = []) => postgres
+		? postgres.left.pool.query<Row>(translateControlPlaneSqlToPostgres(sql), params)
+		: lite!.query<Row>(translateControlPlaneSqlToPostgres(sql), params);
 	class Statement {
 		constructor(readonly sql: string, readonly params: unknown[]) {}
-		async run() { const result = await query(this.sql, this.params); return { success: true, meta: { changes: result.affectedRows ?? result.rows.length } }; }
+		async run() { const result = await query(this.sql, this.params); return { success: true, meta: {
+			changes: 'affectedRows' in result ? result.affectedRows ?? result.rows.length : result.rowCount ?? result.rows.length } }; }
 		async first() { return (await query(this.sql, this.params)).rows[0] ?? null; }
 		async all() { return { results: (await query(this.sql, this.params)).rows }; }
 	}
@@ -57,23 +65,26 @@ export async function relationAuthoringDatabase() {
 		if (failures.length) throw new AggregateError(failures, 'Native relation fixture teardown remains unproven');
 	};
 	try {
-		for (const file of ['0000_control_plane.sql', '0023_living_execution_graph.sql', '0032_execution_graph_revision_integrity.sql', '0041_execution_content_output_authority.sql', '0044_execution_priority_dependency_provenance.sql']) {
+		for (const file of postgres ? [] : ['0000_control_plane.sql', '0023_living_execution_graph.sql', '0032_execution_graph_revision_integrity.sql', '0041_execution_content_output_authority.sql', '0044_execution_priority_dependency_provenance.sql']) {
 			await db.exec(readFileSync(`drizzle/control-plane/${file}`, 'utf8'));
 		}
-		const store = new ControlPlaneStore({ TREESEED_TREEDX_URL: baseUrl, TREESEED_ENVIRONMENT: 'test' }, {
+		const config = { TREESEED_TREEDX_URL: baseUrl, TREESEED_ENVIRONMENT: 'test' };
+		const store = new ControlPlaneStore(config, postgres?.left ?? {
 			prepare: (sql: string) => ({ bind: (...params: unknown[]) => new Statement(sql, params) }),
-			batch: (statements: unknown[]) => db.transaction(async transaction => {
+			batch: (statements: unknown[]) => { assert.ok(lite); return lite.transaction(async transaction => {
 				for (const statement of statements) {
 					assert.ok(statement instanceof Statement); let index = 0;
 					await transaction.query(statement.sql.replace(/\?/gu, () => `$${++index}`), statement.params);
 				}
-			}),
+			}); },
 		});
 		// Original DDL above is already applied. Preserve the actual store methods;
 		// avoid invoking unrelated owner-account/environment seeding in this fixture.
 		store.initializationPromise = Promise.resolve();
+		const peerStore = postgres ? new ControlPlaneStore(config, postgres.right) : undefined;
+		if (peerStore) peerStore.initializationPromise = Promise.resolve();
 		const input = relationInputs(), now = new Date().toISOString();
-		await query('INSERT INTO teams (id,slug,name,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?)', ['team', 'team', 'Team', '{}', now, now]);
+		if (!postgres) await query('INSERT INTO teams (id,slug,name,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?)', ['team', 'team', 'Team', '{}', now, now]);
 		for (const source of input.sources) {
 			const name = `api-relation-${randomUUID()}`;
 			const response = object(await client.repositories.create({ repositoryName: name })), repo = object(response.repo);
@@ -141,6 +152,6 @@ export async function relationAuthoringDatabase() {
 			const loaded = await loadTeamExactDependencyLinks(store, input.sources);
 			return { commit, graph, search, file, loaded, read };
 		};
-		return { ...input, db, store, client, principal, service, content, create, write, snapshot, commitAndLoad, close, query };
+		return { ...input, db, store, peerStore, client, principal, service, content, create, write, snapshot, commitAndLoad, close, query };
 	} catch (error) { try { await close(); } catch (cleanup) { throw new AggregateError([error, cleanup], 'Native relation setup and cleanup failed'); } throw error; }
 }

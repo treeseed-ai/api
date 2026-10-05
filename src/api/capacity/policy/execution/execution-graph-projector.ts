@@ -23,7 +23,7 @@ export interface ExecutableProposalSource {
 	proposalRevision: number;
 	frontmatter: Row;
 	feedback?: Array<{ id: string; kind: 'concern' | 'question'; resolved: boolean; sourceRef: ExactEntityReference }>;
-	decision: { id: string; revision: number; digest: string; current: boolean } | null;
+	decision: { id: string; revision: number; digest: string; current: boolean; repository?: string; commit?: string; path?: string } | null;
 }
 
 export interface ExecutionGraphProjection {
@@ -69,9 +69,13 @@ function proposalRef(source: ExecutableProposalSource): ExactEntityReference {
 
 function decisionRef(source: ExecutableProposalSource): ExactEntityReference | null {
 	if (!source.decision?.current) return null;
+	if (!source.decision.repository || !/^[a-f0-9]{40}$/u.test(source.decision.commit ?? '') || !source.decision.path) {
+		throw Object.assign(new Error('Accepted execution authority requires its exact governed TreeDX Decision.'), { code: 'governance_decision_content_missing' });
+	}
 	return {
-		store: 'postgresql', model: 'decision', id: source.decision.id,
+		store: 'treedx', model: 'decision', id: source.decision.id,
 		revision: source.decision.revision, digest: source.decision.digest,
+		repository: source.decision.repository, commit: source.decision.commit, path: source.decision.path,
 	};
 }
 

@@ -16,6 +16,7 @@ export async function evaluateGovernanceProposalMethod(this: ControlPlaneStore, 
         await this.createGovernanceDecisionFromProposal(proposal.id, {
             electorateSnapshotId: snapshot?.id ?? null,
             actorType: input.actorType ?? 'system', actorId: input.actorId ?? null,
+            reason: input.reason,
         });
         return this.getGovernanceProposal(proposal.id);
     }
@@ -71,6 +72,7 @@ export async function evaluateGovernanceProposalMethod(this: ControlPlaneStore, 
             electorateSnapshotId: snapshot.id,
             actorType: input.actorType ?? 'system',
             actorId: input.actorId ?? null,
+            reason: input.reason,
         });
     }
     return { ...(await this.getGovernanceProposal(proposal.id)), outcome, votes };

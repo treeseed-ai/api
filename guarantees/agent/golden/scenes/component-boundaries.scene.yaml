@@ -1340,6 +1340,15 @@ workflow:
   - id: execution-decision-producer-unit-1
     action: { verifier: api.golden.execution-decision-producer-unit-1 }
     expect: { status: passed }
+  - id: execution-decision-atomic-unit
+    action: { verifier: api.golden.execution-decision-atomic-unit }
+    expect: { status: passed }
+  - id: execution-decision-workspace-unit
+    action: { verifier: api.golden.execution-decision-workspace-unit }
+    expect: { status: passed }
+  - id: execution-decision-demand-unit
+    action: { verifier: api.golden.execution-decision-demand-unit }
+    expect: { status: passed }
   - id: execution-decision-producer-native-1
     action: { verifier: api.golden.execution-decision-producer-native-1 }
     expect: { status: passed }

@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { validateDecisionAuthority, type DecisionAuthorityDatabase } from '../../../../src/api/governance/decision-authority.ts';
 import { evaluateGovernanceProposalMethod } from '../../../../src/api/store/governance/policy/contracts/evaluate-governance-proposal.ts';
-import { ControlPlaneStore } from '../../../../src/api/persistence/store.ts';
+import { ControlPlaneStore, serializeGovernanceProposal } from '../../../../src/api/persistence/store.ts';
+import * as executableProposal from '../../../../src/api/governance/executable-proposal.ts';
+import { readyProposal } from './proposals/architecture/ready-proposal-fixture.ts';
+import * as gateway from '../../../../src/api/knowledge/gateway-treedx-connection.ts';
+import * as changesets from '../../../../src/api/knowledge/changesets/apply-text-changeset.ts';
+import { TreeDxInfrastructureClient } from '../../../../src/api/control-plane/treedx/infrastructure-client.ts';
+import { TreeDxClient, FetchTransport } from '@treeseed/treedx/treedx/client';
 
 const digest = 'b'.repeat(64);
 const baseRow = {
@@ -34,6 +40,70 @@ describe('decision proposal authority', () => {
 });
 
 describe('accepted proposal decision recovery', () => {
+	it('retains the original open workspace journal and close failure after native Decision readback instead of reporting successful closure', async () => {
+		const proposalRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 2, digest: `sha256:${digest}`,
+			repository: 'repository', commit: 'a'.repeat(40), path: 'proposals/proposal.mdx' };
+		const row = { id: 'decision', project_id: 'project', status: 'creating', created_by_id: 'operator', created_at: '2026-10-04T00:00:00.000Z',
+			decision_record_json: JSON.stringify({ proposalRef, rationale: 'Original approval.' }) }, proposal = { closedReason: 'admin_approved' };
+		const client = new TreeDxInfrastructureClient(new TreeDxClient({ baseUrl: 'http://127.0.0.1:1', transport: new FetchTransport({ baseUrl: 'http://127.0.0.1:1', token: 'UNIT input' }) }));
+		const journal: unknown[][] = [], closeFailure = new Error('controlled native close failure'); let source = '';
+		const store = { getProject: async () => ({ teamId: 'team' }), all: async () => [],
+			run: async (_query: string, params: unknown[]) => { journal.push(structuredClone(params)); } };
+		const connection = vi.spyOn(gateway, 'resolveKnowledgeGatewayConnection').mockResolvedValue({ client, repositoryId: 'repository',
+			baseUrl: 'http://127.0.0.1:1', accessToken: 'UNIT input', baseRef: proposalRef.commit, contentPath: '.', allowedPaths: ['decisions/**'],
+			nodeId: '', authoringBranch: 'staging', publicationRef: 'refs/heads/staging' });
+		const read = vi.spyOn(client, 'readRepositoryFile').mockRejectedValueOnce(Object.assign(new Error('Missing supplied branch'), { status: 404 }))
+			.mockImplementation(async () => ({ resolvedRef: 'c'.repeat(40), file: { path: 'decisions/decision.mdx', content: source } }));
+		const create = vi.spyOn(client, 'createWorkspace').mockImplementation(async input => ({ workspaceId: input.workspaceId }));
+		const patch = vi.spyOn(changesets, 'applyTextChangeset').mockImplementation(async input => { source = input.changes[0]!.after ?? ''; return undefined; });
+		const commit = vi.spyOn(client, 'commit').mockResolvedValue({ commitSha: 'c'.repeat(40) });
+		const close = vi.spyOn(client, 'closeWorkspace').mockRejectedValue(closeFailure), held = structuredClone({ proposal, row });
+		try {
+			await expect(executableProposal.publishProposalDecision(store, proposal, row, [])).rejects.toBe(closeFailure);
+			expect(journal).toHaveLength(1); expect(journal[0]).toContain('authoring_workspace_open');
+			expect(journal[0]!.some(value => typeof value === 'string' && value.includes('decision:decision'))).toBe(true);
+			expect(close).toHaveBeenCalledTimes(1); expect({ proposal, row }).toEqual(held);
+		} finally { connection.mockRestore(); read.mockRestore(); create.mockRestore(); patch.mockRestore(); commit.mockRestore(); close.mockRestore(); }
+	});
+	it('keeps the reserved Decision and native identity when atomic projection fails without accepting or separately emitting an event', async () => {
+		const proposalRef = { store: 'treedx' as const, model: 'proposal', id: 'proposal', revision: 2,
+			digest: `sha256:${digest}`, repository: 'repository', commit: 'a'.repeat(40), path: 'proposals/proposal.mdx' };
+		const decisionRef = { ...proposalRef, model: 'decision', id: 'decision', path: 'decisions/decision.mdx', commit: 'c'.repeat(40) };
+		const row = { ...baseRow, status: 'creating', created_at: '2026-10-04T00:00:00.000Z',
+			decision_record_json: JSON.stringify({ proposalRef, decisionDependencies: [], rationale: 'Original governed approval.' }) };
+		const proposal = serializeGovernanceProposal({ id: 'proposal', team_id: 'team', project_id: 'project', status: 'accepted', active_version: 2,
+			active_content_hash: digest, metadata_json: '{}', closed_reason: 'admin_approved' });
+		const writes: string[] = [], batches: Array<Array<{ sql: string; params: unknown[] }>> = [], interruption = new Error('controlled atomic Decision interruption');
+		const store = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, {
+			prepare: (sql: string) => ({ bind: (...params: unknown[]) => ({ sql, params,
+				first: async () => structuredClone(row), all: async () => ({ results: [] }),
+				run: async () => { writes.push(sql); throw new Error('Decision projection must use its atomic batch'); },
+			}) }),
+			batch: async (statements: unknown[]) => {
+				const captured: Array<{ sql: string; params: unknown[] }> = [];
+				for (const statement of statements) {
+					if (!statement || typeof statement !== 'object' || !('sql' in statement) || typeof statement.sql !== 'string'
+						|| !('params' in statement) || !Array.isArray(statement.params)) throw new Error('Invalid owning prepared statement');
+					captured.push({ sql: statement.sql, params: statement.params });
+				}
+				batches.push(captured); throw interruption;
+			},
+		});
+		store.initializationPromise = Promise.resolve();
+		const source = vi.spyOn(executableProposal, 'readExactProposal').mockResolvedValue({ source: 'UNIT supplied proposal bytes', definition: readyProposal(), ref: proposalRef });
+		const publish = vi.spyOn(executableProposal, 'publishProposalDecision').mockResolvedValue(decisionRef);
+		const getProposal = vi.spyOn(store, 'getGovernanceProposal').mockResolvedValue(proposal);
+		const votes = vi.spyOn(store, 'effectiveGovernanceVotes').mockResolvedValue([]);
+		const original = structuredClone({ row, proposal, proposalRef, decisionRef });
+		try {
+			for (let retry = 0; retry < 2; retry++) await expect(store.createGovernanceDecisionFromProposal('proposal', { actorType: 'user', actorId: 'operator' })).rejects.toBe(interruption);
+			expect(writes).toEqual([]); expect(batches).toHaveLength(2); expect(batches[1]).toEqual(batches[0]);
+			expect(batches[0]).toHaveLength(3);
+			expect(batches[0]!.some(operation => operation.sql.includes('INSERT INTO governance_events') && operation.sql.includes('ON CONFLICT (id) DO NOTHING'))).toBe(true);
+			expect(batches[0]!.some(operation => operation.sql.includes('UPDATE governance_decisions') && operation.params.some(value => typeof value === 'string' && value.includes('decisions/decision.mdx')))).toBe(true);
+			expect({ row, proposal, proposalRef, decisionRef }).toEqual(original);
+		} finally { source.mockRestore(); publish.mockRestore(); getProposal.mockRestore(); votes.mockRestore(); }
+	});
 	it('decision creation replay rejects retained foreign stale rejected and superseded authority before returning or rewriting an existing decision', async () => {
 		const proposal = { id: 'proposal', team_id: 'team', project_id: 'project', status: 'accepted', active_version: 2,
 			active_content_hash: digest, proposal_types_json: '["implementation"]', metadata_json: '{}', decision_id: 'decision' };

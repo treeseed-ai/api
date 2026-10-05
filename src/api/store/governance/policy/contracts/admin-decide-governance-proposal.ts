@@ -25,6 +25,7 @@ export async function adminDecideGovernanceProposalMethod(this: ControlPlaneStor
         adminDecision: decision,
         actorType: 'user',
         actorId: principal?.id ?? null,
+        reason,
     });
     const simulation = simulationEvidence(input, principal?.id);
     await this.recordGovernanceEvent({
