@@ -6,7 +6,7 @@ import { CapacityOperationError } from './capacity-operation-error.ts';
 import { loadDiscussions } from '../../../discussions/content.ts';
 import { resolveTeamCommunicationTargets } from '../../../capacity/services/capacity/invocations/communication-target-resolution.ts';
 import { reconcileBlockedDiscussionInvocations } from '../../../capacity/services/capacity/invocations/discussion-invocation-service.ts';
-import type { DiagnosticEnvelopeService } from '../../../security/diagnostic-envelope.ts';
+import type { DiagnosticEnvelopeService } from '../../../../security/diagnostic-envelope.ts';
 import { communicationSchedulingDiagnostics } from './communication/scheduling-diagnostics.ts';
 import { communicationFailure } from './communication/failure.ts';
 import { readExactProposal } from '../../../governance/executable-proposal.ts';
@@ -205,13 +205,13 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 			AND invocation.metadata_json::jsonb->'communication'->>'sendId'=? ORDER BY assignment.updated_at DESC`, [teamId, sendId]);
 		const assignmentByInvocation = new Map<string, Row>();
 		for (const assignment of assignments) if (!assignmentByInvocation.has(text(assignment.invocation_id))) assignmentByInvocation.set(text(assignment.invocation_id), assignment);
-		const projectIds = [...new Set(invocations.map((row: Row) => text(row.project_id)))];
+		const projectIds = [...new Set<string>(invocations.map((row: Row) => text(row.project_id)))];
 		const projects = new Map<string, { slug: string; discussionId: string; messages: Row[]; source: Row | undefined; topic: Row; stream: Row }>();
 		for (const projectId of projectIds) {
 			const invocation = invocations.find((row: Row) => text(row.project_id) === projectId)!;
 			const metadata = record(invocation.metadata_json); const communication = record(metadata.communication);
 			const discussionId = text(metadata.discussionId); const details = await contentStore.getProjectDetails(projectId);
-			const exactPaths = [...new Set(invocations.filter((row: Row) => text(row.project_id) === projectId).flatMap((row: Row) => [
+			const exactPaths = [...new Set<string>(invocations.filter((row: Row) => text(row.project_id) === projectId).flatMap((row: Row) => [
 				strings(row.content_refs_json)[0], text(row.final_message_ref),
 			]).filter(Boolean))];
 			const history = await loadDiscussions({ store: contentStore, projectId, discussionId,
