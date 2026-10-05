@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 import { assignment } from '../../execution/fixtures/assignment.ts';
 import { closeoutDatabase } from '../../execution/graph/architecture/closeout-sql-fixture.ts';
 import { splitPostgresSqlStatements } from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
@@ -40,8 +40,18 @@ export async function settlementDatabase() {
 			await base.db.exec(ddl[0]!);
 		}
 		await base.db.exec(readFileSync('drizzle/control-plane/0033_settle_actual_usage_without_approval.sql', 'utf8'));
-		await base.query(`UPDATE capacity_provider_assignments SET project_agent_class_id=?,assignment_attempt_json=?,attempt_count=1
-			WHERE id=?`, [frozenAttempt.agentClass, JSON.stringify(frozenAttempt), frozenAttempt.id]);
+		const envelope = { teamId: frozenAttempt.teamId, projectId: frozenAttempt.projectId, workDayId: frozenAttempt.workdayId,
+			mode: 'acting', projectAgentClassId: 'isolated-class-row', capacityProviderId: frozenAttempt.provider.providerId,
+			executionProviderId: frozenAttempt.provider.executionProviderId, reservationId: frozenAttempt.reservationId };
+		const result = assignmentResultSchema.parse({ schemaVersion: 'treeseed.assignment-result/v1', id: 'result-report',
+			assignmentId: frozenAttempt.id, status: 'completed', summary: 'Controlled original SQL fixture input, not native model evidence.',
+			references: [], verification: [], diagnostics: [], usage: { elapsedSeconds: 2 }, completedAt: '2026-10-02T21:00:02.000Z' });
+		await base.query(`UPDATE capacity_provider_assignments SET project_agent_class_id=?,assignment_attempt_json=?,attempt_count=1,
+			execution_provider_id=?,reservation_id=?,execution_node_revision=?,graph_revision=?,capacity_envelope_json=?,
+			created_at=?,assignment_result_json=?,completed_at=? WHERE id=?`,
+			[envelope.projectAgentClassId, JSON.stringify(frozenAttempt), frozenAttempt.provider.executionProviderId,
+				frozenAttempt.reservationId, frozenAttempt.nodeRevision, frozenAttempt.graphRevision, JSON.stringify(envelope),
+				frozenAttempt.createdAt, JSON.stringify(result), result.completedAt, frozenAttempt.id]);
 		await base.query(`UPDATE capacity_reservations SET state='consuming',project_agent_class_id=?,execution_provider_id=?,reserved_seconds=2,
 			requested_seconds=2,active_seconds=0,elapsed_seconds=0 WHERE id='reservation'`,
 			[frozenAttempt.agentClass, frozenAttempt.provider.executionProviderId]);

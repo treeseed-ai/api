@@ -10,7 +10,11 @@ import { assignmentFailureDisposition } from '../assignment-failure-policy.ts';
 
 export type JsonRecord = Record<string, unknown>;
 
-export type ExtendedProviderAssignmentLifecycleRequest = ProviderAssignmentLifecycleRequest;
+// Recovery supplies only the recorded cancellation disposition, not a forged
+// completed-agent acceptance receipt. Public lifecycle validation stays strict.
+export type ExtendedProviderAssignmentLifecycleRequest = Omit<ProviderAssignmentLifecycleRequest, 'completion'> & {
+	completion?: Partial<NonNullable<ProviderAssignmentLifecycleRequest['completion']>> | null;
+};
 
 export function record(value: unknown): JsonRecord {
 	if (typeof value === 'string') try { return record(JSON.parse(value)); } catch { return {}; }

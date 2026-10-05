@@ -2386,6 +2386,11 @@ verifiers:
     ownerPackage: '@treeseed/api'
     testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
     testName: normalizes a claimed returned turn without replacing the provider closure or measured usage
+  api.golden.operator-cancellation-measurement-unit:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
+    testName: denies missing malformed and incomplete measured usage before cancelling a released productive attempt
   api.golden.operator-phase-no-fabrication:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
@@ -3096,3 +3101,13 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/ontology/availability-initialization.test.ts
     testName: "verifies the exact advertised conformance against the registered provider key before open or refresh and denies substituted signatures without publication or input repair"
+  api.golden.execution-settlement-record-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-authority.test.ts
+    testName: "requires the stored canonical settlement to agree with every owning ledger identity measurement and clock without repairing either representation"
+  api.golden.execution-settlement-record-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/public-record-custody.test.ts
+    testName: "denies absent malformed and moved stored canonical settlements without reconstructing or repairing retained financial history"

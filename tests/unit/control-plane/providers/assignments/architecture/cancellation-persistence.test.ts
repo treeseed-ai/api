@@ -3,6 +3,8 @@ import { OperatorAssignmentService } from '../../../../../../src/api/capacity/se
 import { settleCapacityReservationExactlyOnce } from '../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
 import { terminalUsage } from '../../../capacity/accounting/architecture/settlement-fixture.ts';
 import { cancellationDatabase, cancelNow } from './cancellation-fixture.ts';
+import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
+import { validateProviderAssignment } from '@treeseed/sdk/agent-capacity';
 
 afterEach(() => vi.useRealTimers());
 function atNow() { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(cancelNow)); }
@@ -11,7 +13,7 @@ function atNow() { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new 
 // or separate PostgreSQL connection concurrency is claimed.
 describe('cancellation retains productive and financial authority through original SQL', () => {
 	it('requests active lease cancellation without terminalizing releasing or rewriting its immutable attempt', async () => {
-		const { db, owner, query, assignment, attempt } = await cancellationDatabase();
+		const { db, owner, query, assignment, attempt, snapshot } = await cancellationDatabase();
 		try {
 			atNow(); const before = structuredClone(attempt);
 			const result = await new OperatorAssignmentService(owner).cancel('team', assignment.id, { idempotencyKey: 'cancel-request' });
@@ -23,6 +25,18 @@ describe('cancellation retains productive and financial authority through origin
 			expect((await query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows).toEqual([{ total: 0 }]);
 			expect((await query('SELECT COUNT(*) AS total FROM capacity_usage_actuals')).rows).toEqual([{ total: 0 }]);
 			expect(attempt).toEqual(before);
+			const repository = new ProviderAssignmentRepository(owner);
+			for (const bytes of ['{}', 'not-json', JSON.stringify({ ...attempt, teamId: 'foreign-team' })]) {
+				await query('UPDATE capacity_provider_assignments SET assignment_attempt_json=? WHERE id=?', [bytes, attempt.id]);
+				const retained = await snapshot();
+				await expect(repository.get('team', attempt.id)).rejects.toMatchObject({ code: expect.stringMatching(/provider_assignment_(contract|json)_invalid/u) });
+				const diagnostic = await repository.getForCancellation('team', attempt.id);
+				expect(diagnostic).toMatchObject({ id: attempt.id,
+					assignmentAttempt: null, assignmentResult: null, explanation: { snapshotValidation: { valid: false } } });
+				expect(validateProviderAssignment(diagnostic).ok).toBe(false);
+				expect(await repository.getForCancellation('foreign-team', attempt.id)).toBeNull();
+				expect(await snapshot()).toEqual(retained);
+			}
 		} finally { await db.close(); }
 	});
 	it('replays terminal cancellation without replacing measured settlement or releasing counters twice', async () => {
@@ -39,14 +53,15 @@ describe('cancellation retains productive and financial authority through origin
 		} finally { await db.close(); }
 	});
 	it('refuses unknown productive usage instead of fabricating a zero settlement during terminal cancellation', async () => {
-		const { db, owner, query, assignment } = await cancellationDatabase('returned', true);
+		const { db, owner, query, assignment, snapshot } = await cancellationDatabase('returned', true);
 		try {
-			atNow(); let denied = false;
+			atNow(); const retained = await snapshot(); let denied = false;
 			try { await new OperatorAssignmentService(owner).cancel('team', assignment.id, { idempotencyKey: 'cancel-unknown-usage' }); }
 			catch { denied = true; }
 			expect({ denied, measurements: (await query('SELECT active_seconds,elapsed_seconds FROM capacity_usage_actuals')).rows,
 				settlements: (await query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows })
 				.toEqual({ denied: true, measurements: [], settlements: [{ total: 0 }] });
+			expect(await snapshot()).toEqual(retained);
 		} finally { await db.close(); }
 	});
 	it('retains durable measured settlement when workspace cleanup is interrupted and retried', async () => {

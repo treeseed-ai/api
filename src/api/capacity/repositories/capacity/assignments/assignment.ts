@@ -1,5 +1,6 @@
 import type { ProviderAssignment } from '@treeseed/sdk/agent-capacity';
 import { assignmentAttemptSchema, assignmentResultSchema, validateProviderAssignment } from '@treeseed/sdk/agent-capacity';
+import { isDeepStrictEqual } from 'node:util';
 import {
 encodeCapacityPageCursor,
 normalizeCapacityPageLimit,
@@ -59,6 +60,8 @@ function typedJson<T>(value: unknown, field: string, assignmentId: string, schem
 			`Assignment ${assignmentId} has invalid ${field} at ${issue.path.join('.')}: ${issue.message}`,
 			500, { assignmentId, field, diagnostics: parsed.error.issues.map(({ path, code, message }) => ({ path, code, message })) });
 	}
+	if (!isDeepStrictEqual(parsed.data, decoded)) throw new CapacityGovernanceError('provider_assignment_contract_invalid',
+		`Assignment ${assignmentId} has noncanonical ${field}.`, 500, { assignmentId, field });
 	return parsed.data ?? null;
 }
 
@@ -70,11 +73,11 @@ export function serializeProviderAssignmentRow(row: Row | null, inspection = fal
 		// Inspection/cancellation never makes an invalid snapshot executable.
 		return serializeExecutableAssignmentRow({ ...row, assignment_attempt_json: null, assignment_result_json: null,
 			explanation_json: { ...json(row.explanation_json, {}, 'explanation_json', text(row.id)),
-				snapshotValidation: { valid: false, ...error.details } } });
+				snapshotValidation: { valid: false, ...error.details } } }, true);
 	}
 }
 
-function serializeExecutableAssignmentRow(row: Row | null): DurableProviderAssignment | null {
+function serializeExecutableAssignmentRow(row: Row | null, diagnosticSnapshot = false): DurableProviderAssignment | null {
 	if (!row) return null;
 	const id = text(row.id);
 	const workspaceContext = json(row.workspace_context_json, {}, 'workspace_context_json', id);
@@ -149,7 +152,11 @@ function serializeExecutableAssignmentRow(row: Row | null): DurableProviderAssig
 		updatedAt: text(row.updated_at),
 	};
 	const validation = validateProviderAssignment(assignment);
-	if (!validation.ok) {
+	// Only the original diagnostic/cancellation catch may expose a null
+	// executable snapshot. All other operational fields still require validation;
+	// the returned record remains invalid for SDK execution/admission consumers.
+	if (!validation.ok && !(diagnosticSnapshot && assignment.assignmentAttempt === null && assignment.assignmentResult === null
+		&& validation.diagnostics.every(entry => entry.path === 'assignmentAttempt'))) {
 		const first = validation.diagnostics[0]!;
 		throw new CapacityGovernanceError(first.code, `Assignment ${id || 'unknown'} is corrupt at ${first.path}: ${first.message}`, 500, {
 			assignmentId: id || null,

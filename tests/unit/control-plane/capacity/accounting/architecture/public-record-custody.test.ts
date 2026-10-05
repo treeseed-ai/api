@@ -33,7 +33,7 @@ describe('public all-attempt accounting record custody', () => {
 		try {
 			const fields = { inputTokens: 7, outputTokens: 3, cachedInputTokens: 2, reasoningTokens: 1, quotaMinutes: 0.25, wallMinutes: 0.5,
 				filesOpened: 4, filesChanged: 2, diffLinesAdded: 9, diffLinesRemoved: 6, testRuns: 2, retryCount: 1,
-				executionProfileId: 'configured-profile', businessModel: 'provider-native' };
+				executionProfileId: 'configured-profile', businessModel: 'configured-native-business' };
 			const usageActual = { ...terminalUsage.usageActual, ...fields };
 			const body = { assignmentAttempt: frozenAttempt.attempt, usageDimension: 'diagnostic-0', accountingMode: 'informational',
 				activeSeconds: 0, elapsedSeconds: 0, usageActual };
@@ -84,11 +84,37 @@ describe('public all-attempt accounting record custody', () => {
 				await f.service.settle(provider, attempt.id, { ...terminalUsage }, terminalUsage.settlementKey); expect(await f.read('capacity.ledger')).toEqual(page); expect(await f.snapshot()).toEqual(stable);
 			} finally { await f.db.close(); }
 		}
-		for (const page of outcomes) expect(page).toMatchObject({ items: [expect.objectContaining({ schemaVersion: 'treeseed.usage-settlement/v1',
+		// The supported page retains its operational ledger envelope. Its canonical
+		// child must be the original stored record, not a read-time conversion.
+		for (const page of outcomes) expect(page).toMatchObject({ items: [expect.objectContaining({ usageSettlement: { schemaVersion: 'treeseed.usage-settlement/v1',
+			id: expect.any(String),
 			idempotencyKey: terminalUsage.settlementKey, assignmentId: frozenAttempt.id, reservationId: frozenAttempt.reservationId,
 			workdayId: frozenAttempt.workdayId, teamId: frozenAttempt.teamId, projectId: frozenAttempt.projectId, agentClass: frozenAttempt.agentClass,
-			providerId: frozenAttempt.provider.providerId, actualSeconds: 2, nativeUsage: terminalUsage.usageActual!.nativeUsage, settledAt: expect.any(String) })],
+			providerId: frozenAttempt.provider.providerId, actualSeconds: 2, nativeUsage: terminalUsage.usageActual!.nativeUsage, settledAt: expect.any(String) } })],
 			page: { limit: 100, hasMore: false, nextCursor: null } });
+	});
+	it('denies absent malformed and moved stored canonical settlements without reconstructing or repairing retained financial history', async () => {
+		const f = await fixture();
+		try {
+			await f.service.settle(provider, frozenAttempt.id, { ...terminalUsage }, terminalUsage.settlementKey);
+			const rows = (await f.query('SELECT * FROM capacity_ledger_entries')).rows;
+			expect(rows).toHaveLength(1); const entry = rows[0]!, original = JSON.parse(String(entry.metadata_json));
+			const page = await f.read('capacity.ledger');
+			expect(page).toMatchObject({ items: [expect.objectContaining({ usageSettlement: original.usageSettlement })] });
+			expect(original.usageSettlement).toMatchObject({ id: entry.id, settledAt: entry.created_at, idempotencyKey: entry.settlement_key });
+			const inputs = [undefined, null, {}, { ...original.usageSettlement, assignmentId: 'foreign' },
+				{ ...original.usageSettlement, providerId: 'foreign' }, { ...original.usageSettlement, nativeUsage: { tokens: '7' } },
+				{ ...original.usageSettlement, actualSeconds: 3 }, { ...original.usageSettlement, settledAt: '2026-01-01T00:00:00Z' }];
+			for (const usageSettlement of inputs) {
+				const supplied = JSON.stringify({ ...original, usageSettlement });
+				await f.query('UPDATE capacity_ledger_entries SET metadata_json=? WHERE id=?', [supplied, entry.id]);
+				const retained = await f.snapshot(); await expect(f.read('capacity.ledger')).rejects.toMatchObject({ code: 'capacity_ledger_entry_corrupt' });
+				await expect(f.service.settle(provider, frozenAttempt.id, { ...terminalUsage }, terminalUsage.settlementKey)).rejects.toMatchObject({ code: 'capacity_ledger_entry_corrupt' });
+				expect(await f.snapshot()).toEqual(retained);
+			}
+			await f.query('UPDATE capacity_ledger_entries SET metadata_json=? WHERE id=?', [entry.metadata_json, entry.id]);
+			expect(await f.read('capacity.ledger')).toEqual(page); expect((await f.query('SELECT * FROM capacity_ledger_entries')).rows).toEqual(rows);
+		} finally { await f.db.close(); }
 	});
 	it('reads supplied native measurements and distinct operational ledger authority without mutating financial or frozen assignment bytes', async () => {
 		const f = await fixture();

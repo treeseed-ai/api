@@ -39,7 +39,7 @@ function setup(ready = true) {
 		capacityEnvelope: { ...base.capacityEnvelope, budget: { ...budget, time: { ...budget.time,
 			preparationStartedAt: '2026-10-01T01:16:26.270Z', authorityDeadlineAt: boundary, preparationDeadlineAt: boundary } } },
 		lifecycleOutput: { teardown: { verified: true, completedAt: boundary }, completion: { disposition: 'completed' }, performance: null } };
-	const first = vi.fn(async (query: string, params: unknown[]) => {
+	const first = vi.fn(async (query: string, params: unknown[]): Promise<Record<string, unknown> | null> => {
 		if (query.includes("node.kind IN ('acting','reviewing')")) return ready ? { id: 'actor' } : null;
 		if (query.includes('capacity_usage_actuals')) return { active_seconds: 0, elapsed_seconds: 2.635 };
 		if (query.startsWith('UPDATE capacity_provider_assignments SET status')) {
@@ -53,6 +53,23 @@ function setup(ready = true) {
 }
 afterEach(() => vi.useRealTimers());
 describe('operator planning boundary closeout', () => {
+	it('denies missing malformed and incomplete measured usage before cancelling a released productive attempt', async () => {
+		for (const measurements of [null, {}, { active_seconds: 1 }, { elapsed_seconds: 1 },
+			{ active_seconds: '1', elapsed_seconds: 1 }, { active_seconds: 1, elapsed_seconds: -1 },
+			{ active_seconds: Number.NaN, elapsed_seconds: 1 }, { active_seconds: 1, elapsed_seconds: Number.POSITIVE_INFINITY }]) {
+			const { service, database } = setup();
+			const budget = emptyCapacityBudget(boundary, 2);
+			fixture.assignment.capacityEnvelope = { teamId: 'team', projectId: 'project', mode: 'acting',
+				budget: { ...budget, time: { ...budget.time, executionStartedAt: '2026-10-01T01:16:26.270Z' } } };
+			const before = structuredClone(fixture.assignment), input = { idempotencyKey: 'original-cancellation' };
+			database.first.mockResolvedValueOnce(measurements);
+			await expect(service.cancel('team', 'assignment', input)).rejects.toMatchObject({
+				code: expect.stringMatching(/^provider_assignment_usage_(required|invalid)$/u) });
+			expect(database.first).toHaveBeenCalledOnce(); expect(database.first.mock.calls[0]![0]).toContain('capacity_usage_actuals');
+			expect(database.batch).not.toHaveBeenCalled(); expect(fixture.settle).not.toHaveBeenCalled();
+			expect(fixture.assignment).toEqual(before); expect(input).toEqual({ idempotencyKey: 'original-cancellation' });
+		}
+	});
 	it('normalizes a claimed returned turn without replacing the provider closure or measured usage', async () => {
 		const { service, database } = setup();
 		await service.cancel('team', 'assignment', { idempotencyKey: 'ordinary-key' });

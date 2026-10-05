@@ -48,7 +48,7 @@ describe('provider incremental terminal and release accounting through original 
 			const service = createProviderAssignmentService(owner as ProviderStore), before = structuredClone(terminalUsage);
 			for (const dimension of ['checkpoint-a', 'checkpoint-b']) {
 				const body = { assignmentAttempt: 1, usageDimension: dimension, accountingMode: 'incremental', activeSeconds: 1,
-					elapsedSeconds: 1, usageActual: { ...terminalUsage.usageActual, nativeUsage: { activeSeconds: 1, tokens: 3 } } };
+					elapsedSeconds: 1, usageActual: { ...terminalUsage.usageActual, inputTokens: 3, nativeUsage: { activeSeconds: 1, tokens: 3 } } };
 				const responses = await Promise.all([service.reportUsage(auth, frozenAttempt.id, body, dimension),
 					service.reportUsage(auth, frozenAttempt.id, body, dimension)]);
 				expect(responses.filter(value => !value.replayed)).toHaveLength(1);

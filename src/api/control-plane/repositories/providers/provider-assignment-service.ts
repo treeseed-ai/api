@@ -124,7 +124,16 @@ async function protectedEventMetadata(store: ProviderAssignmentStore, assignment
 async function ownedAssignment(store: ProviderAssignmentStore, assignmentId: string, principal: ProviderPrincipal) {
 	const assignment = await store.first('SELECT * FROM capacity_provider_assignments WHERE id = ? AND team_id = ? AND membership_id = ? LIMIT 1', [assignmentId, principal.teamId, principal.membershipId]);
 	if (!assignment) throw new CapacityGovernanceError('provider_assignment_not_found', 'Provider assignment does not exist for this membership.', 404);
+	if (assignment.capacity_provider_id !== principal.capacityProviderId) throw new CapacityGovernanceError(
+		'provider_assignment_forbidden', 'Provider identity does not own the assignment.', 403);
 	return assignment;
+}
+
+function measuredNumber(value: unknown, field: string, integer = true): number {
+	if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || integer && !Number.isSafeInteger(value)) {
+		throw new CapacityGovernanceError('provider_assignment_usage_invalid', `${field} requires an unchanged nonnegative measurement.`, 400, { field });
+	}
+	return value;
 }
 
 export function createProviderAssignmentService(storeValue: ProviderAssignmentStore, sessionEvents?: SessionEvents, contentStore: any = storeValue, diagnosticEnvelopes?: DiagnosticEnvelopeService, sourceOptions?: { controlPlaneId: string }) {
@@ -329,18 +338,21 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 		async reportUsage(auth: unknown, assignmentId: string, body: Record<string, unknown>, idempotencyKey = '') {
 			rejectRetiredModeRun(body);
 			const actor = principal(auth, ['provider:usage:write']); const assignment = await ownedAssignment(store, assignmentId, actor);
+			if (body.accountingMode !== undefined && body.accountingMode !== 'informational' && body.accountingMode !== 'incremental') {
+				throw new CapacityGovernanceError('capacity_usage_accounting_mode_invalid', 'Nonterminal reports require informational or incremental accounting.', 400);
+			}
 			return reportCapacityUsage(store, { teamId: actor.teamId, membershipId: actor.membershipId, reservationId: String(assignment.reservation_id ?? ''), assignmentId: String(assignment.id), idempotencyKey,
-				assignmentAttempt: body.assignmentAttempt == null ? null : Number(body.assignmentAttempt), usageDimension: String(body.usageDimension ?? ''), accountingMode: body.accountingMode === 'incremental' ? 'incremental' : 'informational',
-				activeSeconds: Number(body.activeSeconds ?? 0), elapsedSeconds: Number(body.elapsedSeconds ?? 0), providerUnits: body.providerUnits == null ? null : Number(body.providerUnits), usd: body.usd == null ? null : Number(body.usd),
+				assignmentAttempt: body.assignmentAttempt === undefined ? undefined : measuredNumber(body.assignmentAttempt, 'assignmentAttempt'), usageDimension: String(body.usageDimension ?? ''), accountingMode: body.accountingMode === 'incremental' ? 'incremental' : 'informational',
+				activeSeconds: measuredNumber(body.activeSeconds, 'activeSeconds'), elapsedSeconds: measuredNumber(body.elapsedSeconds, 'elapsedSeconds'), providerUnits: body.providerUnits == null ? null : measuredNumber(body.providerUnits, 'providerUnits', false), usd: body.usd == null ? null : measuredNumber(body.usd, 'usd', false),
 				source: 'provider_usage_report', metadata: objectValue(body.metadata), usageActual: objectValue(body.usageActual) });
 		},
 		async settle(auth: unknown, assignmentId: string, body: Record<string, unknown>, idempotencyKey = '') {
 			rejectRetiredModeRun(body);
 			const actor = principal(auth, ['provider:usage:write', 'provider:assignments:write']); const assignment = await ownedAssignment(store, assignmentId, actor);
 			const settlement = await settleCapacityReservationExactlyOnce(store, { settlementKey: idempotencyKey, teamId: actor.teamId, membershipId: actor.membershipId,
-				reservationId: String(assignment.reservation_id ?? ''), assignmentId: String(assignment.id), assignmentAttempt: body.assignmentAttempt == null ? null : Number(body.assignmentAttempt),
+				reservationId: String(assignment.reservation_id ?? ''), assignmentId: String(assignment.id), assignmentAttempt: body.assignmentAttempt === undefined ? undefined : measuredNumber(body.assignmentAttempt, 'assignmentAttempt'),
 				usageDimension: typeof body.usageDimension === 'string' ? body.usageDimension : 'aggregate', usageIdempotencyKey: typeof body.usageIdempotencyKey === 'string' ? body.usageIdempotencyKey : null,
-				activeSeconds: Number(body.activeSeconds), elapsedSeconds: Number(body.elapsedSeconds), providerUnits: body.providerUnits == null ? null : Number(body.providerUnits), usd: body.usd == null ? null : Number(body.usd),
+				activeSeconds: measuredNumber(body.activeSeconds, 'activeSeconds'), elapsedSeconds: measuredNumber(body.elapsedSeconds, 'elapsedSeconds'), providerUnits: body.providerUnits == null ? null : measuredNumber(body.providerUnits, 'providerUnits', false), usd: body.usd == null ? null : measuredNumber(body.usd, 'usd', false),
 				source: 'provider_usage_report', metadata: objectValue(body.metadata), usageActual: objectValue(body.usageActual) as CapacitySettlementRequest['usageActual'] });
 			return settlement;
 		},

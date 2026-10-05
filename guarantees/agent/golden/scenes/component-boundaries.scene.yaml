@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: operator-cancellation-measurement-unit
+    action: { verifier: api.golden.operator-cancellation-measurement-unit }
+    expect: { status: passed }
   - id: canonical-source-ordinal-unit
     action: { verifier: api.golden.canonical-source-ordinal-unit }
     expect: { status: passed }
@@ -1799,4 +1802,10 @@ workflow:
     expect: { status: passed }
   - id: execution-offer-signature-unit-1
     action: { verifier: api.golden.execution-offer-signature-unit-1 }
+    expect: { status: passed }
+  - id: execution-settlement-record-unit
+    action: { verifier: api.golden.execution-settlement-record-unit }
+    expect: { status: passed }
+  - id: execution-settlement-record-native
+    action: { verifier: api.golden.execution-settlement-record-native }
     expect: { status: passed }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { assertCapacityUsageMatches, capacityUsageIdentity, capacityUsageInsertOperation,
 	type CapacityUsageReportRequest } from '../../../../../../src/api/capacity/services/capacity/accounting/usage-report-service.ts';
 import { frozenAttempt, terminalUsage } from './settlement-fixture.ts';
+import { serializeCapacityLedgerEntryRow } from '../../../../../../src/api/capacity/repositories/capacity/accounting/ledger.ts';
 
 const input: CapacityUsageReportRequest = { ...terminalUsage, idempotencyKey: 'usage-key', usageDimension: 'aggregate', accountingMode: 'aggregate' };
 const reservation = { assignment_attempt: 1, assignment_attempt_json: JSON.stringify(frozenAttempt), project_id: frozenAttempt.projectId,
@@ -11,17 +12,42 @@ const identity = capacityUsageIdentity(input, reservation);
 const stored = { id: identity.id, idempotency_key: identity.idempotencyKey, assignment_id: input.assignmentId,
 	assignment_attempt: 1, usage_dimension: 'aggregate', accounting_mode: 'aggregate', active_seconds: 2, elapsed_seconds: 3,
 	metadata_json: '{}', actual_usd: null, native_usage_json: JSON.stringify(input.usageActual!.nativeUsage),
-	execution_provider_id: frozenAttempt.provider.executionProviderId, model_name: frozenAttempt.provider.modelConfigurationId };
+	execution_provider_id: frozenAttempt.provider.executionProviderId, model_name: frozenAttempt.provider.modelConfigurationId,
+	execution_profile_id: 'standard-code-model', business_model: 'isolated-provider-input', input_tokens: 7 };
 
 // UNIT owning accounting functions: supplied frozen attempt/report/row, not actual consumption.
 describe('immutable settlement measurement authority', () => {
+	it('requires the stored canonical settlement to agree with every owning ledger identity measurement and clock without repairing either representation', () => {
+		const settlement = { schemaVersion: 'treeseed.usage-settlement/v1', id: 'entry', idempotencyKey: terminalUsage.settlementKey,
+			assignmentId: frozenAttempt.id, reservationId: frozenAttempt.reservationId, workdayId: frozenAttempt.workdayId,
+			teamId: frozenAttempt.teamId, projectId: frozenAttempt.projectId, agentClass: frozenAttempt.agentClass,
+			providerId: frozenAttempt.provider.providerId, actualSeconds: 2, nativeUsage: terminalUsage.usageActual!.nativeUsage,
+			settledAt: frozenAttempt.createdAt };
+		const row = { id: settlement.id, settlement_key: settlement.idempotencyKey, assignment_id: settlement.assignmentId,
+			reservation_id: settlement.reservationId, work_day_id: settlement.workdayId, team_id: settlement.teamId,
+			project_id: settlement.projectId, capacity_provider_id: settlement.providerId, membership_id: 'membership',
+			phase: 'task_completed_actual_settlement', active_seconds: 2, elapsed_seconds: 3, usd: null, provider_units: null,
+			source: 'supplied-unit-measurement', mode: 'acting', created_at: settlement.settledAt,
+			metadata_json: JSON.stringify({ retained: 'original-metadata', usageSettlement: settlement }) };
+		const before = structuredClone(row);
+		expect(serializeCapacityLedgerEntryRow(row)).toMatchObject({ usageSettlement: settlement, metadata: { retained: 'original-metadata' } });
+		const changes = ['id', 'idempotencyKey', 'assignmentId', 'reservationId', 'workdayId', 'teamId', 'projectId', 'providerId', 'settledAt'];
+		for (const field of changes) {
+			const candidate = { ...row, metadata_json: JSON.stringify({ usageSettlement: { ...settlement, [field]: field === 'settledAt' ? '2026-01-01T00:00:00Z' : 'foreign' } }) };
+			expect(() => serializeCapacityLedgerEntryRow(candidate)).toThrow('invalid usageSettlement');
+		}
+		for (const usageSettlement of [undefined, null, {}, { ...settlement, actualSeconds: 3 }, { ...settlement, cost: 1 },
+			{ ...settlement, nativeUsage: { provenance: 'execution-provider' } }, { ...settlement, legacy: true }])
+			expect(() => serializeCapacityLedgerEntryRow({ ...row, metadata_json: JSON.stringify({ usageSettlement }) })).toThrow('invalid usageSettlement');
+		expect(row).toEqual(before);
+	});
 	it('denies every changed omitted or null diagnostic counter and accounting descriptor on the same usage identity', () => {
 		const fields = [
 			['inputTokens', 'input_tokens', 7], ['outputTokens', 'output_tokens', 3], ['cachedInputTokens', 'cached_input_tokens', 2],
 			['reasoningTokens', 'reasoning_tokens', 1], ['quotaMinutes', 'quota_minutes', 0.25], ['wallMinutes', 'wall_minutes', 0.5],
 			['filesOpened', 'files_opened', 4], ['filesChanged', 'files_changed', 2], ['diffLinesAdded', 'diff_lines_added', 9],
 			['diffLinesRemoved', 'diff_lines_removed', 6], ['testRuns', 'test_runs', 2], ['retryCount', 'retry_count', 1],
-			['executionProfileId', 'execution_profile_id', 'configured-profile'], ['businessModel', 'business_model', 'provider-native'],
+			['executionProfileId', 'execution_profile_id', 'configured-profile'], ['businessModel', 'business_model', 'configured-native-business'],
 		] as const;
 		const usageActual = { ...input.usageActual, ...Object.fromEntries(fields.map(([field, , value]) => [field, value])) };
 		const report = { ...input, usageDimension: 'diagnostic-0', accountingMode: 'informational' as const, activeSeconds: 0, elapsedSeconds: 0, usageActual };
