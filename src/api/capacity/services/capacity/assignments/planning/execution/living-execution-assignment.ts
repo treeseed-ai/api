@@ -153,7 +153,7 @@ export async function assignNextReadyExecutionNode(
 	providerSessionId: string,
 	executionProviders: ProviderSynthesisExecutionProvider[],
 	now = new Date().toISOString(),
-): Promise<DurableProviderAssignment | null> {
+) {
 	const runs = await new CapacityWorkdayRunRepository(store).listActiveForSupply(principal.teamId, principal.capacityProviderId);
 	const deferred: Array<{ runId: string; nodeId: string; code: string; details: unknown }> = [];
 	const selection = { activeRuns: runs.length, readyNodes: 0, phaseEligible: 0, concurrencyEligible: 0,

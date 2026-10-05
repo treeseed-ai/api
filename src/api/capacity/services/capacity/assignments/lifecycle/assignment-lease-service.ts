@@ -136,28 +136,30 @@ export interface AssignmentLeaseDeadlineGate {
 }
 
 export function evaluateAssignmentLeaseDeadline(
-	assignment: Pick<DurableProviderAssignment, 'capacityEnvelope' | 'status'>,
+	assignment: { capacityEnvelope: unknown; status: DurableProviderAssignment['status'] },
 	nowMs: number,
 ): AssignmentLeaseDeadlineGate {
 	const budget = record(record(assignment.capacityEnvelope).budget);
 	const time = record(budget.time);
-	if (assignment.status === 'pending' && !time.executionStartedAt) {
-		return { eligible: true, hardDeadlineAt: null, remainingMs: null, minimumRemainingMs: 0 };
+	const preparing = assignment.status === 'pending' && !time.executionStartedAt;
+	const clocks = [budget.deadline, time.hardDeadlineAt, time.authorityDeadlineAt];
+	if (!Number.isFinite(nowMs) || clocks.some(value => typeof value !== 'string' || !value || !Number.isFinite(Date.parse(value)))) {
+		return { eligible: false, hardDeadlineAt: null, remainingMs: null, minimumRemainingMs: 0 };
 	}
-	const parsedDeadline = Date.parse(String(budget.deadline ?? time.hardDeadlineAt ?? ''));
+	const parsedDeadline = Math.min(...clocks.map(value => Date.parse(String(value))));
 	const closeoutWarningMs = Math.max(0, Number(time.closeoutWarningSeconds ?? 0) * 1000);
 	// Fresh work must not begin once mandatory closeout starts. Returned work is
 	// different: it may already contain validated, unpublished changes that only
 	// need the restricted closeout tools. Re-admit that work while at least one
 	// bounded closeout interval remains; the status/tool gates still prohibit new
 	// exploration and mutation outside closeout-safe operations.
-	const minimumRemainingMs = assignment.status === 'returned'
+	const minimumRemainingMs = preparing ? 0 : assignment.status === 'returned'
 		? 30_000
 		: Number.isFinite(closeoutWarningMs) && closeoutWarningMs > 0
 			? Math.max(30_000, closeoutWarningMs)
 		: 0;
 	if (!Number.isFinite(parsedDeadline)) {
-		return { eligible: true, hardDeadlineAt: null, remainingMs: null, minimumRemainingMs };
+		return { eligible: false, hardDeadlineAt: null, remainingMs: null, minimumRemainingMs };
 	}
 	const remainingMs = Math.max(0, parsedDeadline - nowMs);
 	return {
@@ -169,8 +171,8 @@ export function evaluateAssignmentLeaseDeadline(
 }
 
 export function normalizeProviderAssignmentLeaseSeconds(value: unknown): number {
-	const parsed = Number(value ?? 300);
-	if (!Number.isFinite(parsed)) {
+	const parsed = value === undefined ? 300 : value;
+	if (typeof parsed !== 'number' || !Number.isSafeInteger(parsed) || parsed <= 0) {
 		throw new CapacityGovernanceError(
 			'provider_assignment_lease_seconds_invalid',
 			'Provider assignment leaseSeconds must be a finite number.',
@@ -356,6 +358,15 @@ export async function leaseNextProviderAssignment(
 		     state_version = state_version + 1, claimed_at = COALESCE(claimed_at, ?), metadata_json = ?, capacity_envelope_json = ?,
 		     explanation_json = ?, updated_at = ?
 		 WHERE id = ? AND team_id = ? AND capacity_provider_id = ? AND membership_id = ? AND state_version = ?
+		   AND EXISTS (SELECT 1 FROM capacity_provider_team_memberships membership
+		     JOIN capacity_providers provider ON provider.id = membership.capacity_provider_id
+		     WHERE membership.id = capacity_provider_assignments.membership_id
+		       AND membership.team_id = capacity_provider_assignments.team_id
+		       AND membership.capacity_provider_id = capacity_provider_assignments.capacity_provider_id
+		       AND membership.status = 'approved' AND provider.status = 'active')
+		   AND (CAST(? AS TEXT) IS NULL OR EXISTS (SELECT 1 FROM capacity_provider_access_tokens token
+		     WHERE token.id = ? AND token.membership_id = capacity_provider_assignments.membership_id
+		       AND token.status = 'active' AND token.expires_at > ?))
 		   AND ((status = 'pending' AND lease_state = 'unleased')
 		     OR (status = 'returned' AND lease_state = 'released'))
 		   AND (CAST(? AS TEXT) IS NULL OR status <> 'returned' OR EXISTS (
@@ -373,7 +384,8 @@ export async function leaseNextProviderAssignment(
 			leaseToken, leaseExpiresAt, now, input.runnerId ?? null, context.session.id, now,
 			JSON.stringify(assignment.metadata ?? {}), JSON.stringify(leasedCapacityEnvelope), JSON.stringify(selectedExplanation), now,
 			assignment.id, principal.teamId, principal.capacityProviderId, principal.membershipId,
-			assignment.stateVersion, assignment.executionNodeId, assignment.executionNodeId,
+			assignment.stateVersion, principal.accessTokenId ?? null, principal.accessTokenId ?? null, now,
+			assignment.executionNodeId, assignment.executionNodeId,
 			assignment.executionNodeRevision,
 		],
 	};

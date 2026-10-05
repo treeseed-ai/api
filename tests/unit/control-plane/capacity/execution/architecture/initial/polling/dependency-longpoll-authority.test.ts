@@ -5,6 +5,28 @@ import { resolveProviderSynthesisContext } from '../../../../../../../../src/api
 import { longpollGuard } from './dependency-longpoll-fixture.ts';
 
 describe('longpoll original input and withdrawn caller authority', () => {
+	it('current access token custody rejects withdrawn missing and malformed durable token authority before synthesis reads or writes without changing the principal', async () => {
+		for (const token of [null, { status: 'revoked', expires_at: '9999-12-31T23:59:59.999Z' },
+			{ status: 'expired', expires_at: '9999-12-31T23:59:59.999Z' },
+			...[undefined, null, '', 'malformed', 1, '2000-01-01T00:00:00.000Z'].map(expires_at => ({ status: 'active', expires_at }))]) {
+			const actor = { accessTokenId: 'own-token', teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider' };
+			const input = { providerSessionId: 'session' }, original = structuredClone({ actor, input, token });
+			const reads: Array<{ sql: string; params: unknown[] }> = []; let writes = 0;
+			const store = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, {
+				prepare: (sql: string) => ({ bind: (...params: unknown[]) => ({ first: async () => {
+					reads.push({ sql, params }); if (reads.length !== 1) throw new Error('Unexpected post-denial synthesis read'); return token;
+				}, all: async () => { throw new Error('Unexpected post-denial inventory read'); }, run: async () => { writes++; throw new Error('Unexpected token authority write'); } }) }),
+				batch: async () => { writes++; throw new Error('Unexpected token authority transaction'); },
+			});
+			store.initializationPromise = Promise.resolve();
+			const originalRun = store.run.bind(store);
+			const owner = Object.assign(store, { run: async (sql: string, params: unknown[] = []) => { await originalRun(sql, params); } });
+			await expect(resolveProviderSynthesisContext(owner, actor, input)).rejects.toMatchObject({ status: 401, code: 'provider_authentication_required' });
+			expect(reads).toEqual([{ sql: `SELECT status,expires_at FROM capacity_provider_access_tokens
+			WHERE id=? AND membership_id=? LIMIT 1`, params: ['own-token', 'membership'] }]);
+			expect(writes).toBe(0); expect({ actor, input, token }).toEqual(original);
+		}
+	});
 	it('abort during pending subscription releases the late listener without another lease and preserves the original response and fresh retry', async () => {
 		let ready: (() => void) | undefined;
 		const gate = new Promise<void>(resolve => { ready = resolve; });
@@ -20,7 +42,10 @@ describe('longpoll original input and withdrawn caller authority', () => {
 			f.wake(); f.wake(); await Promise.resolve(); expect(f.counts()).toEqual(atAbort); expect(f.releases()).toBe(1);
 			const retry = { ...body, waitSeconds: 0 }, retryInput = structuredClone(retry);
 			expect(await f.service.next(f.auth, retry)).toEqual({ assignment: null, leaseToken: null, leaseSeconds: 30, diagnostics: null, leaseDiagnostics: null });
-			expect(f.counts()).toEqual({ ...atAbort, leases: atAbort.leases + 1 });
+			// A fresh request performs the same three original reconciliation reads
+			// as its predecessor. This is not post-abort work by the old request.
+			expect(atAbort.reads).toBe(3);
+			expect(f.counts()).toEqual({ ...atAbort, reads: atAbort.reads + 3, leases: atAbort.leases + 1 });
 			expect(f.inputs()).toEqual([input, retryInput]); expect(f.releases()).toBe(1);
 			expect(body).toEqual(input); expect(retry).toEqual(retryInput);
 		} finally { controller.abort(); ready?.(); await pending; }
@@ -42,12 +67,14 @@ describe('longpoll original input and withdrawn caller authority', () => {
 				batch: async () => { writes++; throw new Error('Unexpected unit availability transaction'); },
 			});
 			store.initializationPromise = Promise.resolve();
+			const originalRun = store.run.bind(store);
+			const owner = Object.assign(store, { run: async (sql: string, params: unknown[] = []) => { await originalRun(sql, params); } });
 			if (offset < 0) {
-				const result = await resolveProviderSynthesisContext(store, principal, input);
+				const result = await resolveProviderSynthesisContext(owner, principal, input);
 				expect(result).toMatchObject({ now: input.now, session: { id: 'session', availableUntil: session.available_until, expiresAt: deadline }, executionProviders: [] });
 				expect(reads).toBe(3);
 			} else {
-				let failure: unknown; try { await resolveProviderSynthesisContext(store, principal, input); } catch (error) { failure = error; }
+				let failure: unknown; try { await resolveProviderSynthesisContext(owner, principal, input); } catch (error) { failure = error; }
 				expect(failure).toBeInstanceOf(CapacityGovernanceError);
 				if (!(failure instanceof CapacityGovernanceError)) throw new Error('Original expiry denial required');
 				expect(failure.code).toBe('provider_synthesis_window_expired'); expect(failure.status).toBe(409);

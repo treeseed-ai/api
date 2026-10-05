@@ -398,7 +398,7 @@ export class CapacityGovernanceRepository {
 			{ query: `UPDATE capacity_provider_credential_issuance_authorizations SET status = 'issued', issued_credential_id = ?, updated_at = ? WHERE id = ? AND membership_id = ? AND status = 'pending'`, params: [input.id, input.now, input.authorization.id, input.membership.id] },
 			{ query: `INSERT INTO capacity_provider_team_credentials (id, membership_id, team_id, capacity_provider_id, key_prefix, key_hash, issuance_authorization_id, issuance_generation, issue_idempotency_key, scopes_json, status, rotated_from_credential_id, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, 'active', ?, ?, ? WHERE EXISTS (SELECT 1 FROM capacity_provider_credential_issuance_authorizations WHERE id = ? AND membership_id = ? AND status = 'issued' AND issued_credential_id = ?) AND NOT EXISTS (SELECT 1 FROM capacity_provider_team_credentials WHERE membership_id = ? AND status = 'active')`, params: [input.id, input.membership.id, input.membership.teamId, input.membership.providerId, input.prefix, input.hash, input.authorization.id, input.authorization.generation, input.issueIdempotencyKey, JSON.stringify(input.scopes), input.rotatedFromId ?? null, input.now, input.now, input.authorization.id, input.membership.id, input.id, input.membership.id] },
 		]);
-		return this.credentialById(input.membership.id, input.id);
+		return (await this.credentialByIssueKey(input.membership.id, input.issueIdempotencyKey))?.metadata ?? null;
 	}
 
 	async markCredentialRevealed(credentialId: string, now: string) {
@@ -426,7 +426,7 @@ export class CapacityGovernanceRepository {
 	}
 
 	async createAccessToken(input: { id: string; credential: ProviderTeamCredentialMetadata; idempotencyKey: string; prefix: string; hash: string; issuedAt: string; expiresAt: string }) {
-		await this.database.run(`INSERT INTO capacity_provider_access_tokens (id, membership_id, credential_id, idempotency_key, token_prefix, token_hash, scopes_json, status, issued_at, expires_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`, [input.id, input.credential.membershipId, input.credential.id, input.idempotencyKey, input.prefix, input.hash, JSON.stringify(input.credential.scopes), input.issuedAt, input.expiresAt, input.issuedAt]);
+		await this.database.run(`INSERT INTO capacity_provider_access_tokens (id, membership_id, credential_id, idempotency_key, token_prefix, token_hash, scopes_json, status, issued_at, expires_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?) ON CONFLICT (membership_id, idempotency_key) DO NOTHING`, [input.id, input.credential.membershipId, input.credential.id, input.idempotencyKey, input.prefix, input.hash, JSON.stringify(input.credential.scopes), input.issuedAt, input.expiresAt, input.issuedAt]);
 	}
 
 	async accessTokenByIssueKey(membershipId: string, idempotencyKey: string) {

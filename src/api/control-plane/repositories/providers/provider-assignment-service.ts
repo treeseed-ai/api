@@ -153,23 +153,34 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 		},
 		async next(auth: unknown, body: Record<string, unknown>, signal?: AbortSignal) {
 			const actor = principal(auth, ['provider:assignments:read']);
+			const input = structuredClone(body), wait = input.waitSeconds;
+			if (wait !== undefined && (typeof wait !== 'number' || !Number.isFinite(wait) || wait < 0 || wait > 30)) throw new CapacityGovernanceError(
+				'provider_assignment_wait_invalid', 'Wait seconds must be an unchanged finite number from zero through thirty.', 400);
+			const empty = { assignment: null, leaseToken: null, leaseSeconds: 30, diagnostics: null, leaseDiagnostics: null };
+			if (signal?.aborted) return empty;
 			await reconcileBlockedDiscussionInvocations(store, actor.teamId);
-			const waitMs = Math.max(0, Math.min(30, Number(body.waitSeconds) || 0)) * 1000;
+			if (signal?.aborted) return empty;
+			const waitMs = typeof wait === 'number' ? wait * 1000 : 0;
 			const deadline = Date.now() + waitMs;
 			let wake: (() => void) | null = null; let unsubscribe: (() => void) | null = null;
-			let result = await store.leaseNextProviderAssignment(actor, body);
+			let result = await store.leaseNextProviderAssignment(actor, input);
 			try {
-				if (!result.assignment && waitMs > 0 && sessionEvents) unsubscribe = await sessionEvents.subscribe(actor.teamId, (event) => {
+				if (!result.assignment && waitMs > 0 && sessionEvents && !signal?.aborted) unsubscribe = await sessionEvents.subscribe(actor.teamId, (event) => {
 					if (event.eventType !== 'capacity.assignment.available') return;
-					const purpose = typeof body.lanePurpose === 'string' ? body.lanePurpose : null;
+					const purpose = typeof input.lanePurpose === 'string' ? input.lanePurpose : null;
 					if (!purpose || !event.payload.lanePurpose || event.payload.lanePurpose === purpose) wake?.();
 				});
-				if (!result.assignment && unsubscribe) result = await store.leaseNextProviderAssignment(actor, body);
+				if (!result.assignment && unsubscribe && !signal?.aborted && Date.now() < deadline) result = await store.leaseNextProviderAssignment(actor, input);
 				while (!result.assignment && Date.now() < deadline && !signal?.aborted) {
-					await new Promise<void>((resolve) => { wake = resolve; setTimeout(resolve, Math.min(250, Math.max(1, deadline - Date.now()))); }); wake = null;
-					result = await store.leaseNextProviderAssignment(actor, body);
+					await new Promise<void>((resolve) => {
+						const finish = () => { clearTimeout(timer); signal?.removeEventListener('abort', finish); wake = null; resolve(); };
+						const timer = setTimeout(finish, Math.min(250, Math.max(1, deadline - Date.now())));
+						wake = finish; signal?.addEventListener('abort', finish, { once: true });
+						if (signal?.aborted) finish();
+					});
+					if (!signal?.aborted && Date.now() < deadline) result = await store.leaseNextProviderAssignment(actor, input);
 				}
-			} finally { unsubscribe?.(); }
+			} finally { wake = null; unsubscribe?.(); }
 			return { assignment: result.assignment, leaseToken: result.leaseToken, leaseSeconds: result.leaseSeconds,
 				diagnostics: result.diagnostics ?? null, leaseDiagnostics: result.diagnostics ?? null };
 		},

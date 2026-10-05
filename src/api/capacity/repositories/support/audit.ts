@@ -8,6 +8,7 @@ import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
 import type { ProviderRegistrationRequest } from '@treeseed/sdk/capacity-provider/contracts';
 import { sha256 } from '../../security.ts';
+import type { CapacityGovernanceRepository } from '../governance/policy/governance.ts';
 
 export interface CapacityAuditEvent {
 	id: string;
@@ -80,6 +81,21 @@ function auditEvent(row: Record<string, unknown>): CapacityAuditEvent {
 
 export class CapacityAuditRepository {
 	constructor(private readonly database: CapacityGovernanceDatabase) {}
+	async recordIdentityRotation(repository: Pick<CapacityGovernanceRepository, 'membershipsForProviderPage'>, providerId: string, rotation: Record<string, unknown>, idempotencyKey: string) {
+		if (rotation.capacity_provider_id !== providerId || rotation.idempotency_key !== idempotencyKey || typeof rotation.created_at !== 'string'
+			|| typeof rotation.old_fingerprint !== 'string' || typeof rotation.new_fingerprint !== 'string'
+			|| typeof rotation.from_identity_version !== 'number' || typeof rotation.to_identity_version !== 'number') throw new CapacityGovernanceError(
+			'provider_identity_rotation_evidence_invalid', 'Rotation audit requires the original committed identity, versions and clock.', 500);
+		let cursor: string | undefined;
+		do {
+			const page = await repository.membershipsForProviderPage(providerId, { limit: 200, cursor });
+			for (const member of page.items) await this.recordOnce({ teamId: member.teamId, providerId, membershipId: member.id,
+				actorType: 'provider-identity', actorId: rotation.old_fingerprint, action: 'provider-identity.rotated', resourceType: 'capacity-provider',
+				resourceId: providerId, idempotencyKey, metadata: { previousFingerprint: rotation.old_fingerprint, fingerprint: rotation.new_fingerprint,
+					previousVersion: rotation.from_identity_version, identityVersion: rotation.to_identity_version }, now: rotation.created_at }, `${providerId}:${member.teamId}:${rotation.to_identity_version}`);
+			cursor = page.page.nextCursor ?? undefined;
+		} while (cursor);
+	}
 
 	async recordRegistrationRequest(request: ProviderRegistrationRequest, idempotencyKey: string) {
 		await this.recordOnce({ teamId: request.teamId, providerId: request.providerId,
@@ -98,8 +114,8 @@ export class CapacityAuditRepository {
 			metadata: request.status === 'approved' ? { membershipOnly: true } : { reason: request.rejectionReason }, now: request.reviewedAt });
 	}
 
-	private async recordOnce(input: Omit<CapacityAuditWrite, 'id'>) {
-		await this.record({ ...input, id: sha256(`${input.action}:${input.resourceId}`) }, true);
+	async recordOnce(input: Omit<CapacityAuditWrite, 'id'>, identity = input.resourceId) {
+		await this.record({ ...input, id: sha256(`${input.action}:${identity}`) }, true);
 	}
 
 	async record(input: CapacityAuditWrite, onlyAbsent = false): Promise<void> {
@@ -107,7 +123,8 @@ export class CapacityAuditRepository {
 		const values = onlyAbsent ? `SELECT incoming.* FROM (VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?))
 			AS incoming(id, team_id, capacity_provider_id, membership_id, actor_type, actor_id, action, resource_type, resource_id, request_id, idempotency_key, metadata_json, created_at)
 			WHERE NOT EXISTS (SELECT 1 FROM capacity_audit_events existing WHERE existing.team_id IS NOT DISTINCT FROM incoming.team_id
-				AND existing.action = incoming.action AND existing.resource_id IS NOT DISTINCT FROM incoming.resource_id)` : 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+				AND existing.action = incoming.action AND existing.resource_id IS NOT DISTINCT FROM incoming.resource_id
+				AND existing.idempotency_key IS NOT DISTINCT FROM incoming.idempotency_key)` : 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
 		await this.database.run(
 			`INSERT INTO capacity_audit_events (id, team_id, capacity_provider_id, membership_id, actor_type, actor_id, action, resource_type, resource_id, request_id, idempotency_key, metadata_json, created_at)
 			 ${values} ON CONFLICT DO NOTHING`,

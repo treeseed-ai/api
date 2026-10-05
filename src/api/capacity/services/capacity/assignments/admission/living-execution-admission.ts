@@ -10,6 +10,7 @@ import type { ProviderLeasePrincipal } from '../../../accounts/lease-authority-s
 import { compileAssignmentTimeBudget } from '../planning/assignment-time-budget.ts';
 import { workdayReportContext } from './workday-report-context.ts';
 import { workdayLineageSql } from '../../workdays/scheduling/workday-continuation.ts';
+import { buildProviderAssignmentExplanation } from '../observability/assignment-explanation-service.ts';
 
 interface Store extends CapacityGovernanceDatabase {
 	getProviderAssignment(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null>;
@@ -97,11 +98,14 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		}
 	}
 	const requireExactReplay = (stored: DurableProviderAssignment) => {
+		const metadata = stored.explanation.metadata;
+		const retainedAllocation = metadata && typeof metadata === 'object' && !Array.isArray(metadata) && 'allocation' in metadata
+			? metadata.allocation : undefined;
 		if (stored.teamId !== assignment.teamId || stored.capacityProviderId !== principal.capacityProviderId
 			|| stored.executionNodeId !== assignment.nodeId || stored.executionNodeRevision !== assignment.nodeRevision
 			|| !isDeepStrictEqual(stored.assignmentAttempt, assignment)
 			|| (input.allocation.selection !== undefined && !isDeepStrictEqual(
-				stored.explanation.metadata, { allocation: input.allocation }))) {
+				retainedAllocation, input.allocation))) {
 			throw new CapacityGovernanceError('execution_assignment_idempotency_conflict',
 				'Assignment identity is already bound to different immutable execution authority.', 409);
 		}
@@ -242,7 +246,10 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 			AND EXISTS (SELECT 1 FROM capacity_reservations owned WHERE owned.id=capacity_provider_assignments.reservation_id
 				AND owned.team_id=capacity_provider_assignments.team_id AND owned.assignment_id=capacity_provider_assignments.id
 				AND owned.admission_token=?)`,
-			params: [JSON.stringify({ metadata: { allocation: input.allocation } }),assignment.graphRevision,assignment.nodeId,assignment.nodeRevision,JSON.stringify(assignment),
+			params: [JSON.stringify(buildProviderAssignmentExplanation({ id: assignment.id, explanation: {},
+				synthesizedFrom: null, synthesisKey: assignment.idempotencyKey, assignedAt: null }, assignment.teamId,
+				{ source: 'living_execution_admission', sourceId: assignment.nodeId, eligible: true,
+					metadata: { allocation: input.allocation } }, input.now)),assignment.graphRevision,assignment.nodeId,assignment.nodeRevision,JSON.stringify(assignment),
 				JSON.stringify(input.treedxProxyHandle),JSON.stringify({ assignmentAttempt: assignment,
 					predecessorResults: input.predecessorResults, authorizedContext, treedxProxyHandle: input.treedxProxyHandle }),input.now,
 				assignment.id,assignment.teamId,assignment.reservationId,admissionToken] },

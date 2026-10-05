@@ -24,6 +24,7 @@ jobs:
     env:
       CI: "true"
       GH_TOKEN: ${{ secrets.TREESEED_GITHUB_TOKEN || github.token }}
+      TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,23 +46,15 @@ jobs:
             node_modules/@treeseed/deployment/node_modules/@treeseed/sdk
       - run: npm run verify:direct
       - name: Verify real PostgreSQL backup-writer migration closure
-        env:
-          TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
         run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/services/live/replication-migration-postgres.test.ts
       - name: Verify transactional identity mapping in PostgreSQL
-        env:
-          TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
         run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/accounts/identity-mapping-postgres.test.ts tests/unit/control-plane/accounts/browser-session-postgres.test.ts tests/unit/control-plane/accounts/restricted-runtime-postgres.test.ts tests/unit/control-plane/accounts/identity/principal-store-postgres.test.ts tests/unit/control-plane/accounts/workloads
       - name: Verify concurrent PostgreSQL pool and workday policy allocation
-        env:
-          TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
         run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/accounts/postgres/pool-budget.test.ts tests/unit/control-plane/capacity/workdays/profile-postgres.test.ts tests/unit/control-plane/capacity/workdays/continuation.test.ts tests/unit/control-plane/capacity/workdays/lifecycle/concurrent-runs-postgres.test.ts tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts tests/unit/control-plane/capacity/execution/admission/postgres.test.ts tests/unit/control-plane/capacity/communication/discussion-supply-postgres.test.ts tests/unit/control-plane/providers/assignments/provider-discussion-response-postgres.test.ts
       - name: Pack verified artifact
         run: mkdir -p artifacts && npm pack --json --ignore-scripts --pack-destination artifacts
       - name: Execute coded golden component scenes
         uses: treeseed-ai/reviewer/.github/actions/run-scenes@e29c5bf2db97188c47fdc67a7a098e81a95ced22
-        env:
-          TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
         with:
           ids: guarantee.api.golden.component-boundaries
       - uses: actions/upload-artifact@v4

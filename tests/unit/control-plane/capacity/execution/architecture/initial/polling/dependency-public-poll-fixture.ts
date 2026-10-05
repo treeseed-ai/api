@@ -49,7 +49,7 @@ export async function dependencyPublicPoll(runtimeKey?: { path: string; value: s
 			providerSignals: createProviderSignalService(f.store), providerWorkflows: createProviderWorkflowService(f.store) }),
 			...(runtimeKey ? createProviderRegistrationAndAvailabilityOperations({ providers: createProviderRuntimeService(f.store,
 				{ capacityEncryptionKeyFile: runtimeKey.path, baseUrl: 'http://localhost',
-					TREESEED_CAPACITY_ENCRYPTION_KEY_VERSION: 1, TREESEED_CAPACITY_HISTORICAL_KEY_FILES: '' }, f.store) }) : [])]);
+					TREESEED_CAPACITY_ENCRYPTION_KEY_VERSION: 1, TREESEED_CAPACITY_HISTORICAL_KEY_FILES: '' }, f.host) }) : [])]);
 		const app = new Hono();
 		app.use('/v1/provider/*', createCapacityProviderAccessMiddleware(authenticator));
 		installControlPlaneProtocolRoutes(app, async () => { throw new Error('Provider polling must not invoke OAuth'); }, undefined, registry);

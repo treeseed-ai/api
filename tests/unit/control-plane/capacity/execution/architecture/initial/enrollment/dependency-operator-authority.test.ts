@@ -32,7 +32,7 @@ it('original team management policy waits for the current membership read and ca
 });
 
 async function operatorInputs() {
-	const keys = await generateKeyPair('RS256'), issuer = 'https://identity.example/realms/treeseed', audience = 'http://localhost';
+	const keys = await generateKeyPair('RS256'), issuer = 'https://identity.example/realms/treeseed', audience = 'https://api.example';
 	const local = { userId: 'mapped-user', principal: { id: 'mapped-user', roles: ['renamed-local-role'], permissions: ['*:*:*'], scopes: ['treeseed:read', 'treeseed:admin'], metadata: {} } };
 	const store: IdentityPrincipalStore = { first: async () => null, principalForUser: async () => structuredClone(local) };
 	const first = vi.spyOn(store, 'first'), principal = vi.spyOn(store, 'principalForUser');

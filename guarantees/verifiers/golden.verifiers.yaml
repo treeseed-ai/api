@@ -1,6 +1,36 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-postgres-prerequisite-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/provider-prerequisites.test.ts
+    testName: "complete provider verification inherits the existing disposable PostgreSQL authority before any native suite or coded scene without a second database binding"
+  api.golden.execution-lease-clocks-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-execution-lease-authority.test.ts
+    testName: "rejects expired malformed and coerced reservation workspace and availability clocks against the unchanged original current time"
+  api.golden.execution-recovery-unknown-usage-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery-persistence.test.ts
+    testName: "late recovery retains unknown executed usage and the original attempt without a fabricated zero settlement or a reopened ready node"
+  api.golden.execution-admission-explanation-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-execution-admission.test.ts
+    testName: "claims the node, reservation, and immutable attempt in one batch without legacy demand/allocation authority"
+  api.golden.execution-poll-token-custody-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-longpoll-authority.test.ts
+    testName: "current access token custody rejects withdrawn missing and malformed durable token authority before synthesis reads or writes without changing the principal"
+  api.golden.execution-credential-audit-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-authority.test.ts
+    testName: "credential and membership audit retries preserve their original scoped identity clock metadata and failure without independent reads or rewriting another operation"
   api.golden.execution-registration-audit-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

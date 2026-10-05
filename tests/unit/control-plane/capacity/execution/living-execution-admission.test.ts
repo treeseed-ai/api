@@ -51,6 +51,9 @@ describe('living execution admission', () => {
 		expect(sql).toMatch(/assignment_attempt_json/u);
 		const explanation = store.batch.mock.calls[0]![0].find((operation: { query: string }) => operation.query.includes('SET explanation_json'))!;
 		expect(JSON.parse(String(explanation.params[0]))).toMatchObject({ metadata: { allocation: { allocatedSeconds: 3, limitingConstraint: 'task-duration' } } });
+		expect(JSON.parse(String(explanation.params[0]))).toMatchObject({ teamId: 'team', assignmentId: assignment.id,
+			source: 'living_execution_admission', sourceId: assignment.nodeId, eligible: true, reasons: [], gates: {},
+			metadata: { recordedAt: assignment.createdAt, history: [] }, createdAt: assignment.createdAt });
 		expect(sql).toMatch(/INSERT INTO treedx_proxy_handles/u);
 		const assignmentInsert = store.batch.mock.calls[0]![0].find((operation: { query: string }) => operation.query.includes('INSERT INTO capacity_provider_assignments'))!;
 		expect(assignmentInsert.query).toMatch(/SELECT (?:\?,){14}\?,'pending'/u);

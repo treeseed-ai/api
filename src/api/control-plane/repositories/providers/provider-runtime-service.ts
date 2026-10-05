@@ -16,6 +16,7 @@ import { CapacityRegistrationService } from '../../../capacity/services/support/
 import { createProviderEnvironmentService } from './provider-environment-service.ts';
 
 export interface ProviderPrincipal {
+	accessTokenId?: string;
 	membershipId: string;
 	teamId: string;
 	capacityProviderId: string;

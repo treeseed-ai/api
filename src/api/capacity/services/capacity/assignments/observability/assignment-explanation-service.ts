@@ -40,7 +40,7 @@ function explanationId(assignmentId: string): string {
 }
 
 export function buildProviderAssignmentExplanation(
-	assignment: ProviderAssignment,
+	assignment: Pick<ProviderAssignment, 'id' | 'explanation' | 'synthesizedFrom' | 'synthesisKey' | 'assignedAt'>,
 	teamId: string,
 	input: ProviderAssignmentExplanationWrite = {},
 	timestamp = new Date().toISOString(),

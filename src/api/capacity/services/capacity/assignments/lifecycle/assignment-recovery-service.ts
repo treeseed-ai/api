@@ -107,6 +107,9 @@ export function decideAssignmentRecovery(assignment: DurableProviderAssignment, 
 	}
 	if (observed.reservation && (observed.reservation.settlement_token || observed.reservation.usage_report_token)) return { assignmentId: assignment.id, disposition: 'operator-action', status: 'expired', reasonCode: 'expired_lease_financial_transition_uncertain' };
 	if (observed.usageCount > 0 || observed.hasAssignmentResult || observed.proxyEvents > 0 || observed.fallbackOutputs > 0) return { assignmentId: assignment.id, disposition: 'operator-action', status: 'expired', reasonCode: 'expired_lease_side_effect_evidence_present' };
+	const started = record(record(assignment.capacityEnvelope).budget).time;
+	if (record(started).executionStartedAt !== undefined && record(started).executionStartedAt !== null)
+		return { assignmentId: assignment.id, disposition: 'operator-action', status: 'expired', reasonCode: 'expired_lease_execution_usage_unknown' };
 	// A retry admits a new immutable assignment for the same graph node. The
 	// current assignment's attempt_count therefore cannot bound that sequence.
 	if (observed.failoverCount >= retryLimit(assignment)) return { assignmentId: assignment.id, disposition: 'terminal-failure', status: 'failed', reasonCode: 'expired_lease_retry_exhausted' };

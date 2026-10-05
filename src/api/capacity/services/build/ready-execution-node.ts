@@ -78,9 +78,31 @@ export interface ReadyExecutionNode {
 }
 
 export function linearPredecessorSourceCommit(entries: Array<{ resultId: string; commit: string; predecessorResultIds: string[] }>) {
-	const distinct = [...new Map(entries.map((entry) => [entry.resultId, entry])).values()];
-	const terminal = distinct.filter((entry) => distinct.every((other) =>
-		other.resultId === entry.resultId || entry.predecessorResultIds.includes(other.resultId)));
+	const distinct = new Map<string, (typeof entries)[number]>();
+	for (const entry of entries) {
+		if (!entry.resultId || !/^[a-f0-9]{40}$/u.test(entry.commit)
+			|| entry.predecessorResultIds.some(id => !id || id === entry.resultId)
+			|| new Set(entry.predecessorResultIds).size !== entry.predecessorResultIds.length) return undefined;
+		const prior = distinct.get(entry.resultId);
+		if (prior && (prior.commit !== entry.commit || prior.predecessorResultIds.length !== entry.predecessorResultIds.length
+			|| prior.predecessorResultIds.some(id => !entry.predecessorResultIds.includes(id)))) return undefined;
+		distinct.set(entry.resultId, entry);
+	}
+	const ancestors = new Map<string, Set<string>>(), visiting = new Set<string>();
+	const lineage = (id: string): Set<string> | undefined => {
+		if (visiting.has(id)) return undefined;
+		const cached = ancestors.get(id); if (cached) return cached;
+		visiting.add(id); const found = new Set<string>();
+		for (const predecessor of distinct.get(id)!.predecessorResultIds) {
+			// Read-only results need not contribute a source commit to this inventory.
+			if (!distinct.has(predecessor)) continue;
+			const earlier = lineage(predecessor); if (!earlier) return undefined;
+			found.add(predecessor); for (const ancestor of earlier) found.add(ancestor);
+		}
+		visiting.delete(id); ancestors.set(id, found); return found;
+	};
+	for (const id of distinct.keys()) if (!lineage(id)) return undefined;
+	const terminal = [...distinct.values()].filter(entry => ancestors.get(entry.resultId)!.size === distinct.size - 1);
 	return terminal.length === 1 ? terminal[0]!.commit : undefined;
 }
 
