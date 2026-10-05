@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-agent-snapshot-diagnostics-unit
+    action: { verifier: api.golden.execution-agent-snapshot-diagnostics-unit }
+    expect: { status: passed }
+  - id: execution-agent-snapshot-diagnostics-native
+    action: { verifier: api.golden.execution-agent-snapshot-diagnostics-native }
+    expect: { status: passed }
   - id: execution-qualified-selection-unit
     action: { verifier: api.golden.execution-qualified-selection-unit }
     expect: { status: passed }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { relationSchedulingDatabase } from './relation-scheduling-fixture.ts';
 import { graphNode } from '../../../capacity/execution/graph/architecture/living/living-graph-fixture.ts';
-import { DEFAULT_WORKDAY_POLICY, assignmentAttemptSchema, assignmentResultSchema, compileWorkday } from '@treeseed/sdk/agent-capacity';
+import { DEFAULT_WORKDAY_POLICY, assignmentAttemptSchema, assignmentResultSchema, compileWorkday, validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
 import { object } from './relation-authoring-fixture.ts';
 import { listReadyExecutionNodes } from '../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import { assignNextReadyExecutionNode } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/living-execution-assignment.ts';
@@ -10,8 +10,45 @@ import { livingAllocationInputs } from '../../../../../../src/api/capacity/servi
 import { resolveKnowledgeGatewayConnection } from '../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { createHash } from 'node:crypto';
 import { canonicalOfferBuildInput } from '../../../capacity/execution/fixtures/assignment-attempt-fixtures.ts';
+import { snapshotAgentDefinitions } from '../../../../../../src/api/capacity/services/capacity/agents/agent-definition-snapshot.ts';
 
 describe('native publication to owning scheduler candidate input', () => {
+	it('native exact Agent snapshots retain owning YAML diagnostics and invalid committed bytes before unchanged valid source retry', async () => {
+		const f = await relationSchedulingDatabase();
+		try {
+			const source = f.sources.find(value => value.projectId === 'dependent'); if (!source) throw new Error('Original native source required.');
+			const connect = async (commit: string) => {
+				const connection = await resolveKnowledgeGatewayConnection(f.store, { projectId: source.projectId, write: false,
+					readRefs: [commit], workspacePaths: ['agents/**'] });
+				if (!connection) throw new Error('Original exact native agent read connection required.'); return connection;
+			};
+			const connection = await connect(source.commit), before = await f.snapshot(), baseline = await snapshotAgentDefinitions(connection, source.commit);
+			expect(baseline.commit).toBe(source.commit); expect(baseline.files.length).toBeGreaterThan(0); expect(await f.snapshot()).toEqual(before);
+			const path = 'agents/invalid.mdx', bytes = '---\nid: invalid\n---\n', validation = validateAgentDefinitionModel({ id: 'invalid' });
+			expect(validation.ok).toBe(false); expect(validation.diagnostics.length).toBeGreaterThan(0);
+			const workspace = object(await f.client.workspaces.create(source.repository, { baseRef: source.commit,
+				branchName: 'refs/heads/staging', mode: 'writable', allowedPaths: [path] }));
+			const id = String(workspace.workspaceId); let commit: string;
+			try {
+				await f.client.files.write(id, { path, content: bytes });
+				const committed = object(await f.client.files.commit(id, { message: 'Retained invalid native Agent input',
+					author: { name: 'Fixture', email: 'fixture@example.invalid' } }));
+				commit = String(committed.commitSha); expect(commit).toMatch(/^[a-f0-9]{40}$/u); expect(commit).not.toBe(source.commit);
+			} finally { await f.client.workspaces.close(id); }
+			const invalid = await connect(commit);
+			for (let retry = 0; retry < 2; retry++) {
+				await expect(snapshotAgentDefinitions(invalid, commit)).rejects.toMatchObject({ code: 'agent_team_definition_invalid', status: 409,
+					details: { path, diagnostics: validation.diagnostics } });
+				const read = object(await invalid.client.readRepositoryFile({ repoId: source.repository, ref: commit, path }));
+				expect(read.resolvedRef).toBe(commit);
+				const file = object(read.file ?? (Array.isArray(read.files) ? read.files[0] : undefined));
+				expect(file).toMatchObject({ path, content: bytes }); expect(await f.snapshot()).toEqual(before);
+			}
+			expect(await snapshotAgentDefinitions(connection, source.commit)).toEqual(baseline); expect(await f.snapshot()).toEqual(before);
+			// Invalid native bytes remain committed, never repaired or registered.
+			// Supplied credentials/profile inputs are not managed provider execution.
+		} finally { await f.close(); }
+	}, 60_000);
 	it('native exact governed Proposal bytes produce the same canonical work-item priority on Actor and Reviewer nodes without making blocked work ready', async () => {
 		const priorities = new Map([['precursor:first', -1], ['dependent:first', Number.MAX_SAFE_INTEGER]]), supplied = new Map(priorities);
 		const f = await relationSchedulingDatabase(undefined, priorities);

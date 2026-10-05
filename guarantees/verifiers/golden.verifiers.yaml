@@ -1,6 +1,16 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-agent-snapshot-diagnostics-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/agents/team-clone-source-snapshot.test.ts
+    testName: "fails closed instead of silently dropping an invalid definition"
+  api.golden.execution-agent-snapshot-diagnostics-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-native.test.ts
+    testName: "native exact Agent snapshots retain owning YAML diagnostics and invalid committed bytes before unchanged valid source retry"
   api.golden.execution-qualified-selection-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
