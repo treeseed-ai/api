@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-terminal-orphan-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-terminalization-graph-custody.test.ts
+    testName: "retains an orphan active graph node as unfinished even when no assignment row remains"
   api.golden.execution-issued-priority-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

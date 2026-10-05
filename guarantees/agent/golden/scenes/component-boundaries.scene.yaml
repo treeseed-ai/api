@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-terminal-orphan-unit
+    action: { verifier: api.golden.execution-terminal-orphan-unit }
+    expect: { status: passed }
   - id: execution-issued-priority-native
     action: { verifier: api.golden.execution-issued-priority-native }
     expect: { status: passed }

@@ -33,9 +33,10 @@ describe('workday terminalization retains actual assignment and settlement custo
 	it('refuses unknown productive usage at the workday boundary instead of writing zero and declaring closure', async () => {
 		const { db, owner, query, snapshot } = await cancellationDatabase('returned', true);
 		try {
-			clock(); const before = await snapshot(); let denied = false;
+			clock(); const before = await snapshot(); let denied = false, failure: unknown;
 			try { await terminalizeCapacityWorkdayAssignments(owner, 'team', 'workday', { now: cancelNow }); }
-			catch { denied = true; }
+			catch (error) { denied = true; failure = error; }
+			expect(failure).toMatchObject({ code: 'provider_assignment_usage_required', status: 409 });
 			expect({ denied, usage: (await query('SELECT active_seconds,elapsed_seconds FROM capacity_usage_actuals')).rows,
 				ledger: (await query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows })
 				.toEqual({ denied: true, usage: [], ledger: [{ total: 0 }] });
@@ -81,11 +82,11 @@ describe('workday terminalization retains actual assignment and settlement custo
 		try {
 			clock(); await settleCapacityReservationExactlyOnce(owner, terminalUsage);
 			// Explicit corrupt persisted input, not evidence that real admission creates orphans.
-			await query('DELETE FROM capacity_provider_assignments'); let denied = false, unfinished = 0;
-			try { unfinished = (await terminalizeCapacityWorkdayAssignments(owner, 'team', 'workday', { now: cancelNow })).unfinishedAssignmentCount; }
-			catch { denied = true; }
+			await query('DELETE FROM capacity_provider_assignments');
+			const result = await terminalizeCapacityWorkdayAssignments(owner, 'team', 'workday', { now: cancelNow });
+			expect(result).toMatchObject({ assignmentCount: 0, unfinishedAssignmentCount: 1, settlementErrorCount: 0 });
 			const remaining = (await query("SELECT id FROM execution_nodes WHERE status='running'")).rows;
-			expect({ closureBlocked: denied || unfinished > 0, remaining }).toEqual({ closureBlocked: true, remaining: [{ id: 'report-node' }] });
+			expect({ closureBlocked: result.unfinishedAssignmentCount > 0, remaining }).toEqual({ closureBlocked: true, remaining: [{ id: 'report-node' }] });
 		} finally { await db.close(); }
 	});
 });

@@ -6,6 +6,7 @@ import { ProviderAssignmentRepository } from '../../../../repositories/capacity/
 import { closeTerminalAssignmentWorkspace } from '../../assignments/observability/assignment-terminal-workspace.ts';
 import type { WorkdayTreeDxConnectionStore } from '../treedx/workday-treedx-connection.ts';
 import { terminalAssignmentAuthority } from '../../assignments/lifecycle/assignment-terminal-authority.ts';
+import { terminalPerformance, record } from '../../assignments/lifecycle/completion/assignment-terminal-performance.ts';
 import { assignmentContentIntegrationReadySql,CONTENT_INTEGRATED_EVENT,CONTENT_INTEGRATION_REQUIRED_EVENT } from '../../assignments/lifecycle/assignment-content-integration-requirement.ts';
 
 interface TerminalAssignmentRow extends Record<string, unknown> {
@@ -77,6 +78,16 @@ async function settleTerminalAssignments(
 				{ teamId, runId, assignmentId: assignment.id },
 			);
 		}
+		const admitted = await new ProviderAssignmentRepository(database).get(teamId, assignment.id);
+		if (!admitted) throw new CapacityGovernanceError('workday_assignment_admission_provenance_missing',
+			`Workday assignment ${assignment.id} has no readable admitted authority.`, 409);
+		const measured = await database.first(`SELECT active_seconds,elapsed_seconds,input_tokens,cached_input_tokens,
+			reasoning_tokens,output_tokens,actual_usd FROM capacity_usage_actuals
+			WHERE id=? AND assignment_id=? AND accounting_mode='aggregate' LIMIT 1`,
+			[`usage:${admitted.id}:${admitted.attemptCount}:aggregate`, admitted.id]);
+		// The same measurement gate owns operator cancellation and provider
+		// closeout. A released lease cannot turn unknown executed work into zero.
+		terminalPerformance(admitted, { completion: { disposition: 'cancelled' } }, 'failed', now, record(measured));
 	}
 	await releaseCapacityReservationsExactlyOnce(
 		database,
@@ -297,12 +308,21 @@ export async function terminalizeCapacityWorkdayAssignments(
 		   AND assignment.lease_token IS NOT NULL AND assignment.lease_expires_at IS NOT NULL AND assignment.lease_expires_at > ?
 		   AND ? > ?`, [teamId, runId, now, preserveUntil, now],
 	);
+	const orphaned = await database.first<{ total?: unknown }>(
+		`SELECT COUNT(*) AS total FROM execution_nodes node
+		 JOIN capacity_workday_runs run ON run.id=node.workday_id AND run.team_id=node.team_id
+		 WHERE node.team_id=? AND run.id=? AND node.status IN ('assigned','running')
+		   AND NOT EXISTS (SELECT 1 FROM capacity_provider_assignments assignment
+		     WHERE assignment.team_id=node.team_id AND run.id = assignment.work_day_id
+		       AND assignment.execution_node_id=node.id AND assignment.execution_node_revision=node.node_revision
+		       AND assignment.status NOT IN ('completed','failed','expired','cancelled'))`, [teamId, runId],
+	);
 
 	return {
 		assignmentCount: number(finalTotals?.assignment_count ?? initialTotals?.assignment_count),
 		completedAssignments: number(finalTotals?.completed_assignments),
 		failedAssignments: number(finalTotals?.failed_assignments),
-		unfinishedAssignmentCount: number(finalTotals?.unfinished_assignments),
+		unfinishedAssignmentCount: number(finalTotals?.unfinished_assignments) + number(orphaned?.total),
 		deferredActiveAssignmentCount: number(deferred?.total),
 		settlementErrors: [],
 		settlementErrorCount: 0,
