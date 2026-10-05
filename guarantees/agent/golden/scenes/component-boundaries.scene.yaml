@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-note-identity-unit
+    action: { verifier: api.golden.execution-note-identity-unit }
+    expect: { status: passed }
+  - id: execution-note-identity-native
+    action: { verifier: api.golden.execution-note-identity-native }
+    expect: { status: passed }
   - id: execution-identifier-inventory-unit
     action: { verifier: api.golden.execution-identifier-inventory-unit }
     expect: { status: passed }

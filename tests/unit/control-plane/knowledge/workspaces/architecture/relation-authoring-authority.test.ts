@@ -9,6 +9,19 @@ import { relationInputs, relationPath } from '../../../capacity/execution/graph/
 import { noteSource } from './relation-authoring-fixture.ts';
 
 describe('ordinary exact relation authoring authority', () => {
+	it('denies malformed governed Note identities and duplicate exact subject authority without normalizing the supplied relation', () => {
+		const f = relationInputs(), original = structuredClone(f.note);
+		const missing = { ...f.note }; delete missing.id;
+		const invalid = [missing, ...['', ' padded', 'internal space', 'é', 'a'.repeat(201), null].flatMap(value =>
+			[{ ...f.note, id: value }, { ...f.note, projectId: value }]),
+			{ ...f.note, subjectRefs: [f.link.from, f.link.from] },
+			{ ...f.note, subjectRefs: [f.link.from, Object.fromEntries(Object.entries(f.link.from).reverse())] }];
+		const before = structuredClone(invalid);
+		for (const input of invalid) expect(validateContentFrontmatter('note', input).ok).toBe(false);
+		const valid = { ...f.note, id: 'a'.repeat(200) };
+		expect(validateContentFrontmatter('note', valid)).toMatchObject({ ok: true, data: valid });
+		expect(invalid).toEqual(before); expect(f.note).toEqual(original);
+	});
 	it('retains an exact unchanged governed content retry without sending an empty native patch or inventing an application receipt', async () => {
 		const content = noteSource(), input = { workspace: { workspaceId: 'input-workspace', baseCommitSha: 'a'.repeat(40), baseRef: 'refs/heads/staging' },
 			changes: [{ path: relationPath, before: content, after: content }], idempotencyKey: 'same-input-key' };

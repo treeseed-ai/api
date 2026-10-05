@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { object, relationAuthoringDatabase } from './relation-authoring-fixture.ts';
 import { relationPath } from '../../../capacity/execution/graph/architecture/relations/relation-fixture.ts';
@@ -8,6 +9,30 @@ import { relationPath } from '../../../capacity/execution/graph/architecture/rel
 // This is not a managed provider run, authenticated operator HTTP or whole
 // publication-runner/portfolio acceptance. All resources created inside tests.
 describe('native ordinary relation creation and indexing', () => {
+	it('real TreeDX authoring denies malformed Note identities and duplicate subject authority across unchanged retries before exact original publication bytes', async () => {
+		const f = await relationAuthoringDatabase(); try {
+			const workspace = await f.create(), before = await f.snapshot(), original = structuredClone(f.note);
+			const missing = { ...f.note }; delete missing.id;
+			const invalid = [missing, ...['', ' padded', 'internal space', 'é', 'a'.repeat(201), null].flatMap(value =>
+				[{ ...f.note, id: value }, { ...f.note, projectId: value }]),
+				{ ...f.note, subjectRefs: [f.link.from, f.link.from] },
+				{ ...f.note, subjectRefs: [f.link.from, Object.fromEntries(Object.entries(f.link.from).reverse())] }];
+			const inputs = invalid.map(note => `---\n${stringify(note)}---\n\nReviewed precursor governs dependent work.\n`), held = [...inputs];
+			for (const input of inputs) for (let retry = 0; retry < 2; retry++) {
+				await expect(f.write(workspace, input)).rejects.toMatchObject({ status: 422, code: 'operational_content_invalid' });
+				expect(await f.snapshot()).toEqual(before);
+				expect((await f.service.diff(f.principal, workspace.id)).changedPaths).toEqual([]);
+			}
+			const written = await f.write(workspace);
+			expect(written.workspace.version).toBe(workspace.version + 1);
+			expect((await f.service.readContent(f.principal, workspace.id, relationPath)).content).toBe(f.content);
+			expect((await f.service.diff(f.principal, workspace.id)).changedPaths).toEqual([relationPath]);
+			const after = await f.snapshot(); expect(after.ledger).toEqual(before.ledger);
+			expect(after.reviews).toEqual(before.reviews); expect(after.publications).toEqual(before.publications);
+			expect(after.audits.filter(entry => entry.event_type === 'knowledge.operational_content.updated')).toHaveLength(1);
+			expect(inputs).toEqual(held); expect(f.note).toEqual(original);
+		} finally { await f.close(); }
+	}, 60_000);
 	it('creates and replays one governed native workspace writes canonical relation bytes and reads original exact draft without changing proposal endpoints', async () => {
 		const f = await relationAuthoringDatabase(); try {
 			const originals = structuredClone(f.sources), workspace = await f.create();
