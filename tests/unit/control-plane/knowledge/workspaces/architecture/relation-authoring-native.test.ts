@@ -10,6 +10,35 @@ import { relationPath } from '../../../capacity/execution/graph/architecture/rel
 // This is not a managed provider run, authenticated operator HTTP or whole
 // publication-runner/portfolio acceptance. All resources created inside tests.
 describe('native ordinary relation creation and indexing', () => {
+	it('real governed Decision authoring denies contradictory class dispositions and missing approval positions without draft mutation before unchanged exact retry', async () => {
+		const f = await relationAuthoringDatabase(); try {
+			const workspace = await f.create(), before = await f.snapshot(), path = 'decisions/bounded-decision.mdx';
+			const decision = { schemaVersion: 'treeseed.decision/v1', id: 'bounded-decision', projectId: 'precursor',
+				decisionClass: 'proposal', decisionMethod: 'authority', subjectRef: f.link.from, disposition: 'approved',
+				rationale: 'Controlled authoring input only; this is not an actual governance acceptance.',
+				authorityRefs: [f.link.from], decidedByRefs: [f.link.from], decidedAt: '2026-10-02T21:00:00.000Z' };
+			const variants = [
+				...['approval', 'vote'].map(decisionMethod => ({ ...decision, decisionMethod })),
+				...['authority', 'approval', 'vote'].map(decisionMethod => ({ ...decision, decisionMethod, positions: [] })),
+				...['rejected', 'deferred', 'superseded'].map(disposition => ({ ...decision, decisionClass: 'work-review', disposition })),
+				...['proposal', 'publication'].map(decisionClass => ({ ...decision, decisionClass, disposition: 'request-changes' })),
+			].map(value => serializeFrontmatterDocument(value));
+			const held = [...variants], original = structuredClone(decision), content = serializeFrontmatterDocument(decision);
+			const write = (value: string) => f.service.updateContent(f.principal, workspace.id,
+				{ kind: 'operational-content', create: true, version: workspace.version, sourcePath: path, content: value });
+			for (const value of variants) for (let retry = 0; retry < 2; retry++) {
+				await expect(write(value)).rejects.toMatchObject({ status: 422, code: 'operational_content_invalid' });
+				expect(await f.snapshot()).toEqual(before); expect((await f.service.diff(f.principal, workspace.id)).changedPaths).toEqual([]);
+			}
+			const written = await write(content); expect(written.workspace.version).toBe(workspace.version + 1);
+			expect((await f.service.readContent(f.principal, workspace.id, path)).content).toBe(content);
+			expect((await f.service.diff(f.principal, workspace.id)).changedPaths).toEqual([path]);
+			const after = await f.snapshot(); expect(after.ledger).toEqual(before.ledger);
+			expect(after.reviews).toEqual(before.reviews); expect(after.publications).toEqual(before.publications);
+			expect(after.audits.filter(row => row.event_type === 'knowledge.operational_content.updated')).toHaveLength(1);
+			expect(decision).toEqual(original); expect(variants).toEqual(held);
+		} finally { await f.close(); }
+	}, 60_000);
 	it('real governed YAML profile authoring retains native draft custody across empty inventory and producer review denial before exact renamed execution profile write', async () => {
 		const f = await relationAuthoringDatabase(); try {
 			const workspace = await f.create(), before = await f.snapshot(), path = 'agents/renamed-executor.yaml';

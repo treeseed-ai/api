@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-decision-conditions-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
+    testName: "real governed Decision authoring denies contradictory class dispositions and missing approval positions without draft mutation before unchanged exact retry"
   api.golden.execution-work-item-inventory-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
