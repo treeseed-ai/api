@@ -6,6 +6,22 @@ import { CapacityGovernanceError } from '../../../../../../../../src/api/capacit
 import { invalidAdmissionBindings } from '../initial-admission-fixture.ts';
 
 describe('dependency custody at admission authority', () => {
+	it('rejects malformed canonical capability and predecessor identifiers before any SQL with exact owning failure and immutable inputs', async () => {
+		const outcomes = [];
+		for (const field of ['requiredCapabilities', 'predecessorResultIds'] as const) {
+			for (const value of [[' '], [' padded '], ['a b'], ['é'], ['a'.repeat(201)], ['same', 'same'], ['valid', null], [1], null, 'id']) {
+				const input = dependencyUnitInput(); Object.assign(input.assignment, { [field]: value });
+				const held = structuredClone(input), guard = admissionWriteGuard();
+				let failure: unknown; try { await admitLivingExecutionAssignment(guard.store, input); } catch (error) { failure = error; }
+				outcomes.push({ owned: failure instanceof CapacityGovernanceError,
+					code: failure instanceof CapacityGovernanceError ? failure.code : undefined,
+					status: failure instanceof CapacityGovernanceError ? failure.status : undefined, reads: guard.reads(), writes: guard.writes() });
+				expect(input).toEqual(held);
+			}
+		}
+		expect(outcomes).toEqual(Array.from({ length: 20 }, () => ({ owned: true,
+			code: 'execution_assignment_authority_mismatch', status: 409, reads: 0, writes: 0 })));
+	});
 	it('rejects undeclared tool-group authority through the canonical assignment validator before any SQL with caller bytes retained', async () => {
 		const input = dependencyUnitInput(); Object.assign(input.assignment.grant, { tools: [...input.assignment.grant.tools, 'invented-authority'] });
 		const held = structuredClone(input), guard = admissionWriteGuard();

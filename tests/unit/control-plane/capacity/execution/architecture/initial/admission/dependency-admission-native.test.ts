@@ -3,6 +3,26 @@ import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import { dependencyAdmission } from './dependency-admission-fixture.ts';
 
 describe('original SQL dependency custody admission', () => {
+	it('real owning admission denies malformed capability and predecessor identifiers and retains exact native state across unchanged retries', async () => {
+		const f = await dependencyAdmission(); try {
+			const before = await f.snapshot(), observed = [];
+			for (const field of ['requiredCapabilities', 'predecessorResultIds'] as const) {
+				for (const value of [[' '], [' padded '], ['a b'], ['é'], ['a'.repeat(201)], ['same', 'same'], ['valid', null], [1], null, 'id']) {
+					const input = f.input(); Object.assign(input.assignment, { [field]: value }); const held = structuredClone(input);
+					for (let retry = 0; retry < 2; retry++) {
+						const [outcome] = await Promise.allSettled([f.admit(input)]);
+						if (!outcome) throw new Error('Native admission outcome required.');
+						const error: unknown = outcome.status === 'rejected' ? outcome.reason : undefined;
+						observed.push({ status: outcome.status, code: error && typeof error === 'object' && 'code' in error ? error.code : undefined,
+							statusCode: error && typeof error === 'object' && 'status' in error ? error.status : undefined,
+							stateUnchanged: JSON.stringify(await f.snapshot()) === JSON.stringify(before), inputUnchanged: JSON.stringify(input) === JSON.stringify(held) });
+					}
+				}
+			}
+			expect(observed).toEqual(Array.from({ length: 40 }, () => ({ status: 'rejected', code: 'execution_assignment_authority_mismatch',
+				statusCode: 409, stateUnchanged: true, inputUnchanged: true })));
+		} finally { await f.db.close(); }
+	});
 	it('real owning admission denies undeclared tool-group authority before SQL and preserves failed inputs across exact retry', async () => {
 		const f = await dependencyAdmission(); try {
 			const input = f.input(); Object.assign(input.assignment.grant, { tools: [...input.assignment.grant.tools, 'invented-authority'] });
