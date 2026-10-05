@@ -45,4 +45,3 @@ describe('native proposal Decision authority', () => {
 		} finally { await fixture.close(); }
 	});
 });
-

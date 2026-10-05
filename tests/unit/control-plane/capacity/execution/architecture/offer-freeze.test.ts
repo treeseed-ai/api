@@ -71,4 +71,3 @@ describe('immutable assignment-attempt construction', () => {
 		expect(buildAssignmentAttempt(original).assignment.provider.offerId).toBe('canonical-code-change');
 	});
 });
-
