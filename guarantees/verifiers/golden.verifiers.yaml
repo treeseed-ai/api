@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-work-item-slugs-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-native-readiness.test.ts
+    testName: "native exact Proposal intake retains canonical dotted underscored and nested work-item identities and dependency bytes while denying malformed committed slugs without repair"
   api.golden.execution-node-conditions-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

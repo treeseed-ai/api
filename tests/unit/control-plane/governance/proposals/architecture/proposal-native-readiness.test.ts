@@ -10,6 +10,33 @@ function isolatedEnvironment() {
 	vi.stubEnv('TREESEED_ENVIRONMENT', 'test');
 }
 describe('architecture readiness native SQL and public HTTP-client integration', () => {
+	it('native exact Proposal intake retains canonical dotted underscored and nested work-item identities and dependency bytes while denying malformed committed slugs without repair', async () => {
+		isolatedEnvironment(); const native = await proposalNativeFixture();
+		try {
+			const definition = { ...readyProposal(), status: 'ready' }, item = definition.executionPlan.workItems[0]!;
+			const denied: Record<string, unknown>[] = [];
+			for (const id of ['', ' padded', 'padded ', 'Upper', 'work..part', 'work__part', 'work//part', 'work--part', 'a'.repeat(101)]) {
+				const input = { ...definition, executionPlan: { workItems: [{ ...item, id }] } }, held = structuredClone(input);
+				await native.publish(input); const row = (await native.query('SELECT * FROM governance_proposals')).rows[0]!, before = await native.snapshot();
+				for (let retry = 0; retry < 2; retry++) {
+					await expect(readExactProposal(native.store, row)).rejects.toMatchObject({ status: 422, code: 'proposal_execution_plan_invalid' });
+					expect(await loadTeamExecutableProposalSources(native.store, 'team', 'project')).toEqual([]);
+					expect(await native.snapshot()).toEqual(before);
+				}
+				denied.push(row); expect(input).toEqual(held);
+			}
+			for (const id of ['a', 'work.part', 'work_part', 'work/part', 'work-part', 'work.part/next_part-last', 'a'.repeat(100)]) {
+				const input = { ...definition, executionPlan: { workItems: [{ ...item, id, dependsOn: ['final'] }, { ...item, id: 'final' }] } }, held = structuredClone(input);
+				const exact = await native.publish(input), row = (await native.query('SELECT * FROM governance_proposals')).rows[0]!, before = await native.snapshot();
+				await expect(readExactProposal(native.store, row)).resolves.toMatchObject({ source: exact.source, definition: input });
+				const sources = await loadTeamExecutableProposalSources(native.store, 'team', 'project'); expect(sources).toHaveLength(1);
+				expect(sources[0]).toMatchObject({ frontmatter: input, commit: exact.commit, digest: `sha256:${exact.digest}`, decision: null });
+				expect(await Promise.all([loadTeamExecutableProposalSources(native.store, 'team', 'project'), loadTeamExecutableProposalSources(native.store, 'team', 'project')])).toEqual([sources, sources]);
+				for (const old of denied) await expect(readExactProposal(native.store, old)).rejects.toMatchObject({ status: 422, code: 'proposal_execution_plan_invalid' });
+				expect(await native.snapshot()).toEqual(before); expect(input).toEqual(held);
+			}
+		} finally { await native.close(); }
+	});
 	it('real exact proposal intake denies missing review cycles and unreviewed estimate authority while retaining original committed denial history before bounded review retry', async () => {
 		isolatedEnvironment(); const native = await proposalNativeFixture();
 		try {
