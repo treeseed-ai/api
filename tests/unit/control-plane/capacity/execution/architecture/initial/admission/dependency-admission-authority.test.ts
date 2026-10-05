@@ -6,6 +6,15 @@ import { CapacityGovernanceError } from '../../../../../../../../src/api/capacit
 import { invalidAdmissionBindings } from '../initial-admission-fixture.ts';
 
 describe('dependency custody at admission authority', () => {
+	it('rejects undeclared tool-group authority through the canonical assignment validator before any SQL with caller bytes retained', async () => {
+		const input = dependencyUnitInput(); Object.assign(input.assignment.grant, { tools: [...input.assignment.grant.tools, 'invented-authority'] });
+		const held = structuredClone(input), guard = admissionWriteGuard();
+		let failure: unknown; try { await admitLivingExecutionAssignment(guard.store, input); } catch (error) { failure = error; }
+		expect({ owned: failure instanceof CapacityGovernanceError, code: failure instanceof CapacityGovernanceError ? failure.code : undefined,
+			status: failure instanceof CapacityGovernanceError ? failure.status : undefined, reads: guard.reads(), writes: guard.writes() })
+			.toEqual({ owned: true, code: 'execution_assignment_authority_mismatch', status: 409, reads: 0, writes: 0 });
+		expect(input).toEqual(held);
+	});
 	it('rejects duplicate canonical assignment and result references through owning validators before SQL without normalizing supplied authority', async () => {
 		const outcomes = [];
 		for (const mode of ['authority', 'context', 'read-grant', 'result'] as const) {
