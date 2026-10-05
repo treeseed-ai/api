@@ -71,6 +71,32 @@ describe('initial living assignment native admission', () => {
 			for (const replay of await Promise.all([f.admit(input), f.admit(structuredClone(input))])) expect(replay.assignmentAttempt).toEqual(f.attempt);
 			expect((await f.repository.get(f.attempt.teamId, f.attempt.id))?.assignmentAttempt).toEqual(f.attempt);
 			expect(await f.snapshot()).toEqual(after); expect(input).toEqual(held);
+			let previous = changed;
+			for (const priority of [Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, undefined]) {
+				const projected = structuredClone(previous); projected.revision++;
+				if (priority === undefined) delete projected.nodes[0]!.priority;
+				else projected.nodes[0]!.priority = priority;
+				const active = await f.query("SELECT execution_node_id FROM capacity_provider_assignments WHERE team_id=? AND status IN ('pending','leased','running')", [f.attempt.teamId]);
+				expect(active.rows).toEqual([{ execution_node_id: node.id }]);
+				const activeIds = new Set(active.rows.map(row => {
+					if (typeof row.execution_node_id !== 'string') throw new Error('Native active node identity required');
+					return row.execution_node_id;
+				}));
+				const next = applyOperationalState(previous, projected, projected.revision, activeIds);
+				const { priority: _priorPriority, ...frozenNode } = previous.nodes[0]!;
+				expect(next.nodes[0]).toEqual({ ...frozenNode, ...(priority === undefined ? {} : { priority }), graphRevisionUpdated: next.revision });
+				await persistExecutionGraph(f.store, next, previous, receipt(next));
+				expect(await service.show(principal, f.attempt.teamId, {})).toEqual(next);
+				expect((await f.query('SELECT priority FROM execution_nodes WHERE id=?', [node.id])).rows).toEqual([{ priority: priority ?? null }]);
+				expect(applyOperationalState(next, projected, projected.revision, activeIds)).toEqual(next);
+				const retained = await f.snapshot(); expect(retained.financial).toEqual(committed.financial); expect(retained.proxies).toEqual(committed.proxies);
+				for (const replay of await Promise.all([f.admit(input), f.admit(structuredClone(input))])) expect(replay.assignmentAttempt).toEqual(f.attempt);
+				const substituted = structuredClone(input); substituted.assignment.graphRevision = next.revision;
+				const heldSubstitution = structuredClone(substituted);
+				await expect(f.admit(substituted)).rejects.toMatchObject({ status: 409, code: 'execution_assignment_idempotency_conflict' });
+				expect(substituted).toEqual(heldSubstitution); expect(input).toEqual(held); expect(await f.snapshot()).toEqual(retained);
+				previous = next;
+			}
 		} finally { await f.db.close(); }
 	});
 	it('native builder and admission retain the original phase deadline separately from allocated active time through exact reservation and concurrent replay', async () => {
