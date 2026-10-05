@@ -1,10 +1,32 @@
 import { describe, expect, it } from 'vitest';
-import { digest, recoverIncompleteReviewCycles } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
+import { applyOperationalState, digest, recoverIncompleteReviewCycles } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
 import { emptyLivingGraph, graphNode, graphProjection, graphSource, graphState, livingGraphDatabase } from './living-graph-fixture.ts';
 
 // Authoring only until the complete architecture/assignment test contract is
 // present. Embedded SQL transactions are not separate-server concurrency proof.
 describe('living graph original SQL and public service integration', () => {
+	it('owning graph reconciliation denies overlong class and duplicated exact node authority before SQL persistence while retaining the original graph for unchanged retry', async () => {
+		const f = await livingGraphDatabase(); try {
+			const projection = graphProjection(), original = graphState(projection), held = structuredClone(original);
+			await f.persist(original, emptyLivingGraph(), projection.revision); const before = await f.snapshot();
+			const actor = graphNode(original, 'first', 'actor'), ref = actor.authorityRefs![0]!;
+			const invalid = [{ agentClass: 'a'.repeat(101) }, { agentClass: ' padded' }, { agentClass: 'padded ' },
+				{ authorityRefs: [ref, structuredClone(ref)] }, { authorityRefs: [ref, Object.fromEntries(Object.entries(ref).reverse())] }];
+			const supplied = structuredClone(invalid);
+			for (const patch of invalid) for (let retry = 0; retry < 2; retry++) {
+				const candidate = structuredClone(original); Object.assign(graphNode(candidate, 'first', 'actor'), patch);
+				expect(() => applyOperationalState(original, candidate, 2)).toThrowError(expect.objectContaining({ status: 422, code: 'execution_graph_invalid' }));
+				expect(await f.snapshot()).toEqual(before); expect(await f.service.show(f.principal, 'team', {})).toEqual(original);
+			}
+			const candidate = structuredClone(original); graphNode(candidate, 'first', 'actor').agentClass = 'a'.repeat(100);
+			const next = applyOperationalState(original, candidate, 2), nextProjection = graphProjection(undefined, 2);
+			await f.persist(next, original, nextProjection.revision);
+			expect(await f.service.show(f.principal, 'team', {})).toEqual(next);
+			const snapshot = await f.snapshot(); expect(snapshot.revisions).toHaveLength(2); expect(snapshot.assignments).toEqual(before.assignments);
+			expect(applyOperationalState(next, candidate, 3).nodes).toEqual(next.nodes);
+			expect(await f.snapshot()).toEqual(snapshot); expect(original).toEqual(held); expect(invalid).toEqual(supplied);
+		} finally { await f.db.close(); }
+	});
 	it('native owning SQL preserves optional safe integer priorities and exact dependency provenance while invalid writes retain the complete graph', async () => {
 		const f = await livingGraphDatabase();
 		try {

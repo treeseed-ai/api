@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-node-authority-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-integration.test.ts
+    testName: "owning graph reconciliation denies overlong class and duplicated exact node authority before SQL persistence while retaining the original graph for unchanged retry"
   api.golden.execution-decision-conditions-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

@@ -49,6 +49,10 @@ describe('native ordinary relation creation and indexing', () => {
 				capabilities: ['source-inspection'], context: { include: ['assignment-subject'] }, activityProfiles: { acting } };
 			const invalid = [{ ...profile, capabilities: [] }, { ...profile, context: { include: [] } }, { ...profile, activityProfiles: {} },
 				{ ...profile, activityProfiles: { acting, reviewing: acting } },
+				...[' padded', 'padded ', 'a'.repeat(101)].flatMap(agentClass => [
+					{ ...profile, agentClass },
+					{ ...profile, activityProfiles: { acting: { ...acting, dependsOn: { agents: [agentClass] } } } },
+				]),
 				{ ...profile, activityProfiles: { acting: { ...acting, signals: { publishes: ['retired-signal'] } } } },
 				{ ...profile, activityProfiles: { acting: { ...acting, signals: { subscribesTo: [{ contract: 'retired-signal' }] } } } }]
 				.map(value => serializeFrontmatterDocument(value));
