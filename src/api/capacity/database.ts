@@ -5,7 +5,7 @@ export interface CapacityDatabaseOperation {
 
 export interface CapacityGovernanceDatabase {
 	ensureInitialized(): Promise<unknown>;
-	run(query: string, params?: unknown[]): Promise<void>;
+	run(query: string, params?: unknown[]): Promise<unknown>;
 	first<T extends Record<string, unknown> = Record<string, unknown>>(query: string, params?: unknown[]): Promise<T | null>;
 	all<T extends Record<string, unknown> = Record<string, unknown>>(query: string, params?: unknown[]): Promise<T[]>;
 	batch(operations: CapacityDatabaseOperation[]): Promise<unknown>;

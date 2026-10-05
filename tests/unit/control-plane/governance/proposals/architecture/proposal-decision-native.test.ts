@@ -28,8 +28,6 @@ import { canonicalJson } from '../../../../../../src/api/capacity/security.ts';
 import { createGovernanceService } from '../../../../../../src/api/control-plane/governance/governance-service.ts';
 import { createDiscussionService } from '../../../../../../src/api/discussions/discussion-service.ts';
 import { SessionEventService } from '../../../../../../src/api/realtime/session-events.ts';
-
-
 describe('native proposal Decision authority', () => {
 	it('original governance acceptance publishes one native classed Decision for the exact proposal and preserves that content and original history through decision creation replay', async () => {
 		// Native proposal bytes and the administrative principal are INPUTS. The
@@ -132,6 +130,8 @@ describe('native proposal Decision authority', () => {
 				expect(readiness).toMatchObject({ votingReady: false, executionPlanReady: true, unresolvedBlockerCount: 1 });
 				expect(readiness!.missingVoting).toContain('resolved blocking questions and concerns');
 				const blocked = await f.snapshot(), blockedEvents = await f.store.all('SELECT * FROM governance_events ORDER BY id');
+				const blockedService = createGovernanceService(f.store, createDiscussionService({ store: f.store, capacity: f.store, sessionEvents: new SessionEventService(f.store) }));
+				await expect(blockedService.evaluate(f.principal, projectId, declaration.id, { expectedProposalVersion: 1 }, '1')).rejects.toMatchObject({ status: 409, code: 'governance_proposal_not_ready' }); expect(await f.snapshot()).toEqual(blocked); expect(await f.store.all('SELECT * FROM governance_events ORDER BY id')).toEqual(blockedEvents);
 				await expect(f.store.adminDecideGovernanceProposal(f.principal, declaration.id, input))
 					.rejects.toMatchObject({ status: 409, code: 'governance_proposal_not_ready' });
 				expect(await f.snapshot()).toEqual(blocked); expect(await f.store.all('SELECT * FROM governance_events ORDER BY id')).toEqual(blockedEvents);
@@ -368,7 +368,7 @@ describe('native proposal Decision authority', () => {
 			await f.query('INSERT INTO capacity_provider_team_memberships (id,team_id,capacity_provider_id,approved_at,approved_by_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)',
 				[membershipId, 'team', providerId, suppliedAt, f.principal.id, suppliedAt, suppliedAt]);
 			const preflightBefore = await readerState(), originalReceipts = await f.store.all('SELECT * FROM capacity_operation_receipts ORDER BY id');
-			const service = createWorkdayService(createCapacityControlPlane(f.store));
+			const capacity = createCapacityControlPlane(f.store), service = createWorkdayService(capacity);
 			const intent = { schemaVersion: 'treeseed.workday-intent/v1', teamId: 'team', profileId: 'default', projects: [projectId],
 				executionMode: 'production', startsAt: suppliedAt, durationSeconds: 60, planningOnly: false, decisionIds: [decisionId],
 				operatorConstraints: { providerIds: [providerId], maxConcurrency: 1 } };
@@ -412,7 +412,7 @@ describe('native proposal Decision authority', () => {
 					nativeLimits: adapter.accountingLimits, accountingObservation: adapter.accountingObservation }],
 					lanes: ['communication', 'platform', 'workday'].map(purpose => ({ id: purpose, purpose, priority: 1,
 						maxConcurrentWorkers: 1, capabilities: adapter.capabilities })) };
-				const publicationBefore = structuredClone(publication), availability = new AvailabilitySessionService(f.store),
+				const publicationBefore = structuredClone(publication), availability = new AvailabilitySessionService(capacity),
 					opened = await availability.open(principal, publication); assert.ok(opened);
 				const admittedAt = new Date().toISOString(), activePlan = { ...compileWorkday({ id: run.id, teamId: 'team',
 					policyId: 'default', policyRevision: 1, executionMode: 'simulation', startsAt: new Date(Date.parse(admittedAt) - 20_000).toISOString(),
@@ -421,7 +421,7 @@ describe('native proposal Decision authority', () => {
 					trigger_kind,execution_mode,parameters_json,started_at,created_at,updated_at) VALUES (?,?,?,'native-governed-admission','running','local','workday','manual','simulation',?,?,?,?)`,
 					[run.id, 'team', providerId, JSON.stringify({ ...run.parameters, scheduledProjectIds: [projectId], appliedPlan: activePlan }),
 						activePlan.startsAt, admittedAt, admittedAt]);
-				const context = await resolveProviderSynthesisContext(f.store, principal, { sessionId: opened.id, now: admittedAt });
+				const context = await resolveProviderSynthesisContext(capacity, principal, { sessionId: opened.id, now: admittedAt });
 				expect(context.executionProviders).toHaveLength(1); expect(context.executionProviders[0]!.offers).toEqual([signed.offer]);
 				const opportunity = allocateWorkdayCapacity({ now: admittedAt, remainingSeconds: 9,
 					workdays: [{ plan: activePlan, committedSeconds: 0, planningCommittedSeconds: 0, maximumAdditionalSeconds: 9, actingReady: true }] })[run.id]; assert.ok(opportunity);
@@ -431,7 +431,7 @@ describe('native proposal Decision authority', () => {
 				const compilerBefore = structuredClone(compilerInput), frozen = buildAssignmentAttempt(compilerInput), attempt = frozen.assignment;
 				expect(attempt.sourceRef).toEqual(proposalRef); expect(attempt.authorityRefs).toEqual(actorNode.authorityRefs);
 				expect(attempt.effectiveProfile).toEqual(selectedReady.effectiveProfile); expect(attempt.provider.providerId).toBe(providerId);
-				expect(attempt.limits.maximumSeconds).toBe(3); expect(attempt.deadline).toBe(new Date(Date.parse(admittedAt) + 3_000).toISOString());
+				expect(attempt.limits.maximumSeconds).toBe(3); expect(attempt.deadline).toBe(activePlan.endsAt);
 				const admission = { ...frozen, principal, projectAgentClassId: selectedReady.projectAgentClassId, providerSessionId: opened.id,
 					allocation: { ...frozen.allocation, opportunity, selection: selectFairReadyNode([{ id: actorNode.id, projectId,
 						agentClass: actorNode.agentClass, readyAt: selectedReady.readyAt }], [], activePlan.policySnapshot) },
@@ -439,7 +439,7 @@ describe('native proposal Decision authority', () => {
 					treedxProxyHandle: { id: `native-proxy-${attempt.id}`, repositoryId: repository, expiresAt: attempt.deadline,
 						allowedReadPaths: attempt.grant.contentRead.flatMap(ref => ref.path ? [ref.path] : []), allowedWritePaths: [] }, now: admittedAt };
 				const admissionBefore = structuredClone(admission); expect(Date.now()).toBeLessThan(Date.parse(attempt.deadline));
-				const admitted = await admitLivingExecutionAssignment(f.store, admission); expect(Date.now()).toBeLessThan(Date.parse(attempt.deadline));
+				const admitted = await admitLivingExecutionAssignment(capacity, admission); expect(Date.now()).toBeLessThan(Date.parse(attempt.deadline));
 				expect(admitted.assignmentAttempt).toEqual(attempt); expect(admitted).toMatchObject({ id: attempt.id, membershipId, capacityProviderId: providerId,
 					providerSessionId: opened.id, executionProviderId: adapter.id, executionNodeId: actorNode.id, executionNodeRevision: actorNode.nodeRevision });
 				expect(admitted.workspaceContext.predecessorResults).toEqual([]);
@@ -453,14 +453,14 @@ describe('native proposal Decision authority', () => {
 				expect(committed.counters).toHaveLength(2); for (const counter of committed.counters) expect(counter).toMatchObject({ hard_limit: 10, committed_amount: 3 });
 				expect(committed.reservations[0]).toMatchObject({ assignment_id: attempt.id, reserved_seconds: 3, expires_at: attempt.deadline });
 				expect(committed.nodes.find(node => node.id === actorNode.id)?.status).toBe('assigned'); expect(committed.usage).toEqual([]); expect(committed.ledger).toEqual(before.ledger);
-				for (const replay of await Promise.all([admitLivingExecutionAssignment(f.store, admission), admitLivingExecutionAssignment(f.store, structuredClone(admission))]))
+				for (const replay of await Promise.all([admitLivingExecutionAssignment(capacity, admission), admitLivingExecutionAssignment(capacity, structuredClone(admission))]))
 					expect(replay.assignmentAttempt).toEqual(attempt);
 				expect(await state()).toEqual(committed); expect(admission).toEqual(admissionBefore); expect(compilerInput).toEqual(compilerBefore); expect(publication).toEqual(publicationBefore);
 				const leaseInput = { providerSessionId: opened.id, runnerId: 'native-governed-runner', leaseSeconds: 30,
 					laneId: frozen.laneId, lanePurpose: 'workday' as const }, leaseBefore = structuredClone(leaseInput), calledAt = Date.now();
 				expect(calledAt).toBeLessThan(Date.parse(attempt.deadline));
-				const claims = await Promise.all([leaseNextProviderAssignment(f.store, principal, leaseInput),
-					leaseNextProviderAssignment(f.store, principal, { ...leaseInput, runnerId: 'native-competing-runner' })]);
+				const claims = await Promise.all([leaseNextProviderAssignment(capacity, principal, leaseInput),
+					leaseNextProviderAssignment(capacity, principal, { ...leaseInput, runnerId: 'native-competing-runner' })]);
 				const winners = claims.filter(value => value.assignment); expect(winners).toHaveLength(1);
 				const winner = winners[0]!; expect({ id: winner.assignment?.id, status: winner.assignment?.status,
 					leaseState: winner.assignment?.leaseState, membershipId: winner.assignment?.membershipId })
@@ -472,7 +472,7 @@ describe('native proposal Decision authority', () => {
 				for (const loser of claims.filter(value => !value.assignment)) expect(loser.leaseToken).toBeNull();
 				const claimed = await state(); expect(claimed.assignments).toHaveLength(1);
 				for (const field of ['reservations', 'proxies', 'counters', 'claims', 'nodes', 'usage', 'ledger'] as const) expect(claimed[field]).toEqual(committed[field]);
-				expect((await f.store.getProviderAssignment('team', attempt.id))?.leaseToken === winner.leaseToken).toBe(true);
+				expect((await capacity.getProviderAssignment('team', attempt.id))?.leaseToken === winner.leaseToken).toBe(true);
 				expect(leaseInput).toEqual(leaseBefore); expect(admission).toEqual(admissionBefore); expect(publication).toEqual(publicationBefore);
 				expect(await f.store.all('SELECT * FROM governance_events ORDER BY id')).toEqual(history); expect(await f.store.all('SELECT * FROM governance_decisions ORDER BY id')).toEqual(rows);
 				expect(await f.store.all('SELECT * FROM capacity_operation_receipts ORDER BY id')).toEqual(allReceipts);

@@ -1,6 +1,7 @@
 import { governanceVotingProvider } from '../../../../governance/voting.ts';
 import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
 import { assertExpectedProposalVersion, simulationEvidence } from '../support/simulation-evidence.ts';
+import { assertGovernanceProposalReady } from './governance-proposal-readiness.ts';
 export async function evaluateGovernanceProposalMethod(this: ControlPlaneStore, proposalId, input: any = {}) {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
@@ -20,6 +21,9 @@ export async function evaluateGovernanceProposalMethod(this: ControlPlaneStore, 
     }
     if (!['voting', 'open', 'draft'].includes(proposal.status))
         return proposal;
+    if (input.adminDecision !== 'rejected' && input.adminDecision !== 'request_changes') {
+        await assertGovernanceProposalReady.call(this, proposalId, 'voting');
+    }
     const snapshot = await this.latestGovernanceElectorateSnapshot(proposal.id, proposal.activeVersion) ?? await this.snapshotGovernanceElectorate(proposal.id);
     const provider = governanceVotingProvider(proposal.governanceProviderId);
     const effectiveVotes = await this.effectiveGovernanceVotes(proposal) as Array<{

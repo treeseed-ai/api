@@ -5,6 +5,7 @@ import type { CapacityUsageActual } from '@treeseed/sdk/agent-capacity';
 import { createCapacityQueryService } from '../../../../../../../src/api/control-plane/repositories/capacity/capacity-query-service.ts';
 import { splitPostgresSqlStatements } from '../../../../../../../src/api/persistence/postgres-sql-statements.ts';
 import { closeoutDatabase } from './closeout-sql-fixture.ts';
+import { serializeTaskUsageActualRow } from '../../../../../../../src/api/capacity/repositories/capacity/accounting/task-usage.ts';
 
 const principal = { id: 'isolated-reader', roles: ['admin'] };
 async function fixture() {
@@ -32,6 +33,46 @@ async function fixture() {
 // REAL owning SQL/operator evidence/service, supplied measurements only. No
 // actual provider charge, canonical UsageSettlement, live DB or server concurrency claim.
 describe('complete scoped usage observation through original SQL and owning service', () => {
+	it('requires a valid stored usage timestamp without rewriting bytes or charging elapsed infrastructure time as active work', () => {
+		const row = { id: 'usage', idempotency_key: 'key', project_id: 'project', task_signature: 'task',
+			execution_profile_id: 'profile', assignment_attempt: 1, usage_dimension: 'aggregate', accounting_mode: 'aggregate',
+			business_model: 'isolated-test', active_seconds: 0, elapsed_seconds: 2, native_usage_json: '{}', metadata_json: '{}',
+			created_at: '2026-10-02T21:00:01.000Z' };
+		for (const created_at of ['2026-10-02T21:00:01.000Z', '2026-10-02T21:00:01Z', '2026-10-02T17:00:01-04:00', '2024-02-29T00:00:00Z']) {
+			const input = { ...row, created_at }, before = structuredClone(input);
+			expect(serializeTaskUsageActualRow(input)).toMatchObject({ id: 'usage', activeSeconds: 0, elapsedSeconds: 2, createdAt: created_at });
+			expect(input).toEqual(before);
+		}
+		const failures: unknown[] = [];
+		for (const created_at of [undefined, null, 0, '', ' ', 'invalid', '2026-10-02', '2026-02-30T00:00:00Z', '2026-10-02T25:00:00Z']) {
+			const input = { ...row, created_at }, before = structuredClone(input);
+			try { serializeTaskUsageActualRow(input); failures.push('ADMITTED'); }
+			catch (error) { failures.push(error); }
+			expect(input).toEqual(before);
+		}
+		expect(failures).toHaveLength(9);
+		for (const failure of failures) expect(failure).toMatchObject({ code: 'capacity_task_usage_corrupt', status: 500,
+			details: { usageActualId: 'usage', column: 'created_at' } });
+	});
+	it('owning SQL usage reads retain malformed clock history and admit only an explicit valid-clock retry', async () => {
+		const { db, query, seed, service } = await fixture();
+		try {
+			await seed(0); const retained = await query('SELECT * FROM capacity_usage_actuals ORDER BY id');
+			const outcomes: unknown[] = [];
+			for (const clock of ['invalid', '2026-10-02', '2026-02-30T00:00:00Z', '2026-10-02T25:00:00Z']) {
+				await query('UPDATE capacity_usage_actuals SET created_at=?', [clock]);
+				const before = await query('SELECT * FROM capacity_usage_actuals ORDER BY id');
+				try { await service.usage(principal, 'team', { projectId: 'project' }); outcomes.push('ADMITTED'); }
+				catch (error) { outcomes.push(error); }
+				expect(await query('SELECT * FROM capacity_usage_actuals ORDER BY id')).toEqual(before);
+			}
+			for (const outcome of outcomes) expect(outcome).toMatchObject({ code: 'capacity_task_usage_corrupt', status: 500 });
+			await query('UPDATE capacity_usage_actuals SET created_at=?', ['2026-10-02T21:00:01.000Z']);
+			const page = await service.usage(principal, 'team', { projectId: 'project' });
+			expect(page.items).toHaveLength(1); expect(page.items[0]).toMatchObject({ id: 'usage-000', createdAt: '2026-10-02T21:00:01.000Z' });
+			expect(await query('SELECT * FROM capacity_usage_actuals ORDER BY id')).toEqual(retained);
+		} finally { await db.close(); }
+	});
 	it('reads all measured usage beyond page one with exact project workday cursor and immutable repeated reads', async () => {
 		const { db, query, seed, service } = await fixture();
 		try {

@@ -4,6 +4,7 @@ import { governanceContentHash } from '../../persistence/store.ts';
 import { reconcileExecutionGraph } from '../repositories/capacity/execution/execution-graph-service.ts';
 import { resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
 import { exactEntityReferenceSchema } from '@treeseed/sdk/agent-capacity';
+import { assertGovernanceProposalReady } from '../../store/governance/policy/contracts/governance-proposal-readiness.ts';
 
 type Principal = { id: string; roles?: string[]; permissions?: string[]; metadata?: Record<string, unknown> } | undefined;
 
@@ -264,8 +265,14 @@ export function createGovernanceService(store: any, discussions: { create: (prin
 		},
 		async evaluate(principal: Principal, projectId: string, proposalId: string, body: Record<string, unknown>, ifMatch?: string) {
 			await projectFor(store, principal, projectId, 'projects:manage:team');
-			await proposalFor(store, projectId, proposalId);
-			try { return await store.evaluateGovernanceProposal(proposalId, { ...versionedBody(body, ifMatch),
+			const proposal = await proposalFor(store, projectId, proposalId);
+			try {
+				const input = versionedBody(body, ifMatch);
+				if (['draft', 'open', 'voting'].includes(proposal.status)
+					&& input.adminDecision !== 'rejected' && input.adminDecision !== 'request_changes') {
+					await assertGovernanceProposalReady.call(store, proposalId, 'voting');
+				}
+				return await store.evaluateGovernanceProposal(proposalId, { ...input,
 				actorType: actorType(principal), actorId: principal!.id }); }
 			catch (error) { fail(error, 'governance_proposal_evaluate_failed'); }
 		},

@@ -1,4 +1,5 @@
 import type { CapacityUsageActual } from '@treeseed/sdk/agent-capacity';
+import { z } from 'zod';
 import {
 encodeCapacityPageCursor,
 normalizeCapacityPageLimit,
@@ -9,6 +10,7 @@ import { CapacityGovernanceError } from '../../../database.ts';
 
 type Row = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
+const timestamp = z.string().datetime({ offset: true });
 
 export interface TaskUsagePageFilters {
 	workDayId?: string | null;
@@ -87,6 +89,9 @@ function jsonRecord(row: Row, column: string): JsonRecord {
 
 export function serializeTaskUsageActualRow(row: Row | null): CapacityUsageActual | null {
 	if (!row) return null;
+	const createdAt = requiredText(row, 'created_at');
+	if (!timestamp.safeParse(createdAt).success) throw new CapacityGovernanceError('capacity_task_usage_corrupt',
+		'Task usage actual has invalid created_at.', 500, { usageActualId: typeof row.id === 'string' ? row.id : null, column: 'created_at' });
 	return {
 		id: requiredText(row, 'id'),
 		idempotencyKey: requiredText(row, 'idempotency_key'),
@@ -122,7 +127,7 @@ export function serializeTaskUsageActualRow(row: Row | null): CapacityUsageActua
 		actualUsd: nullableNumber(row, 'actual_usd'),
 		nativeUsage: jsonRecord(row, 'native_usage_json'),
 		metadata: jsonRecord(row, 'metadata_json'),
-		createdAt: requiredText(row, 'created_at'),
+		createdAt,
 	};
 }
 

@@ -1,6 +1,26 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-proposal-evaluation-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-denial-native.test.ts
+    testName: "owning native proposal evaluation denies incomplete plans and exact unresolved feedback before electorate or decision writes without rewriting retained history"
+  api.golden.execution-proposal-evaluation-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/governance-service.test.ts
+    testName: "retains exact authorized evaluation and accepted-decision recovery while denying missing or malformed readiness before mutation"
+  api.golden.execution-usage-clock-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/usage-observation-persistence.test.ts
+    testName: "requires a valid stored usage timestamp without rewriting bytes or charging elapsed infrastructure time as active work"
+  api.golden.execution-usage-clock-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/usage-observation-persistence.test.ts
+    testName: "owning SQL usage reads retain malformed clock history and admit only an explicit valid-clock retry"
   api.golden.execution-schedule-update-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
