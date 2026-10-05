@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-report-subject-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
+    testName: "real governed report Note authoring retains exact workday subject bytes after repeated missing or malformed authority denial without false publication or charges"
   api.golden.execution-terminal-priority-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

@@ -10,6 +10,31 @@ import { relationPath } from '../../../capacity/execution/graph/architecture/rel
 // This is not a managed provider run, authenticated operator HTTP or whole
 // publication-runner/portfolio acceptance. All resources created inside tests.
 describe('native ordinary relation creation and indexing', () => {
+	it('real governed report Note authoring retains exact workday subject bytes after repeated missing or malformed authority denial without false publication or charges', async () => {
+		const f = await relationAuthoringDatabase(); try {
+			const workspace = await f.create(), before = await f.snapshot(), path = 'notes/bounded-report.mdx';
+			const workday = { store: 'postgresql', model: 'workday', id: 'bounded-workday' };
+			const report = { schemaVersion: 'treeseed.note/v1', id: 'bounded-report', projectId: 'precursor',
+				classification: 'workday-report', subjectRefs: [workday, f.link.from],
+				body: 'Controlled authoring input, not a completed provider workday report.', createdAt: '2026-10-02T21:00:00.000Z' };
+			const variants = [[], [f.link.from], [{ ...f.link.from, model: 'workday' }], [{ ...workday, model: 'proposal' }],
+				[workday, workday], [{ ...workday, id: null }], null].map(subjectRefs => serializeFrontmatterDocument({ ...report, subjectRefs }));
+			const held = [...variants], original = structuredClone(report), content = serializeFrontmatterDocument(report);
+			const write = (value: string) => f.service.updateContent(f.principal, workspace.id,
+				{ kind: 'operational-content', create: true, version: workspace.version, sourcePath: path, content: value });
+			for (const value of variants) for (let retry = 0; retry < 2; retry++) {
+				await expect(write(value)).rejects.toMatchObject({ status: 422, code: 'operational_content_invalid' });
+				expect(await f.snapshot()).toEqual(before); expect((await f.service.diff(f.principal, workspace.id)).changedPaths).toEqual([]);
+			}
+			const written = await write(content); expect(written.workspace.version).toBe(workspace.version + 1);
+			expect((await f.service.readContent(f.principal, workspace.id, path)).content).toBe(content);
+			expect((await f.service.diff(f.principal, workspace.id)).changedPaths).toEqual([path]);
+			const after = await f.snapshot(); expect(after.ledger).toEqual(before.ledger);
+			expect(after.reviews).toEqual(before.reviews); expect(after.publications).toEqual(before.publications);
+			expect(after.audits.filter(row => row.event_type === 'knowledge.operational_content.updated')).toHaveLength(1);
+			expect(report).toEqual(original); expect(variants).toEqual(held);
+		} finally { await f.close(); }
+	}, 60_000);
 	it('real governed Decision authoring denies contradictory class dispositions and missing approval positions without draft mutation before unchanged exact retry', async () => {
 		const f = await relationAuthoringDatabase(); try {
 			const workspace = await f.create(), before = await f.snapshot(), path = 'decisions/bounded-decision.mdx';
