@@ -92,6 +92,17 @@ export function serializeTaskUsageActualRow(row: Row | null): CapacityUsageActua
 	const createdAt = requiredText(row, 'created_at');
 	if (!timestamp.safeParse(createdAt).success) throw new CapacityGovernanceError('capacity_task_usage_corrupt',
 		'Task usage actual has invalid created_at.', 500, { usageActualId: typeof row.id === 'string' ? row.id : null, column: 'created_at' });
+	const activeSeconds = nonnegativeNumber(row, 'active_seconds');
+	const elapsedSeconds = nonnegativeNumber(row, 'elapsed_seconds');
+	const nativeUsage = jsonRecord(row, 'native_usage_json');
+	const mode = accountingMode(row.accounting_mode);
+	// Explicit copies of the same measured seconds cannot contradict the durable
+	// columns. Other native units remain untouched; elapsed time is not active time.
+	for (const [field, measured] of [['activeSeconds', activeSeconds], ['elapsedSeconds', elapsedSeconds]] as const) {
+		if (mode !== 'informational' && Object.hasOwn(nativeUsage, field) && nativeUsage[field] !== measured) throw new CapacityGovernanceError(
+			'capacity_task_usage_corrupt', `Native ${field} contradicts its durable measurement.`, 500,
+			{ usageActualId: typeof row.id === 'string' ? row.id : null, column: 'native_usage_json' });
+	}
 	return {
 		id: requiredText(row, 'id'),
 		idempotencyKey: requiredText(row, 'idempotency_key'),
@@ -103,7 +114,7 @@ export function serializeTaskUsageActualRow(row: Row | null): CapacityUsageActua
 		assignmentId: nullableText(row.assignment_id),
 		assignmentAttempt: nonnegativeNumber(row, 'assignment_attempt'),
 		usageDimension: requiredText(row, 'usage_dimension'),
-		accountingMode: accountingMode(row.accounting_mode),
+		accountingMode: mode,
 		mode: capacityMode(row.mode),
 		capacityProviderId: nullableText(row.capacity_provider_id),
 		executionProviderId: nullableText(row.execution_provider_id),
@@ -122,10 +133,10 @@ export function serializeTaskUsageActualRow(row: Row | null): CapacityUsageActua
 		diffLinesRemoved: nullableNumber(row, 'diff_lines_removed'),
 		testRuns: nullableNumber(row, 'test_runs'),
 		retryCount: nullableNumber(row, 'retry_count'),
-		activeSeconds: nonnegativeNumber(row, 'active_seconds'),
-		elapsedSeconds: nonnegativeNumber(row, 'elapsed_seconds'),
+		activeSeconds,
+		elapsedSeconds,
 		actualUsd: nullableNumber(row, 'actual_usd'),
-		nativeUsage: jsonRecord(row, 'native_usage_json'),
+		nativeUsage,
 		metadata: jsonRecord(row, 'metadata_json'),
 		createdAt,
 	};

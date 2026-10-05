@@ -33,6 +33,53 @@ async function fixture() {
 // REAL owning SQL/operator evidence/service, supplied measurements only. No
 // actual provider charge, canonical UsageSettlement, live DB or server concurrency claim.
 describe('complete scoped usage observation through original SQL and owning service', () => {
+	it('retains separately measured infrastructure time and rejects contradictory native second measurements without rewriting either input', () => {
+		const row = { id: 'usage', idempotency_key: 'key', project_id: 'project', task_signature: 'task',
+			execution_profile_id: 'profile', assignment_attempt: 1, usage_dimension: 'aggregate', accounting_mode: 'aggregate',
+			business_model: 'isolated-test', active_seconds: 0, elapsed_seconds: 2,
+			metadata_json: '{}', created_at: '2026-10-02T21:00:01.000Z' };
+		for (const native of [{}, { activeSeconds: 0 }, { activeSeconds: 0, elapsedSeconds: 2 }, { tokens: 7 }]) {
+			const input = { ...row, native_usage_json: JSON.stringify(native) }, before = structuredClone(input);
+			expect(serializeTaskUsageActualRow(input)).toMatchObject({ activeSeconds: 0, elapsedSeconds: 2, nativeUsage: native });
+			expect(input).toEqual(before);
+		}
+		for (const field of ['activeSeconds', 'elapsedSeconds'] as const) {
+			for (const invalid of [1, '0', null, false, -1, {}, []]) {
+				const input = { ...row, native_usage_json: JSON.stringify({ [field]: invalid }) }, before = structuredClone(input);
+				expect(() => serializeTaskUsageActualRow(input)).toThrowError(expect.objectContaining({
+					code: 'capacity_task_usage_corrupt', status: 500, details: { usageActualId: 'usage', column: 'native_usage_json' } }));
+				expect(input).toEqual(before);
+			}
+		}
+		const informational = { ...row, accounting_mode: 'informational', elapsed_seconds: 0,
+			native_usage_json: JSON.stringify({ activeSeconds: 1, elapsedSeconds: 3 }) };
+		const before = structuredClone(informational);
+		expect(serializeTaskUsageActualRow(informational)).toMatchObject({ accountingMode: 'informational',
+			activeSeconds: 0, elapsedSeconds: 0, nativeUsage: { activeSeconds: 1, elapsedSeconds: 3 } });
+		expect(informational).toEqual(before);
+	});
+	it('owning SQL readback preserves contradictory native measurements and returns only an explicit consistent zero-active retry without charging infrastructure', async () => {
+		const { db, query, seed, service } = await fixture();
+		try {
+			await seed(0);
+			await query('UPDATE capacity_usage_actuals SET active_seconds=0,elapsed_seconds=2');
+			const failed = await query('SELECT * FROM capacity_usage_actuals ORDER BY id');
+			for (let retry = 0; retry < 2; retry++) {
+				await expect(service.usage(principal, 'team', { projectId: 'project' })).rejects.toMatchObject({
+					code: 'capacity_task_usage_corrupt', status: 500 });
+				expect(await query('SELECT * FROM capacity_usage_actuals ORDER BY id')).toEqual(failed);
+			}
+			await query('UPDATE capacity_usage_actuals SET native_usage_json=?', [JSON.stringify({ activeSeconds: 0, elapsedSeconds: 2 })]);
+			const restored = await query('SELECT * FROM capacity_usage_actuals ORDER BY id');
+			const page = await service.usage(principal, 'team', { projectId: 'project' });
+			expect(page.items).toHaveLength(1);
+			expect(page.items[0]).toMatchObject({ id: 'usage-000', activeSeconds: 0, elapsedSeconds: 2,
+				nativeUsage: { activeSeconds: 0, elapsedSeconds: 2 }, metadata: { settlementKey: 'settlement-0' } });
+			expect(await service.usage(principal, 'team', { projectId: 'project' })).toEqual(page);
+			expect(await query('SELECT * FROM capacity_usage_actuals ORDER BY id')).toEqual(restored);
+			expect(failed.rows[0]).toMatchObject({ active_seconds: 0, elapsed_seconds: 2, native_usage_json: '{"activeSeconds":1}' });
+		} finally { await db.close(); }
+	});
 	it('requires a valid stored usage timestamp without rewriting bytes or charging elapsed infrastructure time as active work', () => {
 		const row = { id: 'usage', idempotency_key: 'key', project_id: 'project', task_signature: 'task',
 			execution_profile_id: 'profile', assignment_attempt: 1, usage_dimension: 'aggregate', accounting_mode: 'aggregate',
@@ -106,6 +153,8 @@ describe('complete scoped usage observation through original SQL and owning serv
 		} finally { await db.close(); }
 	});
 	it('rejects corrupt stored creation clocks and zero measured productive time instead of returning valid-looking evidence', async () => {
+		// The zero-active negative retains native activeSeconds=1 from seed:
+		// contradictory measurements are denied, not legitimate infrastructure time.
 		const { db, query, seed, service } = await fixture();
 		try {
 			await seed(0); const outcomes: string[] = [];
