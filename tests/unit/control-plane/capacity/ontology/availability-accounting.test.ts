@@ -1,12 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { assertMonotonicAvailabilityAccounting } from '../../../../../src/api/capacity/services/accounts/availability-accounting.ts';
 import { serializeAvailabilitySessionRow } from '../../../../../src/api/capacity/repositories/accounts/availability-session.ts';
+import { canonicalOfferBuildInput } from '../execution/fixtures/assignment-attempt-fixtures.ts';
 const now = '2026-09-16T12:00:00.000Z';
 const observation = { day: '2026-09-16', observedAt: now, healthy: true, activeSeconds: 100, reservedSeconds: 0 };
 const adapter = { id: 'codex-implementation', adapter: 'codex', isolation: 'microvm', nativeLimits: { modelConfigurationId: 'terra-medium', dailyActiveSecondsLimit: 28800,
 	capabilityLimits: { implementation: { dailyActiveSecondsLimit: 28800 } } }, accountingObservation: {
 		modelUsage: observation, capabilityUsage: { implementation: observation } } };
 describe('availability usage continuity', () => {
+	it('retains every canonical executable offer and exact runtime build in public availability readback without rewriting stored authority', () => {
+		const provider = canonicalOfferBuildInput().providers[0]!;
+		const row = { id: 'session', membership_id: 'membership', team_id: 'team', capacity_provider_id: 'provider',
+			status: 'closed', sequence: 1, opened_at: now, refreshed_at: now, expires_at: now,
+			execution_providers_json: JSON.stringify([{ ...adapter, runtimeBuild: provider.runtimeBuild, offers: provider.offers }]),
+			capabilities_json: JSON.stringify(provider.capabilities), native_limits_json: '{}', runner_pressure_json: '{}', constraints_json: '{}' };
+		const held = structuredClone(row), result = serializeAvailabilitySessionRow(row);
+		expect(result?.snapshot.adapters[0]?.offers).toEqual(provider.offers);
+		expect(result?.snapshot.adapters[0]?.runtimeBuild).toBe(provider.runtimeBuild);
+		expect(result?.snapshot.adapters[0]?.accountingObservation).toEqual(adapter.accountingObservation);
+		expect(row).toEqual(held); expect(serializeAvailabilitySessionRow(row)).toEqual(result);
+	});
 	it('denies malformed retained shared model and capability observations before renamed fresh or unhealthy publications can conceal prior authority', () => {
 		const patches: Array<Record<string, unknown>> = [];
 		for (const reservedSeconds of [undefined, null, '0', false, -1, NaN, Infinity, -Infinity]) patches.push({ reservedSeconds });

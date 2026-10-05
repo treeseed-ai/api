@@ -22,7 +22,7 @@ describe('independent PostgreSQL connection graph custody', () => {
 			}
 			for (const database of [f.left, f.right]) {
 				expect((await database.pool.query('SELECT id,to_jsonb(priority) AS priority FROM execution_nodes ORDER BY id')).rows)
-					.toEqual(input.nodes.map(node => ({ id: node.id, priority: node.priority })).sort((a, b) => a.id.localeCompare(b.id)));
+					.toEqual(input.nodes.map(node => ({ id: node.id, priority: node.priority })).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 			}
 			await Promise.all(f.stores.map(store => persistExecutionGraph(store, graph, graph, receipt)));
 			expect(await f.snapshot()).toEqual(before); expect(input).toEqual(held);
@@ -79,10 +79,16 @@ describe('independent PostgreSQL connection graph custody', () => {
 			expect(outcomes.filter(value => value.status === 'fulfilled')).toHaveLength(1);
 			expect(outcomes.filter(value => value.status === 'rejected')).toHaveLength(1);
 			const winner = graphs[outcomes.findIndex(value => value.status === 'fulfilled')]!;
-			expect(await f.reader.show(f.principal, 'team', {})).toEqual(winner);
+			const loserIndex = outcomes.findIndex(value => value.status === 'rejected'), loser = graphs[loserIndex]!;
+			for (const store of f.stores) expect(await createExecutionGraphService(store).show(f.principal, 'team', {})).toEqual(winner);
 			const snapshot = await f.snapshot(); expect(snapshot.revisions).toHaveLength(1);
 			expect(snapshot.nodes).toHaveLength(winner.nodes.length); expect(snapshot.edges).toHaveLength(winner.edges.length);
 			expect(snapshot.assignments).toEqual([]); expect(snapshot.reservations).toEqual([]);
+			await expect(persistExecutionGraph(f.stores[loserIndex], loser, initial, { ...projections[loserIndex]!.revision, graphDigest: loser.digest }))
+				.rejects.toMatchObject({ status: 409, code: 'execution_graph_revision_conflict' });
+			expect(await f.snapshot()).toEqual(snapshot);
+			await persistExecutionGraph(f.stores[1 - loserIndex], winner, winner, { ...projections[1 - loserIndex]!.revision, graphDigest: winner.digest });
+			expect(await f.snapshot()).toEqual(snapshot);
 		} finally { await f.close(); }
 	}, 30_000);
 	it('matching concurrent graph writes have one durable revision and repeated independent reads remain unchanged', async () => {

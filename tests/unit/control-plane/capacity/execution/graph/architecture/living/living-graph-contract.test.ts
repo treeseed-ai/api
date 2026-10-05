@@ -2,9 +2,31 @@ import { describe, expect, it } from 'vitest';
 import { projectTeamExecutionGraph } from '../../../../../../../../src/api/capacity/policy/execution/execution-graph-projector.ts';
 import { recoverIncompleteReviewCycles } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
 import { decodeExecutionNode } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-storage.ts';
-import { graphNode, graphProfiles, graphProjection, graphSource, graphState } from './living-graph-fixture.ts';
+import { persistExecutionGraph } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { emptyLivingGraph, graphNode, graphProfiles, graphProjection, graphSource, graphState } from './living-graph-fixture.ts';
 
 describe('complete governed living graph contract authoring', () => {
+	it('binds every graph mutation to its exact winning digest even when competing revisions share the same publication clock', async () => {
+		const projection = graphProjection(), original = graphState(projection);
+		for (const current of [emptyLivingGraph(), original]) {
+			const graph = current.revision === 0 ? original : { ...original, revision: 2, digest: 'different-desired-digest', edges: [] };
+			const receipt = { ...projection.revision, revision: graph.revision, graphDigest: graph.digest };
+			const before = structuredClone({ graph, current, receipt });
+			let operations: Array<{ query: string; params: unknown[] }> = [];
+			const store = {
+				batch: async (values: typeof operations) => { operations = structuredClone(values); },
+				first: async () => ({ revision: graph.revision, graph_digest: 'retained-competing-digest' }),
+			};
+			await expect(persistExecutionGraph(store, graph, current, receipt)).rejects.toMatchObject({ status: 409, code: 'execution_graph_revision_conflict' });
+			const mutations = operations.filter(value => /^(INSERT INTO execution_nodes|INSERT INTO execution_edges|UPDATE execution_edges)/.test(value.query));
+			expect(mutations.length).toBeGreaterThan(0);
+			for (const mutation of mutations) {
+				expect(mutation.query).toContain('WHERE team_id=? AND revision=? AND created_at=? AND graph_digest=?');
+				expect(mutation.params.slice(-4)).toEqual([receipt.teamId, receipt.revision, receipt.createdAt, receipt.graphDigest]);
+			}
+			expect({ graph, current, receipt }).toEqual(before);
+		}
+	});
 	it('decodes exact persisted safe integer priority without coercing malformed storage or inventing omitted authority', () => {
 		const node = graphNode(graphState(graphProjection()), 'first', 'actor');
 		const row = { id: node.id, team_id: node.teamId, project_id: node.projectId, work_item_id: node.workItemId,

@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-availability-offer-readback-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-accounting.test.ts
+    testName: "retains every canonical executable offer and exact runtime build in public availability readback without rewriting stored authority"
   api.golden.execution-primary-source-reader-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -1511,6 +1516,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/initial/counter-scope.test.ts
     testName: "denies missing capabilities foreign models and malformed counter ceilings"
+  api.golden.execution-graph-digest-guard-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-contract.test.ts
+    testName: "binds every graph mutation to its exact winning digest even when competing revisions share the same publication clock"
   api.golden.architecture-living-graph-postgres-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

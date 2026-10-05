@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-availability-offer-readback-unit
+    action: { verifier: api.golden.execution-availability-offer-readback-unit }
+    expect: { status: passed }
+  - id: execution-graph-digest-guard-unit
+    action: { verifier: api.golden.execution-graph-digest-guard-unit }
+    expect: { status: passed }
   - id: execution-primary-source-reader-unit
     action: { verifier: api.golden.execution-primary-source-reader-unit }
     expect: { status: passed }

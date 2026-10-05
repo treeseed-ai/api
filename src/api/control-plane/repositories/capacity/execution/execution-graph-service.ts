@@ -228,7 +228,7 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 			JSON.stringify(current.nodes.map(node => ({ id: node.id, node_revision: node.nodeRevision, status: node.status }))),graph.teamId],
 	}];
 	const revisionGuard = `EXISTS (SELECT 1 FROM execution_graph_revisions
-		WHERE team_id=? AND revision=? AND created_at=?)`;
+		WHERE team_id=? AND revision=? AND created_at=? AND graph_digest=?)`;
 	const currentNodes = new Map(current.nodes.map((node) => [node.id, node]));
 	for (const node of graph.nodes.filter((candidate) => stable(currentNodes.get(candidate.id)) !== stable(candidate))) operations.push({
 		query: `INSERT INTO execution_nodes (
@@ -254,7 +254,7 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 			node.requestedPermissions ? JSON.stringify(node.requestedPermissions) : null,node.output ? JSON.stringify(node.output) : null,node.workspace ?? null,
 			node.acceptanceCriteria ? JSON.stringify(node.acceptanceCriteria) : null,node.maximumReviewCycles ?? null,
 			node.condition ? JSON.stringify(node.condition) : null,node.graphRevisionCreated,node.graphRevisionUpdated,now,now,node.priority ?? null,
-			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt],
+			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt,revisionRecord.graphDigest],
 	});
 	const currentEdges = new Map(current.edges.map((edge) => [edge.id, edge]));
 	const desiredEdges = new Set(graph.edges.map((edge) => edge.id));
@@ -262,7 +262,7 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 		query: `UPDATE execution_edges SET graph_revision_removed = ?
 			WHERE team_id = ? AND id = ? AND graph_revision_removed IS NULL AND ${revisionGuard}`,
 		params: [graph.revision, graph.teamId, prior.id,
-			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt],
+			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt,revisionRecord.graphDigest],
 	});
 	for (const edge of graph.edges.filter((candidate) => stable(currentEdges.get(candidate.id)) !== stable(candidate))) operations.push({
 		query: `INSERT INTO execution_edges (id,team_id,from_node_id,to_node_id,provenance,source_ref_json,graph_revision_created,graph_revision_removed,created_at)
@@ -270,7 +270,7 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 			ON CONFLICT (id) DO UPDATE SET graph_revision_removed=NULL`,
 		params: [edge.id,edge.teamId,edge.fromNodeId,edge.toNodeId,edge.provenance,
 			edge.sourceRef ? JSON.stringify(edge.sourceRef) : null,edge.graphRevisionCreated,null,now,
-			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt],
+			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt,revisionRecord.graphDigest],
 	});
 	await store.batch(operations);
 	const committed = await store.first('SELECT revision,graph_digest FROM execution_graph_revisions WHERE team_id=? ORDER BY revision DESC LIMIT 1', [graph.teamId]);

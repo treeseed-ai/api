@@ -44,6 +44,8 @@ export function serializeAvailabilitySessionRow(row: Row | null): ProviderAvaila
 			reservedWorkers: Number(pressure.reservedWorkers ?? 0), borrowedWorkers: Number(pressure.borrowedWorkers ?? 0),
 			availableWorkers: Number(pressure.availableWorkers ?? nativeLimits.maxConcurrentWorkers ?? nativeLimits.maxConcurrentRunners ?? 0),
 			adapters: executionProviders.map((provider) => ({ id: String(provider.id), adapter: String(provider.adapter),
+				...(provider.runtimeBuild !== undefined ? { runtimeBuild: provider.runtimeBuild } : {}),
+				...(provider.offers !== undefined ? { offers: provider.offers } : {}),
 				isolation: provider.isolation === 'microvm' ? 'microvm' : provider.isolation === 'process' ? 'process' : 'worker',
 				status: provider.status === 'active' ? 'available' : provider.status,
 				capabilities: Array.isArray(provider.capabilities) ? provider.capabilities.map(String) : [],

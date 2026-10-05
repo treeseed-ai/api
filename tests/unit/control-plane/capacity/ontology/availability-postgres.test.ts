@@ -5,8 +5,9 @@ import { createControlPlanePostgresDatabase } from '../../../../../src/api/suppo
 import { AvailabilitySessionService } from '../../../../../src/api/capacity/services/accounts/availability-session-service.ts';
 import { AvailabilitySessionRepository } from '../../../../../src/api/capacity/repositories/accounts/availability-session.ts';
 import { postgresGraph } from '../execution/graph/architecture/living/living-postgres-fixture.ts';
-import { canonicalOfferBuildInput, invalidCanonicalOffers, invalidQualificationOffers, signSuppliedOffer, substitutedSignedOffers } from '../execution/fixtures/assignment-attempt-fixtures.ts';
+import { canonicalOfferBuildInput, executionCapability, invalidCanonicalOffers, invalidQualificationOffers, signSuppliedOffer, substitutedSignedOffers } from '../execution/fixtures/assignment-attempt-fixtures.ts';
 import { CORE_CAPABILITY_DEFINITIONS } from '@treeseed/sdk/capacity-provider';
+import { appliedWorkdaySchema } from '@treeseed/sdk/agent-capacity';
 import { resolveProviderSynthesisContext } from '../../../../../src/api/capacity/services/capacity/providers/provider-synthesis-context-service.ts';
 import { buildAssignmentAttempt } from '../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import { CapacityGovernanceError } from '../../../../../src/api/capacity/database.ts';
@@ -55,10 +56,18 @@ describe('provider accounting in disposable PostgreSQL', () => {
       qualification.conformance[0]!.suite = { id: 'supplied-native-qualification', version: '1.0.0' };
       const qualifiedInput = structuredClone(input); qualifiedInput.adapters[0]!.id = 'qualified-input-adapter';
       qualifiedInput.adapters[0]!.capabilities = [automated.id]; qualifiedInput.adapters[0]!.offers = [signSuppliedOffer(qualification, registeredKey).offer];
-      const qualifiedBefore = structuredClone(qualifiedInput), qualified = await service.open(principal, qualifiedInput);
+      // A separate controlled membership leaves the original executable session
+      // open; normal same-membership publication deliberately closes its prior one.
+      await f.left.pool.query(`INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ('qualification-team','qualification-team','Qualification input',$1,$1)`, [original.now]);
+      await f.left.pool.query(`INSERT INTO capacity_provider_team_memberships
+        (id,team_id,capacity_provider_id,approved_at,approved_by_id,created_at,updated_at)
+        VALUES ('qualification-membership','qualification-team','provider',$1,'controlled-operator',$1,$1)`, [original.now]);
+      const qualificationPrincipal = { ...principal, teamId: 'qualification-team', membershipId: 'qualification-membership' };
+      const qualifiedBefore = structuredClone(qualifiedInput), qualified = await service.open(qualificationPrincipal, qualifiedInput);
       if (!qualified) throw new Error('Actual declared-tier publication control required');
       expect(qualified.snapshot.adapters[0]!.offers).toEqual(qualifiedInput.adapters[0]!.offers);
-      expect((await service.close(principal, qualified.id))?.status).toBe('closed'); expect(qualifiedInput).toEqual(qualifiedBefore);
+      expect((await service.close(qualificationPrincipal, qualified.id))?.status).toBe('closed'); expect(qualifiedInput).toEqual(qualifiedBefore);
+      expect((await service.get(principal.teamId, opened.id))?.status).toBe('open');
       const baseline = await snapshot(f.left); expect(await snapshot(f.right)).toEqual(baseline);
       const qualificationOutcomes: Array<{ name: string; code: string; cause: unknown }> = [];
       for (const operation of ['open', 'refresh'] as const) for (const variant of invalidQualificationOffers(qualification, original.now)) {
@@ -120,7 +129,7 @@ describe('provider accounting in disposable PostgreSQL', () => {
       expect(frozen.assignment.sourceRef).toEqual(original.candidate.node.sourceRef);
       expect(frozen.assignment.authorityRefs).toEqual(original.candidate.node.authorityRefs);
       expect(frozen.assignment.limits.maximumSeconds).toBe(3); expect(frozen.assignment.createdAt).toBe(compileNow);
-      expect(frozen.assignment.deadline).toBe(new Date(Date.parse(compileNow) + 3_000).toISOString());
+      expect(frozen.assignment.deadline).toBe(appliedWorkdaySchema.parse(buildSource.run.parameters.appliedPlan).endsAt);
       for (const result of await Promise.all([compile(), compile()])) expect(result).toEqual(frozen);
       expect(await snapshot(f.right)).toEqual(baseline); expect(await snapshot(f.left)).toEqual(baseline);
       const outcomes: Array<{ name: string; cause: unknown }> = [];
@@ -173,8 +182,10 @@ describe('provider accounting in disposable PostgreSQL', () => {
     try {
       await db.migrate();
       const now = new Date().toISOString();
+      const canonical = canonicalOfferBuildInput(now).providers[0]!;
+      const signed = signSuppliedOffer(canonical.offers[0]!, generateKeyPairSync('ed25519').privateKey);
       await db.pool.query(`INSERT INTO capacity_providers (id,fingerprint,public_jwk_json,display_name,created_at,updated_at)
-        VALUES ('provider','test','{}','Provider',$1,$1)`, [now]);
+        VALUES ('provider','test',$2,'Provider',$1,$1)`, [now, JSON.stringify(signed.publicJwk)]);
       for (const team of ['first', 'second']) {
         await db.pool.query(`INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ($1,$1,$1,$2,$2)`, [team, now]);
         await db.pool.query(`INSERT INTO capacity_provider_team_memberships
@@ -190,15 +201,16 @@ describe('provider accounting in disposable PostgreSQL', () => {
       const input = (activeSeconds: number) => {
         const observed = { day: now.slice(0, 10), observedAt: now, healthy: true, activeSeconds, reservedSeconds: 0 };
         return { adapters: [{ id: 'codex-implementation', adapter: 'codex', runtimeBuild: `sha256:${'a'.repeat(64)}`,
+          offers: [signed.offer], capabilities: [executionCapability],
           status: 'available', maxConcurrentWorkers: 1, laneIds: ['communication', 'platform', 'workday'],
           nativeLimits: { modelConfigurationId: 'terra-medium', dailyActiveSecondsLimit: 28800,
-            capabilityLimits: { implementation: { dailyActiveSecondsLimit: 28800 } } },
-          accountingObservation: { modelUsage: observed, capabilityUsage: { implementation: observed } } }],
+            capabilityLimits: { [executionCapability]: { dailyActiveSecondsLimit: 28800 } } },
+          accountingObservation: { modelUsage: observed, capabilityUsage: { [executionCapability]: observed } } }],
           lanes: ['communication', 'platform', 'workday'].map(purpose => ({ id: purpose, purpose, maxConcurrentWorkers: 1 })) };
       };
       const principal = (team: string) => ({ teamId: team, membershipId: `membership-${team}`, capacityProviderId: 'provider' });
       const first = service.open(principal('first'), input(2));
-      await firstEntered;
+      await Promise.race([firstEntered, first.then(() => { throw new Error('Native publication returned before the owning transaction barrier'); })]);
       const second = service.open(principal('second'), input(1));
       const rejection = expect(second).rejects.toMatchObject({ code: 'provider_accounting_regressed' });
       release();
@@ -228,8 +240,10 @@ describe('native provider restart accounting authority', () => {
     const reader = new pg.Pool({ connectionString: connection.href });
     try {
       await db.migrate(); const now = new Date().toISOString();
+      const canonical = canonicalOfferBuildInput(now).providers[0]!;
+      const signed = signSuppliedOffer(canonical.offers[0]!, generateKeyPairSync('ed25519').privateKey);
       await db.pool.query(`INSERT INTO capacity_providers (id,fingerprint,public_jwk_json,display_name,created_at,updated_at)
-        VALUES ('provider','restart-test','{}','Provider',$1,$1)`, [now]);
+        VALUES ('provider','restart-test',$2,'Provider',$1,$1)`, [now, JSON.stringify(signed.publicJwk)]);
       for (const team of ['first', 'second']) {
         await db.pool.query(`INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ($1,$1,$1,$2,$2)`, [team, now]);
         await db.pool.query(`INSERT INTO capacity_provider_team_memberships
@@ -245,9 +259,10 @@ describe('native provider restart accounting authority', () => {
       const input = (activeSeconds: number, id = 'configured-runtime') => {
         const observedAt = new Date().toISOString(), observed = { day: observedAt.slice(0, 10), observedAt, healthy: true, activeSeconds, reservedSeconds: 0 };
         return { adapters: [{ id, adapter: 'codex', runtimeBuild: `sha256:${'a'.repeat(64)}`, status: 'available', maxConcurrentWorkers: 1,
+          offers: [signed.offer], capabilities: [executionCapability],
           laneIds: ['communication', 'platform', 'workday'], nativeLimits: { modelConfigurationId: 'shared-model', dailyActiveSecondsLimit: 120,
-            capabilityLimits: { implementation: { dailyActiveSecondsLimit: 60 } } }, accountingObservation: {
-              modelUsage: { ...observed }, capabilityUsage: { implementation: { ...observed } } } }],
+            capabilityLimits: { [executionCapability]: { dailyActiveSecondsLimit: 60 } } }, accountingObservation: {
+              modelUsage: { ...observed }, capabilityUsage: { [executionCapability]: { ...observed } } } }],
           lanes: ['communication', 'platform', 'workday'].map(purpose => ({ id: purpose, purpose, maxConcurrentWorkers: 1 })) };
       };
       const service = new AvailabilitySessionService(store), firstInput = input(10), firstBefore = structuredClone(firstInput);
@@ -300,7 +315,7 @@ describe('native provider restart accounting authority', () => {
         if (!accounting || typeof accounting !== 'object') throw new Error('Original retained accounting required');
         const capabilities = Reflect.get(accounting, 'capabilityUsage');
         if (!capabilities || typeof capabilities !== 'object') throw new Error('Original retained capability observations required');
-        const target = scope === 'model' ? Reflect.get(accounting, 'modelUsage') : Reflect.get(capabilities, 'implementation');
+        const target = scope === 'model' ? Reflect.get(accounting, 'modelUsage') : Reflect.get(capabilities, executionCapability);
         if (!target || typeof target !== 'object') throw new Error('Original retained scope required');
         Object.assign(target, patch); const suppliedBytes = JSON.stringify(adapters);
         await db.pool.query('UPDATE capacity_provider_availability_sessions SET execution_providers_json=$1 WHERE id=$2', [suppliedBytes, opened.id]);
@@ -317,10 +332,10 @@ describe('native provider restart accounting authority', () => {
       for (const fault of ['model-regression', 'capability-regression', 'backward-clock', 'model-health', 'capability-health'] as const) {
         const supplied = input(10, 'renamed-after-restart'), observation = supplied.adapters[0]!.accountingObservation;
         if (fault === 'model-regression') observation.modelUsage.activeSeconds = 9;
-        if (fault === 'capability-regression') observation.capabilityUsage.implementation.activeSeconds = 9;
+        if (fault === 'capability-regression') observation.capabilityUsage[executionCapability]!.activeSeconds = 9;
         if (fault === 'backward-clock') observation.modelUsage.observedAt = new Date(Date.parse(firstInput.adapters[0]!.accountingObservation.modelUsage.observedAt) - 1).toISOString();
         if (fault === 'model-health') Object.assign(observation.modelUsage, { healthy: 'true' });
-        if (fault === 'capability-health') Object.assign(observation.capabilityUsage.implementation, { healthy: 'true' });
+        if (fault === 'capability-health') Object.assign(observation.capabilityUsage[executionCapability]!, { healthy: 'true' });
         const before = structuredClone(supplied); let error: unknown;
         try { await restarted.open(principal('second'), supplied); } catch (cause) { error = cause; }
         outcomes.push({ fault, error, unchanged: JSON.stringify(await snapshot(db.pool)) === JSON.stringify(baseline), inputUnchanged: JSON.stringify(supplied) === JSON.stringify(before) });
