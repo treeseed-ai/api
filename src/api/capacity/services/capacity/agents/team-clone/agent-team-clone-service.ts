@@ -64,7 +64,7 @@ function failed(stage:string,projectId:string,error:unknown):never{
 }
 async function acceptedSourceCommit(store:any,projectId:string){
 	const page=await store.listProjectAgentClassesPage(projectId,{limit:200,cursor:null});
-	const refs=new Set((Array.isArray(page?.items)?page.items:[]).filter((item:Row)=>item.status==='active').map((item:Row)=>text(record(item.metadata).immutableRef)).filter((value:string)=>/^[0-9a-f]{40}$/u.test(value)));
+	const refs=new Set<string>((Array.isArray(page?.items)?page.items:[]).filter((item:Row)=>item.status==='active').map((item:Row)=>text(record(item.metadata).immutableRef)).filter((value:string)=>/^[0-9a-f]{40}$/u.test(value)));
 	if(refs.size!==1)throw new CapacityOperationError(409,'agent_team_source_authority_invalid','The source agent team must resolve to one active immutable TreeDX commit.',{projectId,activeCommitCount:refs.size});
 	return [...refs][0]!;
 }

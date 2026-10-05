@@ -70,10 +70,12 @@ export class ContextQueryCheckService {
 				if(selected.length!==(ids.size+slugs.size||teamProjects.length))throw new CapacityGovernanceError('context_query_source_missing','A selected same-team project does not exist.',404);
 				for(const project of selected)add(String(project.id),['**'],'same-team');continue;
 			}
-			const shares=(await (this.store as any).listTreeDxSharesForRecipient(teamId)).filter((share:Record<string,unknown>)=>String(share.teamId)===selector.teamId&&share.status==='active'&&(!share.expiresAt||Date.parse(String(share.expiresAt))>Date.now()));
-			const eligible=new Map<string,Record<string,unknown>>();for(const share of shares){const grant=record(share.trustGrant);if(!strings(grant.operations).includes('context'))continue;for(const id of strings(grant.projectIds??share.projectId))eligible.set(id,grant);}
-			const selected=selector.projectIds?.length?selector.projectIds:[...eligible.keys()];
-			for(const id of selected){const grant=eligible.get(id);if(!grant)throw new CapacityGovernanceError('context_query_share_denied','An active knowledge share does not cover the selected project.',403);add(id,strings(grant.paths),`shared-team:${selector.teamId}`);}
+			if(selector.scope==='shared-team') {
+				const shares=(await (this.store as any).listTreeDxSharesForRecipient(teamId)).filter((share:Record<string,unknown>)=>String(share.teamId)===selector.teamId&&share.status==='active'&&(!share.expiresAt||Date.parse(String(share.expiresAt))>Date.now()));
+				const eligible=new Map<string,Record<string,unknown>>();for(const share of shares){const grant=record(share.trustGrant);if(!strings(grant.operations).includes('context'))continue;for(const id of strings(grant.projectIds??share.projectId))eligible.set(id,grant);}
+				const selected=selector.projectIds?.length?selector.projectIds:[...eligible.keys()];
+				for(const id of selected){const grant=eligible.get(id);if(!grant)throw new CapacityGovernanceError('context_query_share_denied','An active knowledge share does not cover the selected project.',403);add(id,strings(grant.paths),`shared-team:${selector.teamId}`);}
+			}
 		}
 		return [...projects.values()];
 	}
@@ -122,7 +124,7 @@ export class ContextQueryCheckService {
 			resolvedRef=String((read as Record<string,unknown>).resolvedRef??resolvedRef);files.push(...(read.files??[]));
 		}
 		const commit=resolvedRef;
-		const entries=files.flatMap((file:unknown)=>{
+		const entries=files.map((file:unknown)=>{
 			const row=record(file); const filePath=String(row.path??''); const source=String(row.content??'');
 			const contract=collections.find(([,collection])=>filePath.startsWith(`${collection}/`)||filePath.includes(`/${collection}/`)); if(!contract||!source) return [];
 			const validation=validateContentFrontmatter(contract[2],parseFrontmatterDocument(source).frontmatter);
@@ -144,7 +146,7 @@ export class ContextQueryCheckService {
 				return [{entryType:'test' as const,id:String(value.id),testRef:String(value.testRef),kind,definitionKind:kind==='context-query'?'query' as const:'query-set' as const,definitionId:String(reference.id),definitionRevision:Number(reference.revision),path:filePath,commit}];
 			}
 			return [{entryType:'definition' as const,kind:contract[0],id:String(value.id),revision:Number(value.revision),maturity:String(value.maturity??''),queryRefs:contract[0]==='query-set'?(Array.isArray(value.queryRefs)?value.queryRefs.map(record):[]):[],path:filePath,commit}];
-		});
+		}).flat();
 		return {commit,definitions:entries.filter((entry)=>entry.entryType==='definition'),tests:entries.filter((entry)=>entry.entryType==='test'),agentReferences:entries.filter((entry)=>entry.entryType==='agent-reference')};
 	}
 
@@ -174,7 +176,7 @@ export class ContextQueryCheckService {
 		if(catalogPath&&!catalogPath.startsWith(`${projectLibraryPath(initial.contentPath,COLLECTIONS.test)}/`))throw new CapacityGovernanceError('context_query_test_path_invalid','Context-query test path is outside the registered collection.',400);
 		const testSource=await this.source(projectId,String(input.definitionRef??`refs/heads/${initial.authoringBranch.replace(/^refs\/heads\//u,'')}`),catalogPath||path(initial.contentPath,COLLECTIONS.test,testId));
 		const testValidation=validateContentFrontmatter('agent_test',testSource.frontmatter);
-		if(!testValidation.ok||!['context-query','context-query-set'].includes(String(testValidation.data?.kind))) throw new CapacityGovernanceError('context_query_test_invalid','Context-query test definition is invalid.',422,{diagnostics:testValidation.diagnostics});
+		if(!testValidation.ok||!['context-query','context-query-set'].includes(String(record(testValidation.data).kind))) throw new CapacityGovernanceError('context_query_test_invalid','Context-query test definition is invalid.',422,{diagnostics:testValidation.diagnostics});
 		const test=testValidation.data as ContextQueryTestDefinition&{kind:'context-query'|'context-query-set'};
 		const exactRef=testSource.resolvedRef;
 		// An isolated check is a control-plane mutation: it may rebuild TreeDX's derived
