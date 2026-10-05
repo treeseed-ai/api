@@ -1,10 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import { recoverIncompleteReviewCycles } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
+import { digest, recoverIncompleteReviewCycles } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
 import { emptyLivingGraph, graphNode, graphProjection, graphSource, graphState, livingGraphDatabase } from './living-graph-fixture.ts';
 
 // Authoring only until the complete architecture/assignment test contract is
 // present. Embedded SQL transactions are not separate-server concurrency proof.
 describe('living graph original SQL and public service integration', () => {
+	it('native owning SQL preserves optional safe integer priorities and exact dependency provenance while invalid writes retain the complete graph', async () => {
+		const f = await livingGraphDatabase();
+		try {
+			const p = graphProjection(), graph = graphState(p), priorities = [Number.MIN_SAFE_INTEGER, 0, Number.MAX_SAFE_INTEGER];
+			graph.nodes.slice(0, 3).forEach((node, index) => { node.priority = priorities[index]!; });
+			const edge = graph.edges[0]!; edge.provenance = 'treedx-link'; edge.sourceRef = graph.nodes[0]!.sourceRef;
+			graph.digest = digest({ teamId: graph.teamId, nodes: graph.nodes, edges: graph.edges });
+			const held = structuredClone(graph); await f.persist(graph, emptyLivingGraph(), p.revision);
+			expect(await f.service.show(f.principal, 'team', {})).toEqual(graph); expect(graph).toEqual(held);
+			const snapshot = await f.snapshot();
+			for (const priority of ['9007199254740992', '-9007199254740992', '1.5', 'invalid']) {
+				await expect(f.query('UPDATE execution_nodes SET priority=? WHERE id=?', [priority, graph.nodes[0]!.id])).rejects.toThrow();
+				expect(await f.snapshot()).toEqual(snapshot);
+			}
+			await expect(f.query('UPDATE execution_edges SET provenance=? WHERE id=?', ['invented-policy', edge.id])).rejects.toThrow();
+			expect(await f.snapshot()).toEqual(snapshot);
+			const changed = structuredClone(graph); delete changed.nodes[0]!.priority; changed.nodes[0]!.graphRevisionUpdated = 2; changed.revision = 2;
+			changed.digest = digest({ teamId: changed.teamId, nodes: changed.nodes, edges: changed.edges });
+			const next = graphProjection(undefined, 2); await f.persist(changed, graph, next.revision);
+			expect(await f.service.show(f.principal, 'team', {})).toEqual(changed);
+			expect((await f.query('SELECT priority FROM execution_nodes WHERE id=?', [graph.nodes[0]!.id])).rows).toEqual([{ priority: null }]);
+			expect((await f.snapshot()).revisions).toHaveLength(2); expect(graph).toEqual(held);
+		} finally { await f.db.close(); }
+	});
 	it('persists one team graph with independent reviewed dependencies and exact provenance readback', async () => {
 		const f = await livingGraphDatabase();
 		try {

@@ -24,8 +24,7 @@ const array = (value: unknown): unknown[] => {
 	if (Array.isArray(value)) return value;
 	if (typeof value === 'string') try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
 	return [];
-};
-const integer = (value: unknown): number => Number.isInteger(Number(value)) ? Number(value) : 0;
+}; const integer = (value: unknown): number => Number.isInteger(Number(value)) ? Number(value) : 0;
 export const isRevisionRequiredReviewDisposition = (value: unknown): boolean => value === 'request-changes';
 export const terminalAssignmentWasRequeued = (row: Row): boolean => {
 	const requestedAt = Date.parse(text(record(record(row.metadata_json).operatorRetry).requestedAt));
@@ -100,7 +99,8 @@ async function readGraph(store: any, teamId: string): Promise<TeamGraph> {
 	]);
 	return {
 		teamId, revision: integer(revisionRow?.revision), digest: text(revisionRow?.graph_digest),
-		nodes: nodeRows.map(decodeExecutionNode), edges: edgeRows.map(decodeExecutionEdge),
+		nodes: nodeRows.map(decodeExecutionNode).sort((left: ExecutionNode, right: ExecutionNode) => left.id.localeCompare(right.id)),
+		edges: edgeRows.map(decodeExecutionEdge).sort((left: ExecutionEdge, right: ExecutionEdge) => left.id.localeCompare(right.id)),
 	};
 }
 
@@ -235,8 +235,8 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 			id,team_id,project_id,workday_id,work_item_id,kind,pair_role,source_ref_json,authority_refs_json,
 			rule_revision,node_revision,agent_class,status,estimate_json,required_capabilities_json,
 			requested_permissions_json,output_json,workspace,acceptance_criteria_json,maximum_review_cycles,condition_json,
-			graph_revision_created,graph_revision_updated,created_at,updated_at
-		) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE ${revisionGuard}
+			graph_revision_created,graph_revision_updated,created_at,updated_at,priority
+		) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE ${revisionGuard}
 		ON CONFLICT (id) DO UPDATE SET
 			project_id=excluded.project_id,workday_id=excluded.workday_id,work_item_id=excluded.work_item_id,
 			kind=excluded.kind,pair_role=excluded.pair_role,source_ref_json=excluded.source_ref_json,
@@ -245,7 +245,7 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 			estimate_json=excluded.estimate_json,required_capabilities_json=excluded.required_capabilities_json,
 			requested_permissions_json=excluded.requested_permissions_json,output_json=excluded.output_json,workspace=excluded.workspace,
 			acceptance_criteria_json=excluded.acceptance_criteria_json,maximum_review_cycles=excluded.maximum_review_cycles,
-			condition_json=excluded.condition_json,
+			condition_json=excluded.condition_json,priority=excluded.priority,
 			graph_revision_updated=excluded.graph_revision_updated,updated_at=excluded.updated_at`,
 		params: [node.id,node.teamId,node.projectId,node.workdayId ?? null,node.workItemId ?? null,node.kind,node.pairRole,
 			JSON.stringify(node.sourceRef),JSON.stringify(node.authorityRefs ?? []),node.ruleRevision,node.nodeRevision,
@@ -253,7 +253,7 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 			node.requiredCapabilities ? JSON.stringify(node.requiredCapabilities) : null,
 			node.requestedPermissions ? JSON.stringify(node.requestedPermissions) : null,node.output ? JSON.stringify(node.output) : null,node.workspace ?? null,
 			node.acceptanceCriteria ? JSON.stringify(node.acceptanceCriteria) : null,node.maximumReviewCycles ?? null,
-			node.condition ? JSON.stringify(node.condition) : null,node.graphRevisionCreated,node.graphRevisionUpdated,now,now,
+			node.condition ? JSON.stringify(node.condition) : null,node.graphRevisionCreated,node.graphRevisionUpdated,now,now,node.priority ?? null,
 			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt],
 	});
 	const currentEdges = new Map(current.edges.map((edge) => [edge.id, edge]));

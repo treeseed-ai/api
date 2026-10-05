@@ -195,6 +195,9 @@ export function projectTeamExecutionGraph(input: {
 
 	for (const source of [...input.sources].sort((left, right) =>
 		left.projectId.localeCompare(right.projectId) || left.path.localeCompare(right.path))) {
+		if (source.teamId !== input.teamId) throw Object.assign(new Error('Proposal source belongs to another team.'), {
+			code: 'execution_source_team_mismatch',
+		});
 		const validation = validatePortableContentData('proposal', source.frontmatter);
 		if (!validation.ok) throw Object.assign(new Error(`Proposal ${source.path} is invalid.`), {
 			code: 'proposal_execution_plan_invalid', diagnostics: validation.diagnostics,
@@ -273,6 +276,7 @@ export function projectTeamExecutionGraph(input: {
 
 	for (const link of input.dependencyLinks ?? []) {
 		const endpoint = (ref: ExactEntityReference, role: 'predecessor' | 'dependent') => {
+			if (ref.store !== 'treedx' || ref.model !== 'proposal') return undefined;
 			const item = ref.anchor?.match(/^work-item\/([a-z0-9]+(?:-[a-z0-9]+)*)$/u)?.[1];
 			const candidates = nodes.filter((node) => node.sourceRef.store === 'treedx'
 				&& node.sourceRef.model === 'proposal' && node.sourceRef.id === ref.id

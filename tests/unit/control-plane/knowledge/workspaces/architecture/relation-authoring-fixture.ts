@@ -57,7 +57,7 @@ export async function relationAuthoringDatabase() {
 		if (failures.length) throw new AggregateError(failures, 'Native relation fixture teardown remains unproven');
 	};
 	try {
-		for (const file of ['0000_control_plane.sql', '0023_living_execution_graph.sql', '0032_execution_graph_revision_integrity.sql', '0041_execution_content_output_authority.sql']) {
+		for (const file of ['0000_control_plane.sql', '0023_living_execution_graph.sql', '0032_execution_graph_revision_integrity.sql', '0041_execution_content_output_authority.sql', '0044_execution_priority_dependency_provenance.sql']) {
 			await db.exec(readFileSync(`drizzle/control-plane/${file}`, 'utf8'));
 		}
 		const store = new ControlPlaneStore({ TREESEED_TREEDX_URL: baseUrl, TREESEED_ENVIRONMENT: 'test' }, {

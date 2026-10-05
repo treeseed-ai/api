@@ -65,7 +65,7 @@ export async function livingGraphDatabase() {
 	try {
 		// Minimal team/assignment host tables; original owning graph migrations.
 		await db.exec("CREATE TABLE teams (id text PRIMARY KEY); INSERT INTO teams VALUES ('team'),('other-team'); CREATE TABLE capacity_provider_assignments (id text PRIMARY KEY, team_id text, status text);");
-		for (const file of ['0023_living_execution_graph.sql', '0032_execution_graph_revision_integrity.sql', '0041_execution_content_output_authority.sql']) {
+		for (const file of ['0023_living_execution_graph.sql', '0032_execution_graph_revision_integrity.sql', '0041_execution_content_output_authority.sql', '0044_execution_priority_dependency_provenance.sql']) {
 			for (const sql of splitPostgresSqlStatements(readFileSync(`drizzle/control-plane/${file}`, 'utf8'))) await db.exec(sql);
 		}
 		const query = (sql: string, params: unknown[] = []) => {

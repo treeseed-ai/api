@@ -3,6 +3,18 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-priority-storage-unit
+    action: { verifier: api.golden.execution-priority-storage-unit }
+    expect: { status: passed }
+  - id: execution-priority-storage-native
+    action: { verifier: api.golden.execution-priority-storage-native }
+    expect: { status: passed }
+  - id: execution-session-registration-unit
+    action: { verifier: api.golden.execution-session-registration-unit }
+    expect: { status: passed }
+  - id: execution-session-registration-native
+    action: { verifier: api.golden.execution-session-registration-native }
+    expect: { status: passed }
   - id: execution-postgres-prerequisite-unit
     action: { verifier: api.golden.execution-postgres-prerequisite-unit }
     expect: { status: passed }

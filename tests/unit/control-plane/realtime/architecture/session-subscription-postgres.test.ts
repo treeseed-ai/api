@@ -292,6 +292,14 @@ describe('independent PostgreSQL session event delivery and subscription ownersh
 		let release: (() => void) | undefined, releaseForeign: (() => void) | undefined;
 		const observeError = (error: Error) => { errors.push(error); };
 		let removeObserver: (() => void) | undefined;
+		let holder: PoolClient | undefined, queued: Promise<unknown> | undefined, queuedDone = false;
+		const holdRestoration = (client: PoolClient) => {
+			// Native pool acquire fires before LISTEN. Queue an owned SQL barrier,
+			// so this case observes a genuine notification gap during recovery.
+			queued = client.query('SELECT pg_advisory_xact_lock($1,$2)', [lock, lock]);
+			void queued.then(() => { queuedDone = true; }, () => { queuedDone = true; });
+		};
+		let lock = 0;
 		try {
 			const graph = await f.snapshot();
 			const input = { teamId: 'team', eventType: 'capacity.assignment.available', resourceId: 'same-disconnect-input', payload: { lanePurpose: 'workday' } };
@@ -306,6 +314,9 @@ describe('independent PostgreSQL session event delivery and subscription ownersh
 			const owners = (await f.left.pool.query("SELECT pid, datname, backend_start::text AS started FROM pg_stat_activity WHERE pid=$1 AND datname=$2 AND backend_type='client backend' AND pid<>pg_backend_pid()", [pid, f.name])).rows;
 			expect(owners).toHaveLength(1); expect(owners[0].pid).toBe(pid); expect(owners[0].datname).toBe(f.name);
 			expect(typeof owners[0].started).toBe('string'); expect(owners[0].started.length).toBeGreaterThan(0);
+			lock = pid; holder = await f.left.pool.connect();
+			await holder.query('BEGIN'); await holder.query('SELECT pg_advisory_xact_lock($1,$2)', [lock, lock]);
+			f.listenerPool.once('acquire', holdRestoration);
 			client.on('error', observeError); removeObserver = () => { client.removeListener('error', observeError); };
 			// Signal ONLY the independently verified backend of THIS fresh owned
 			// listener, rechecking exact database and original start against PID reuse.
@@ -313,15 +324,18 @@ describe('independent PostgreSQL session event delivery and subscription ownersh
 			await eventObserved(() => errors.some(error => 'code' in error && error.code === '57P01'));
 			// Signalling success alone is NOT termination or service release proof.
 			await eventObserved(async () => (await f.left.pool.query('SELECT pid FROM pg_stat_activity WHERE pid=$1 AND datname=$2 AND backend_start=$3::timestamptz', [pid, f.name, owners[0].started])).rows.length === 0);
-			await eventObserved(() => f.listenerPool.totalCount === f.listenerPool.idleCount);
+			await eventObserved(async () => (await f.right.pool.query("SELECT pid FROM pg_locks WHERE locktype='advisory' AND database=(SELECT oid FROM pg_database WHERE datname=$1) AND classid=$2::oid AND objid=$2::oid AND NOT granted", [f.name, lock])).rows.length === 1);
+			expect(queued).toBeDefined(); expect(queuedDone).toBe(false);
 			expect(await f.rows()).toEqual(earlier); expect(await f.snapshot()).toEqual(graph);
 			const missed = await f.publisher.publish(input);
-			// No listener is connected and the publisher is a different service.
+			// The replacement has not activated LISTEN; publication is independent.
 			// Recover via the ORIGINAL durable list cursor, not fake callback replay.
 			expect(received).toEqual([first]); expect(await f.subscriber.list('team', first.sequence)).toEqual([missed]);
 			expect(await f.subscriber.list('team', first.sequence)).toEqual([missed]);
 			const disconnected = await f.rows(); expect(disconnected).toHaveLength(earlier.length + 1);
 			for (const row of earlier) expect(disconnected).toContainEqual(row);
+			await holder.query('ROLLBACK'); holder.release(); holder = undefined;
+			await eventObserved(() => queuedDone); await queued;
 			releaseForeign = await f.subscriber.subscribe('foreign-team', event => foreign.push(event));
 			const restored = (await f.listenerClient().query('SELECT pg_backend_pid() AS pid, current_database() AS database, pg_listening_channels() AS channel')).rows;
 			expect(restored).toHaveLength(1); expect(restored[0].database).toBe(f.name); expect(restored[0].channel).toBe('treeseed_session_events'); expect(restored[0].pid).not.toBe(pid);
@@ -336,7 +350,11 @@ describe('independent PostgreSQL session event delivery and subscription ownersh
 			release(); release(); releaseForeign(); releaseForeign();
 			await eventObserved(() => f.listenerPool.totalCount === f.listenerPool.idleCount);
 			expect((await f.listenerPool.query('SELECT pg_listening_channels() AS channel')).rows).toEqual([]);
-		} finally { release?.(); releaseForeign?.(); try { await f.close(); } finally { removeObserver?.(); } }
+		} finally {
+			f.listenerPool.removeListener('acquire', holdRestoration);
+			try { if (holder) await holder.query('ROLLBACK'); if (queued) await queued; }
+			finally { holder?.release(); release?.(); releaseForeign?.(); try { await f.close(); } finally { removeObserver?.(); } }
+		}
 	}, 30_000);
 	it('native acquired client aborted transaction rejects original LISTEN without leaked callbacks or pool custody and same service retry resumes independent durable delivery', async () => {
 		const f = await sessionPostgres(), healthy: SessionEvent[] = [], denied: SessionEvent[] = [], retried: SessionEvent[] = [];

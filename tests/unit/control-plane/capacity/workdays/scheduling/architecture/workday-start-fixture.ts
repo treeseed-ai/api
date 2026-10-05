@@ -35,7 +35,7 @@ export async function workdayStartDatabase() {
 	try {
 		for (const file of ['0000_control_plane.sql', '0023_living_execution_graph.sql', '0031_workday_execution_mode_authority.sql',
 			'0032_execution_graph_revision_integrity.sql', '0033_settle_actual_usage_without_approval.sql',
-			'0034_recurring_workday_canonical_intent.sql', '0041_execution_content_output_authority.sql']) {
+			'0034_recurring_workday_canonical_intent.sql', '0041_execution_content_output_authority.sql', '0044_execution_priority_dependency_provenance.sql']) {
 			await db.exec(readFileSync(`drizzle/control-plane/${file}`, 'utf8'));
 		}
 		await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });

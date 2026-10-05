@@ -61,7 +61,7 @@ export function applyOperationalState(current: TeamGraph, projected: TeamGraph, 
 			nodeRevision: Math.max(prior.nodeRevision, applicableTerminal!.nodeRevision), graphRevisionUpdated: revision };
 		}
 		const operational = prior && !freshSimulationAttempt && node.kind !== 'condition'
-			&& ((prior.pairRole !== 'reviewer' && ['completed', 'failed', 'cancelled'].includes(prior.status))
+			&& ((['completed', 'failed', 'cancelled'].includes(prior.status))
 				|| (['assigned', 'running'].includes(prior.status) && activeAssignmentNodeIds.has(prior.id)));
 		if (operational) return { ...prior, graphRevisionUpdated: revision };
 		const semantic = (value: ExecutionNode) => {
@@ -134,6 +134,7 @@ export function applyOperationalState(current: TeamGraph, projected: TeamGraph, 
 /** Reconcile a committed request-changes result whose paired node update was interrupted. */
 export function recoverIncompleteReviewCycles(graph: TeamGraph, completedReviews: ReadonlyMap<string, number>,
 	latestRequestChangesReviewers: ReadonlySet<string>, revision: number): TeamGraph {
+	let changed = false;
 	for (const reviewer of graph.nodes) {
 		const completed = completedReviews.get(reviewer.id) ?? 0;
 		if (reviewer.pairRole !== 'reviewer' || reviewer.status !== 'failed'
@@ -145,8 +146,9 @@ export function recoverIncompleteReviewCycles(graph: TeamGraph, completedReviews
 		if (!actor) continue;
 		reviewer.nodeRevision += 1; reviewer.status = 'blocked'; reviewer.graphRevisionUpdated = revision;
 		actor.nodeRevision += 1; actor.status = 'ready'; actor.graphRevisionUpdated = revision;
+		changed = true;
 	}
-	graph.digest = digest({ teamId: graph.teamId, nodes: graph.nodes, edges: graph.edges });
+	if (changed) graph.digest = digest({ teamId: graph.teamId, nodes: graph.nodes, edges: graph.edges });
 	return graph;
 }
 

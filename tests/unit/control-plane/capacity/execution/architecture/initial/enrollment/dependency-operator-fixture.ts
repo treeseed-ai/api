@@ -28,7 +28,7 @@ export async function dependencyOperator() {
 		for (const prefix of ['CREATE TABLE IF NOT EXISTS operation_confirmation_nonces', 'CREATE INDEX IF NOT EXISTS idx_operation_confirmation_nonces_expires_at']) {
 			const statements = AUTH_SCHEMA_SQL.filter(sql => sql.trimStart().startsWith(prefix)); assert.equal(statements.length, 1); await f.left.pool.query(statements[0]!);
 		}
-		const now = new Date().toISOString(), issuer = 'https://identity.example/realms/treeseed', audience = 'http://localhost';
+		const now = new Date().toISOString(), issuer = 'https://identity.example/realms/treeseed', audience = 'https://localhost';
 		await f.left.pool.query("INSERT INTO users(id,status,display_name,metadata_json,created_at,updated_at) VALUES('mapped-operator','active','Renamed operator','{}',$1,$1)", [now]);
 		await f.left.pool.query("INSERT INTO user_identities(id,user_id,provider,provider_subject,created_at,updated_at) VALUES('operator-identity','mapped-operator',$1,'operator-subject',$2,$2)", [issuer, now]);
 		await f.left.pool.query("INSERT INTO roles(id,key,created_at) VALUES('operator-role','renamed-operator-role',$1),('team-owner-role','team_owner',$1) ON CONFLICT(key) DO NOTHING", [now]);
@@ -71,7 +71,8 @@ export async function dependencyOperator() {
 			const receipt = z.object({ data: z.object({ registrationCode: z.string().min(1) }) }).parse(await reveal.json());
 			// Capture the original helper's three-second proof only AFTER app/key
 			// setup. No Assignment/Lease/productive window is created or extended.
-			const inputs = registrationProofInputs(new Date()), original = structuredClone({ body: inputs.body, payload: inputs.payload });
+			const signed = registrationProofInputs(new Date());
+			const inputs = { ...signed, payload: { ...signed.payload, audience } }, original = structuredClone({ body: inputs.body, payload: inputs.payload });
 			const response = await app.request(new Request(`${audience}${inputs.path}`, { method: 'POST', headers: { authorization: `Treeseed-Registration ${receipt.data.registrationCode}`, 'content-type': 'application/json', 'idempotency-key': 'operator-public-registration' }, body: JSON.stringify({ ...inputs.body, proof: inputs.proof(inputs.payload) }) }));
 			assert.equal(response.status, 200); assert.ok(Date.now() < Date.parse(inputs.payload.expiresAt)); assert.deepEqual({ body: inputs.body, payload: inputs.payload }, original);
 			const request = CONTROL_PLANE_OPERATIONS.providers.register.schema.output.parse(await response.json());

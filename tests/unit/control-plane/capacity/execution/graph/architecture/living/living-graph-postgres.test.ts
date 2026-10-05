@@ -21,7 +21,7 @@ describe('independent PostgreSQL connection graph custody', () => {
 				for (const node of visible.nodes) expect(node).toEqual(graph.nodes.find(value => value.id === node.id));
 			}
 			for (const database of [f.left, f.right]) {
-				expect((await database.pool.query('SELECT id,priority FROM execution_nodes ORDER BY id')).rows)
+				expect((await database.pool.query('SELECT id,to_jsonb(priority) AS priority FROM execution_nodes ORDER BY id')).rows)
 					.toEqual(input.nodes.map(node => ({ id: node.id, priority: node.priority })).sort((a, b) => a.id.localeCompare(b.id)));
 			}
 			await Promise.all(f.stores.map(store => persistExecutionGraph(store, graph, graph, receipt)));

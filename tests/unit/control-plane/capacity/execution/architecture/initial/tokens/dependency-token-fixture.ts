@@ -12,14 +12,14 @@ import { dependencyPublicPoll } from '../polling/dependency-public-poll-fixture.
 
 // Controlled signed INPUTS, not a second product signer/validator, Agent identity
 // issuance, governance, or provider runtime. Node signs; original API verifies.
-export function tokenProofInputs(now: Date, deadline: string) {
+export function tokenProofInputs(now: Date, deadline: string, audience = 'http://localhost') {
 	const keys = generateKeyPairSync('ed25519'), exported = keys.publicKey.export({ format: 'jwk' });
 	assert.equal(exported.kty, 'OKP'); assert.equal(exported.crv, 'Ed25519'); assert.equal(typeof exported.x, 'string');
 	if (typeof exported.x !== 'string') throw new Error('Ed25519 public x required');
 	const publicJwk: CapacityProviderPublicJwk = { kty: 'OKP', crv: 'Ed25519', x: exported.x, alg: 'EdDSA' };
 	const body = { credentialId: 'token-credential', idempotencyKey: 'signed-token-issue', requestedValiditySeconds: 60 };
 	const payload: CapacityProviderProofPayload = { schemaVersion: 1, algorithm: 'Ed25519', providerFingerprint: capacityProviderFingerprint(publicJwk),
-		identityVersion: 1, method: 'POST', path: '/v1/provider/access-tokens', audience: 'http://localhost',
+		identityVersion: 1, method: 'POST', path: '/v1/provider/access-tokens', audience,
 		bodySha256: sha256(canonicalJson(body)), issuedAt: now.toISOString(), expiresAt: deadline, jti: randomUUID() };
 	const proof = (value: CapacityProviderProofPayload = payload, header = { alg: 'EdDSA', typ: 'JOSE' }) => {
 		const protectedValue = Buffer.from(JSON.stringify(header)).toString('base64url'), encoded = Buffer.from(JSON.stringify(value)).toString('base64url');

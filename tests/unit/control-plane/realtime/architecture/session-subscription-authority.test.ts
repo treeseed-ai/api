@@ -4,6 +4,27 @@ import { ControlPlaneStore } from '../../../../../src/api/persistence/store.ts';
 import { SessionEventService, type SessionEvent } from '../../../../../src/api/realtime/session-events.ts';
 
 describe('declared pooled session subscription failure authority', () => {
+	it('identical callback registrations retain independent release ownership without deleting their shared team or reviving a released registration', async () => {
+		let sequence = 0;
+		const store = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, {
+			prepare: (sql: string) => ({ bind: () => ({ first: async () => sql.trimStart().startsWith('INSERT') ? {
+				sequence: ++sequence, event_type: 'capacity.assignment.available', team_id: 'team', project_id: null,
+				resource_id: 'same-callback-unit-input', payload_json: '{}', created_at: '2026-10-03T00:00:00.000Z',
+			} : null, all: async () => ({ results: [] }), run: async () => { throw new Error('Unexpected subscription write'); } }) }),
+		});
+		store.initializationPromise = Promise.resolve();
+		const service = new SessionEventService(store), received: SessionEvent[] = [], callback = (event: SessionEvent) => { received.push(event); };
+		const first = await service.subscribe('team', callback), second = await service.subscribe('team', callback);
+		let third: (() => void) | undefined;
+		const input = { teamId: 'team', eventType: 'capacity.assignment.available', resourceId: 'same-callback-unit-input' }, original = structuredClone(input);
+		try {
+			const one = await service.publish(input); expect(received).toEqual([one, one]);
+			first(); first(); const two = await service.publish(input); expect(received).toEqual([one, one, two]);
+			second(); second(); third = await service.subscribe('team', callback); first(); second();
+			const three = await service.publish(input); expect(received).toEqual([one, one, two, three]);
+			third(); third(); await service.publish(input); expect(received).toEqual([one, one, two, three]); expect(input).toEqual(original);
+		} finally { first(); second(); third?.(); }
+	});
 	it('concurrent first registrations remain pending through shared acquisition and LISTEN activation then route original team notifications and release only the last registration', async () => {
 		const pool = new pg.Pool(), returnClient = vi.fn(), client = Object.assign(new pg.Client(), { release: returnClient });
 		const result = { command: 'LISTEN', rowCount: null, oid: 0, fields: [], rows: [] };
@@ -281,7 +302,9 @@ describe('declared pooled session subscription failure authority', () => {
 			const event = await service.publish({ teamId: 'team', eventType: row.event_type, resourceId: row.resource_id });
 			expect(first).toEqual([event]); expect(second).toEqual([event]); expect(third).toEqual([event]); expect(writes).toBe(1);
 			releaseFirst(); releaseFirst(); releaseSecond(); releaseSecond(); releaseThird(); releaseThird();
-			expect(returnOld).toHaveBeenCalledTimes(1); expect(returnNew).toHaveBeenCalledTimes(1);
+			// Native UNLISTEN must complete before the healthy client is returned.
+			// Observe the same exact release, not synchronous promise scheduling.
+			await vi.waitFor(() => expect(returnNew).toHaveBeenCalledTimes(1)); expect(returnOld).toHaveBeenCalledTimes(1);
 		} finally {
 			releaseFirst?.(); releaseSecond?.(); releaseThird?.(); old.removeListener('error', observe);
 			oldQuery.mockRestore(); newQuery.mockRestore(); connect.mockRestore(); await old.end(); await replacement.end(); await pool.end();

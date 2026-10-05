@@ -12,7 +12,7 @@ describe('exact dependency intake native HTTP original SQL and public graph read
 			expect(explanation.admission.eligible).toBe(false);
 			expect(explanation.predecessors).toContainEqual(expect.objectContaining({ edge: expect.objectContaining({ provenance: 'treedx-link', sourceRef: f.dependency.sourceRef }), satisfied: false }));
 			const noteCalls = f.calls.filter(call => call.route.endsWith('/files/read')); expect(noteCalls).toHaveLength(1);
-			expect(noteCalls[0]!.body).toMatchObject({ ref: relationCommit, paths: [relationPath] });
+			expect(noteCalls[0]!.body).toEqual({ ref: relationCommit, path: relationPath, encoding: 'utf8', parseFrontmatter: true, allowProtected: true });
 			expect(noteCalls[0]!.scope).toMatchObject({ treedx_repo_ids: ['precursor-library'], treeseed_project_id: 'precursor', treeseed_connection_id: 'isolated-connection' });
 			expect(noteCalls[0]!.scope.treedx_refs).toContain(relationCommit);
 			expect(noteCalls[0]!.scope.treedx_capabilities).not.toContain('files:write'); expect(f.sources).toEqual(before);

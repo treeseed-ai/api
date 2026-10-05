@@ -1,9 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { projectTeamExecutionGraph } from '../../../../../../../../src/api/capacity/policy/execution/execution-graph-projector.ts';
 import { recoverIncompleteReviewCycles } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
+import { decodeExecutionNode } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-storage.ts';
 import { graphNode, graphProfiles, graphProjection, graphSource, graphState } from './living-graph-fixture.ts';
 
 describe('complete governed living graph contract authoring', () => {
+	it('decodes exact persisted safe integer priority without coercing malformed storage or inventing omitted authority', () => {
+		const node = graphNode(graphState(graphProjection()), 'first', 'actor');
+		const row = { id: node.id, team_id: node.teamId, project_id: node.projectId, work_item_id: node.workItemId,
+			kind: node.kind, pair_role: node.pairRole, source_ref_json: JSON.stringify(node.sourceRef), authority_refs_json: JSON.stringify(node.authorityRefs),
+			rule_revision: node.ruleRevision, node_revision: node.nodeRevision, agent_class: node.agentClass, status: node.status,
+			estimate_json: JSON.stringify(node.estimate), required_capabilities_json: JSON.stringify(node.requiredCapabilities),
+			requested_permissions_json: JSON.stringify(node.requestedPermissions), output_json: JSON.stringify(node.output), workspace: node.workspace,
+			acceptance_criteria_json: JSON.stringify(node.acceptanceCriteria), maximum_review_cycles: node.maximumReviewCycles,
+			graph_revision_created: node.graphRevisionCreated, graph_revision_updated: node.graphRevisionUpdated };
+		const before = structuredClone(row);
+		for (const priority of [Number.MIN_SAFE_INTEGER, -1, 0, 1, Number.MAX_SAFE_INTEGER]) {
+			for (const stored of [priority, String(priority)]) expect(decodeExecutionNode({ ...row, priority: stored })).toEqual({ ...node, priority });
+		}
+		expect(decodeExecutionNode(row)).toEqual(node); expect(decodeExecutionNode({ ...row, priority: null })).toEqual(node);
+		for (const priority of ['', ' ', '1.0', '1e0', '+1', '01', false, [], {}, 0.5, NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1, '9007199254740992']) {
+			const input = { ...row, priority }, held = structuredClone(input);
+			expect(() => decodeExecutionNode(input)).toThrow(); expect(input).toEqual(held);
+		}
+		expect(row).toEqual(before);
+	});
 	it('projects governed work-item integer priorities unchanged onto both review-pair nodes without bypassing approval dependencies or permission ceilings', () => {
 		for (const priority of [Number.MIN_SAFE_INTEGER, -1, 0, 1, Number.MAX_SAFE_INTEGER]) {
 			const source = graphSource(), plan = source.frontmatter.executionPlan;

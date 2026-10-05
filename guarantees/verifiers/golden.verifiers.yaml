@@ -1,6 +1,26 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-priority-storage-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-contract.test.ts
+    testName: "decodes exact persisted safe integer priority without coercing malformed storage or inventing omitted authority"
+  api.golden.execution-priority-storage-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-integration.test.ts
+    testName: "native owning SQL preserves optional safe integer priorities and exact dependency provenance while invalid writes retain the complete graph"
+  api.golden.execution-session-registration-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-authority.test.ts
+    testName: "identical callback registrations retain independent release ownership without deleting their shared team or reviving a released registration"
+  api.golden.execution-session-registration-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-registration-postgres.test.ts
+    testName: "one native listener preserves identical callback registrations independently through stale release retry and final durable channel cleanup"
   api.golden.execution-postgres-prerequisite-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

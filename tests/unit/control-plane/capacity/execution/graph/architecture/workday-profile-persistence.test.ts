@@ -17,7 +17,7 @@ async function database() {
 		await db.exec(`CREATE TABLE teams (id text PRIMARY KEY);
 			INSERT INTO teams VALUES ('team');
 			CREATE TABLE capacity_provider_assignments (id text PRIMARY KEY, team_id text, status text);`);
-		for (const file of ['0023_living_execution_graph.sql', '0041_execution_content_output_authority.sql']) {
+		for (const file of ['0023_living_execution_graph.sql', '0041_execution_content_output_authority.sql', '0044_execution_priority_dependency_provenance.sql']) {
 			for (const statement of splitPostgresSqlStatements(readFileSync(`drizzle/control-plane/${file}`, 'utf8'))) {
 				await db.exec(statement);
 			}
