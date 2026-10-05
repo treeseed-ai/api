@@ -20,6 +20,7 @@ import type { DurableCapacityWorkdayRun } from '../../../../../repositories/capa
 import { workdayTreeDxWorkspaceId } from '../../../workdays/treedx/workday-treedx-workspace-service.ts';
 import { compileAssignmentTimeBudget } from '../assignment-time-budget.ts';
 import type { LivingAllocationInputs } from '../../admission/living-allocation-inputs.ts';
+import { assignmentPredecessors } from '../../admission/living-execution-admission.ts';
 
 const stable = (value: unknown): string => {
 	if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
@@ -90,6 +91,19 @@ function projectTreeDxWorkspaceReference(candidate: ReadyExecutionNode): ExactEn
 		&& reference.repository === candidate.projectContentRepositoryId);
 }
 
+function primaryGitReference(candidate: ReadyExecutionNode): ExactEntityReference {
+	const source = candidate.node.sourceRef.store === 'git' ? candidate.node.sourceRef : undefined;
+	const references = [...(source ? [source] : []), ...candidate.contextRefs.filter(reference => reference.store === 'git')];
+	// The verified project source owns writes. Foreign predecessor citations
+	// remain readable evidence; neither their order nor their commits select it.
+	const repositories = candidate.sourceRepositories.length ? candidate.sourceRepositories
+		: [...new Set(references.map(reference => reference.repository))];
+	const reference = repositories.length === 1 ? references.find(item => item.repository === repositories[0]) : undefined;
+	if (!reference?.repository || !reference.commit || (source && source.repository !== reference.repository)) throw new CapacityGovernanceError(
+		'assignment_source_repository_required', 'A Git assignment requires one exact primary source repository consistent with its project authority.', 409);
+	return reference;
+}
+
 function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant {
 	const requested = candidate.node.requestedPermissions!;
 	const ceiling = candidate.effectiveProfile.permissionCeiling;
@@ -144,7 +158,7 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant 
 		contentWrite,
 		sourceRead,
 		sourceWrite: candidate.node.workspace === 'git' && requested.tools.includes('source.write')
-			? [...new Set(sourceRefs.map((reference) => reference.repository).filter((value): value is string => Boolean(value)))] : [],
+			? [primaryGitReference(candidate).repository!] : [],
 		tools: [...requested.tools],
 	};
 }
@@ -152,8 +166,7 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant 
 function workspace(candidate: ReadyExecutionNode, assignmentId: string, exactGrant: ExactGrant, run: DurableCapacityWorkdayRun) {
 	if (candidate.node.workspace === 'read-only') return { mode: 'read-only' as const };
 	const reference = candidate.node.workspace === 'treedx' ? projectTreeDxWorkspaceReference(candidate)
-		: candidate.node.sourceRef.store === candidate.node.workspace ? candidate.node.sourceRef
-			: candidate.contextRefs.find((item) => item.store === candidate.node.workspace);
+		: primaryGitReference(candidate);
 	if (!reference?.repository || !reference.commit) throw new CapacityGovernanceError(
 		'assignment_workspace_reference_missing', `Node ${candidate.node.id} lacks its exact ${candidate.node.workspace} workspace reference.`, 409);
 	const writablePaths = candidate.node.workspace === 'treedx'
@@ -293,6 +306,7 @@ export function buildAssignmentAttempt(input: {
 		deadline, leaseId: id('lease', [assignmentId]), reservationId: id('reservation', [assignmentId]),
 		attempt: input.attempt, status: 'created', createdAt: input.now,
 	});
+	assignmentPredecessors(assignment, candidate.predecessorResults);
 	return { assignment, allocation: { ...allocation, opportunity: allocationInputs.opportunity }, accountingLimits: limits, executionProviderId: selected.provider.id, laneId: selected.lane.id,
 		lanePurpose: communication ? 'communication' : 'workday',
 		// Admission counts existing assignments against a total ceiling, not remaining headroom.

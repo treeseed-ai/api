@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildAssignmentAttempt } from '../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
-import { candidate, permissions, provider, run, sourceRef, canonicalOfferBuildInput, invalidCanonicalOffers,
+import { candidate, permissions, provider, run, sourceRef, gitRef, canonicalOfferBuildInput, invalidCanonicalOffers,
 	conversationCapability, executionCapability, suppliedCapabilityOffer } from './fixtures/assignment-attempt-fixtures.ts';
 import { capabilityOfferDigest } from '@treeseed/sdk/capacity-provider';
 import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
@@ -190,6 +190,7 @@ describe('immutable assignment-attempt construction', () => {
 
 	it('continues a revised Actor from its prior candidate commit', () => {
 		const revised = structuredClone(candidate);
+		revised.contextRefs.push({ ...gitRef, id: 'prior-candidate', commit: '9'.repeat(40) });
 		revised.node.nodeRevision = 2;
 		revised.predecessorResults = [{
 			schemaVersion: 'treeseed.assignment-result/v1', id: 'prior', assignmentId: 'prior-assignment',
@@ -206,6 +207,7 @@ describe('immutable assignment-attempt construction', () => {
 
 	it('continues a reviewed revision from its own candidate when the original Tester commit is also a predecessor', () => {
 		const revised = structuredClone(candidate);
+		revised.contextRefs.push(...['8', '9'].map(digit => ({ ...gitRef, id: `prior-candidate-${digit}`, commit: digit.repeat(40) })));
 		revised.node.nodeRevision = 3;
 		revised.predecessorResults = [
 			{ schemaVersion: 'treeseed.assignment-result/v1', id: 'tester-result', assignmentId: 'tester-assignment',
@@ -224,6 +226,7 @@ describe('immutable assignment-attempt construction', () => {
 
 	it('rebases a revised Actor on its sole current upstream while retaining its earlier candidate as context', () => {
 		const revised = structuredClone(candidate);
+		revised.contextRefs.push(...['8', '9'].map(digit => ({ ...gitRef, id: `prior-candidate-${digit}`, commit: digit.repeat(40) })));
 		revised.node.nodeRevision = 3;
 		revised.predecessorResults = ['8', '9'].map((digit) => ({
 			schemaVersion: 'treeseed.assignment-result/v1', id: `result-${digit}`, assignmentId: `assignment-${digit}`,
@@ -242,6 +245,7 @@ describe('immutable assignment-attempt construction', () => {
 
 	it('uses the sole Git predecessor as the base for an initial acting node', () => {
 		const following = structuredClone(candidate);
+		following.contextRefs.push({ ...gitRef, id: 'prior-candidate', commit: '9'.repeat(40) });
 		following.predecessorResults = [{
 			schemaVersion: 'treeseed.assignment-result/v1', id: 'predecessor', assignmentId: 'previous-assignment',
 			status: 'completed', summary: 'Reviewed predecessor.',
@@ -271,6 +275,7 @@ describe('immutable assignment-attempt construction', () => {
 
 	it('gives an authorized Releaser one exact base and every divergent predecessor for integration', () => {
 		const integration = structuredClone(candidate);
+		integration.contextRefs.push(...['8', '9'].map(digit => ({ ...gitRef, id: `prior-candidate-${digit}`, commit: digit.repeat(40) })));
 		integration.node.agentClass = 'releaser';
 		integration.node.workItemId = 'simulate-release';
 		integration.node.requestedPermissions.tools = [...permissions.tools, 'release'];

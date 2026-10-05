@@ -441,12 +441,12 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 		// the workday itself and must remain eligible in that same run.
 		if (selectedDecisionIds.size && decisionIds.length && !decisionIds.some((id) => selectedDecisionIds.has(id))) continue;
 		const selected = await effectiveProfile(store, node);
-		const sourceRepositories = node.requestedPermissions?.tools.includes('source.read')
-			? [selectAssignmentSourceRepository(await store.listHubRepositories(node.projectId)).id]
-			: [];
+		const sourceRepository = node.requestedPermissions?.tools.includes('source.read')
+			? selectAssignmentSourceRepository(await store.listHubRepositories(node.projectId)) : undefined;
+		const sourceRepositories = sourceRepository ? [`${sourceRepository.owner}/${sourceRepository.name}`] : [];
 		const loadedContext = await loadContext(store, node);
 		const predecessor = await predecessorContext(store, node,
-			loadedContext.find((item) => item.store === 'git')?.repository);
+			sourceRepositories[0] ?? loadedContext.find((item) => item.store === 'git')?.repository);
 		const predecessors = predecessor.results;
 		const candidateRefs = predecessors.flatMap((result) => result.references).flatMap((reference) => {
 			if (reference.kind !== 'git') return [];

@@ -72,31 +72,8 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		throw new CapacityGovernanceError('execution_assignment_authority_mismatch',
 			'Assignment admission requires its exact team and capacity-provider authority.', 409);
 	}
-	const predecessorIds = new Set(assignment.predecessorResultIds);
-	const predecessorAttempts = new Set<string>();
-	const predecessorResults: Array<ReturnType<typeof assignmentResultSchema.parse>> = [];
+	const predecessorResults = assignmentPredecessors(assignment, input.predecessorResults);
 	const reporting = assignment.effectiveProfile.activity === 'reporting';
-	if (!Array.isArray(input.predecessorResults) || predecessorIds.size !== assignment.predecessorResultIds.length
-		|| input.predecessorResults.length !== predecessorIds.size) throw new CapacityGovernanceError(
-		'assignment_predecessor_authority_mismatch', 'Admission requires every exact assigned predecessor result once.', 409);
-	for (const value of input.predecessorResults) {
-		const parsed = assignmentResultSchema.safeParse(value);
-		if (!parsed.success || (!reporting && parsed.data.status !== 'completed') || !predecessorIds.delete(parsed.data.id)
-			|| parsed.data.assignmentId === assignment.id || predecessorAttempts.has(parsed.data.assignmentId)) throw new CapacityGovernanceError(
-			'assignment_predecessor_authority_mismatch', 'Admission requires distinct completed canonical predecessor results.', 409);
-		predecessorAttempts.add(parsed.data.assignmentId);
-		predecessorResults.push(parsed.data);
-		for (const reference of parsed.data.references) {
-			if (reference.kind !== 'git' && reference.kind !== 'treedx') continue;
-			const matches = (ref: AssignmentAttempt['contextRefs'][number]) => ref.store === reference.kind
-				&& ref.repository === reference.repository && ref.commit === reference.commit
-				&& (reference.kind === 'git' || ref.path === reference.path);
-			if (!assignment.contextRefs.some(matches)
-				|| (reference.kind === 'git' ? !assignment.grant.sourceRead.includes(reference.repository)
-					: !assignment.grant.contentRead.some(matches))) throw new CapacityGovernanceError(
-				'assignment_predecessor_authority_mismatch', 'Every predecessor artifact requires its exact context and read grant.', 409);
-		}
-	}
 	const requireExactReplay = (stored: DurableProviderAssignment) => {
 		const metadata = stored.explanation.metadata;
 		const retainedAllocation = metadata && typeof metadata === 'object' && !Array.isArray(metadata) && 'allocation' in metadata
@@ -311,4 +288,32 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 				requestedSeconds: assignment.limits.maximumSeconds });
 	}
 	return requireExactReplay(committed);
+}
+
+/** One canonical predecessor contract, shared by compilation and final admission. */
+export function assignmentPredecessors(assignment: AssignmentAttempt, values: unknown[]) {
+	const predecessorIds = new Set(assignment.predecessorResultIds), predecessorAttempts = new Set<string>();
+	const results: Array<ReturnType<typeof assignmentResultSchema.parse>> = [];
+	const reporting = assignment.effectiveProfile.activity === 'reporting';
+	if (!Array.isArray(values) || predecessorIds.size !== assignment.predecessorResultIds.length
+		|| values.length !== predecessorIds.size) throw new CapacityGovernanceError(
+		'assignment_predecessor_authority_mismatch', 'Admission requires every exact assigned predecessor result once.', 409);
+	for (const value of values) {
+		const parsed = assignmentResultSchema.safeParse(value);
+		if (!parsed.success || (!reporting && parsed.data.status !== 'completed') || !predecessorIds.delete(parsed.data.id)
+			|| parsed.data.assignmentId === assignment.id || predecessorAttempts.has(parsed.data.assignmentId)) throw new CapacityGovernanceError(
+			'assignment_predecessor_authority_mismatch', 'Admission requires distinct completed canonical predecessor results.', 409);
+		predecessorAttempts.add(parsed.data.assignmentId); results.push(parsed.data);
+		for (const reference of parsed.data.references) {
+			if (reference.kind !== 'git' && reference.kind !== 'treedx') continue;
+			const matches = (ref: AssignmentAttempt['contextRefs'][number]) => ref.store === reference.kind
+				&& ref.repository === reference.repository && ref.commit === reference.commit
+				&& (reference.kind === 'git' || ref.path === reference.path);
+			if (!assignment.contextRefs.some(matches)
+				|| (reference.kind === 'git' ? !assignment.grant.sourceRead.includes(reference.repository)
+					: !assignment.grant.contentRead.some(matches))) throw new CapacityGovernanceError(
+				'assignment_predecessor_authority_mismatch', 'Every predecessor artifact requires its exact context and read grant.', 409);
+		}
+	}
+	return results;
 }

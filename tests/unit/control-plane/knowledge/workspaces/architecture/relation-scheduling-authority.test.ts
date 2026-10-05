@@ -4,6 +4,22 @@ import { schedulingInputs } from './relation-scheduling-fixture.ts';
 import { buildAssignmentAttempt } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 
 describe('cross-project dependent assignment construction', () => {
+	it('selects only the explicit primary repository for writes in either citation order and denies absent or ambiguous primary authority without rewriting inputs', () => {
+		for (const reversed of [false, true]) {
+			const input = schedulingInputs(); input.candidate.sourceRepositories = ['treeseed-ai/sdk'];
+			if (reversed) input.candidate.contextRefs.reverse();
+			const before = structuredClone(input), { assignment } = buildAssignmentAttempt(input);
+			expect(assignment.workspace).toMatchObject({ mode: 'git', repository: 'treeseed-ai/sdk', baseCommit: 'c'.repeat(40) });
+			expect(assignment.grant.sourceWrite).toEqual(['treeseed-ai/sdk']);
+			expect(assignment.grant.sourceRead).toEqual(expect.arrayContaining(['treeseed-ai/sdk', 'treeseed-ai/precursor']));
+			expect(assignment.contextRefs).toEqual(expect.arrayContaining(input.candidate.contextRefs)); expect(input).toEqual(before);
+		}
+		for (const sources of [[], ['missing-primary'], ['treeseed-ai/sdk', 'treeseed-ai/precursor'], ['treeseed-ai/sdk', 'treeseed-ai/sdk']]) {
+			const input = schedulingInputs(); input.candidate.sourceRepositories = sources; const before = structuredClone(input);
+			expect(() => buildAssignmentAttempt(input)).toThrowError(expect.objectContaining({ status: 409, code: 'assignment_source_repository_required' }));
+			expect(input).toEqual(before);
+		}
+	});
 	it('denies missing malformed and legacy partial provider offers before constructing an immutable governed assignment', () => {
 		const partial = { offerId: 'legacy-partial-offer', capabilities: [{ id: 'code-change' }] };
 		const invalid: unknown[] = [undefined, null, [], {}, 'legacy', [partial],

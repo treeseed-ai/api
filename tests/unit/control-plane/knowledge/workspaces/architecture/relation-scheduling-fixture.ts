@@ -26,7 +26,7 @@ export function schedulingInputs(): Parameters<typeof buildAssignmentAttempt>[0]
 	const review = assignmentResultSchema.parse({ ...actor, id: 'precursor-review-result', assignmentId: 'precursor-review', references: [{ kind: 'treedx', projectId: 'precursor', repository: approval.repository, commit: approval.commit, path: approval.path }] });
 	const permissions = { content: { read: ['proposal', 'decision'], write: [] }, tools: ['source.read', 'source.write', 'verification'] };
 	const opportunity = allocateWorkdayCapacity({ now, remainingSeconds: 180, workdays: [{ plan, committedSeconds: 0, planningCommittedSeconds: 0, maximumAdditionalSeconds: 180, actingReady: true }] })[plan.id]; assert.ok(opportunity);
-	return { candidate: { ...candidate, readyAt: now, node: executionNodeSchema.parse({ ...candidate.node, requestedPermissions: permissions }),
+	return { candidate: { ...candidate, readyAt: now, sourceRepositories: ['treeseed-ai/sdk'], node: executionNodeSchema.parse({ ...candidate.node, requestedPermissions: permissions }),
 		effectiveProfile: effectiveActivityProfileSchema.parse({ ...candidate.effectiveProfile, permissionCeiling: permissions }),
 		contextRefs: [gitRef, { store: 'git', model: 'repository', id: 'precursor-candidate', repository: 'treeseed-ai/precursor', commit: 'e'.repeat(40) }, approval], predecessorResults: [actor, review] },
 		run, principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' }, providerSessionId: 'session',

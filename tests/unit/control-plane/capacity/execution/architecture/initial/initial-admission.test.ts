@@ -11,6 +11,39 @@ import { createExecutionGraphService, persistExecutionGraph } from '../../../../
 import type { GraphRevision } from '@treeseed/sdk/agent-capacity';
 
 describe('initial living assignment native admission', () => {
+	it('native compiler admission preserves only primary Git writes and exact foreign read citations through reservation concurrent replay and denied authority', async () => {
+		for (const reversed of [false, true]) {
+			const f = await initialAdmission();
+			try {
+				const supplied = canonicalOfferBuildInput(f.attempt.createdAt);
+				Object.assign(supplied.candidate.node, { id: 'primary-source-node', teamId: f.attempt.teamId,
+					projectId: f.attempt.projectId, agentClass: f.attempt.agentClass });
+				supplied.run.id = f.attempt.workdayId; supplied.run.parameters.appliedPlan = f.plan;
+				supplied.candidate.sourceRepositories = ['treeseed-ai/sdk'];
+				const foreign = { store: 'git' as const, model: 'repository', id: 'foreign-citation', repository: 'treeseed-ai/precursor', commit: 'e'.repeat(40) };
+				supplied.candidate.contextRefs.push(foreign); if (reversed) supplied.candidate.contextRefs.reverse();
+				const held = structuredClone(supplied), before = await f.snapshot();
+				for (const sources of [[], ['missing-primary'], ['treeseed-ai/sdk', foreign.repository], ['treeseed-ai/sdk', 'treeseed-ai/sdk']]) {
+					const denied = structuredClone(supplied); denied.candidate.sourceRepositories = sources;
+					const heldDenied = structuredClone(denied);
+					expect(() => buildAssignmentAttempt(denied)).toThrowError(expect.objectContaining({ status: 409, code: 'assignment_source_repository_required' }));
+					expect(denied).toEqual(heldDenied); expect(await f.snapshot()).toEqual(before);
+				}
+				const built = buildAssignmentAttempt(supplied); await f.seedNode(built.assignment);
+				const input = f.input(built.assignment), original = structuredClone(input), admitted = await f.admit(input);
+				expect(built.assignment.workspace).toMatchObject({ mode: 'git', repository: 'treeseed-ai/sdk', baseCommit: 'c'.repeat(40) });
+				expect(built.assignment.grant.sourceWrite).toEqual(['treeseed-ai/sdk']);
+				expect(built.assignment.grant.sourceRead).toEqual(expect.arrayContaining(['treeseed-ai/sdk', foreign.repository]));
+				expect(built.assignment.contextRefs).toContainEqual(foreign);
+				expect(admitted.assignmentAttempt).toEqual(built.assignment);
+				expect((await f.repository.get(input.assignment.teamId, input.assignment.id))?.assignmentAttempt).toEqual(built.assignment);
+				const committed = await f.snapshot(); expect(committed.financial.capacity_reservations).toHaveLength(1);
+				expect(committed.financial.capacity_usage_actuals).toEqual([]); expect(committed.financial.capacity_ledger_entries).toEqual([]);
+				for (const replay of await Promise.all([f.admit(input), f.admit(structuredClone(input))])) expect(replay.assignmentAttempt).toEqual(built.assignment);
+				expect(await f.snapshot()).toEqual(committed); expect(input).toEqual(original); expect(supplied).toEqual(held);
+			} finally { await f.db.close(); }
+		}
+	});
 	it('native graph reprioritization changes future scheduling only while issued canonical attempt reservation and exact admission replay remain frozen', async () => {
 		const f = await initialAdmission(undefined, true);
 		try {

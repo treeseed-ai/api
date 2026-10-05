@@ -3,6 +3,15 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-primary-source-reader-unit
+    action: { verifier: api.golden.execution-primary-source-reader-unit }
+    expect: { status: passed }
+  - id: execution-primary-source-unit
+    action: { verifier: api.golden.execution-primary-source-unit }
+    expect: { status: passed }
+  - id: execution-primary-source-native
+    action: { verifier: api.golden.execution-primary-source-native }
+    expect: { status: passed }
   - id: execution-proposal-evaluation-native
     action: { verifier: api.golden.execution-proposal-evaluation-native }
   - id: execution-proposal-evaluation-unit

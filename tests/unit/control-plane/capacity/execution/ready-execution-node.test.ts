@@ -122,6 +122,17 @@ const teamContextStore = {
 };
 
 describe('direct ready-node admission input', () => {
+	it('derives primary source identity from the verified project repository rather than its database row or foreign citation order', async () => {
+		const foreign = { store: 'git' as const, model: 'repository', id: 'foreign-citation', repository: 'treeseed-ai/precursor', commit: 'f'.repeat(40) };
+		for (const refs of [[foreign, ...contextRefs], [...contextRefs, foreign]]) {
+			const original = structuredClone(refs), store = { ...teamContextStore, all: vi.fn()
+				.mockResolvedValueOnce([nodeRow()]).mockResolvedValueOnce([classRow(definition)])
+				.mockResolvedValueOnce([{ assignment_result_json: result }]) };
+			const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => refs);
+			expect(candidate.sourceRepositories).toEqual(['treeseed-ai/sdk']);
+			expect(candidate.contextRefs).toEqual(expect.arrayContaining(refs)); expect(refs).toEqual(original);
+		}
+	});
 	beforeEach(() => {
 		vi.mocked(resolveKnowledgeGatewayConnection).mockClear();
 		gateway.readRepositoryFile.mockResolvedValue({
@@ -218,7 +229,7 @@ describe('direct ready-node admission input', () => {
 			expect.objectContaining({ id: 'team-project:team-objective', path: 'objectives/core', commit: '1'.repeat(40) }),
 			expect.objectContaining({ id: 'project:project-objective', path: 'objectives/core', commit: '1'.repeat(40) }),
 		]));
-		expect(candidate.sourceRepositories).toEqual(['repository-sdk']);
+		expect(candidate.sourceRepositories).toEqual(['treeseed-ai/sdk']);
 		expect(candidate.effectiveProfile.profileRef).toMatchObject({
 			store: 'treedx', repository: 'repository', commit: agentCommit, path: agentPath,
 		});

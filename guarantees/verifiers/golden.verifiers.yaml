@@ -1,6 +1,21 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-primary-source-reader-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/ready-execution-node.test.ts
+    testName: "derives primary source identity from the verified project repository rather than its database row or foreign citation order"
+  api.golden.execution-primary-source-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-authority.test.ts
+    testName: "selects only the explicit primary repository for writes in either citation order and denies absent or ambiguous primary authority without rewriting inputs"
+  api.golden.execution-primary-source-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/initial-admission.test.ts
+    testName: "native compiler admission preserves only primary Git writes and exact foreign read citations through reservation concurrent replay and denied authority"
   api.golden.execution-proposal-evaluation-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
