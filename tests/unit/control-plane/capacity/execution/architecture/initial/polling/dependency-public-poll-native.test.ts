@@ -3,6 +3,23 @@ import { describe, expect, it } from 'vitest';
 import { dependencyPublicPoll } from './dependency-public-poll-fixture.ts';
 
 describe('real public provider poll HTTP and original SQL custody', () => {
+	it('authenticated native HTTP rejects the retired frozen signal route without SQL mutation before unchanged ordinary claim', async () => {
+		const f = await dependencyPublicPoll(); try {
+			expect(await f.authenticate()).toMatchObject({ principal: { teamId: f.principal.teamId, membershipId: f.principal.membershipId } });
+			const input = { contractId: 'retired-frozen-contract', subjectGroupIds: ['retired-group'], payload: {} }, held = structuredClone(input);
+			const before = await f.state(), statuses: number[] = [];
+			for (let retry = 0; retry < 2; retry++) {
+				statuses.push((await f.request(input, { path: `/v1/provider/assignments/${encodeURIComponent(f.attempt.id)}/signals` })).status);
+				expect(await f.state()).toEqual(before); expect(input).toEqual(held);
+			}
+			expect(statuses).toEqual([404, 404]);
+			expect(Date.now()).toBeLessThan(Date.parse(f.attempt.deadline));
+			const response = await f.request(); expect(response.status).toBe(200);
+			const envelope: unknown = await response.json();
+			if (!envelope || typeof envelope !== 'object' || !('data' in envelope)) throw new Error('Original public data envelope missing');
+			expect(CONTROL_PLANE_OPERATIONS.providers.nextAssignment.schema.output.parse(envelope.data)).toMatchObject({ assignment: { id: f.attempt.id, assignmentAttempt: f.attempt } });
+		} finally { await f.db.close(); }
+	});
 	it('real token authentication and public catalog return the exact leased attempt with both predecessor results and no finance rewrite', async () => {
 		const f = await dependencyPublicPoll(); try {
 			const before = await f.custody(); const response = await f.request(); expect(response.status).toBe(200);

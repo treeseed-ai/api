@@ -8,7 +8,6 @@ import { CapacityRegistrationService } from '../../../../../../../../src/api/cap
 import { CapacityGovernanceRepository } from '../../../../../../../../src/api/capacity/repositories/governance/policy/governance.ts';
 import { createCapacityProviderAccessMiddleware } from '../../../../../../../../src/api/capacity/provider-access-middleware.ts';
 import { createProviderAssignmentService } from '../../../../../../../../src/api/control-plane/repositories/providers/provider-assignment-service.ts';
-import { createProviderSignalService } from '../../../../../../../../src/api/control-plane/repositories/providers/provider-signal-service.ts';
 import { createProviderWorkflowService } from '../../../../../../../../src/api/control-plane/repositories/providers/provider-workflow-service.ts';
 import { createProviderAssignmentOperations } from '../../../../../../../../src/api/control-plane/catalog/providers/assignments.ts';
 import { OperationRegistry } from '../../../../../../../../src/api/control-plane/catalog/operation-registry.ts';
@@ -46,7 +45,7 @@ export async function dependencyPublicPoll(runtimeKey?: { path: string; value: s
 			return () => { unsubscribed += 1; release(); };
 		} });
 		const registry = new OperationRegistry([...createProviderAssignmentOperations({ providerAssignments: service,
-			providerSignals: createProviderSignalService(f.store), providerWorkflows: createProviderWorkflowService(f.store) }),
+			providerWorkflows: createProviderWorkflowService(f.store) }),
 			...(runtimeKey ? createProviderRegistrationAndAvailabilityOperations({ providers: createProviderRuntimeService(f.store,
 				{ capacityEncryptionKeyFile: runtimeKey.path, baseUrl: 'http://localhost',
 					TREESEED_CAPACITY_ENCRYPTION_KEY_VERSION: 1, TREESEED_CAPACITY_HISTORICAL_KEY_FILES: '' }, f.host) }) : [])]);
@@ -55,8 +54,8 @@ export async function dependencyPublicPoll(runtimeKey?: { path: string; value: s
 		installControlPlaneProtocolRoutes(app, async () => { throw new Error('Provider polling must not invoke OAuth'); }, undefined, registry);
 		const rest = CONTROL_PLANE_OPERATIONS.providers.nextAssignment.descriptor.rest;
 		assert.ok(rest); assert.equal(rest.method, 'POST');
-		const request = (body: Record<string, unknown> = f.request, options: { token?: string; signal?: AbortSignal; raw?: string } = {}) =>
-			app.request(new Request(`http://localhost${rest.path}`, { method: rest.method,
+		const request = (body: Record<string, unknown> = f.request, options: { token?: string; signal?: AbortSignal; raw?: string; path?: string } = {}) =>
+			app.request(new Request(`http://localhost${options.path ?? rest.path}`, { method: rest.method,
 				headers: { 'content-type': 'application/json', authorization: `Bearer ${options.token ?? issued.plaintext}`,
 					'idempotency-key': 'public-poll-request' }, body: options.raw ?? JSON.stringify(body), signal: options.signal }));
 		const state = async () => ({ ...await f.snapshot(), invocations: (await f.query('SELECT * FROM agent_invocation_requests ORDER BY id')).rows,

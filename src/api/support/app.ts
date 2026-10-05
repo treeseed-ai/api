@@ -38,7 +38,6 @@ import { createExecutionGraphService } from '../control-plane/repositories/capac
 import { createOperationService } from '../control-plane/repositories/operations/operation-service.ts';
 import { createProviderRuntimeService } from '../control-plane/repositories/providers/provider-runtime-service.ts';
 import { createProviderAssignmentService } from '../control-plane/repositories/providers/provider-assignment-service.ts';
-import { createProviderSignalService } from '../control-plane/repositories/providers/provider-signal-service.ts';
 import { createProviderWorkflowService } from '../control-plane/repositories/providers/provider-workflow-service.ts';
 import { createTreeDxProxyOperationService } from '../control-plane/repositories/treedx/proxy-operation-service.ts';
 import { TreeAiProxyService } from '../control-plane/treeai/proxy-service.ts';
@@ -221,7 +220,6 @@ export function createPlatformApiApp(options: any = {}) {
 	const capabilityOntology = createCapabilityOntologyService(capacity);
 	const diagnosticEnvelopes = createDiagnosticEnvelopeService({ ...config, ...runtime.resolved.config });
 	const providerAssignments = createProviderAssignmentService(capacity, sessionEvents, store, diagnosticEnvelopes, { controlPlaneId: config.baseUrl });
-	const providerSignals = createProviderSignalService(capacity);
 	const providerWorkflows = createProviderWorkflowService(capacity);
 	const treeDxProxy = createTreeDxProxyOperationService(capacity, runtime);
 	const registeredAiNodes = createRegisteredAiNodes(store, delegationAuthority, process.env, options.fetchImpl ?? fetch);
@@ -257,7 +255,6 @@ export function createPlatformApiApp(options: any = {}) {
 			platformOperations: createOperationService(store),
 			providers,
 			providerAssignments,
-			providerSignals,
 			providerWorkflows,
 			treeDxProxy,
 			treeAiProxy,
