@@ -73,7 +73,7 @@ function record(value: unknown): Row {
 	if (typeof value === 'string') try { return record(JSON.parse(value)); } catch { return {}; }
 	return {};
 }
-function text(value: unknown): string { return typeof value === 'string' ? value.trim() : ''; }
+function text(value: unknown, fallback = ''): string { return typeof value === 'string' && value.trim() ? value.trim() : fallback; }
 function values(value:unknown):unknown[]{if(Array.isArray(value))return value;if(typeof value==='string')try{return values(JSON.parse(value));}catch{return [];}return [];}
 function list(value:unknown):string[]{return values(value).map(String);}
 function records(value: unknown): Row[] { if (Array.isArray(value)) return value.map(record); if (typeof value === 'string') try { return records(JSON.parse(value)); } catch { return []; } return []; }
@@ -195,7 +195,8 @@ async function assertExactParent(store: DiscussionInvocationStore, input: Discus
 	return { id: workdayId, parameters: record(run.parameters_json) };
 }
 
-async function communicationSupply(store: DiscussionInvocationStore, teamId: string, now = new Date().toISOString()) {
+async function communicationSupply(store: DiscussionInvocationStore, teamId: string, now = new Date().toISOString()):
+	Promise<(Row & { maxConcurrentWorkers: number; providerRuntimeBuild: string | null }) | null> {
 	const candidates = await store.all(
 		`SELECT membership.id AS membership_id, membership.capacity_provider_id, execution.id AS execution_provider_id
 		 FROM capacity_provider_team_memberships membership
