@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-terminal-priority-unit
+    action: { verifier: api.golden.execution-terminal-priority-unit }
+    expect: { status: passed }
+  - id: execution-terminal-priority-native
+    action: { verifier: api.golden.execution-terminal-priority-native }
+    expect: { status: passed }
   - id: execution-node-authority-native
     action: { verifier: api.golden.execution-node-authority-native }
     expect: { status: passed }

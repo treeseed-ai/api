@@ -54,7 +54,11 @@ export function applyOperationalState(current: TeamGraph, projected: TeamGraph, 
 			if (prior.pairRole !== 'reviewer' || recoveredTerminalStatus !== 'blocked') {
 				terminalProjectionNodeIds.add(node.id);
 			}
-			return { ...prior, ...(continuedTerminal ? node : {}), status: recoveredTerminalStatus,
+			// Recovered terminal evidence freezes execution authority, not future
+			// scheduling priority. An omitted projected priority clears the old value.
+			const { priority: _priority, ...frozen } = prior;
+			return { ...frozen, ...(continuedTerminal ? node : {}),
+				...(node.priority !== undefined ? { priority: node.priority } : {}), status: recoveredTerminalStatus,
 			// A terminal assignment is evidence for an existing node revision, not a
 			// new semantic revision. Repeated reconciliation must converge instead of
 			// manufacturing fresh ready Actor revisions that can be leased again.

@@ -1,6 +1,16 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-terminal-priority-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-contract.test.ts
+    testName: "reconciles every recovered terminal pair priority without changing issued node authority or reopening terminal history"
+  api.golden.execution-terminal-priority-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-postgres.test.ts
+    testName: "native terminal graph reconciliation publishes changed and omitted priorities through independent pools without rewriting historical authority or retrying terminal work"
   api.golden.execution-node-authority-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

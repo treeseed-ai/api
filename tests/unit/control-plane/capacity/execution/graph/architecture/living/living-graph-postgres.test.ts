@@ -1,11 +1,51 @@
 import { describe, expect, it } from 'vitest';
 import { createExecutionGraphService, persistExecutionGraph } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
-import { emptyLivingGraph, graphProjection, graphSource, graphState } from './living-graph-fixture.ts';
+import { emptyLivingGraph, graphNode, graphProjection, graphSource, graphState } from './living-graph-fixture.ts';
+import { applyOperationalState } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
 import { postgresGraph } from './living-postgres-fixture.ts';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { verifyDatabaseMigrations } from '../../../../../../../../src/api/support/verify-database-migrations.ts';
 describe('independent PostgreSQL connection graph custody', () => {
+	it('native terminal graph reconciliation publishes changed and omitted priorities through independent pools without rewriting historical authority or retrying terminal work', async () => {
+		const f = await postgresGraph();
+		try {
+			const input = graphProjection(), initial = graphState(input);
+			const actor = graphNode(initial, 'first', 'actor'), reviewer = graphNode(initial, 'first', 'reviewer');
+			const terminal = new Map([[actor.id, { status: 'completed' as const, nodeRevision: actor.nodeRevision }],
+				[reviewer.id, { status: 'completed' as const, nodeRevision: reviewer.nodeRevision }]]);
+			let current = applyOperationalState(initial, { ...initial, nodes: input.nodes, edges: input.edges }, 1, new Set(), terminal);
+			await persistExecutionGraph(f.stores[0], current, emptyLivingGraph(), { ...input.revision, graphDigest: current.digest });
+			const historical = await f.snapshot(), held = structuredClone({ input, initial, terminal });
+			const frozen = new Map(current.nodes.map(node => [node.id, structuredClone(node)]));
+			for (const priority of [Number.MIN_SAFE_INTEGER, 0, Number.MAX_SAFE_INTEGER, undefined]) {
+				const projected = graphProjection(undefined, current.revision + 1);
+				for (const node of projected.nodes) if (terminal.has(node.id) && priority !== undefined) node.priority = priority;
+				const candidate = { ...current, nodes: projected.nodes, edges: projected.edges };
+				const original = structuredClone({ current, projected });
+				const next = applyOperationalState(current, candidate, projected.revision.revision, new Set(), terminal);
+				for (const id of terminal.keys()) {
+					const { priority: _priority, graphRevisionUpdated: _revision, ...authority } = frozen.get(id)!;
+					expect(next.nodes.find(node => node.id === id)).toEqual({ ...authority, ...(priority === undefined ? {} : { priority }), graphRevisionUpdated: next.revision });
+				}
+				const receipt = { ...projected.revision, graphDigest: next.digest };
+				await persistExecutionGraph(f.stores[1], next, current, receipt);
+				for (const store of f.stores) expect(await createExecutionGraphService(store).show(f.principal, 'team', {})).toEqual(next);
+				for (const database of [f.left, f.right]) for (const id of terminal.keys())
+					expect((await database.pool.query('SELECT to_jsonb(priority) AS priority FROM execution_nodes WHERE id=$1', [id])).rows).toEqual([{ priority: priority ?? null }]);
+				const after = await f.snapshot();
+				expect(after.assignments).toEqual(historical.assignments); expect(after.reservations).toEqual(historical.reservations);
+				expect(after.revisions.slice(0, historical.revisions.length)).toEqual(historical.revisions);
+				expect(applyOperationalState(next, candidate, next.revision, new Set(), terminal)).toEqual(next);
+				await Promise.all(f.stores.map(store => persistExecutionGraph(store, next, next, receipt)));
+				expect(await f.snapshot()).toEqual(after); expect({ current, projected }).toEqual(original);
+				current = next;
+			}
+			expect({ input, initial, terminal }).toEqual(held);
+			// Terminal statuses are supplied inputs. Actual native graph publication/readback
+			// is proven here, not provider execution, governance, charges or physical teardown.
+		} finally { await f.close(); }
+	}, 30_000);
 	it('native graph publication retains canonical integer priorities through independent public reads and matching concurrent replay without changing readiness or grants', async () => {
 		const f = await postgresGraph();
 		try {

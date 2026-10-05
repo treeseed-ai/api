@@ -1,11 +1,39 @@
 import { describe, expect, it } from 'vitest';
 import { projectTeamExecutionGraph } from '../../../../../../../../src/api/capacity/policy/execution/execution-graph-projector.ts';
-import { recoverIncompleteReviewCycles } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
+import { applyOperationalState, recoverIncompleteReviewCycles } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
 import { decodeExecutionNode } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-storage.ts';
 import { persistExecutionGraph } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { emptyLivingGraph, graphNode, graphProfiles, graphProjection, graphSource, graphState } from './living-graph-fixture.ts';
 
 describe('complete governed living graph contract authoring', () => {
+	it('reconciles every recovered terminal pair priority without changing issued node authority or reopening terminal history', () => {
+		for (const role of ['actor', 'reviewer'] as const) for (const status of ['completed', 'failed', 'cancelled', 'blocked'] as const) {
+			if (role === 'actor' && status === 'blocked') continue;
+			const input = graphProjection(), current = graphState(input), target = graphNode(current, 'first', role);
+			const actor = graphNode(current, 'first', 'actor');
+			const terminal = new Map([[actor.id, { status: 'completed' as const, nodeRevision: actor.nodeRevision }],
+				[target.id, { status, nodeRevision: target.nodeRevision }]]);
+			const original = structuredClone({ current, input, terminal });
+			let retained = applyOperationalState(current, { ...current, nodes: input.nodes, edges: input.edges }, 1, new Set(), terminal);
+			const frozen = structuredClone(graphNode(retained, 'first', role));
+			for (const priority of [Number.MIN_SAFE_INTEGER, 0, Number.MAX_SAFE_INTEGER, undefined]) {
+				const projected = graphProjection(undefined, retained.revision + 1);
+				const node = projected.nodes.find(value => value.id === target.id)!;
+				if (priority !== undefined) node.priority = priority;
+				const candidate = { ...retained, nodes: projected.nodes, edges: projected.edges };
+				const held = structuredClone({ retained, projected, terminal });
+				const next = applyOperationalState(retained, candidate, projected.revision.revision, new Set(), terminal);
+				const { priority: _priority, graphRevisionUpdated: _revision, ...authority } = frozen;
+				expect(graphNode(next, 'first', role)).toEqual({ ...authority, ...(priority === undefined ? {} : { priority }), graphRevisionUpdated: next.revision });
+				expect(next.digest).not.toBe(retained.digest);
+				expect(next.edges).toEqual(retained.edges);
+				expect(applyOperationalState(next, candidate, next.revision, new Set(), terminal)).toEqual(next);
+				expect({ retained, projected, terminal }).toEqual(held);
+				retained = next;
+			}
+			expect({ current, input, terminal }).toEqual(original);
+		}
+	});
 	it('binds every graph mutation to its exact winning digest even when competing revisions share the same publication clock', async () => {
 		const projection = graphProjection(), original = graphState(projection);
 		for (const current of [emptyLivingGraph(), original]) {
