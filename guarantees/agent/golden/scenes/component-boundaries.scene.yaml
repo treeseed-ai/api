@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-assignment-ownership-unit
+    action: { verifier: api.golden.execution-assignment-ownership-unit }
+    expect: { status: passed }
+  - id: execution-assignment-ownership-native
+    action: { verifier: api.golden.execution-assignment-ownership-native }
+    expect: { status: passed }
   - id: execution-dependency-endpoint-native
     action: { verifier: api.golden.execution-dependency-endpoint-native }
     expect: { status: passed }

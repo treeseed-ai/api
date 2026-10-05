@@ -174,7 +174,7 @@ describe('provider assignment workday identity', () => {
 		const createCapacityWorkdayEvent = vi.fn().mockResolvedValue({ id: 'event-1' });
 		const service = createProviderAssignmentService({
 			getProviderAssignment: vi.fn().mockResolvedValue({
-				id: 'assignment-1', capacityProviderId: 'provider-1', workDayId: 'workday-run-1', metadata: {},
+				id: 'assignment-1', capacityProviderId: 'provider-1', membershipId: 'membership-1', teamId: 'team-1', workDayId: 'workday-run-1', metadata: {},
 			}),
 			createCapacityWorkdayEvent,
 		} as never);

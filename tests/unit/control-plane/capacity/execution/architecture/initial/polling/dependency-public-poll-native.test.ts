@@ -3,6 +3,54 @@ import { describe, expect, it } from 'vitest';
 import { dependencyPublicPoll } from './dependency-public-poll-fixture.ts';
 
 describe('real public provider poll HTTP and original SQL custody', () => {
+	it('authenticated owning assignment reads and ordinary event writes deny a foreign membership without repairing native authority before unchanged exact retry', async () => {
+		const f = await dependencyPublicPoll(); try {
+			// Existing seeded credential is INPUT, not signed enrollment. Native
+			// authentication still resolves the real hash, account and membership.
+			await f.query("UPDATE capacity_provider_access_tokens SET scopes_json=? WHERE id='public-poll-token'",
+				[JSON.stringify(['provider:assignments:read', 'provider:assignments:write'])]);
+			expect(await f.authenticate()).toMatchObject({ principal: f.principal });
+			const path = CONTROL_PLANE_OPERATIONS.providers.assignment.descriptor.rest?.path;
+			const eventPath = CONTROL_PLANE_OPERATIONS.providers.createEvent.descriptor.rest?.path;
+			if (!path || !eventPath) throw new Error('Original public assignment and event routes required');
+			const read = () => f.request({}, { method: 'GET', path: path.replace('{assignmentId}', encodeURIComponent(f.attempt.id)) });
+			const body = { id: 'membership-custody-event', eventType: 'provider.execution.started', component: 'provider-runner',
+				status: 'active', message: 'Original ordinary observation.' }, held = structuredClone(body);
+			const write = () => f.request(body, { path: eventPath.replace('{assignmentId}', encodeURIComponent(f.attempt.id)) });
+			const baseline = await read(); expect(baseline.status).toBe(200); const exact = await baseline.json();
+			const state = async () => ({ ...await f.state(), events: (await f.query('SELECT * FROM capacity_workday_events ORDER BY id')).rows });
+			const original = await state();
+			await f.query('UPDATE capacity_provider_assignments SET membership_id=? WHERE id=?', ['foreign-membership', f.attempt.id]);
+			const denied = await state(), replies: Array<{ status: number; body: unknown }> = [];
+			for (let retry = 0; retry < 2; retry++) {
+				for (const operation of [read, write]) { const response = await operation(); replies.push({ status: response.status, body: await response.json() }); }
+			}
+			const after = await state();
+			// Restore only the supplied row field; every denied response and state
+			// observation stays retained, including a real pre-fix event write.
+			await f.query('UPDATE capacity_provider_assignments SET membership_id=? WHERE id=?', [f.principal.membershipId, f.attempt.id]);
+			expect(replies.map(reply => reply.status)).toEqual([403, 403, 403, 403]);
+			for (const reply of replies) expect(JSON.stringify(reply.body)).toContain('provider_assignment_forbidden');
+			expect(after).toEqual(denied); expect(await state()).toEqual(original); expect(body).toEqual(held);
+			const retried = await read(); expect(retried.status).toBe(200); expect(await retried.json()).toEqual(exact);
+			const concurrent = await Promise.all([read(), read()]);
+			for (const response of concurrent) { expect(response.status).toBe(200); expect(await response.json()).toEqual(exact); }
+			expect(await state()).toEqual(original);
+			expect((await write()).status).toBe(200);
+			const written = await state(); expect(written.events).toHaveLength(original.events.length + 1);
+			// The owning event service also publishes one native session invalidation;
+			// retain that real positive side effect rather than forbid publication.
+			expect(written.sessionEvents).toHaveLength(original.sessionEvents.length + 1);
+			for (const row of original.sessionEvents) expect(written.sessionEvents).toContainEqual(row);
+			const notification = written.sessionEvents.find(row => !original.sessionEvents.some(previous => previous.sequence === row.sequence));
+			expect(notification).toMatchObject({ team_id: f.principal.teamId, resource_id: f.attempt.workdayId, event_type: 'resource.invalidated' });
+			expect(JSON.parse(String(notification?.payload_json))).toMatchObject({ workdayId: f.attempt.workdayId, eventId: `provider-runtime:${f.attempt.id}:${body.id}` });
+			const { events: _events, sessionEvents: _sessionEvents, ...unchanged } = written;
+			const { events: _originalEvents, sessionEvents: _originalSessionEvents, ...previous } = original;
+			expect(unchanged).toEqual(previous); expect(body).toEqual(held);
+			expect(Date.now()).toBeLessThan(Date.parse(f.attempt.deadline));
+		} finally { await f.db.close(); }
+	});
 	it('authenticated native HTTP rejects the retired frozen signal route without SQL mutation before unchanged ordinary claim', async () => {
 		const f = await dependencyPublicPoll(); try {
 			expect(await f.authenticate()).toMatchObject({ principal: { teamId: f.principal.teamId, membershipId: f.principal.membershipId } });

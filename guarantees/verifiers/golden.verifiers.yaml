@@ -1,6 +1,16 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-assignment-ownership-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/provider-assignment-activity-custody.test.ts
+    testName: "requires the exact provider team and membership for assignment ownership without rewriting absent malformed or foreign authority"
+  api.golden.execution-assignment-ownership-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-public-poll-native.test.ts
+    testName: "authenticated owning assignment reads and ordinary event writes deny a foreign membership without repairing native authority before unchanged exact retry"
   api.golden.execution-dependency-endpoint-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

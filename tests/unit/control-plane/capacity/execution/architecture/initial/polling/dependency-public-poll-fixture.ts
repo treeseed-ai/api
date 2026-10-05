@@ -54,10 +54,10 @@ export async function dependencyPublicPoll(runtimeKey?: { path: string; value: s
 		installControlPlaneProtocolRoutes(app, async () => { throw new Error('Provider polling must not invoke OAuth'); }, undefined, registry);
 		const rest = CONTROL_PLANE_OPERATIONS.providers.nextAssignment.descriptor.rest;
 		assert.ok(rest); assert.equal(rest.method, 'POST');
-		const request = (body: Record<string, unknown> = f.request, options: { token?: string; signal?: AbortSignal; raw?: string; path?: string } = {}) =>
-			app.request(new Request(`http://localhost${options.path ?? rest.path}`, { method: rest.method,
+		const request = (body: Record<string, unknown> = f.request, options: { token?: string; signal?: AbortSignal; raw?: string; path?: string; method?: 'GET' | 'POST' } = {}) =>
+			app.request(new Request(`http://localhost${options.path ?? rest.path}`, { method: options.method ?? rest.method,
 				headers: { 'content-type': 'application/json', authorization: `Bearer ${options.token ?? issued.plaintext}`,
-					'idempotency-key': 'public-poll-request' }, body: options.raw ?? JSON.stringify(body), signal: options.signal }));
+					'idempotency-key': 'public-poll-request' }, body: options.method === 'GET' ? undefined : options.raw ?? JSON.stringify(body), signal: options.signal }));
 		const state = async () => ({ ...await f.snapshot(), invocations: (await f.query('SELECT * FROM agent_invocation_requests ORDER BY id')).rows,
 			sessionEvents: (await f.query('SELECT * FROM session_events ORDER BY sequence')).rows });
 		assert.ok(Date.now() < Date.parse(f.attempt.deadline), 'Original three-second public poll authority elapsed during setup');

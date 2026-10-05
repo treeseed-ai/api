@@ -21,7 +21,8 @@ export interface ProviderAssignmentStore extends CapacityGovernanceDatabase {
 export function assertProviderOwnsAssignment(value: AssignmentObservation | null, principal: ProviderPrincipal, action: string) {
 	if (!value) throw new CapacityGovernanceError('provider_assignment_not_found', 'Unknown assignment.', 404);
 	const assignment = assignmentRecord(value);
-	if (assignment.capacityProviderId !== principal.capacityProviderId) throw new CapacityGovernanceError('provider_assignment_forbidden', `Provider cannot ${action} this assignment.`, 403);
+	if (assignment.capacityProviderId !== principal.capacityProviderId || assignment.teamId !== principal.teamId
+		|| assignment.membershipId !== principal.membershipId) throw new CapacityGovernanceError('provider_assignment_forbidden', `Provider cannot ${action} this assignment.`, 403);
 	return assignment;
 }
 

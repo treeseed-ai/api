@@ -96,13 +96,23 @@ test('Actual managed execution uses the complete clean migration inventory and e
 				assert.equal(nativeRun.length, 1); assert.equal(nativeRun[0].team_id, run.teamId); assert.equal(nativeRun[0].status, run.status);
 				const assignments = (await client.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1 ORDER BY id', [id])).rows;
 				assert.ok(assignments.length > 0, 'ACCEPTANCE_SCHEMA_EMPTY: Actual managed assignment inventory required');
+				const membershipSql = `SELECT id,team_id,capacity_provider_id FROM capacity_provider_team_memberships membership
+					WHERE EXISTS (SELECT 1 FROM capacity_provider_assignments assignment WHERE assignment.work_day_id=$1
+						AND assignment.membership_id=membership.id) ORDER BY id`;
+				const memberships = (await client.query<{ id: string; team_id: string; capacity_provider_id: string }>(membershipSql, [id])).rows;
+				assert.equal(memberships.length, new Set(assignments.map(value => value.membership_id)).size,
+					'ACCEPTANCE_PROVIDER_MEMBERSHIP: Every actual assignment needs its independently stored provider membership');
+				const byMembership = new Map(memberships.map(value => [value.id, value]));
 				const observations: Array<{ id: string; value: Record<string, unknown> }> = [];
 				const prioritySources = new Map<string, { args: string[]; returned: Record<string, unknown> }>(); let prioritizedWork = 0, calibratedWork = 0;
 				const calibrationHistory = new Map<string, { sql: string; parameters: unknown[]; rows: unknown[] }>();
 				for (const value of assignments) {
 					assert.equal(value.team_id, run.teamId); assert.equal(typeof value.id, 'string');
+					assert.deepEqual(byMembership.get(value.membership_id), { id: value.membership_id, team_id: value.team_id,
+						capacity_provider_id: value.capacity_provider_id }, 'ACCEPTANCE_PROVIDER_MEMBERSHIP: Assignment team and provider must match its owning membership');
 					const visible = read(['assignments', 'show', value.id]);
 					assert.equal(visible.id, value.id); assert.equal(visible.workDayId, id); assert.equal(visible.teamId, run.teamId); assert.equal(visible.status, value.status);
+					assert.equal(visible.membershipId, value.membership_id); assert.equal(visible.capacityProviderId, value.capacity_provider_id);
 					assert.equal(Object.hasOwn(visible, 'modeRunId'), false, 'ACCEPTANCE_SCHEMA_RETIRED_IDENTITY: Public assignment retains a retired mode-run alias');
 					const nativeAttempt: unknown = JSON.parse(value.assignment_attempt_json);
 					const attempt = assignmentAttemptSchema.parse(nativeAttempt);
@@ -248,7 +258,8 @@ test('Actual managed execution uses the complete clean migration inventory and e
 				assert.deepEqual((await client.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1 ORDER BY id', [id])).rows, assignments);
 				assert.deepEqual((await client.query('SELECT * FROM capacity_workday_runs WHERE id=$1', [id])).rows, nativeRun);
 				assert.deepEqual((await client.query('SELECT * FROM treeseed_control_plane_schema_migrations ORDER BY name')).rows, ledger);
-				held = { catalog: before, assignments, run: nativeRun, ledger };
+				assert.deepEqual((await client.query(membershipSql, [id])).rows, memberships);
+				held = { catalog: before, assignments, run: nativeRun, ledger, memberships, membershipSql };
 			} finally { await client.query('ROLLBACK'); }
 		} finally { client.release(); }
 		assert.ok(held);
@@ -261,6 +272,8 @@ test('Actual managed execution uses the complete clean migration inventory and e
 				assert.deepEqual((await fresh.query("SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' ORDER BY table_name,column_name")).rows, held.catalog);
 				assert.deepEqual((await fresh.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1 ORDER BY id', [id])).rows, held.assignments);
 				assert.deepEqual((await fresh.query('SELECT * FROM capacity_workday_runs WHERE id=$1', [id])).rows, held.run);
+				assert.equal(typeof held.membershipSql, 'string');
+				assert.deepEqual((await fresh.query(String(held.membershipSql), [id])).rows, held.memberships);
 				assert.deepEqual((await fresh.query('SELECT * FROM treeseed_control_plane_schema_migrations ORDER BY name')).rows, held.ledger);
 			} finally { await fresh.query('ROLLBACK'); }
 		} finally { fresh.release(); }
