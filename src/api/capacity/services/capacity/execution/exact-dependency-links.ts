@@ -72,13 +72,14 @@ export async function loadTeamExactDependencyLinks(store: any, sources: Executab
 				}
 				const content = value.content;
 				const validated = validatePortableContentData('note', record(value.frontmatter));
-				if (!validated.ok || !validated.data || validated.data.projectId !== project.projectId) {
+				const note = record(validated.data);
+				if (!validated.ok || !validated.data || note.projectId !== project.projectId) {
 					throw new Error('TreeDX dependency note failed content and project validation.');
 				}
-				file = { sourceRef: { store: 'treedx', model: 'note', id: validated.data.id,
+				file = { sourceRef: { store: 'treedx', model: 'note', id: text(note.id),
 					repository: project.repository, commit, path,
 					digest: `sha256:${createHash('sha256').update(content).digest('hex')}` },
-					links: validated.data.links ?? [] };
+					links: Array.isArray(note.links) ? note.links : [] };
 				files.set(path, file);
 			}
 			if (!file.links.some((candidate) => JSON.stringify(candidate) === JSON.stringify(link))) {

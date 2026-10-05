@@ -1,4 +1,4 @@
-import type { GovernanceProposalReadiness } from '../../../../../governance/proposal-readiness.ts';
+import type { GovernanceProposalReadiness } from '../../../../governance/proposal-readiness.ts';
 import { exactEntityReferenceSchema, type ExactEntityReference } from '@treeseed/sdk/agent-capacity';
 
 type Row = Record<string, unknown>;

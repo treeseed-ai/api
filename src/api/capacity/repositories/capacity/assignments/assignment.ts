@@ -54,7 +54,7 @@ function typedJson<T>(value: unknown, field: string, assignmentId: string, schem
 		catch { throw new CapacityGovernanceError('provider_assignment_json_invalid', `Assignment ${assignmentId} has invalid ${field}.`, 500, { assignmentId, field }); }
 	}
 	const parsed = schema.safeParse(decoded);
-	if (!parsed.success) {
+	if (parsed.success === false) {
 		const issue = parsed.error.issues[0]!;
 		throw new CapacityGovernanceError('provider_assignment_contract_invalid',
 			`Assignment ${assignmentId} has invalid ${field} at ${issue.path.join('.')}: ${issue.message}`,
