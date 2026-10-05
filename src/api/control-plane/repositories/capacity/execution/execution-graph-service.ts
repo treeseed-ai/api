@@ -16,7 +16,7 @@ import { loadTeamExactDependencyLinks } from '../../../../capacity/services/capa
 import { readExactProposal } from '../../../../governance/executable-proposal.ts';
 import { authorizeCapacityTeam, type CapacityPrincipal } from '../capacity-authorization.ts';
 import { CapacityOperationError } from '../capacity-operation-error.ts';
-import { decodeExecutionEdge, decodeExecutionNode } from './execution-graph-storage.ts';
+import { decodeExecutionEdge, decodeExecutionNode, decodeGraphWatchCursor } from './execution-graph-storage.ts';
 import { workdayContinuationHistory, assignmentBelongsToRun } from '../../../../capacity/services/capacity/workdays/scheduling/workday-continuation.ts';
 
 type Row = Record<string, unknown>;
@@ -454,7 +454,7 @@ export function createExecutionGraphService(store: any) {
 		},
 		async watch(principal: CapacityPrincipal, teamId: string, query: Row) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
-			const cursor = Math.max(integer(query.cursor), 0);
+			const cursor = decodeGraphWatchCursor(query.cursor);
 			const limit = Math.min(Math.max(integer(query.limit) || 100, 1), 500);
 			const rows = await store.all(`SELECT * FROM execution_graph_revisions
 				WHERE team_id=? AND revision>? ORDER BY revision LIMIT ?`, [teamId,cursor,limit]);

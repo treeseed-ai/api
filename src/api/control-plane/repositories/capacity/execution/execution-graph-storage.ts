@@ -4,6 +4,7 @@ import {
 	type ExecutionEdge,
 	type ExecutionNode,
 } from '@treeseed/sdk/agent-capacity';
+import { CapacityOperationError } from '../capacity-operation-error.ts';
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {
@@ -17,6 +18,15 @@ const array = (value: unknown): unknown[] => {
 	return [];
 };
 const integer = (value: unknown): number => Number.isInteger(Number(value)) ? Number(value) : 0;
+
+export function decodeGraphWatchCursor(value: unknown): number {
+	if (value === undefined) return 0;
+	if (typeof value !== 'string' || !/^\d+$/u.test(value) || !Number.isSafeInteger(Number(value))) {
+		throw new CapacityOperationError(400, 'execution_graph_cursor_invalid',
+			'Graph watch cursor must be a nonnegative safe integer revision string.');
+	}
+	return Number(value);
+}
 
 export function decodeExecutionNode(row: Row): ExecutionNode {
 	// PostgreSQL bigint transport may be a decimal string, never caller coercion.

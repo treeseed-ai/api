@@ -813,6 +813,9 @@ workflow:
   - id: architecture-profile-inventory-4
     action: { verifier: api.golden.architecture-profile-inventory-4 }
     expect: { status: passed }
+  - id: execution-graph-watch-cursor-unit
+    action: { verifier: api.golden.execution-graph-watch-cursor-unit }
+    expect: { status: passed }
   - id: architecture-graph-watch-1
     action: { verifier: api.golden.architecture-graph-watch-1 }
     expect: { status: passed }

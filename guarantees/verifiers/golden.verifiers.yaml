@@ -1361,6 +1361,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/initial/profile-inventory.test.ts
     testName: "public profile query denies missing principal missing project and unknown compiled handler without SQL mutation"
+  api.golden.execution-graph-watch-cursor-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/graph-watch.test.ts
+    testName: "requires exact nonnegative safe integer watch cursor strings before reading history without normalizing malformed input"
   api.golden.architecture-graph-watch-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
