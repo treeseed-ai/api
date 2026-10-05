@@ -3,12 +3,12 @@ vi.mock('../../../../../src/api/capacity/services/capacity/assignments/lifecycle
 	reconcileAssignmentContent: vi.fn(async () => undefined),
 }));
 import { advanceLivingWorkday } from '../../../../../src/api/capacity/services/capacity/workdays/lifecycle/living-workday-lifecycle.ts';
-import { compileWorkday, validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
+import { DEFAULT_WORKDAY_POLICY, compileWorkday, validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
 import { runtimeWorkdayPhase } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import { compileCapacityWorkdayRunRecord } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 
 const fluidPlan = { ...compileWorkday({ id: 'fluid-workday', teamId: 'team', policyId: 'default', policyRevision: 1,
-	executionMode: 'simulation', policy: { durationSeconds: 3600, planningPercent: 100 / 3,
+	executionMode: 'simulation', policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 3600, planningPercent: 100 / 3,
 		maximumConcurrency: 5, communicationConcurrency: 5 }, agentIds: [],
 	startsAt: '2026-09-29T12:00:00Z' }), state: 'active' as const };
 const fluidRun = compileCapacityWorkdayRunRecord('team', { id: 'fluid-workday', executionMode: 'simulation',
@@ -54,7 +54,7 @@ vi.mock('../../../../../src/api/governance/executable-proposal.ts', async (impor
 }));
 
 const now = '2026-09-13T16:00:00.000Z';
-const policy = { durationSeconds: 60, maximumConcurrency: 2, planningTurnMaximumSeconds: 10,
+const policy = { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 60, maximumConcurrency: 2, planningTurnMaximumSeconds: 10,
 	communicationConcurrency: 1, projectPercentages: { project: 100 }, agentClassPercentages: { project: { architect: 100 } } };
 const planningPermissions = { content: { read: ['proposal'], write: ['proposal'] }, tools: ['discussion'] };
 const planningAgent = (agentClass: string) => ({ schemaVersion: 'treeseed.agent/v1', id: `project/${agentClass}`,

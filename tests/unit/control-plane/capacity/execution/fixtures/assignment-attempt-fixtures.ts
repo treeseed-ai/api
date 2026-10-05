@@ -1,4 +1,4 @@
-import { allocateWorkdayCapacity, compileWorkday, effectiveActivityProfileSchema, exactEntityReferenceSchema, executionNodeSchema } from '@treeseed/sdk/agent-capacity';
+import { DEFAULT_WORKDAY_POLICY, allocateWorkdayCapacity, compileWorkday, effectiveActivityProfileSchema, exactEntityReferenceSchema, executionNodeSchema } from '@treeseed/sdk/agent-capacity';
 import { capabilityOfferDigest, capabilityOfferSchema, CORE_CAPABILITY_DEFINITIONS, type CapabilityOffer } from '@treeseed/sdk/capacity-provider';
 import type { buildAssignmentAttempt } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import { serializeCapacityWorkdayRunRow } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
@@ -44,7 +44,7 @@ export const provider = {
 export const run = { id: 'workday', executionMode: 'simulation', parameters: { appliedPlan: {
 	schemaVersion: 'treeseed.workday/v1', id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
 	executionMode: 'simulation',
-	policySnapshot: { durationSeconds: 3600, maximumConcurrency: 1, planningTurnMaximumSeconds: 60,
+	policySnapshot: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 3600, maximumConcurrency: 1, planningTurnMaximumSeconds: 60,
 		communicationConcurrency: 1, projectPercentages: { project: 100 }, agentClassPercentages: { project: { engineer: 100 } } },
 	state: 'active', startsAt: '2026-09-13T12:00:00.000Z', endsAt: '2026-09-13T13:00:00.000Z',
 	planningRounds: [{ round: 1, state: 'complete', assignmentIds: ['planning:1:project/engineer'] },
@@ -78,7 +78,7 @@ export function canonicalOfferBuildInput(now = '2026-10-04T12:00:00.000Z', capab
 	const observation = { day: now.slice(0, 10), observedAt: now, healthy: true, activeSeconds: 0, reservedSeconds: 0 };
 	const plan = { ...compileWorkday({ id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
 		executionMode: 'simulation', startsAt: new Date(Date.parse(now) - 20_000).toISOString(), agentIds: [],
-		policy: { durationSeconds: 60, planningPercent: 20, maximumConcurrency: 1, communicationConcurrency: 1 } }), state: 'active' as const };
+		policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 60, planningPercent: 20, maximumConcurrency: 1, communicationConcurrency: 1 } }), state: 'active' as const };
 	const ownerRun = serializeCapacityWorkdayRunRow({ id: 'workday', team_id: 'team', scenario_id: 'canonical-offer-input', status: 'running',
 		environment: 'local', execution_kind: 'workday', trigger_kind: 'manual', execution_mode: 'simulation', created_at: now, updated_at: now,
 		started_at: now, parameters_json: JSON.stringify({ appliedPlan: plan }), summary_json: '{}', metrics_json: '{}', expected_json: '{}',

@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { assignmentAttemptSchema, calculateAssignmentAllocation, compileWorkday, allocateWorkdayCapacity,
+import { DEFAULT_WORKDAY_POLICY, assignmentAttemptSchema, calculateAssignmentAllocation, compileWorkday, allocateWorkdayCapacity,
 	selectFairReadyNode, type AssignmentAttempt } from '@treeseed/sdk/agent-capacity';
 import { settlementDatabase } from '../../../accounting/architecture/settlement-fixture.ts';
 import { replayAttempt } from '../admission-replay-fixture.ts';
@@ -62,7 +62,7 @@ export async function initialAdmission(admissionNow: string | (() => string) = '
 			deadline: new Date(Date.parse(now) + 3_000).toISOString(), attempt: 1, graphRevision: 2, nodeRevision: 1 });
 		const plan = { ...compileWorkday({ id: attempt.workdayId, teamId: attempt.teamId, policyId: 'default',
 			policyRevision: 1, executionMode: 'simulation', startsAt: new Date(Date.parse(now) - 20_000).toISOString(), agentIds: [],
-			policy: { durationSeconds: 60, planningPercent: 20, maximumConcurrency: 1, communicationConcurrency: 1 } }), state: 'active' as const };
+			policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 60, planningPercent: 20, maximumConcurrency: 1, communicationConcurrency: 1 } }), state: 'active' as const };
 		await base.query(`UPDATE capacity_workday_runs SET status='running',parameters_json=? WHERE id=?`,
 			[JSON.stringify({ appliedPlan: plan }), attempt.workdayId]);
 		if (completeOriginalTables) await base.query('UPDATE capacity_workday_runs SET started_at=?,created_at=?,updated_at=? WHERE id=?',

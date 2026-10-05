@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { stringify } from 'yaml';
-import { allocateWorkdayCapacity, assignmentAttemptSchema, assignmentResultSchema, compileWorkday, effectiveActivityProfileSchema, executionNodeSchema, exactEntityReferenceSchema, type ExactEntityReference } from '@treeseed/sdk/agent-capacity';
+import { DEFAULT_WORKDAY_POLICY, allocateWorkdayCapacity, assignmentAttemptSchema, assignmentResultSchema, compileWorkday, effectiveActivityProfileSchema, executionNodeSchema, exactEntityReferenceSchema, type ExactEntityReference } from '@treeseed/sdk/agent-capacity';
 import { relationPublicationDatabase } from './relation-publication-fixture.ts';
 import { object } from './relation-authoring-fixture.ts';
 import { candidate, gitRef, provider } from '../../../capacity/execution/fixtures/assignment-attempt-fixtures.ts';
@@ -12,10 +12,11 @@ import { buildAssignmentAttempt } from '../../../../../../src/api/capacity/servi
 import { listReadyExecutionNodes } from '../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import { applyOperationalState, type TeamGraph } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
 import { persistExecutionGraph } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { createCapacityControlPlane } from '../../../../../../src/api/capacity/control-plane.ts';
 
 export function schedulingInputs(): Parameters<typeof buildAssignmentAttempt>[0] {
 	const now = '2026-09-13T12:00:00.000Z', plan = { ...compileWorkday({ id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
-		executionMode: 'simulation', startsAt: now, agentIds: [], policy: { durationSeconds: 3600, planningPercent: 20, maximumConcurrency: 1, communicationConcurrency: 1 } }), state: 'active' as const };
+		executionMode: 'simulation', startsAt: now, agentIds: [], policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 3600, planningPercent: 20, maximumConcurrency: 1, communicationConcurrency: 1 } }), state: 'active' as const };
 	const run = serializeCapacityWorkdayRunRow({ id: plan.id, team_id: 'team', scenario_id: 'isolated-relation', status: 'running', environment: 'local',
 		execution_kind: 'workday', trigger_kind: 'manual', execution_mode: 'simulation', created_at: now, updated_at: now, started_at: now,
 		parameters_json: JSON.stringify({ appliedPlan: plan }), ...Object.fromEntries(['summary', 'metrics', 'expected', 'actual', 'report_refs', 'error'].map(key => [`${key}_json`, '{}'])) }); assert.ok(run);
@@ -46,6 +47,27 @@ export async function relationSchedulingDatabase(primarySource?: ExactEntityRefe
 	};
 	try {
 		const run = schedulingInputs().run, now = run.createdAt;
+		// Explicit canonical native demand, not a runtime alias for the older
+		// controlled projector unit input's unqualified "verification" label.
+		for (const source of f.sources) {
+			const items = object(source.frontmatter.executionPlan).workItems; assert.ok(Array.isArray(items));
+			for (const item of items) {
+				object(item).requiredCapabilities = ['treeseed.research.verification'];
+				object(item).requestedPermissions = { content: { read: ['proposal', 'decision'], write: [] }, tools: ['source.read'] };
+			}
+		}
+		for (const profile of Object.values(f.profiles)) for (const activity of Object.values(profile.activityProfiles)) {
+			if (activity) activity.permissions = { content: { read: ['proposal', 'decision'], write: [] }, tools: ['source.read'] };
+		}
+		// Explicit primary source binding INPUT; no remote repository is created,
+		// fetched or written, and predecessor citations never supply this identity.
+		for (const source of f.sources) {
+			const repository = source.projectId === 'dependent' && primarySource?.repository
+				? primarySource.repository : `treeseed-ai/${source.projectId}`;
+			const [owner, name] = repository.split('/'); assert.ok(owner && name);
+			await f.query(`INSERT INTO hub_repositories (id,hub_id,team_id,role,provider,owner,name,current_branch,created_at,updated_at)
+				VALUES (?,?,?,'software','github',?,?,'staging',?,?)`, [`${source.projectId}-source`, source.projectId, 'team', owner, name, now, now]);
+		}
 		if (workItemPriorities) {
 			const matched = new Set<string>();
 			for (const source of f.sources) {
@@ -110,7 +132,8 @@ export async function relationSchedulingDatabase(primarySource?: ExactEntityRefe
 		};
 		const publish = async () => {
 			const workspace = await f.create(), written = await f.write(workspace, `---\n${stringify(f.note)}---\n\nReviewed precursor governs dependent work.\n`);
-			const submitted = await f.submit(written.workspace), result = await f.run(submitted.integration.operation.id); assert.equal(result.ok, true);
+			const submitted = await f.submit(written.workspace), result = await f.run(submitted.integration.operation.id);
+			assert.equal(result.ok, true, result.error?.message);
 			return { submitted, graph: await reconcile() };
 		};
 		const ready = () => listReadyExecutionNodes(f.store, currentRun, { id: 'dependent', slug: 'dependent' });
@@ -124,7 +147,10 @@ export async function relationSchedulingDatabase(primarySource?: ExactEntityRefe
 				// the candidate reader, not executions of these native readonly nodes.
 				const attempt = assignmentAttemptSchema.parse({ ...source, agentClass: node.agentClass, id: `input-${node.id}`, idempotencyKey: `input-${node.id}`, projectId: 'precursor', workdayId: run.id,
 					nodeId: node.id, nodeRevision: node.nodeRevision, graphRevision: current.revision, workItemId: 'first', sourceRef: node.sourceRef, authorityRefs: node.authorityRefs,
-					grant: { ...source.grant, contentWrite: reviewing ? [ref] : [] }, predecessorResultIds: reviewing ? [`result-${actor.id}`] : [] });
+					...(reviewing ? { workspace: { mode: 'treedx', workspaceId: `input-review-${node.id}`,
+						repository: ref.repository, baseCommit: ref.commit, writablePaths: [ref.path] } } : {}),
+					grant: { ...source.grant, sourceWrite: reviewing ? [] : source.grant.sourceWrite,
+						contentWrite: reviewing ? [ref] : [] }, predecessorResultIds: reviewing ? [`result-${actor.id}`] : [] });
 				const result = assignmentResultSchema.parse({ schemaVersion: 'treeseed.assignment-result/v1', id: `result-${node.id}`, assignmentId: attempt.id,
 					status: 'completed', summary: 'Supplied reviewed predecessor INPUT, not a live execution.', references: reviewing
 						? [{ kind: 'treedx', projectId: 'precursor', repository: ref.repository, commit: ref.commit, path: ref.path }]
@@ -136,11 +162,13 @@ export async function relationSchedulingDatabase(primarySource?: ExactEntityRefe
 				VALUES (?,'membership','team','precursor','provider',?,?,'acting','completed','released',?,?,?,?,?,?,?,?)`,
 				[value.attempt.id, `precursor:${value.node.agentClass}`, run.id, f.sources[0]!.decision!.id, value.node.id, value.node.nodeRevision,
 					JSON.stringify(value.attempt), JSON.stringify(value.result), run.createdAt, run.createdAt, run.createdAt]);
+			await f.query('UPDATE capacity_provider_assignments SET lifecycle_output_json=? WHERE id=?',
+				[JSON.stringify({ activityCompletion: { reviewDisposition: 'approved' } }), rows[1]!.attempt.id]);
 			await reconcile(new Map(rows.map(value => [value.node.id, { status: 'completed' as const, nodeRevision: value.node.nodeRevision }])));
 			return rows;
 		};
 		const snapshot = async () => ({ ...await f.snapshot(), graph: current, assignments: await f.store.all('SELECT * FROM capacity_provider_assignments ORDER BY id'),
 			reservations: await f.store.all('SELECT * FROM capacity_reservations ORDER BY id'), classes: await f.store.all('SELECT * FROM project_agent_classes ORDER BY id') });
-		return { ...f, currentRun, ready, publish, completeInputs, reconcile, snapshot, close };
+		return { ...f, capacity: createCapacityControlPlane(f.store), currentRun, ready, publish, completeInputs, reconcile, snapshot, close };
 	} catch (error) { try { await close(); } catch (cleanup) { throw new AggregateError([error, cleanup], 'Relation scheduling setup and cleanup failed'); } throw error; }
 }

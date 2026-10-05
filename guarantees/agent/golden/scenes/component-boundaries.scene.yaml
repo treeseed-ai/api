@@ -3,6 +3,21 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-qualified-selection-unit
+    action: { verifier: api.golden.execution-qualified-selection-unit }
+    expect: { status: passed }
+  - id: execution-predecessor-missing-unit
+    action: { verifier: api.golden.execution-predecessor-missing-unit }
+    expect: { status: passed }
+  - id: execution-predecessor-lineage-unit
+    action: { verifier: api.golden.execution-predecessor-lineage-unit }
+    expect: { status: passed }
+  - id: execution-predecessor-decision-unit
+    action: { verifier: api.golden.execution-predecessor-decision-unit }
+    expect: { status: passed }
+  - id: execution-publication-branch-unit
+    action: { verifier: api.golden.execution-publication-branch-unit }
+    expect: { status: passed }
   - id: execution-unchanged-content-unit
     action: { verifier: api.golden.execution-unchanged-content-unit }
     expect: { status: passed }
@@ -1871,6 +1886,9 @@ workflow:
   - id: architecture-decision-selection-unit-1
     action: { verifier: api.golden.architecture-decision-selection-unit-1 }
     expect: { status: passed }
+  - id: execution-selected-project-unit
+    action: { verifier: api.golden.execution-selected-project-unit }
+    expect: { status: passed }
   - id: architecture-start-custody-unit-1
     action: { verifier: api.golden.architecture-start-custody-unit-1 }
     expect: { status: passed }
@@ -1879,6 +1897,9 @@ workflow:
     expect: { status: passed }
   - id: architecture-decision-selection-native-1
     action: { verifier: api.golden.architecture-decision-selection-native-1 }
+    expect: { status: passed }
+  - id: execution-policy-completeness-native
+    action: { verifier: api.golden.execution-policy-completeness-native }
     expect: { status: passed }
   - id: execution-offer-selection-unit-1
     action: { verifier: api.golden.execution-offer-selection-unit-1 }

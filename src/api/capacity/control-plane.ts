@@ -40,6 +40,8 @@ export interface CapacityControlPlaneHost extends CapacityGovernanceDatabase {
 	createTeam(input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
 	prepareTeamDeletion(teamId: string, confirmation: string): Promise<{ ok: boolean; team?: unknown; [key: string]: unknown }>;
 	getProject(projectId: string): Promise<Record<string, unknown> | null>;
+	getProjectByTeamAndSlug(teamId: string, slug: string): Promise<Record<string, unknown> | null>;
+	listTreeDxSharesForRecipient(teamId: string): Promise<Record<string, unknown>[]>;
 	getProjectDetails(projectId: string): Promise<Record<string, unknown> | null>;
 	getProjectTreeDxLibrary(projectId: string): Promise<Record<string, unknown> | null>;
 	listApprovalRequestsForProject(projectId: string, limit: number): Promise<Record<string, unknown>[]>;

@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { decodeExecutionNode } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-storage.ts';
 import { listReadyExecutionNodes } from '../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import { serializeCapacityWorkdayRunRow } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
-import { allocateWorkdayCapacity, compileWorkday, selectFairReadyNode } from '@treeseed/sdk/agent-capacity';
+import { DEFAULT_WORKDAY_POLICY, allocateWorkdayCapacity, compileWorkday, selectFairReadyNode } from '@treeseed/sdk/agent-capacity';
 import { buildAssignmentAttempt } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import { provider as suppliedProvider, canonicalOfferBuildInput, signSuppliedOffer } from '../../../capacity/execution/fixtures/assignment-attempt-fixtures.ts';
 import { AvailabilitySessionService } from '../../../../../../src/api/capacity/services/accounts/availability-session-service.ts';
@@ -40,10 +40,8 @@ describe('native proposal Decision authority', () => {
 			// The original integrated Discussion journal advances this binding via
 			// its owning store method, which requires the represented instance row.
 			// This is a disposable connection INPUT, not service provisioning.
-			const instanceAt = new Date().toISOString();
-			await f.query(`INSERT INTO treedx_instances (id,team_id,kind,provider,name,base_url,status,created_at,updated_at)
-				VALUES (?,?,?,?,?,?,?,?,?)`, ['native-conformance', 'team', 'local', 'treedx', 'Disposable native authority fixture',
-					process.env.TREEDX_BASE_URL, 'active', instanceAt, instanceAt]);
+			expect((await f.query('SELECT id,base_url,status FROM treedx_instances WHERE id=?', ['native-conformance'])).rows)
+				.toEqual([{ id: 'native-conformance', base_url: process.env.TREEDX_BASE_URL, status: 'active' }]);
 			const repository = f.sources[0]!.repository, projectId = f.sources[0]!.projectId;
 			const declaration = { ...readyProposal(), id: `proposal-${randomUUID()}`, projectId };
 			if (canonicalSupply) for (const workItem of declaration.executionPlan.workItems) {
@@ -325,7 +323,7 @@ describe('native proposal Decision authority', () => {
 			const selectedReady = readyNodes[0]!, compileNow = new Date().toISOString();
 			const plan = { ...compileWorkday({ id: run.id, teamId: 'team', policyId: 'default', policyRevision: 1,
 				executionMode: 'simulation', startsAt: new Date(Date.parse(compileNow) - 20_000).toISOString(), agentIds: [],
-				policy: { durationSeconds: 60, planningPercent: 20, maximumConcurrency: 1, communicationConcurrency: 1 } }), state: 'active' as const };
+				policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 60, planningPercent: 20, maximumConcurrency: 1, communicationConcurrency: 1 } }), state: 'active' as const };
 			const opportunity = allocateWorkdayCapacity({ now: compileNow, remainingSeconds: 9,
 				workdays: [{ plan, committedSeconds: 0, planningCommittedSeconds: 0, maximumAdditionalSeconds: 9, actingReady: true }] })[plan.id]; assert.ok(opportunity);
 			const buildInput: Parameters<typeof buildAssignmentAttempt>[0] = { candidate: selectedReady,
@@ -421,7 +419,7 @@ describe('native proposal Decision authority', () => {
 					opened = await availability.open(principal, publication); assert.ok(opened);
 				const admittedAt = new Date().toISOString(), activePlan = { ...compileWorkday({ id: run.id, teamId: 'team',
 					policyId: 'default', policyRevision: 1, executionMode: 'simulation', startsAt: new Date(Date.parse(admittedAt) - 20_000).toISOString(),
-					agentIds: [], policy: { durationSeconds: 60, planningPercent: 20, maximumConcurrency: 1, communicationConcurrency: 1 } }), state: 'active' as const };
+					agentIds: [], policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 60, planningPercent: 20, maximumConcurrency: 1, communicationConcurrency: 1 } }), state: 'active' as const };
 				await f.query(`INSERT INTO capacity_workday_runs (id,team_id,capacity_provider_id,scenario_id,status,environment,execution_kind,
 					trigger_kind,execution_mode,parameters_json,started_at,created_at,updated_at) VALUES (?,?,?,'native-governed-admission','running','local','workday','manual','simulation',?,?,?,?)`,
 					[run.id, 'team', providerId, JSON.stringify({ ...run.parameters, scheduledProjectIds: [projectId], appliedPlan: activePlan }),

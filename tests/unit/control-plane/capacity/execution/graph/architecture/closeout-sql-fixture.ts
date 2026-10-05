@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
-import { compileWorkday } from '@treeseed/sdk/agent-capacity';
+import { DEFAULT_WORKDAY_POLICY, compileWorkday } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../../../../src/api/capacity/database.ts';
 import { CapacityWorkdayRunRepository } from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
 import { CapacityWorkdayRunWriteRepository } from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run-write.ts';
@@ -54,7 +54,7 @@ export async function closeoutDatabase() {
 		const reads = new CapacityWorkdayRunRepository(owner), writes = new CapacityWorkdayRunWriteRepository(owner);
 		const plan = { ...compileWorkday({ id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
 			executionMode: 'simulation', startsAt: '2026-10-02T21:00:00.000Z', agentIds: [],
-			policy: { durationSeconds: 60, planningPercent: 20, maximumConcurrency: 5, communicationConcurrency: 5 } }),
+			policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 60, planningPercent: 20, maximumConcurrency: 5, communicationConcurrency: 5 } }),
 			state: 'closing', closingAt: now };
 		await writes.create(compileCapacityWorkdayRunRecord('team', { id: 'workday', status: 'running',
 			executionMode: 'simulation', startedAt: plan.startsAt,

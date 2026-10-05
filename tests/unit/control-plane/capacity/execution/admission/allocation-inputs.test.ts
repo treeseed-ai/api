@@ -3,7 +3,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { livingAllocationInputs } from '../../../../../../src/api/capacity/services/capacity/assignments/admission/living-allocation-inputs.ts';
 import { postgresGraph } from '../graph/architecture/living/living-postgres-fixture.ts';
 import { serializeCapacityWorkdayRunRow } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
-import { compileWorkday } from '@treeseed/sdk/agent-capacity';
+import { DEFAULT_WORKDAY_POLICY, compileWorkday } from '@treeseed/sdk/agent-capacity';
 
 const now = '2026-09-16T12:30:00.000Z';
 const plan = { schemaVersion: 'treeseed.workday/v1', id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
@@ -35,7 +35,7 @@ describe('live allocation ledger inputs', () => {
 			await f.left.pool.query(`INSERT INTO capacity_execution_providers (id,capacity_provider_id,display_name,adapter,native_unit,max_concurrent_runners,created_at,updated_at) VALUES ('configured-executor','provider','Configured executor','codex','seconds',1,$1,$1)`, [at]);
 			for (const [id, weight, ready] of [['a', 2, true], ['b', 1, true], ['idle', 10, false]] as const) {
 				const applied = { ...compileWorkday({ id, teamId: 'team', policyId: 'default', policyRevision: 1,
-					executionMode: id === 'b' ? 'production' : 'simulation', policy: { durationSeconds: 60, maximumConcurrency: 1,
+					executionMode: id === 'b' ? 'production' : 'simulation', policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 60, maximumConcurrency: 1,
 						communicationConcurrency: 1, planningPercent: 20, allocationWeight: weight }, agentIds: [], startsAt }), state: 'active' as const };
 				await f.left.pool.query(`INSERT INTO capacity_workday_runs (id,team_id,scenario_id,status,execution_mode,execution_kind,
 					parameters_json,started_at,created_at,updated_at) VALUES ($1,'team','weighted-input','running',$2,'workday',$3,$4,$4,$4)`,

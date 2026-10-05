@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
+import { stringify } from 'yaml';
+const contentRead = vi.hoisted(() => vi.fn());
+vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', async importOriginal => ({
+	...await importOriginal<object>(), resolveKnowledgeGatewayConnection: async () => ({ repositoryId: 'library',
+		client: { readRepositoryFile: contentRead } }),
+}));
 import { parsePublicWorkdayIntent, WorkdayPreflightService } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-preflight-service.ts';
 import { canonicalWorkdayShares } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-scheduling-service.ts';
 
@@ -21,8 +27,16 @@ function fixture(acceptedDecision = false) {
 	const decision = { id: 'decision', team_id: 'team', project_id: 'project-sdk', proposal_id: 'proposal',
 		proposal_version: 1, proposal_content_hash: 'd'.repeat(64), status: 'accepted', superseded_at: null,
 		proposal_status: 'accepted', active_version: 1, active_content_hash: 'd'.repeat(64),
-		decision_record_json: JSON.stringify({ decisionDependencies: [], proposalRef: { id: 'proposal', revision: 1,
+		decision_record_json: JSON.stringify({ decisionDependencies: [], proposalRef: { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
 			digest: `sha256:${'d'.repeat(64)}`, repository: 'library', commit: 'a'.repeat(40), path: 'proposals/proposal.mdx' } }) };
+	const record = JSON.parse(decision.decision_record_json), user = { store: 'postgresql', model: 'user', id: 'operator' };
+	const definition = { schemaVersion: 'treeseed.decision/v1', id: decision.id, projectId: decision.project_id,
+		decisionClass: 'proposal', decisionMethod: 'authority', subjectRef: record.proposalRef, disposition: 'approved',
+		rationale: 'Controlled UNIT acceptance input', authorityRefs: [user], decidedByRefs: [user], decidedAt: '2026-09-13T12:00:00.000Z' };
+	const source = `---\n${stringify(definition)}---\n`, decisionRef = { store: 'treedx', model: 'decision', id: decision.id,
+		revision: 1, repository: 'library', commit: 'b'.repeat(40), path: 'decisions/decision.mdx', digest: exactDigest(source) };
+	decision.decision_record_json = JSON.stringify({ ...record, decisionRef });
+	contentRead.mockReset().mockResolvedValue({ resolvedRef: decisionRef.commit, file: { path: decisionRef.path, content: source } });
 	const store = {
 		ensureInitialized: vi.fn(async () => {}),
 		all: vi.fn(async (sql: string): Promise<Record<string, unknown>[]> => sql.includes('capacity_provider_team_memberships') ? [{ capacity_provider_id: 'provider' }] : sql.includes('project_agent_classes') ? [{ id: 'class', slug: 'assurance' }] : sql.includes('SELECT id,slug FROM projects') ? [{ id: 'project-sdk', slug: 'sdk' }] : []),
@@ -31,13 +45,30 @@ function fixture(acceptedDecision = false) {
 			if (args[2] === 'workday.preflight') stored = JSON.parse(String(args[7]));
 			else replay = { request_digest: args[4], response_json: args[7] };
 		}),
-		preflightCapacityWorkdayRunRequest: vi.fn(async () => ({ availableSeconds: 600, projects: [{ id: 'project-sdk', agents: [{ slug: 'reviewer', agentClass: 'assurance', classSlug: 'assurance', activityTypes: ['reviewing'] }] }], executionNodeDemands: [{ graph_revision: 5, ...executionNodeRow({ id: 'node-review', kind: 'reviewing', agentClass: 'assurance', digest: 'sha256:source', expectedSeconds: 120, decisionRevision: 1 }) }] })),
+		preflightCapacityWorkdayRunRequest: vi.fn(async (): Promise<Record<string, unknown>> => ({ availableSeconds: 600, projects: [{ id: 'project-sdk', agents: [{ slug: 'reviewer', agentClass: 'assurance', classSlug: 'assurance', activityTypes: ['reviewing'] }] }], executionNodeDemands: [{ graph_revision: 5, ...executionNodeRow({ id: 'node-review', kind: 'reviewing', agentClass: 'assurance', digest: 'sha256:source', expectedSeconds: 120, decisionRevision: 1 }) }] })),
 		createCapacityWorkdayRun: vi.fn(async (_team: string, value: any) => ({ id: value.id, startedAt: value.startedAt })),
 	};
 	return { store, service: new WorkdayPreflightService(store as any), stored: () => stored };
 }
 
 describe('public workday selection custody', () => {
+	it('denies a Decision outside the selected projects before reading its governed content or persisting preflight authority', async () => {
+		for (const projects of [['sdk'], ['project-sdk'], ['sdk', 'other-selected']]) {
+			const f = fixture(true), first = f.store.first.getMockImplementation()!;
+			f.store.first.mockImplementation(async sql => {
+				const row = await first(sql);
+				return sql.includes('FROM governance_decisions decision') ? { ...row, project_id: 'foreign-project' } : row;
+			});
+			const body = { ...input(), projects, decisionIds: ['decision'] }, held = structuredClone(body);
+			const intent = parsePublicWorkdayIntent('team', body), frozen = structuredClone(intent);
+			await expect(f.service.preflight('team', intent, 'actor')).rejects.toMatchObject({
+				status: 409, code: 'governance_decision_project_mismatch',
+			});
+			expect(contentRead).not.toHaveBeenCalled(); expect(f.store.run).not.toHaveBeenCalled();
+			expect(f.store.createCapacityWorkdayRun).not.toHaveBeenCalled(); expect(f.stored()).toBeUndefined();
+			expect(body).toEqual(held); expect(intent).toEqual(frozen);
+		}
+	});
 	it('denies expired original admission and every nonrunning retained run without a start receipt or changed authority', async () => {
 		for (const status of ['queued', 'failed', 'cancelled', 'completed', 'degraded']) {
 			const f = fixture(), planned = await f.service.preflight('team', parsePublicWorkdayIntent('team', input()), 'actor');

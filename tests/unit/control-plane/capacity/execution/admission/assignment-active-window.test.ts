@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { buildAssignmentAttempt } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import { beginAssignmentPreparationTimeBudget, compileAssignmentTimeBudget } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-time-budget.ts';
 import { compileAssignmentExecutionWindow } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-execution-window-service.ts';
@@ -15,7 +16,7 @@ function allocate(now: string, mode: 'production' | 'simulation', startsAt: stri
 		permissionCeiling: planning.node.requestedPermissions } as never;
 	const applied = { ...structuredClone(run as Record<string, unknown>), executionMode: mode, parameters: { appliedPlan: {
 		...(run as { parameters: { appliedPlan: Record<string, unknown> } }).parameters.appliedPlan,
-		executionMode: mode, startsAt, endsAt, policySnapshot: { durationSeconds: 3600, planningPercent: 100 / 3,
+		executionMode: mode, startsAt, endsAt, policySnapshot: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 3600, planningPercent: 100 / 3,
 			maximumConcurrency: 5, communicationConcurrency: 5, planningTurnMaximumSeconds: 180,
 			projectPercentages: { project: 100 }, agentClassPercentages: { project: { engineer: 100 } } },
 	} } };

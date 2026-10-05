@@ -36,7 +36,10 @@ export function graphSource(projectId = 'project'): ExecutableProposalSource {
 	const next = { ...readyWorkItem(), id: 'next', agentClass: 'boundary-verifier', dependsOn: ['first'] };
 	return { teamId: 'team', projectId, repository: `${projectId}-library`, path: 'proposals/proposal.mdx',
 		commit: 'a'.repeat(40), digest: `sha256:${'b'.repeat(64)}`, proposalRevision: 1,
-		decision: { id: `${projectId}-decision`, revision: 1, digest: `sha256:${'c'.repeat(64)}`, current: true },
+		// Complete controlled authority INPUT for projector/state unit boundaries;
+		// not a native Decision publication or independent content readback.
+		decision: { id: `${projectId}-decision`, revision: 1, digest: `sha256:${'c'.repeat(64)}`, current: true,
+			repository: `${projectId}-library`, commit: 'd'.repeat(40), path: `decisions/${projectId}-decision.mdx` },
 		frontmatter: { ...readyProposal(), id: `${projectId}-proposal`, projectId, status: 'decided',
 			executionPlan: { workItems: [first, next] } } };
 }

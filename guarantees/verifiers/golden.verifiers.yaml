@@ -1,6 +1,31 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-qualified-selection-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/living-execution-assignment-paths.test.ts
+    testName: "ranks only fully provider-qualified candidates and records the exact eligible inventory without changing rejected high-priority input"
+  api.golden.execution-predecessor-missing-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/ready-execution-node.test.ts
+    testName: "denies a required native predecessor without a canonical owning result instead of dropping it from the candidate inventory"
+  api.golden.execution-predecessor-lineage-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/ready-execution-node.test.ts
+    testName: "keeps foreign predecessor Git citations readable without selecting their commits as the primary source lineage"
+  api.golden.execution-predecessor-decision-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/ready-execution-node.test.ts
+    testName: "binds cross-project predecessor queries to each owning node Decision and revision rather than filtering them by the dependent Decision"
+  api.golden.execution-publication-branch-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/publication-scope.test.ts
+    testName: "denies moved stale and failed published branch indexes before manifest publication while retaining exact commit indexing and supplied authority"
   api.golden.execution-decision-demand-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -3226,6 +3251,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workdays/selection-preflight.test.ts
     testName: "requires every explicit decision selector to resolve before persisting even a planning-only or partially matched preflight"
+  api.golden.execution-selected-project-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/selection-preflight.test.ts
+    testName: "denies a Decision outside the selected projects before reading its governed content or persisting preflight authority"
   api.golden.architecture-start-custody-unit-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -3241,6 +3271,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
     testName: "real public preflight refuses missing unaccepted foreign superseded and stale selected native governance rows without persisting a receipt or broadening planning authority"
+  api.golden.execution-policy-completeness-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "real public workday policy reads and preflight deny every missing stored policy field without inserting defaults or admission truth"
   api.golden.execution-offer-selection-unit-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

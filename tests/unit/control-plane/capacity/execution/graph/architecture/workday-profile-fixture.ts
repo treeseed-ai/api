@@ -1,5 +1,5 @@
 import { parse } from 'yaml';
-import { compileWorkday, validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
+import { DEFAULT_WORKDAY_POLICY, compileWorkday, validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
 import { projectActiveWorkdays } from '../../../../../../../src/api/capacity/policy/execution/workday-execution-projector.ts';
 import { applyOperationalState, type TeamGraph } from '../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
 
@@ -35,7 +35,7 @@ export function project(profiles: AgentDefinition[], state: 'active' | 'closing'
 	const plan = compileWorkday({ id: 'architecture-workday', teamId: 'team', policyId: 'default', policyRevision: 1,
 		executionMode: 'simulation', startsAt: '2026-09-16T12:00:00Z',
 		agentIds: profiles.map(definition => `project/${definition.id}:planning`),
-		policy: { durationSeconds: 1800, maximumConcurrency: 2, communicationConcurrency: 1 } });
+		policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 1800, maximumConcurrency: 2, communicationConcurrency: 1 } });
 	return projectActiveWorkdays({ teamId: 'team', revision: 1,
 		profiles: Object.fromEntries(profiles.map(definition => [`project:${definition.agentClass}`, definition])),
 		sources: [{ id: plan.id, teamId: 'team', parameters: { appliedPlan: { ...plan, state },

@@ -8,6 +8,7 @@ vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => (
 
 import { executionNodeRunScope, linearPredecessorSourceCommit, listReadyExecutionNodes, workItemContext } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
+import { replayAttempt } from './architecture/admission-replay-fixture.ts';
 
 const projectId = 'project';
 const sourceRef = {
@@ -122,6 +123,31 @@ const teamContextStore = {
 };
 
 describe('direct ready-node admission input', () => {
+	it('denies a required native predecessor without a canonical owning result instead of dropping it from the candidate inventory', async () => {
+		for (const missing of [null, {}, { ...result, status: 'running' }, { ...result, status: 'failed' }]) {
+			const supplied = { predecessor_node_id: 'required-predecessor', assignment_result_json: missing }, held = structuredClone(supplied);
+			const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([nodeRow()])
+				.mockResolvedValueOnce([classRow(definition)]).mockResolvedValueOnce([supplied]) };
+			await expect(listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs))
+				.rejects.toMatchObject({ code: 'execution_node_predecessor_result_missing' });
+			expect(supplied).toEqual(held);
+		}
+	});
+	it('keeps foreign predecessor Git citations readable without selecting their commits as the primary source lineage', async () => {
+		const foreign = { ...result, references: [{ kind: 'git', repository: 'treeseed-ai/precursor', commit: 'f'.repeat(40) }] };
+		for (const references of [foreign.references, [...foreign.references, ...result.references], [...result.references, ...foreign.references]]) {
+			const supplied = { ...foreign, references }, held = structuredClone(supplied);
+			const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([nodeRow()])
+				.mockResolvedValueOnce([classRow(definition)]).mockResolvedValueOnce([{ assignment_result_json: supplied,
+					assignment_attempt_json: { ...replayAttempt(), predecessorResultIds: [] } }]) };
+			const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
+			const expected = references.some(ref => ref.repository === 'treeseed-ai/sdk') ? 'd'.repeat(40) : undefined;
+			expect(candidate.lineageSourceCommit).toBe(expected); expect(candidate.directPredecessorSourceCommit).toBe(expected);
+			expect(candidate.predecessorResults).toEqual([supplied]);
+			expect(candidate.contextRefs).toContainEqual(expect.objectContaining({ store: 'git', repository: 'treeseed-ai/precursor', commit: 'f'.repeat(40) }));
+			expect(supplied).toEqual(held);
+		}
+	});
 	it('derives primary source identity from the verified project repository rather than its database row or foreign citation order', async () => {
 		const foreign = { store: 'git' as const, model: 'repository', id: 'foreign-citation', repository: 'treeseed-ai/precursor', commit: 'f'.repeat(40) };
 		for (const refs of [[foreign, ...contextRefs], [...contextRefs, foreign]]) {
@@ -238,6 +264,21 @@ describe('direct ready-node admission input', () => {
 		}));
 		expect(JSON.stringify(candidate)).not.toMatch(/capacityPlan|demand|sourceCandidate|artifactManifest/u);
 	});
+	it('binds cross-project predecessor queries to each owning node Decision and revision rather than filtering them by the dependent Decision', async () => {
+		const selected = nodeRow('dependent', 'dependent-decision'), held = structuredClone(selected);
+		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([selected])
+			.mockResolvedValueOnce([classRow(definition)]).mockResolvedValueOnce([{ assignment_result_json: result }]) };
+		const [candidate] = await listReadyExecutionNodes(store, { ...run, parameters: { decisionIds: ['dependent-decision'] } } as never,
+			project as never, async () => contextRefs);
+		expect(candidate.predecessorResults).toEqual([result]);
+		const [query, parameters] = store.all.mock.calls[2]!;
+		expect(query).toContain('jsonb_array_elements(predecessor.authority_refs_json::jsonb)');
+		expect(query).toContain('jsonb_array_elements(actor.authority_refs_json::jsonb)');
+		expect(query).toContain('candidate.execution_node_revision=predecessor.node_revision');
+		expect(query).toContain('candidate.execution_node_revision=actor.node_revision');
+		expect(parameters).toEqual(['team', 'dependent', 'team', 'dependent']);
+		expect(selected).toEqual(held);
+	});
 	it('keeps the assignment project library binding distinct from Team Library context', async () => {
 		const store = { ...teamContextStore,
 			getProjectTreeDxLibrary: vi.fn(async (id: string) => ({ repositoryId: id === projectId ? 'sdk-library' : 'team-library',
@@ -282,8 +323,10 @@ describe('direct ready-node admission input', () => {
 		const [sql, bindings] = store.all.mock.calls[2]!;
 		expect(sql).toContain("pair.provenance='review-pair'");
 		expect(sql).toContain("reviewer.status='completed'");
-		expect(sql.match(/candidate\.decision_id=\?/gu)).toHaveLength(2);
-		expect(bindings).toEqual(['decision', 'team', 'node', 'decision', 'team', 'node']);
+		expect(sql.match(/candidate\.decision_id IS NOT DISTINCT FROM/gu)).toHaveLength(2);
+		expect(sql).toContain('jsonb_array_elements(predecessor.authority_refs_json::jsonb)');
+		expect(sql).toContain('jsonb_array_elements(actor.authority_refs_json::jsonb)');
+		expect(bindings).toEqual(['team', 'node', 'team', 'node']);
 	});
 
 	it('does not carry an older decision review into an initial Actor revision', async () => {

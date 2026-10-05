@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createPublicKey, randomUUID, verify } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { stringify } from 'yaml';
@@ -13,6 +13,7 @@ import { loadTeamExactDependencyLinks } from '../../../../../../src/api/capacity
 import { relationInputs, relationPath } from '../../../capacity/execution/graph/architecture/relations/relation-fixture.ts';
 import { postgresGraph } from '../../../capacity/execution/graph/architecture/living/living-postgres-fixture.ts';
 import { translateControlPlaneSqlToPostgres } from '../../../../../../src/api/support/control-plane-postgres.ts';
+import { treeDxDelegationAuthority } from '../../../../../../src/api/control-plane/treedx/delegation-authority.ts';
 
 type Row = Record<string, unknown>;
 export const object = (value: unknown): Row => { assert.ok(value && typeof value === 'object' && !Array.isArray(value)); return value as Row; };
@@ -37,7 +38,28 @@ export async function relationAuthoringDatabase(nativePostgres = false) {
 	for (const key of ['TREESEED_TREEDX_URL', 'TREESEED_TREEDX_BASE_URL']) {
 		assert.ok(!process.env[key] || process.env[key]?.replace(/\/+$/u, '') === baseUrl.replace(/\/+$/u, ''), 'Native server override must not redirect custody');
 	}
-	const client = new TreeDxClient({ baseUrl, transport: new FetchTransport({ baseUrl, token, timeoutMs: 15_000 }) });
+	// The configured bootstrap scope is controlled test authority, not an agent
+	// lease. Use the existing issuer/auth-provider path with its unchanged120s
+	// expiry so a complete suite does not reuse an expired startup credential.
+	const authority = treeDxDelegationAuthority(), parts = token.split('.'); assert.equal(parts.length, 3);
+	const header = object(JSON.parse(Buffer.from(parts[0]!, 'base64url').toString('utf8')));
+	const claims = object(JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf8')));
+	assert.equal(header.alg, 'RS256'); assert.equal(header.kid, authority.currentJwk.kid);
+	assert.ok(verify('RSA-SHA256', Buffer.from(`${parts[0]}.${parts[1]}`),
+		createPublicKey({ key: authority.currentJwk, format: 'jwk' }), Buffer.from(parts[2]!, 'base64url')));
+	assert.equal(claims.iss, authority.issuer); assert.equal(claims.aud, authority.audience);
+	assert.ok(Number(claims.exp) - Number(claims.iat) <= 125 && Number(claims.exp) > Number(claims.iat));
+	const scope = (key: string) => { const values = claims[key]; assert.ok(Array.isArray(values));
+		return values.map(value => { assert.equal(typeof value, 'string'); assert.ok(value); return String(value); }); };
+	const identity = (key: string) => { assert.equal(typeof claims[key], 'string'); assert.ok(claims[key]); return String(claims[key]); };
+	const delegation = { actorId: identity('treedx_actor_id'), tenantId: identity('treedx_tenant_id'),
+		projectId: identity('treeseed_project_id'), connectionId: identity('treeseed_connection_id'),
+		scope: { repositoryIds: scope('treedx_repo_ids'), capabilities: scope('treedx_capabilities'),
+			refs: scope('treedx_refs'), paths: scope('treedx_paths') } };
+	const client = new TreeDxClient({ baseUrl, transport: new FetchTransport({ baseUrl,
+		authProvider: { getToken: () => authority.mint(delegation).token }, timeoutMs: 15_000 }) });
+	const nativeNode = object(object(await client.registry.localNode()).node), nodeId = String(nativeNode.id ?? '');
+	assert.ok(nodeId, 'Native server must expose its actual broker node identity');
 	const postgres = nativePostgres ? await postgresGraph() : undefined, lite = postgres ? undefined : new PGlite();
 	const db = postgres ? { query: <T extends Row>(sql: string, params: unknown[] = []) => postgres.left.pool.query<T>(sql, params),
 		exec: (sql: string) => postgres.left.pool.query(sql), close: postgres.close } : lite!;
@@ -65,10 +87,10 @@ export async function relationAuthoringDatabase(nativePostgres = false) {
 		if (failures.length) throw new AggregateError(failures, 'Native relation fixture teardown remains unproven');
 	};
 	try {
-		for (const file of postgres ? [] : ['0000_control_plane.sql', '0023_living_execution_graph.sql', '0032_execution_graph_revision_integrity.sql', '0041_execution_content_output_authority.sql', '0044_execution_priority_dependency_provenance.sql']) {
+		for (const file of postgres ? [] : ['0000_control_plane.sql', '0006_treedx_commit_replication.sql', '0017_remove_git_backup_replication.sql', '0018_repair_git_backup_column_removal.sql', '0023_living_execution_graph.sql', '0032_execution_graph_revision_integrity.sql', '0041_execution_content_output_authority.sql', '0044_execution_priority_dependency_provenance.sql']) {
 			await db.exec(readFileSync(`drizzle/control-plane/${file}`, 'utf8'));
 		}
-		const config = { TREESEED_TREEDX_URL: baseUrl, TREESEED_ENVIRONMENT: 'test' };
+		const config = { TREESEED_TREEDX_URL: baseUrl, TREESEED_TREEDX_NODE_ID: nodeId, TREESEED_ENVIRONMENT: 'test' };
 		const store = new ControlPlaneStore(config, postgres?.left ?? {
 			prepare: (sql: string) => ({ bind: (...params: unknown[]) => new Statement(sql, params) }),
 			batch: (statements: unknown[]) => { assert.ok(lite); return lite.transaction(async transaction => {
@@ -85,6 +107,10 @@ export async function relationAuthoringDatabase(nativePostgres = false) {
 		if (peerStore) peerStore.initializationPromise = Promise.resolve();
 		const input = relationInputs(), now = new Date().toISOString();
 		if (!postgres) await query('INSERT INTO teams (id,slug,name,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?)', ['team', 'team', 'Team', '{}', now, now]);
+		// Existing public publication methods update the represented binding.
+		// This fresh instance row is connection INPUT, not provisioning evidence.
+		await query(`INSERT INTO treedx_instances (id,team_id,kind,provider,name,base_url,status,created_at,updated_at)
+			VALUES (?,?,?,?,?,?,?,?,?)`, ['native-conformance', 'team', 'local', 'treedx', 'Disposable native authority fixture', baseUrl, 'active', now, now]);
 		for (const source of input.sources) {
 			const name = `api-relation-${randomUUID()}`;
 			const response = object(await client.repositories.create({ repositoryName: name })), repo = object(response.repo);

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { appliedWorkdaySchema, compileWorkday } from '@treeseed/sdk/agent-capacity';
+import { DEFAULT_WORKDAY_POLICY, appliedWorkdaySchema, compileWorkday } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../../../src/api/capacity/database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
 vi.mock('../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-content-readback.ts', () => ({
@@ -8,7 +8,7 @@ vi.mock('../../../../../../src/api/capacity/services/capacity/assignments/lifecy
 import { advanceLivingWorkday } from '../../../../../../src/api/capacity/services/capacity/workdays/lifecycle/living-workday-lifecycle.ts';
 
 const plan = { ...compileWorkday({ id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 4,
-	executionMode: 'simulation', policy: { durationSeconds: 3600, planningPercent: 100 / 3,
+	executionMode: 'simulation', policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 3600, planningPercent: 100 / 3,
 		planningTurnMaximumSeconds: 180, maximumConcurrency: 5, communicationConcurrency: 5 },
 	agentIds: ['project/researcher:planning'], startsAt: '2026-10-01T20:05:41.362Z' }), state: 'active' as const };
 

@@ -1,12 +1,38 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { appliedWorkdaySchema } from '@treeseed/sdk/agent-capacity';
+import { appliedWorkdaySchema, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { canonicalJson } from '../../../../../../../src/api/capacity/security.ts';
 import { workdayStartDatabase } from './workday-start-fixture.ts';
 
 // AUTHORING ONLY: no execution receipt. Native SQL/HTTP controls do not prove
 // separate PostgreSQL connections, actual TreeDX policy or provider consumption.
 describe('first manual and recurring admission through the same public owning path', () => {
+	it('real public workday policy reads and preflight deny every missing stored policy field without inserting defaults or admission truth', async () => {
+		const f = await workdayStartDatabase(); try {
+			const original = { revision: 1, policy: structuredClone(DEFAULT_WORKDAY_POLICY) }, intent = structuredClone(f.intent);
+			await f.query('UPDATE teams SET metadata_json=? WHERE id=?', [JSON.stringify({ workdayProfile: original }), 'team']);
+			expect(await f.publicService.profilesShow(f.principal, 'team', 'default')).toEqual({ id: 'default', teamId: 'team', ...original });
+			const admitted: string[] = [];
+			for (const field of Object.keys(original.policy)) {
+				const policy = Object.fromEntries(Object.entries(original.policy).filter(([key]) => key !== field));
+				const bytes = JSON.stringify({ workdayProfile: { revision: 1, policy } });
+				await f.query('UPDATE teams SET metadata_json=? WHERE id=?', [bytes, 'team']);
+				const before = await f.snapshot(), calls = structuredClone(f.calls);
+				for (const [kind, operation] of [['show', () => f.publicService.profilesShow(f.principal, 'team', 'default')],
+					['preflight', () => f.preflight()]] as const) {
+					try { await operation(); admitted.push(`${field}:${kind}`); }
+					catch (error) { expect(error).toMatchObject({ status: 503, code: 'workday_profile_invalid' }); }
+					expect(await f.snapshot()).toEqual(before); expect(f.calls).toEqual(calls);
+					expect(await f.first('SELECT metadata_json FROM teams WHERE id=?', ['team'])).toEqual({ metadata_json: bytes });
+				}
+			}
+			expect(admitted).toEqual([]); expect(f.intent).toEqual(intent); expect(original.policy).toEqual(DEFAULT_WORKDAY_POLICY);
+			await f.query('UPDATE teams SET metadata_json=? WHERE id=?', [JSON.stringify({ workdayProfile: original }), 'team']);
+			const planned = await f.preflight(); expect(planned.selectedDemands).toEqual([]);
+			const after = await f.snapshot(); expect(after.receipts).toHaveLength(1); expect(after.workdays).toEqual([]);
+			expect(after.assignments).toEqual([]); expect(after.reservations).toEqual([]); expect(after.usage).toEqual([]); expect(after.ledger).toEqual([]);
+		} finally { await f.close(); }
+	});
 	it('native original planning ticks retain an interrupted generation and repeat beyond two rounds without duplicate nodes events or financial writes', async () => {
 		const f = await workdayStartDatabase(); try {
 			const input = structuredClone(f.intent), current = await f.publicService.profilesShow(f.principal, 'team', 'default');

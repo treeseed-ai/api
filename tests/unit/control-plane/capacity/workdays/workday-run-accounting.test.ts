@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { compileWorkday } from '@treeseed/sdk/agent-capacity';
+import { DEFAULT_WORKDAY_POLICY, compileWorkday } from '@treeseed/sdk/agent-capacity';
 import { CapacityWorkdayRunRepository } from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
 
 describe('workday admission read-back', () => {
 	it('derives project and class receipt totals from team-scoped reservations without storing duplicate counters', async () => {
 		const now = '2026-09-16T12:00:00.000Z';
 		const plan = compileWorkday({ id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
-			executionMode: 'simulation', startsAt: now, agentIds: [], policy: { durationSeconds: 600,
+			executionMode: 'simulation', startsAt: now, agentIds: [], policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 600,
 				maximumConcurrency: 1, communicationConcurrency: 1 } });
 		const row = { id: 'workday', team_id: 'team', scenario_id: 'profile:default', status: 'running', environment: 'local',
 			execution_kind: 'workday', trigger_kind: 'manual', execution_mode: 'simulation', parameters_json: JSON.stringify({ appliedPlan: plan }),

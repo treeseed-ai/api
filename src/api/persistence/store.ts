@@ -18,6 +18,7 @@ export class ControlPlaneStore {
         };
         batch?(statements: unknown[]): Promise<unknown>;
         migrate?(): Promise<unknown>;
+        close?(): Promise<void> | void;
     };
     declare initializationPromise: Promise<unknown> | null;
     declare artifactBucket: unknown;

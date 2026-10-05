@@ -21,7 +21,9 @@ export async function relationPublicationDatabase() {
 	const restore = () => { if (originalRoot === undefined) delete process.env.TREESEED_PUBLISHED_KNOWLEDGE_ROOT;
 		else process.env.TREESEED_PUBLISHED_KNOWLEDGE_ROOT = originalRoot; };
 	try {
-		const f = await relationAuthoringDatabase(); fixture = f;
+		// Publication invokes the original graph reconciliation and transaction
+		// boundaries. Reuse full migrated native PostgreSQL, not partial DDL.
+		const f = await relationAuthoringDatabase(true); fixture = f;
 		const storage = createLocalKnowledgePublicationStorage();
 		const client = new DirectControlPlaneRunnerClient(f.store, false), runnerId = 'isolated-relation-publication';
 		await client.register({ runnerId, environment: 'local', capabilities: ['knowledge:publish_review'], maxConcurrentJobs: 1 });

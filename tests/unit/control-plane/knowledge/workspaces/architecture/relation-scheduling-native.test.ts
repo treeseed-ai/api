@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { relationSchedulingDatabase, schedulingInputs } from './relation-scheduling-fixture.ts';
+import { relationSchedulingDatabase } from './relation-scheduling-fixture.ts';
 import { graphNode } from '../../../capacity/execution/graph/architecture/living/living-graph-fixture.ts';
-import { assignmentAttemptSchema, assignmentResultSchema, compileWorkday } from '@treeseed/sdk/agent-capacity';
+import { DEFAULT_WORKDAY_POLICY, assignmentAttemptSchema, assignmentResultSchema, compileWorkday } from '@treeseed/sdk/agent-capacity';
 import { object } from './relation-authoring-fixture.ts';
 import { listReadyExecutionNodes } from '../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import { assignNextReadyExecutionNode } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/living-execution-assignment.ts';
@@ -9,6 +9,7 @@ import { buildAssignmentAttempt } from '../../../../../../src/api/capacity/servi
 import { livingAllocationInputs } from '../../../../../../src/api/capacity/services/capacity/assignments/admission/living-allocation-inputs.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { createHash } from 'node:crypto';
+import { canonicalOfferBuildInput } from '../../../capacity/execution/fixtures/assignment-attempt-fixtures.ts';
 
 describe('native publication to owning scheduler candidate input', () => {
 	it('native exact governed Proposal bytes produce the same canonical work-item priority on Actor and Reviewer nodes without making blocked work ready', async () => {
@@ -17,7 +18,8 @@ describe('native publication to owning scheduler candidate input', () => {
 		try {
 			const sources = structuredClone(f.sources), files: Array<{ source: typeof f.sources[number]; returned: Record<string, unknown> }> = [];
 			const readSource = async (source: typeof f.sources[number]) => {
-				const connection = await resolveKnowledgeGatewayConnection(f.store, { projectId: source.projectId, readRefs: [source.commit] });
+				const connection = await resolveKnowledgeGatewayConnection(f.store, { projectId: source.projectId, write: false,
+					readRefs: [source.commit], workspacePaths: [source.path] });
 				expect(connection).toBeTruthy();
 				const returned = object(await connection!.client.readRepositoryFile({ repoId: source.repository, ref: source.commit, path: source.path }));
 				expect(returned.resolvedRef).toBe(source.commit);
@@ -33,8 +35,8 @@ describe('native publication to owning scheduler candidate input', () => {
 				const nodes = published.graph.nodes.filter(node => node.projectId === projectId && node.workItemId === workItemId);
 				expect(nodes.map(node => node.pairRole).sort()).toEqual(['actor', 'reviewer']);
 				for (const node of nodes) expect(node).toMatchObject({ priority });
-				const rows = await f.query('SELECT id,priority,status FROM execution_nodes WHERE project_id=? AND work_item_id=? ORDER BY id', [projectId, workItemId]);
-				expect(rows.rows).toEqual(nodes.map(node => ({ id: node.id, priority, status: node.status })).sort((a, b) => a.id.localeCompare(b.id)));
+				const rows = await f.query('SELECT id,priority::text AS priority,status FROM execution_nodes WHERE project_id=? AND work_item_id=? ORDER BY id', [projectId, workItemId]);
+				expect(rows.rows).toEqual(nodes.map(node => ({ id: node.id, priority: String(priority), status: node.status })).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 			}
 			expect(graphNode(published.graph, 'first', 'actor', 'dependent').status).toBe('blocked'); expect(await f.ready()).toEqual([]);
 			expect(await f.snapshot()).toEqual(before);
@@ -57,14 +59,14 @@ describe('native publication to owning scheduler candidate input', () => {
 			// input. This is not a refresh of an executing assignment or lease.
 			const now = new Date().toISOString(), startsAt = new Date(Date.parse(now) - 721_000).toISOString();
 			const plan = { ...compileWorkday({ id: f.currentRun.id, teamId: f.currentRun.teamId, policyId: 'default', policyRevision: 1,
-				executionMode: 'simulation', startsAt, agentIds: [], policy: { durationSeconds: 3600, planningPercent: 20,
+				executionMode: 'simulation', startsAt, agentIds: [], policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 3600, planningPercent: 20,
 					maximumConcurrency: 1, communicationConcurrency: 1, projectPercentages: { precursor: 90, dependent: 10 } } }), state: 'active' as const };
-			const parameters = { ...f.currentRun.parameters, scheduledProjectIds: ['precursor', 'dependent'], appliedPlan: plan };
+			const parameters = { ...f.currentRun.parameters, projects: ['precursor', 'dependent'], scheduledProjectIds: ['precursor', 'dependent'], appliedPlan: plan };
 			Object.assign(f.currentRun, { parameters, startedAt: startsAt });
 			await f.query(`INSERT INTO capacity_workday_runs (id,team_id,capacity_provider_id,scenario_id,status,environment,execution_kind,trigger_kind,execution_mode,parameters_json,started_at,created_at,updated_at)
 				VALUES (?,?,'provider','native-eligible-selection','running','local','workday','manual','simulation',?,?,?,?)`,
 				[f.currentRun.id, f.currentRun.teamId, JSON.stringify(parameters), startsAt, startsAt, now]);
-			const providers = structuredClone(schedulingInputs().providers), principal = { teamId: f.currentRun.teamId, capacityProviderId: 'provider', membershipId: 'membership' };
+			const providers = structuredClone(canonicalOfferBuildInput(now, 'treeseed.research.verification').providers), principal = { teamId: f.currentRun.teamId, capacityProviderId: 'provider', membershipId: 'membership' };
 			for (const provider of providers) {
 				if (!provider.accountingObservation) throw new Error('Original accounting observation required');
 				provider.accountingObservation.modelUsage = { ...provider.accountingObservation.modelUsage, day: now.slice(0, 10), observedAt: now };
@@ -95,12 +97,12 @@ describe('native publication to owning scheduler candidate input', () => {
 					buildAssignmentAttempt({ candidate: value, run: f.currentRun, principal, providerSessionId: 'session', providers, allocationInputs: allocations, attempt: 1, now });
 					eligible.push(value);
 				} catch (error) {
-					expect(value.node.projectId).toBe('precursor'); expect(error).toMatchObject({ code: 'capacity_execution_provider_unavailable' });
+					expect(value.node.projectId, error instanceof Error ? error.message : 'Unexpected native build denial').toBe('precursor'); expect(error).toMatchObject({ code: 'capacity_execution_provider_unavailable' });
 				}
 			}
 			expect(eligible.length).toBeGreaterThan(0); expect(eligible.every(value => value.node.projectId === 'dependent')).toBe(true);
 			const before = await f.snapshot(), supplied = structuredClone({ providers, principal, parameters });
-			const observation = object(await assignNextReadyExecutionNode(f.store, principal, 'session', providers, now)), admitted = object(observation.assignment);
+			const observation = object(await assignNextReadyExecutionNode(f.capacity, principal, 'session', providers, now)), admitted = object(observation.assignment);
 			const attempt = assignmentAttemptSchema.parse(admitted.assignmentAttempt); expect(attempt.projectId).toBe('dependent');
 			const selection = object(object(object(admitted.explanation).metadata).allocation).selection;
 			const expected = eligible.map(value => {
@@ -113,7 +115,7 @@ describe('native publication to owning scheduler candidate input', () => {
 			const committed = await f.snapshot();
 			expect(committed.assignments).toHaveLength(before.assignments.length + 1); expect(committed.reservations).toHaveLength(1);
 			expect(committed.ledger).toEqual(before.ledger); expect({ providers, principal, parameters }).toEqual(supplied);
-			const again = object(await assignNextReadyExecutionNode(f.store, principal, 'session', providers, now)); expect(again.assignment).toBeNull();
+			const again = object(await assignNextReadyExecutionNode(f.capacity, principal, 'session', providers, now)); expect(again.assignment).toBeNull();
 			expect(await f.snapshot()).toEqual(committed);
 			// Actual native content reads and original SQL/scheduler/builder/admission.
 			// Provider availability/principal/predecessors remain controlled INPUTS,
@@ -172,6 +174,18 @@ describe('native publication to owning scheduler candidate input', () => {
 			expect(candidate!.contextRefs).toContainEqual(expect.objectContaining({ store: 'git', repository: 'treeseed-ai/precursor', commit: 'e'.repeat(40) }));
 			expect(candidate!.contextRefs).toContainEqual(expect.objectContaining({ store: 'treedx', model: 'decision', repository: f.sources[0]!.repository, path: 'decisions/approval.md' }));
 			expect(f.sources).toEqual(originals); expect(await f.snapshot()).toEqual(before); expect(before.reservations).toEqual([]); expect(before.ledger).toEqual([]);
+			for (const input of inputs) for (const changed of ['decision', 'revision', 'failed-result'] as const) {
+				await f.query('UPDATE capacity_provider_assignments SET decision_id=?,execution_node_revision=?,assignment_result_json=? WHERE id=?',
+					[changed === 'decision' ? 'foreign-decision' : f.sources[0]!.decision!.id,
+						changed === 'revision' ? input.node.nodeRevision + 1 : input.node.nodeRevision,
+						JSON.stringify(changed === 'failed-result' ? { ...input.result, status: 'failed' } : input.result), input.attempt.id]);
+				const invalid = await f.snapshot();
+				await expect(f.ready()).rejects.toMatchObject({ code: 'execution_node_predecessor_result_missing' });
+				expect(await f.snapshot()).toEqual(invalid);
+				await f.query('UPDATE capacity_provider_assignments SET decision_id=?,execution_node_revision=?,assignment_result_json=? WHERE id=?',
+					[f.sources[0]!.decision!.id, input.node.nodeRevision, JSON.stringify(input.result), input.attempt.id]);
+			}
+			expect(await f.snapshot()).toEqual(before); expect(await f.ready()).toEqual(candidates);
 		} finally { await f.close(); }
 	}, 60_000);
 	it('failed cancelled running and Actor-only supplied predecessor states cannot make the native dependent candidate eligible', async () => {

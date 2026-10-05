@@ -35,7 +35,7 @@ export function prioritizeCommunicationCandidates<T extends { node: { kind: stri
 }
 
 export function isNodeEligibleInWorkdayPhase(
-	node: Pick<ExecutionNode, 'kind' | 'pairRole'>, phase: 'planning' | 'acting', closing: boolean,
+	node: Pick<ExecutionNode, 'kind' | 'pairRole'>, phase: 'planning' | 'acting' | 'ended', closing: boolean,
 ): boolean {
 	if (closing) return node.kind === 'reporting';
 	if (node.kind === 'reporting') return false;
@@ -111,13 +111,14 @@ async function issueLivingTreeDxAuthority(store: LivingExecutionStore, run: Para
 			{ assignmentId: assignment.id },
 		);
 	}
-	const write = assignment.workspace.mode === 'treedx';
+	const writableWorkspace = assignment.workspace.mode === 'treedx' ? assignment.workspace : null;
+	const write = writableWorkspace !== null;
 	return {
 		id: `tdx_${assignment.id}`, teamId: assignment.teamId, projectId: assignment.projectId,
 		assignmentId: assignment.id, repositoryId: repositoryId ?? null, repositoryProjectId: repositoryProjectId || null,
-		workspaceId: write ? assignment.workspace.workspaceId : null,
-		baseRef: write ? assignment.workspace.baseCommit : assignment.sourceRef.commit ?? null,
-		baseCommitSha: write ? assignment.workspace.baseCommit : assignment.sourceRef.commit ?? null,
+		workspaceId: writableWorkspace ? writableWorkspace.workspaceId : null,
+		baseRef: writableWorkspace ? writableWorkspace.baseCommit : assignment.sourceRef.commit ?? null,
+		baseCommitSha: writableWorkspace ? writableWorkspace.baseCommit : assignment.sourceRef.commit ?? null,
 		...(write ? { branchName: String(workspace.branchName ?? `refs/heads/${assignment.id}`) } : {}),
 		status: 'issued',
 		scopes: write
@@ -129,8 +130,8 @@ async function issueLivingTreeDxAuthority(store: LivingExecutionStore, run: Para
 		allowedPaths, allowedReadPaths: readPaths, allowedWritePaths: writePaths, readRepositories,
 		expiresAt: assignment.deadline,
 		metadata: { source: 'living_execution_graph', nodeId: assignment.nodeId, nodeRevision: assignment.nodeRevision,
-			graphRevision: assignment.graphRevision, baseRef: write ? assignment.workspace.baseCommit : assignment.sourceRef.commit ?? null,
-			baseCommitSha: write ? assignment.workspace.baseCommit : assignment.sourceRef.commit ?? null, repositoryProjectId: repositoryProjectId || null,
+			graphRevision: assignment.graphRevision, baseRef: writableWorkspace ? writableWorkspace.baseCommit : assignment.sourceRef.commit ?? null,
+			baseCommitSha: writableWorkspace ? writableWorkspace.baseCommit : assignment.sourceRef.commit ?? null, repositoryProjectId: repositoryProjectId || null,
 			branchName: workspace.branchName ?? null, readRepositories },
 	};
 }
@@ -181,7 +182,31 @@ export async function assignNextReadyExecutionNode(
 		const withinWindow = concurrent.filter(() => appliedPlan.state === 'closing'
 			|| Date.parse(appliedPlan.endsAt) - Date.parse(now) >= 1_000);
 		selection.windowEligible += withinWindow.length;
-		const candidates = prioritizeCommunicationCandidates(withinWindow);
+		const defer = (error: unknown, nodeId: string) => {
+			if (!(error instanceof CapacityGovernanceError) || ![
+				'execution_node_claim_lost', 'execution_node_claim_stale',
+				'capacity_execution_provider_unavailable', 'capacity_assignment_allocation_deferred',
+			].includes(error.code)) throw error;
+			if (error.code === 'execution_node_claim_lost') { selection.claimLost += 1; selection.claimLoss = error.details; }
+			if (error.code === 'execution_node_claim_stale') selection.claimStale += 1;
+			if (error.code === 'capacity_execution_provider_unavailable') selection.providerUnavailable += 1;
+			if (error.code === 'capacity_assignment_allocation_deferred') selection.allocationDeferred += 1;
+			if (error.code.startsWith('capacity_')) deferred.push({ runId: run.id, nodeId, code: error.code, details: error.details });
+		};
+		const qualified: Array<(typeof withinWindow)[number] & { selected: ReturnType<typeof buildAssignmentAttempt> }> = [];
+		for (const candidate of withinWindow) {
+			selection.attemptedNodes += 1;
+			try {
+				const priorAttempts = await executionNodeAssignmentGeneration(store, candidate.node.teamId, candidate.node.id, candidate.node.nodeRevision);
+				const allocationInputs = await livingAllocationInputs(store, { run, runs, providers: executionProviders,
+					capacityProviderId: principal.capacityProviderId, capabilityId: candidate.node.requiredCapabilities?.[0] ?? '',
+					agentClass: candidate.node.agentClass!, activity: candidate.effectiveProfile.activity, now });
+				const selected = buildAssignmentAttempt({ candidate, run, principal, providerSessionId,
+					providers: executionProviders, allocationInputs, attempt: priorAttempts + 1, now });
+				qualified.push({ ...candidate, selected });
+			} catch (error) { defer(error, candidate.node.id); }
+		}
+		const candidates = prioritizeCommunicationCandidates(qualified);
 		const prior = await store.all(`SELECT node.project_id,node.agent_class,reservation.active_seconds,
 			reservation.reserved_seconds,reservation.state FROM capacity_reservations reservation
 			JOIN capacity_provider_assignments assignment ON assignment.reservation_id=reservation.id
@@ -198,18 +223,8 @@ export async function assignNextReadyExecutionNode(
 			const candidate = remaining.find((item) => item.node.id === selectedNode?.id);
 			if (!candidate) break;
 			remaining.splice(remaining.indexOf(candidate), 1);
-			selection.attemptedNodes += 1;
-				const priorAttempts = await executionNodeAssignmentGeneration(
-					store, candidate.node.teamId, candidate.node.id, candidate.node.nodeRevision,
-				);
 				try {
-				const allocationInputs = await livingAllocationInputs(store, { run, runs, providers: executionProviders,
-					capacityProviderId: principal.capacityProviderId, capabilityId: candidate.node.requiredCapabilities?.[0] ?? '',
-					agentClass: candidate.node.agentClass!, activity: candidate.effectiveProfile.activity, now });
-				const selected = buildAssignmentAttempt({
-					candidate, run, principal, providerSessionId, providers: executionProviders, allocationInputs,
-					attempt: priorAttempts + 1, now,
-				});
+				const selected = candidate.selected;
 				const attempt = selected.assignment;
 					const treedxProxyHandle = await issueLivingTreeDxAuthority(store, run, attempt, now);
 					const admitted = await admitLivingExecutionAssignment(store, { principal, assignment: attempt, allocation: { ...selected.allocation, selection: selectedNode },
@@ -225,21 +240,7 @@ export async function assignNextReadyExecutionNode(
 						predecessorResults: candidate.predecessorResults, treedxProxyHandle, now });
 					return { assignment: admitted, selection };
 				} catch (error) {
-					if (error instanceof CapacityGovernanceError && [
-						'execution_node_claim_lost', 'execution_node_claim_stale',
-						'capacity_execution_provider_unavailable',
-						'capacity_assignment_allocation_deferred',
-					].includes(error.code)) {
-					if (error.code === 'execution_node_claim_lost') { selection.claimLost += 1; selection.claimLoss = error.details; }
-					if (error.code === 'execution_node_claim_stale') selection.claimStale += 1;
-					if (error.code === 'capacity_execution_provider_unavailable') selection.providerUnavailable += 1;
-					if (error.code === 'capacity_assignment_allocation_deferred') selection.allocationDeferred += 1;
-						if (error.code.startsWith('capacity_')) deferred.push({
-							runId: run.id, nodeId: candidate.node.id, code: error.code, details: error.details,
-						});
-						continue;
-					}
-					throw error;
+					defer(error, candidate.node.id);
 				}
 		}
 	}

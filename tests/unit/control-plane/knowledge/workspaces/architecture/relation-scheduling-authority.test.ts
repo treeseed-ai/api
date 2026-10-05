@@ -49,7 +49,7 @@ describe('cross-project dependent assignment construction', () => {
 	it('denies secondary content writes and every permission outside the exact configured dependent profile before assignment construction', () => {
 		const mutations: Array<(value: ReturnType<typeof schedulingInputs>) => void> = [
 			value => { value.candidate.node.requestedPermissions!.content.write = ['decision']; },
-			value => { value.candidate.node.requestedPermissions!.tools.push('unapproved-tool'); },
+			value => { Object.assign(value.candidate.node.requestedPermissions!, { tools: [...value.candidate.node.requestedPermissions!.tools, 'unapproved-tool'] }); },
 			value => { value.candidate.effectiveProfile.permissionCeiling.content.read = ['proposal']; },
 		];
 		for (const mutate of mutations) { const input = schedulingInputs(); mutate(input); const before = structuredClone(input); expect(() => buildAssignmentAttempt(input)).toThrow(); expect(input).toEqual(before); }

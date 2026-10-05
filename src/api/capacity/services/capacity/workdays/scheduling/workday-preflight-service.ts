@@ -98,10 +98,8 @@ export class WorkdayPreflightService {
 			const selected = new Set(projects.filter(row => intent.projects === 'all'
 				|| intent.projects.includes(text(row.id)) || intent.projects.includes(text(row.slug))).map(row => text(row.id)));
 			for (const decisionId of intent.decisionIds) {
-				const authority = await validateDecisionAuthority(this.store, decisionId, { teamId });
+				const authority = await validateDecisionAuthority(this.store, decisionId, { teamId, projectId: [...selected] });
 				if (!authority.valid || !authority.current) throw new CapacityGovernanceError(authority.code!, authority.message!, 409);
-				if (!selected.has(authority.current.projectId)) throw new CapacityGovernanceError('governance_decision_project_mismatch',
-					'The governance decision belongs to another project.', 409);
 			}
 		}
 		if (intent.continueFromWorkdayId) {
