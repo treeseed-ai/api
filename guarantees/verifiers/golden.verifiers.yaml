@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-ready-proposal-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-native-readiness.test.ts
+    testName: "real exact proposal intake refuses ready or decided missing summary plan or independent estimates without repairing indexed source bytes before unchanged ready retry"
   api.golden.execution-report-subject-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

@@ -10,6 +10,43 @@ function isolatedEnvironment() {
 	vi.stubEnv('TREESEED_ENVIRONMENT', 'test');
 }
 describe('architecture readiness native SQL and public HTTP-client integration', () => {
+	it('real exact proposal intake refuses ready or decided missing summary plan or independent estimates without repairing indexed source bytes before unchanged ready retry', async () => {
+		isolatedEnvironment(); const native = await proposalNativeFixture();
+		try {
+			const definition = { ...readyProposal(), status: 'ready' }, item = definition.executionPlan.workItems[0]!;
+			await native.publish(definition);
+			const changes = [{ summary: undefined }, { executionPlan: undefined },
+				{ executionPlan: { workItems: [{ ...item, estimate: undefined }] } },
+				{ executionPlan: { workItems: [{ ...item, reviewEstimate: undefined }] } }];
+			const inputs = ['ready', 'decided'].flatMap(status => changes.map(change => ({ ...definition, status, ...change })));
+			const held = structuredClone(inputs), denied: Record<string, unknown>[] = [];
+			const index = async (exact: ReturnType<typeof native.publishContent>) => {
+				await native.query('UPDATE governance_proposals SET active_version=active_version+1,active_content_hash=?,metadata_json=? WHERE id=?',
+					[exact.digest, JSON.stringify({ contentProvenance: { repositoryId: 'repository', contentPath: 'proposals/proposal.mdx',
+						commitSha: exact.commit, digest: exact.digest } }), 'proposal']);
+				return (await native.query('SELECT * FROM governance_proposals')).rows[0]!;
+			};
+			for (const input of inputs) {
+				const exact = native.publishContent('proposals/proposal.mdx', input), row = await index(exact), before = await native.snapshot();
+				for (let retry = 0; retry < 2; retry++) {
+					await expect(readExactProposal(native.store, row)).rejects.toMatchObject({ status: 422, code: 'proposal_execution_plan_invalid' });
+					expect(await loadTeamExecutableProposalSources(native.store, 'team', 'project')).toEqual([]);
+					expect(await native.snapshot()).toEqual(before);
+				}
+				denied.push(row);
+			}
+			const exact = native.publishContent('proposals/proposal.mdx', definition), row = await index(exact), before = await native.snapshot();
+			await expect(readExactProposal(native.store, row)).resolves.toMatchObject({ source: exact.source, definition });
+			const sources = await loadTeamExecutableProposalSources(native.store, 'team', 'project'); expect(sources).toHaveLength(1);
+			expect(sources[0]).toMatchObject({ frontmatter: definition, commit: exact.commit, digest: `sha256:${exact.digest}`, decision: null });
+			expect(await Promise.all([loadTeamExecutableProposalSources(native.store, 'team', 'project'),
+				loadTeamExecutableProposalSources(native.store, 'team', 'project')])).toEqual([sources, sources]);
+			for (const row of denied) await expect(readExactProposal(native.store, row)).rejects.toMatchObject({ status: 422, code: 'proposal_execution_plan_invalid' });
+			expect(await native.snapshot()).toEqual(before); expect(inputs).toEqual(held);
+			// Committed source and native SQL index are controlled inputs, not an
+			// accepted Decision, native governance transition or provider dispatch.
+		} finally { await native.close(); }
+	});
 	it('real executable proposal intake retains invalid committed work-item inventories through repeated denial before exact bounded source retry', async () => {
 		isolatedEnvironment(); const native = await proposalNativeFixture();
 		try {
