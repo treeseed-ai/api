@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-work-item-review-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-native-readiness.test.ts
+    testName: "real exact proposal intake denies missing review cycles and unreviewed estimate authority while retaining original committed denial history before bounded review retry"
   api.golden.execution-ready-proposal-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
