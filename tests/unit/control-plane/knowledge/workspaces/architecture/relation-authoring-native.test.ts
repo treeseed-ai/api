@@ -10,6 +10,33 @@ import { relationPath } from '../../../capacity/execution/graph/architecture/rel
 // This is not a managed provider run, authenticated operator HTTP or whole
 // publication-runner/portfolio acceptance. All resources created inside tests.
 describe('native ordinary relation creation and indexing', () => {
+	it('native governed Note authoring denies every missing exact dependency endpoint field without source or SQL repair before unchanged committed link input retry', async () => {
+		const f = await relationAuthoringDatabase(); try {
+			const workspace = await f.create(), before = await f.snapshot(), original = structuredClone(f.note);
+			const fields = ['store', 'model', 'id', 'revision', 'digest', 'repository', 'commit', 'path', 'anchor'];
+			const variants = (['from', 'to'] as const).flatMap(end => {
+				const endpoint = f.link[end];
+				const invalid = fields.map(field => Object.fromEntries(Object.entries(endpoint).filter(([key]) => key !== field)));
+				return [...invalid, ...[{ store: 'git' }, { model: 'note' }, { anchor: 'work-item/UPPER' }, { unexpected: true }]
+					.map(patch => ({ ...endpoint, ...patch }))].map(changed => ({ ...f.note, links: [{ ...f.link, [end]: changed }] }));
+			});
+			const inputs = variants.map(note => `---\n${stringify(note)}---\n\nReviewed precursor governs dependent work.\n`), held = [...inputs];
+			for (const input of inputs) for (let retry = 0; retry < 2; retry++) {
+				await expect(f.write(workspace, input)).rejects.toMatchObject({ status: 422, code: 'operational_content_invalid' });
+				expect(await f.snapshot()).toEqual(before);
+				expect((await f.service.diff(f.principal, workspace.id)).changedPaths).toEqual([]);
+			}
+			const written = await f.write(workspace); expect(written.workspace.version).toBe(workspace.version + 1);
+			expect((await f.service.readContent(f.principal, workspace.id, relationPath)).content).toBe(f.content);
+			expect((await f.service.diff(f.principal, workspace.id)).changedPaths).toEqual([relationPath]);
+			const after = await f.snapshot(); expect(after.ledger).toEqual(before.ledger);
+			expect(after.reviews).toEqual(before.reviews); expect(after.publications).toEqual(before.publications);
+			expect(after.audits.filter(row => row.event_type === 'knowledge.operational_content.updated')).toHaveLength(1);
+			expect(inputs).toEqual(held); expect(f.note).toEqual(original);
+			// Actual native authoring and exact draft readback, not an independent
+			// Reviewer decision, provider dispatch, managed charges or publication.
+		} finally { await f.close(); }
+	}, 60_000);
 	it('real governed report Note authoring retains exact workday subject bytes after repeated missing or malformed authority denial without false publication or charges', async () => {
 		const f = await relationAuthoringDatabase(); try {
 			const workspace = await f.create(), before = await f.snapshot(), path = 'notes/bounded-report.mdx';

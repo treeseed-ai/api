@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-dependency-endpoint-native
+    action: { verifier: api.golden.execution-dependency-endpoint-native }
+    expect: { status: passed }
   - id: execution-work-item-review-native
     action: { verifier: api.golden.execution-work-item-review-native }
     expect: { status: passed }

@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-dependency-endpoint-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
+    testName: "native governed Note authoring denies every missing exact dependency endpoint field without source or SQL repair before unchanged committed link input retry"
   api.golden.execution-work-item-review-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
