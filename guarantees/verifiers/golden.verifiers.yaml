@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-node-conditions-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-integration.test.ts
+    testName: "real graph reconciliation denies missing assignable condition and review-pair fields before persistence while retaining exact native condition authority for unchanged replay"
   api.golden.execution-assignment-ownership-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

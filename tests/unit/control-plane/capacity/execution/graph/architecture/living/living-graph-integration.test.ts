@@ -5,6 +5,42 @@ import { emptyLivingGraph, graphNode, graphProjection, graphSource, graphState, 
 // Authoring only until the complete architecture/assignment test contract is
 // present. Embedded SQL transactions are not separate-server concurrency proof.
 describe('living graph original SQL and public service integration', () => {
+	it('real graph reconciliation denies missing assignable condition and review-pair fields before persistence while retaining exact native condition authority for unchanged replay', async () => {
+		const f = await livingGraphDatabase(); try {
+			const projection = graphProjection(), original = graphState(projection), held = structuredClone(original);
+			await f.persist(original, emptyLivingGraph(), projection.revision); const before = await f.snapshot();
+			const fields = ['agentClass', 'estimate', 'requiredCapabilities', 'requestedPermissions', 'workspace'] as const;
+			const actor = graphNode(original, 'first', 'actor'), condition = { conditionType: 'lifecycle' as const,
+				subjectRef: actor.sourceRef, expectedState: 'workday-closing' };
+			const invalid = [
+				...fields.map(field => { const value = structuredClone(actor); delete value[field]; return value; }),
+				...['workItemId', 'maximumReviewCycles'].map(field => Object.fromEntries(Object.entries(actor).filter(([key]) => key !== field))),
+				{ ...actor, condition },
+				{ ...actor, kind: 'condition', pairRole: null, condition },
+				{ ...Object.fromEntries(Object.entries(actor).filter(([key]) => !fields.some(field => field === key))), kind: 'condition', pairRole: null },
+			];
+			const supplied = structuredClone(invalid);
+			for (const value of invalid) for (let retry = 0; retry < 2; retry++) {
+				const candidate = structuredClone(original), index = candidate.nodes.findIndex(node => node.id === actor.id);
+				// Deliberately malformed public input must reach the owning schema
+				// unchanged, not be normalized by a second test-only validator.
+				Object.assign(candidate.nodes[index]!, value);
+				for (const key of Object.keys(actor)) if (!Object.hasOwn(value, key)) Reflect.deleteProperty(candidate.nodes[index]!, key);
+				expect(() => applyOperationalState(original, candidate, 2)).toThrowError(expect.objectContaining({ status: 422, code: 'execution_graph_invalid' }));
+				expect(await f.snapshot()).toEqual(before); expect(await f.service.show(f.principal, 'team', {})).toEqual(original);
+			}
+			const candidate = structuredClone(original), conditioned = graphNode(candidate, 'first', 'actor');
+			conditioned.kind = 'condition'; conditioned.pairRole = null; conditioned.condition = condition;
+			for (const field of fields) delete conditioned[field];
+			const next = applyOperationalState(original, candidate, 2), nextProjection = graphProjection(undefined, 2);
+			await f.persist(next, original, nextProjection.revision);
+			expect(await f.service.show(f.principal, 'team', {})).toEqual(next);
+			const snapshot = await f.snapshot(); expect(snapshot.assignments).toEqual(before.assignments);
+			const replayed = applyOperationalState(next, candidate, 3);
+			expect(replayed.nodes).toEqual(next.nodes); expect(await f.snapshot()).toEqual(snapshot);
+			expect(original).toEqual(held); expect(invalid).toEqual(supplied);
+		} finally { await f.db.close(); }
+	});
 	it('owning graph reconciliation denies overlong class and duplicated exact node authority before SQL persistence while retaining the original graph for unchanged retry', async () => {
 		const f = await livingGraphDatabase(); try {
 			const projection = graphProjection(), original = graphState(projection), held = structuredClone(original);
