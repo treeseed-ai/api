@@ -135,8 +135,14 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		...(reporting ? [] : predecessorResults.flatMap(result => [result.assignmentId, JSON.stringify(result)]))];
 	const current = await store.first(`SELECT node.id FROM execution_nodes node
 		WHERE node.team_id=? AND node.id=? AND node.node_revision=? AND node.status='ready' AND ${nodeAuthority}`, common);
-	if (!current) throw new CapacityGovernanceError('execution_assignment_authority_mismatch',
-		'The ready node or its exact completed predecessor authority changed before admission.', 409);
+	if (!current) {
+		// Another admission may have committed after the first absence read and
+		// moved its node out of ready. That is replay, never new claim authority.
+		const committed = await store.getProviderAssignment(assignment.teamId, assignment.id);
+		if (committed) return requireExactReplay(committed);
+		throw new CapacityGovernanceError('execution_assignment_authority_mismatch',
+			'The ready node or its exact completed predecessor authority changed before admission.', 409);
+	}
 	const authorizedContext = await workdayReportContext(store, assignment);
 	const claims = capabilityCounterClaims(assignment, input.accountingLimits, input.now);
 	const admissionToken = randomUUID();

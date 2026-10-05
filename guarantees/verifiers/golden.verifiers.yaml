@@ -3251,3 +3251,13 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/capacity-query-operations.test.ts
     testName: "retains every declared capacity error status and fails closed on malformed or undeclared statuses through the original catalog boundary"
+  api.golden.execution-admission-late-replay-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-authority.test.ts
+    testName: "retains the exact concurrently committed admission after an absent first lookup and denies changed or missing late snapshots without writes"
+  api.golden.execution-admission-late-replay-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/postgres.test.ts
+    testName: "serializes competing claims and rolls back without orphan reservations or duplicate charges"

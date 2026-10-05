@@ -2,13 +2,16 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { describe, expect, it } from 'vitest';
 import { createControlPlanePostgresDatabase } from '../../../../../../src/api/support/control-plane-postgres.ts';
-import type { CapacityGovernanceDatabase } from '../../../../../../src/api/capacity/database.ts';
-import { ProviderAssignmentLifecycleService } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-lifecycle-service.ts';
+import { ControlPlaneStore } from '../../../../../../src/api/persistence/store.ts';
+import { createCapacityControlPlane } from '../../../../../../src/api/capacity/control-plane.ts';
 import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { seedPlanningBoundary } from './fixtures/planning-boundary-postgres.ts';
 import { terminalPerformance } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/completion/assignment-terminal-performance.ts';
 import { OperatorAssignmentService } from '../../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
 import { settleCapacityReservationExactlyOnce } from '../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
+import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
+import { assignment } from '../fixtures/assignment.ts';
+import { compileAssignmentTimeBudget } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-time-budget.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 describe('terminal timeout PostgreSQL custody', () => {
@@ -36,6 +39,9 @@ describe('terminal timeout PostgreSQL custody', () => {
 			await db.pool.query(`INSERT INTO capacity_providers (id,fingerprint,public_jwk_json,display_name,created_at,updated_at) VALUES ('provider','test','{}','Provider',$1,$1)`, [now]);
 			await db.pool.query(`INSERT INTO capacity_provider_team_memberships (id,team_id,capacity_provider_id,approved_at,approved_by_id,created_at,updated_at) VALUES ('membership','team','provider',$1,'test',$1,$1)`, [now]);
 			await db.pool.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,created_at,updated_at) VALUES ('engineer','team','project','engineer','Engineer',$1,$1)`, [now]);
+			await db.pool.query(`INSERT INTO capacity_execution_providers
+				(id,capacity_provider_id,display_name,adapter,native_unit,max_concurrent_runners,created_at,updated_at)
+				VALUES ('codex','provider','Codex','codex','seconds',1,$1,$1)`, [now]);
 			await db.pool.query(`INSERT INTO capacity_provider_assignments
 				(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,mode,status,lease_state,
 				lease_token,lease_expires_at,reservation_id,created_at,updated_at)
@@ -51,26 +57,50 @@ describe('terminal timeout PostgreSQL custody', () => {
 			await db.pool.query(`INSERT INTO capacity_reservation_counter_claims
 				(reservation_id,counter_id,admission_token,reserved_amount,release_policy,created_at,updated_at)
 				VALUES ('reservation','counter','admission',$2,'usage-settlement',$1,$1)`, [now, reservedSeconds]);
-			await db.pool.query(`UPDATE capacity_provider_assignments SET capacity_envelope_json=$1 WHERE id='assignment'`,
-				[JSON.stringify({ teamId: 'team', projectId: 'project', mode: 'acting' })]);
 			if (phase) await seedPlanningBoundary(db, now, expired);
+			else {
+				const issuedAt = new Date(Date.parse(expired) - reservedSeconds * 1000).toISOString();
+				const attempt = assignmentAttemptSchema.parse({ ...assignment, status: 'leased', createdAt: issuedAt, deadline: expired,
+					estimate: { expectedSeconds: reservedSeconds, maximumSeconds: reservedSeconds },
+					limits: { ...assignment.limits, maximumSeconds: reservedSeconds } });
+				const budget = compileAssignmentTimeBudget({ now: issuedAt, requestedSeconds: reservedSeconds,
+					configuredBudget: { deadline: expired } }).capacityBudget;
+				await db.pool.query(`UPDATE capacity_provider_assignments SET assignment_attempt_json=$1,capacity_envelope_json=$2,
+					execution_provider_id=$3,work_day_id=$4,execution_node_id=$5,execution_node_revision=$6,
+					graph_revision=$7,attempt_count=$8,created_at=$9 WHERE id='assignment'`, [JSON.stringify(attempt),
+					JSON.stringify({ teamId: 'team', projectId: 'project', workDayId: attempt.workdayId, mode: 'acting',
+						projectAgentClassId: 'engineer', capacityProviderId: 'provider', executionProviderId: attempt.provider.executionProviderId,
+						reservationId: 'reservation', budget }), attempt.provider.executionProviderId, attempt.workdayId, attempt.nodeId,
+					attempt.nodeRevision, attempt.graphRevision, attempt.attempt, issuedAt]);
+			}
+			await db.pool.query(`UPDATE capacity_reservations SET work_day_id='workday',execution_provider_id='codex' WHERE id='reservation'`);
+			const stored = (await db.pool.query<{ assignment_attempt_json: string }>(
+				"SELECT assignment_attempt_json FROM capacity_provider_assignments WHERE id='assignment'")).rows;
+			expect(stored).toHaveLength(1);
+			const issued = assignmentAttemptSchema.parse(JSON.parse(stored[0]!.assignment_attempt_json));
+			expect(issued.deadline).toBe(expired); expect(issued.limits.maximumSeconds).toBe(reservedSeconds);
+			await db.pool.query(`INSERT INTO execution_nodes
+				(id,team_id,project_id,workday_id,work_item_id,kind,pair_role,source_ref_json,authority_refs_json,
+				rule_revision,node_revision,agent_class,status,graph_revision_created,graph_revision_updated,created_at,updated_at,
+				estimate_json,required_capabilities_json,requested_permissions_json,workspace,acceptance_criteria_json,maximum_review_cycles)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,1,$10,$11,'running',1,$12,$13,$13,$14,$15,$16,$17,$18,2)`,
+				[issued.nodeId, issued.teamId, issued.projectId, issued.workdayId, issued.workItemId, phase ? 'planning' : 'acting',
+					phase ? null : 'actor', JSON.stringify(issued.sourceRef), JSON.stringify(issued.authorityRefs),
+					issued.nodeRevision, issued.agentClass, issued.graphRevision, issued.createdAt, JSON.stringify(issued.estimate),
+					JSON.stringify(issued.requiredCapabilities), JSON.stringify(issued.effectiveProfile.permissionCeiling),
+					issued.workspace.mode, JSON.stringify(issued.acceptanceCriteria)]);
 			if (requested) await db.pool.query(`UPDATE capacity_provider_assignments SET metadata_json='{"cancellationRequested":true}' WHERE id='assignment'`);
-			const store: CapacityGovernanceDatabase & { db: typeof db } = { db, ensureInitialized: () => db.migrate(),
-				run: async (sql, params = []) => { await db.prepare(sql).bind(...params).run(); },
-				first: (sql, params = []) => db.prepare(sql).bind(...params).first(),
-				all: async (sql, params = []) => (await db.prepare(sql).bind(...params).all()).results,
-				batch: operations => db.batch(operations) };
+			const host = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, db);
+			host.initializationPromise = Promise.resolve();
+			const store = createCapacityControlPlane(host);
 			const repository = new ProviderAssignmentRepository(store);
-			const service = new ProviderAssignmentLifecycleService(Object.assign(store, {
-				getProviderAssignment: repository.get.bind(repository),
-			}) as ConstructorParameters<typeof ProviderAssignmentLifecycleService>[0]);
 			const principal = { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider' };
 			const failure = { leaseToken: 'lease', code: requested ? 'assignment_cancelled' : 'assignment_timeout', retryable: false,
 				activeSeconds, elapsedSeconds: activeSeconds + 3, usage: { inputTokens: 200, outputTokens: 30 },
 				output: { teardown: { verified: true, completedAt: now } } };
 			const report = phase ? { ...failure, performance: terminalPerformance((await repository.get('team', 'assignment'))!, failure, 'failed', now) } : failure;
-			expect(await service.complete(principal, 'assignment', { leaseToken: 'lease' })).toBeNull();
-			expect(await service.fail(principal, 'assignment', { ...failure, leaseToken: 'wrong' })).toBeNull();
+			expect(await store.completeProviderAssignment(principal, 'assignment', { leaseToken: 'lease' })).toBeNull();
+			expect(await store.failProviderAssignment(principal, 'assignment', { ...failure, leaseToken: 'wrong' })).toBeNull();
 			if (returned) {
 				await settleCapacityReservationExactlyOnce(store, { settlementKey: 'pre-model-return', teamId: 'team',
 					membershipId: 'membership', reservationId: 'reservation', assignmentId: 'assignment', activeSeconds,
@@ -81,7 +111,7 @@ describe('terminal timeout PostgreSQL custody', () => {
 				await operator.cancel('team', 'assignment', { idempotencyKey: 'phase' });
 				await operator.cancel('team', 'assignment', { idempotencyKey: 'phase-replay' });
 			} else {
-				const outcomes = await Promise.all([service.fail(principal, 'assignment', report), service.fail(principal, 'assignment', report)]);
+				const outcomes = await Promise.all([store.failProviderAssignment(principal, 'assignment', report), store.failProviderAssignment(principal, 'assignment', report)]);
 				expect(outcomes.filter(Boolean)).toHaveLength(1);
 			}
 			expect(await repository.get('team', 'assignment')).toMatchObject({ status: phase ? 'cancelled' : 'failed',

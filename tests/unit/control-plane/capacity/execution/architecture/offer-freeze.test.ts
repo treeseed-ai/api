@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildAssignmentAttempt } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import { permissions, provider, canonicalOfferBuildInput, invalidCanonicalOffers } from '../fixtures/assignment-attempt-fixtures.ts';
-import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
+import { appliedWorkdaySchema, assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 
 describe('immutable assignment-attempt construction', () => {
 	it('preserves explicit integration authority and one exact base when the governed class using the same Releaser handler is renamed', () => {
@@ -17,6 +17,8 @@ describe('immutable assignment-attempt construction', () => {
 			references: [{ kind: 'git', repository: 'treeseed-ai/sdk', commit: digit.repeat(40) }], verification: [],
 			usage: { elapsedSeconds: 1 }, diagnostics: [], completedAt: original.now,
 		}));
+		for (const digit of ['8', '9']) original.candidate.contextRefs.push({ store: 'git', model: 'repository',
+			id: `reviewed-input-${digit}`, repository: 'treeseed-ai/sdk', commit: digit.repeat(40) });
 		for (const agentClass of ['releaser', 'configured-integration-author', 'customer-composition-worker']) {
 			const input = structuredClone(original); input.candidate.node.agentClass = agentClass;
 			input.candidate.effectiveProfile.profileRef.id = `configured/${agentClass}`;
@@ -54,7 +56,7 @@ describe('immutable assignment-attempt construction', () => {
 		expect(first.assignment.createdAt).toBe(supplied.now); expect(first.assignment.limits.maximumSeconds).toBe(3);
 		// Active allocation does not precharge separately bounded infrastructure or
 		// queue time. The user's explicit contract retains original phase authority.
-		expect(first.assignment.deadline).toBe(supplied.run.parameters.appliedPlan!.endsAt);
+		expect(first.assignment.deadline).toBe(appliedWorkdaySchema.parse(supplied.run.parameters.appliedPlan).endsAt);
 		expect(first.accountingLimits).toEqual(supplied.providers[0]!.accountingLimits);
 		expect(first.providerConcurrencyLimit).toBe(1); expect(first.laneId).toBe('work');
 		for (let retry = 0; retry < 3; retry++) expect(buildAssignmentAttempt(structuredClone(supplied))).toEqual(first);

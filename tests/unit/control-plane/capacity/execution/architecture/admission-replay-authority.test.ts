@@ -11,6 +11,24 @@ function replayStore() {
 }
 
 describe('immutable admission replay authority', () => {
+	it('retains the exact concurrently committed admission after an absent first lookup and denies changed or missing late snapshots without writes', async () => {
+		for (const variant of ['exact', 'foreign-provider', 'changed-attempt', 'missing'] as const) {
+			const { store, stored } = replayStore(), input = replayInput(replayAttempt());
+			if (variant === 'foreign-provider') stored.capacityProviderId = 'foreign-provider';
+			if (variant === 'changed-attempt') stored.assignmentAttempt.provider.runtimeBuild = `sha256:${'f'.repeat(64)}`;
+			const before = structuredClone({ input, stored }), originalLookup = store.getProviderAssignment;
+			let lookups = 0, reads = 0, writes = 0;
+			store.getProviderAssignment = async (team, id) => ++lookups === 1 || variant === 'missing' ? null : originalLookup(team, id);
+			store.first = async () => { reads++; return null; };
+			store.batch = async () => { writes++; throw new Error('Unexpected new admission batch'); };
+			const outcome = await admitLivingExecutionAssignment(store, input).then(value => ({ value }), error => ({ error }));
+			if (variant === 'exact') expect(outcome).toEqual({ value: stored });
+			else expect(outcome).toMatchObject({ error: { status: 409, code: variant === 'missing'
+				? 'execution_assignment_authority_mismatch' : 'execution_assignment_idempotency_conflict' } });
+			expect({ lookups, reads, writes }).toEqual({ lookups: 2, reads: 1, writes: 0 });
+			expect({ input, stored }).toEqual(before);
+		}
+	});
 	it('returns an identical replay without rewriting the original input or stored snapshot', async () => {
 		const { store, stored } = replayStore(), input = replayInput(replayAttempt()), before = structuredClone({ input, stored });
 		await expect(admitLivingExecutionAssignment(store, input)).resolves.toBe(stored);

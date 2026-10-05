@@ -54,18 +54,18 @@ describe('living admission in disposable PostgreSQL', () => {
 				first: (sql: string, params: unknown[] = []) => database.prepare(sql).bind(...params).first(),
 				all: async (sql: string, params: unknown[] = []) => (await database.prepare(sql).bind(...params).all()).results,
 				batch: (operations: Array<{ query: string; params?: unknown[] }>) => database.batch(operations),
-				getProviderAssignment: (team: string, id: string) => {
+				getProviderAssignment: (team: string, id: string): ReturnType<ProviderAssignmentRepository['get']> => {
 					if (staleAdmissionRead) { staleAdmissionRead = false; return Promise.resolve(null); }
-					return database.prepare(`SELECT id,execution_node_id AS "executionNodeId",
-						execution_node_revision AS "executionNodeRevision" FROM capacity_provider_assignments WHERE team_id=? AND id=?`).bind(team, id).first();
+					return new ProviderAssignmentRepository(store as never).get(team, id);
 				},
 			};
 			const attempts = ['first', 'second'].map(id => assignmentAttemptSchema.parse({ ...assignment,
 				id, idempotencyKey: id, nodeId: id, reservationId: `reservation-${id}` }));
 			for (const attempt of attempts) await database.prepare(`INSERT INTO execution_nodes
-				(id,team_id,project_id,workday_id,kind,source_ref_json,rule_revision,node_revision,agent_class,status,
-				graph_revision_created,graph_revision_updated,created_at,updated_at) VALUES (?,?,?,?,?,'{}',1,1,'engineer','ready',1,2,?,?)`)
-				.bind(attempt.nodeId, attempt.teamId, attempt.projectId, attempt.workdayId, 'acting', attempt.createdAt, attempt.createdAt).run();
+				(id,team_id,project_id,workday_id,kind,source_ref_json,authority_refs_json,rule_revision,node_revision,agent_class,status,
+				graph_revision_created,graph_revision_updated,created_at,updated_at) VALUES (?,?,?,?,?,?,?,1,1,'engineer','ready',1,2,?,?)`)
+				.bind(attempt.nodeId, attempt.teamId, attempt.projectId, attempt.workdayId, 'acting',
+					JSON.stringify(attempt.sourceRef), JSON.stringify(attempt.authorityRefs), attempt.createdAt, attempt.createdAt).run();
 			const run = (attempt: typeof attempts[number]) => admitLivingExecutionAssignment(store as never, {
 				principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
 				assignment: attempt, allocation: { ...calculateAssignmentAllocation({ estimate: attempt.estimate, measurements: [],

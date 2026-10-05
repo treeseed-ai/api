@@ -1886,3 +1886,9 @@ workflow:
   - id: execution-capacity-error-status-unit
     action: { verifier: api.golden.execution-capacity-error-status-unit }
     expect: { status: passed }
+  - id: execution-admission-late-replay-unit
+    action: { verifier: api.golden.execution-admission-late-replay-unit }
+    expect: { status: passed }
+  - id: execution-admission-late-replay-native
+    action: { verifier: api.golden.execution-admission-late-replay-native }
+    expect: { status: passed }
