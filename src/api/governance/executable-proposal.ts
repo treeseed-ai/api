@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import type { ExactEntityReference } from '@treeseed/sdk/agent-capacity';
+import { estimateSchema, type ExactEntityReference } from '@treeseed/sdk/agent-capacity';
 import { resolveKnowledgeGatewayConnection } from '../knowledge/gateway-treedx-connection.ts';
 
 type Row = Record<string, unknown>;
@@ -29,15 +29,12 @@ export function proposalApprovalFingerprint(proposal: Row): string {
 /** A draft may enter the graph only after its work units have genuine bounded
  * estimates. Readiness and source selection must use the same structural gate. */
 export function hasCompleteExecutablePlan(proposal: Row): boolean {
+	if (!validatePortableContentData('proposal', proposal).ok) return false;
 	const plan = record(proposal.executionPlan);
-	const complete = (value: unknown) => {
-		const estimate = record(value);
-		const expected = Number(estimate.expectedSeconds), maximum = Number(estimate.maximumSeconds);
-		return Number.isFinite(expected) && expected > 0 && Number.isFinite(maximum) && maximum >= expected;
-	};
 	return Array.isArray(plan.workItems) && plan.workItems.length > 0 && plan.workItems.every((value: unknown) => {
 		const item = record(value);
-		return complete(item.estimate) && (item.review !== 'required' || complete(item.reviewEstimate));
+		return estimateSchema.safeParse(item.estimate).success
+			&& (item.review !== 'required' || estimateSchema.safeParse(item.reviewEstimate).success);
 	});
 }
 

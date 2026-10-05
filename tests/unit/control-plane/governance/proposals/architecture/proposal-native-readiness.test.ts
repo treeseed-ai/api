@@ -42,7 +42,8 @@ describe('architecture readiness native SQL and public HTTP-client integration',
 		try {
 			const item = readyWorkItem(), other = { ...readyWorkItem(), id: 'other-work' };
 			const graphs = [[item, item], [{ ...item, dependsOn: ['missing'] }],
-				[{ ...item, dependsOn: ['other-work'] }, { ...other, dependsOn: [item.id] }]];
+				[{ ...item, dependsOn: ['other-work'] }, { ...other, dependsOn: [item.id] }],
+				[{ ...item, dependsOn: ['other-work', 'other-work'] }, other]];
 			const admitted: number[] = [];
 			for (const [index, workItems] of graphs.entries()) {
 				await native.publish({ ...readyProposal(), executionPlan: { workItems } });
@@ -51,6 +52,10 @@ describe('architecture readiness native SQL and public HTTP-client integration',
 				expect(await native.snapshot()).toEqual(before);
 			}
 			expect(admitted).toEqual([]);
+			const restored = { ...readyProposal(), executionPlan: { workItems: [{ ...item, dependsOn: ['other-work'] }, other] } };
+			await native.publish(restored); const before = await native.snapshot(), supplied = structuredClone(restored);
+			expect(await loadTeamExecutableProposalSources(native.store, 'team', 'project')).toHaveLength(1);
+			expect(await native.snapshot()).toEqual(before); expect(restored).toEqual(supplied);
 		} finally { await native.close(); }
 	});
 	it('keeps denied moved and digest-mismatched exact HTTP reads closed without mutating persisted source', async () => {
