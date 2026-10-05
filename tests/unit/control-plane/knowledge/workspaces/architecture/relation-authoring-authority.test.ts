@@ -9,6 +9,13 @@ import { relationInputs, relationPath } from '../../../capacity/execution/graph/
 import { noteSource } from './relation-authoring-fixture.ts';
 
 describe('ordinary exact relation authoring authority', () => {
+	it('retains an exact unchanged governed content retry without sending an empty native patch or inventing an application receipt', async () => {
+		const content = noteSource(), input = { workspace: { workspaceId: 'input-workspace', baseCommitSha: 'a'.repeat(40), baseRef: 'refs/heads/staging' },
+			changes: [{ path: relationPath, before: content, after: content }], idempotencyKey: 'same-input-key' };
+		const before = structuredClone(input); let calls = 0;
+		const result = await applyTextChangeset({ ...input, client: { applyChangeset: async () => { calls += 1; return { applied: true }; } } });
+		expect(calls).toBe(0); expect(result).toBeUndefined(); expect(input).toEqual(before);
+	});
 	it('serializes the canonical Note link through one original changeset with byte exact patch hash base ref and compare and swap authority', async () => {
 		const content = noteSource(), workspace = { workspaceId: 'input-workspace', baseCommitSha: 'a'.repeat(40), baseRef: 'refs/heads/staging' };
 		const input = { workspace, changes: [{ path: relationPath, before: null, after: content }], idempotencyKey: 'same-input-key' };

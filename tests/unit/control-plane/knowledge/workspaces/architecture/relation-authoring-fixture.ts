@@ -126,13 +126,14 @@ export async function relationAuthoringDatabase() {
 				destinationRef: 'refs/heads/staging', expectedDestinationHead: workspace.baseCommitSha }));
 			assert.equal(promotion.afterHead, commit);
 			await query('UPDATE treedx_project_libraries SET content_repository_ref=? WHERE project_id=?', [commit, 'precursor']);
-			const read = await resolveKnowledgeGatewayConnection(store, { projectId: 'precursor', write: true, readRefs: [commit] }); assert.ok(read);
+			const read = await resolveKnowledgeGatewayConnection(store, { projectId: 'precursor', write: true, relationPaths: true, readRefs: [commit] }); assert.ok(read);
 			const graph = await completedGraphRefresh(read.client, { repoId: input.sources[0]!.repository, ref: commit, paths: ['notes/**'], changedPaths: [relationPath] });
 			const search = treeDxResult(await read.client.refreshSearchIndex({ repoId: input.sources[0]!.repository, ref: commit, paths: ['notes/**'] }), 'index');
 			requireIndexedSourceClosure({ projectId: 'precursor', commitSha: commit, graph, search });
 			const file = object(await read.client.readRepositoryFile({ repoId: input.sources[0]!.repository, ref: commit, path: relationPath }));
 			assert.equal(file.resolvedRef, commit); const nativeFile = object(file.file ?? (Array.isArray(file.files) ? file.files[0] : undefined));
 			assert.equal(nativeFile.path, relationPath); assert.equal(nativeFile.content, content);
+			await completedGraphRefresh(read.client, { repoId: read.repositoryId, ref: read.publicationRef, paths: ['notes/**'] });
 			// Loader queries every selected project's publication branch. Build the
 			// original native index for the other disposable selected library too.
 			const secondary = await resolveKnowledgeGatewayConnection(store, { projectId: 'dependent', write: true }); assert.ok(secondary);

@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-unchanged-content-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-authority.test.ts
+    testName: "retains an exact unchanged governed content retry without sending an empty native patch or inventing an application receipt"
   api.golden.execution-usage-seconds-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
