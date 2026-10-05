@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { stringify } from 'yaml';
+import { serializeFrontmatterDocument } from '../../../../../../src/api/content/frontmatter.ts';
 import { describe, expect, it } from 'vitest';
 import { object, relationAuthoringDatabase } from './relation-authoring-fixture.ts';
 import { relationPath } from '../../../capacity/execution/graph/architecture/relations/relation-fixture.ts';
@@ -9,6 +10,36 @@ import { relationPath } from '../../../capacity/execution/graph/architecture/rel
 // This is not a managed provider run, authenticated operator HTTP or whole
 // publication-runner/portfolio acceptance. All resources created inside tests.
 describe('native ordinary relation creation and indexing', () => {
+	it('real governed YAML profile authoring retains native draft custody across empty inventory and producer review denial before exact renamed execution profile write', async () => {
+		const f = await relationAuthoringDatabase(); try {
+			const workspace = await f.create(), before = await f.snapshot(), path = 'agents/renamed-executor.yaml';
+			const acting = { handler: 'configured-executor', permissions: { content: { read: ['proposal'], write: [] }, tools: ['source.read'] },
+				prompt: { system: 'Execute only the bounded configured objective with exact granted source authority.' } };
+			const profile = { schemaVersion: 'treeseed.agent/v1', id: 'renamed-executor', name: 'Renamed Executor', agentClass: 'renamed-executor',
+				purpose: 'Complete the exact configured execution objective.', responsibilities: ['Retain original assignment authority.'],
+				capabilities: ['source-inspection'], context: { include: ['assignment-subject'] }, activityProfiles: { acting } };
+			const invalid = [{ ...profile, capabilities: [] }, { ...profile, context: { include: [] } }, { ...profile, activityProfiles: {} },
+				{ ...profile, activityProfiles: { acting, reviewing: acting } },
+				{ ...profile, activityProfiles: { acting: { ...acting, signals: { publishes: ['retired-signal'] } } } },
+				{ ...profile, activityProfiles: { acting: { ...acting, signals: { subscribesTo: [{ contract: 'retired-signal' }] } } } }]
+				.map(value => serializeFrontmatterDocument(value));
+			const original = structuredClone(profile), held = [...invalid], content = serializeFrontmatterDocument(profile);
+			const write = (value: string) => f.service.updateContent(f.principal, workspace.id,
+				{ kind: 'agent-profile', create: true, version: workspace.version, sourcePath: path, content: value });
+			for (const value of invalid) for (let retry = 0; retry < 2; retry++) {
+				await expect(write(value)).rejects.toMatchObject({ status: 422, code: 'agent_profile_invalid' });
+				expect(await f.snapshot()).toEqual(before);
+				expect((await f.service.diff(f.principal, workspace.id)).changedPaths).toEqual([]);
+			}
+			const written = await write(content); expect(written.workspace.version).toBe(workspace.version + 1);
+			expect((await f.service.readContent(f.principal, workspace.id, path)).content).toBe(content);
+			expect((await f.service.diff(f.principal, workspace.id)).changedPaths).toEqual([path]);
+			const after = await f.snapshot(); expect(after.ledger).toEqual(before.ledger);
+			expect(after.audits.filter(entry => entry.event_type === 'agent.profile.updated')).toHaveLength(1);
+			expect(after.reviews).toEqual(before.reviews); expect(after.publications).toEqual(before.publications);
+			expect(profile).toEqual(original); expect(invalid).toEqual(held);
+		} finally { await f.close(); }
+	}, 60_000);
 	it('real TreeDX authoring denies malformed Note identities and duplicate subject authority across unchanged retries before exact original publication bytes', async () => {
 		const f = await relationAuthoringDatabase(); try {
 			const workspace = await f.create(), before = await f.snapshot(), original = structuredClone(f.note);

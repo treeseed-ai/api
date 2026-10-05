@@ -1,6 +1,16 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-profile-signal-cutover-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/agents/agent-definition-source.test.ts
+    testName: "retains exact governed profile validation and denies retired signal fields without producing a second signal-reference authority"
+  api.golden.execution-profile-inventory-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
+    testName: "real governed YAML profile authoring retains native draft custody across empty inventory and producer review denial before exact renamed execution profile write"
   api.golden.execution-note-identity-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
