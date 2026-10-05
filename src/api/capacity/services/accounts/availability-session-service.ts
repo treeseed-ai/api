@@ -1,11 +1,13 @@
 import type { CapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import type { ProviderAvailabilitySessionStatus } from '@treeseed/sdk/capacity-provider/contracts';
-import { randomUUID } from 'node:crypto';
+import { createHash, createPublicKey, randomUUID, verify } from 'node:crypto';
 import type { CapacityDatabaseOperation, CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
 import { AvailabilitySessionRepository,type AvailabilitySessionWrite } from '../../repositories/accounts/availability-session.ts';
 import { upsertCapacityExecutionProviderOperations } from '../../repositories/capacity/providers/execution-provider.ts';
-import { capabilityOfferDigest, capabilityOfferSchema, type CapabilityDefinition } from '@treeseed/sdk/capacity-provider';
+import { capabilityOfferDigest, capabilityOfferSchema, capabilityDefinitionSchema, validateCapabilityOfferQualification,
+	type CapabilityDefinition } from '@treeseed/sdk/capacity-provider/contracts';
+import { canonicalJson } from '../../security.ts';
 import { createCapabilityOntologyService } from '../../../control-plane/repositories/capabilities/capability-ontology-service.ts';
 import { decodeDurableJsonArray } from '../../durable-json.ts';
 import { assertMonotonicAvailabilityAccounting } from './availability-accounting.ts';
@@ -107,23 +109,56 @@ export class AvailabilitySessionService {
 
 	private async validateOfferReferences(principal: ProviderAvailabilityPrincipal, input: JsonRecord) {
 		await this.ontology.ensureInitialized();
-		const offers = objects(input.adapters).flatMap((adapter) => objects(adapter.offers));
-		for (const [index, offer] of offers.entries()) {
+		const adapters = input.adapters;
+		if (!Array.isArray(adapters) || !adapters.length || adapters.some(adapter => !adapter || typeof adapter !== 'object'
+			|| Array.isArray(adapter) || !Array.isArray(adapter.offers) || !adapter.offers.length)) {
+			throw new CapacityGovernanceError('provider_capability_offer_invalid', 'Every adapter requires a complete nonempty offer inventory.', 400);
+		}
+		const offerIds = new Set<string>(), offers = adapters.flatMap(adapter => adapter.offers).map((offer: unknown, index) => {
 			const parsed = capabilityOfferSchema.safeParse(offer);
 			if (!parsed.success) throw new CapacityGovernanceError('provider_capability_offer_invalid', `Capability offer ${index} is invalid.`, 400, { issues: parsed.error.issues });
-			const { offerDigest, ...material } = parsed.data;
+			if (offerIds.has(parsed.data.offerId)) throw new CapacityGovernanceError('provider_capability_offer_invalid', 'Offer identities must be provider-global unique.', 400);
+			offerIds.add(parsed.data.offerId);
+			return parsed.data;
+		});
+		const now = new Date();
+		for (const [index, offer] of offers.entries()) {
+			const { offerDigest, ...material } = offer;
 			if (capabilityOfferDigest(material) !== offerDigest) throw new CapacityGovernanceError('provider_capability_offer_digest_mismatch', `Capability offer ${index} digest is invalid.`, 400);
-			for (const reference of parsed.data.capabilities) {
+			const definitions: CapabilityDefinition[] = [];
+			for (const reference of offer.capabilities) {
 				const core = await this.database.first(`SELECT definition_digest,status,definition_json FROM capability_definitions WHERE capability_id=? AND version=? ORDER BY generation DESC LIMIT 1`, [reference.id, reference.version]);
 				const extension = core ? null : await this.database.first(`SELECT definition_digest,status,definition_json FROM provider_capability_proposals WHERE capacity_provider_id=? AND capability_id=? AND version=? ORDER BY created_at DESC LIMIT 1`, [principal.capacityProviderId, reference.id, reference.version]);
 				const definition = core ?? extension;
 				if (!definition || definition.status === 'revoked' || String(definition.definition_digest) !== reference.digest) throw new CapacityGovernanceError('provider_capability_offer_unknown', `Offer references unavailable capability ${reference.id}@${reference.version}.`, 409);
-				const conformance = parsed.data.conformance.find((entry) => entry.capability.id === reference.id && entry.capability.version === reference.version && entry.capability.digest === reference.digest);
-				if (!conformance || conformance.providerId !== principal.capacityProviderId || conformance.status !== 'passed' || (conformance.expiresAt && Date.parse(conformance.expiresAt) <= Date.now())) throw new CapacityGovernanceError('provider_capability_conformance_invalid', `Offer lacks current provider conformance for ${reference.id}@${reference.version}.`, 409);
-				const definitionValue = (typeof definition.definition_json === 'string' ? JSON.parse(definition.definition_json) : definition.definition_json) as CapabilityDefinition;
-				const tiers = ['signed-attestation', 'automated-suite', 'reviewed-certification'];
-				if (tiers.indexOf(conformance.tier) < tiers.indexOf(definitionValue.qualificationTier)) throw new CapacityGovernanceError('provider_capability_qualification_insufficient', `Offer qualification is below the required tier for ${reference.id}.`, 409);
+				let value: unknown;
+				try { value = typeof definition.definition_json === 'string' ? JSON.parse(definition.definition_json) : definition.definition_json; }
+				catch { throw new CapacityGovernanceError('provider_capability_offer_unknown', 'Capability definition bytes are malformed.', 409); }
+				const parsed = capabilityDefinitionSchema.safeParse(value);
+				if (!parsed.success) throw new CapacityGovernanceError('provider_capability_offer_unknown', 'Capability definition is not canonical.', 409);
+				definitions.push(parsed.data);
 			}
+			const qualification = validateCapabilityOfferQualification(offer, { now, providerId: principal.capacityProviderId, definitions });
+			if (!qualification.ok) throw new CapacityGovernanceError(qualification.diagnostics.some(entry => entry.code === 'provider_offer_qualification_insufficient')
+				? 'provider_capability_qualification_insufficient' : 'provider_capability_conformance_invalid', 'Offer lacks unique current qualification at its declared tier.', 409);
+		}
+		try {
+			const identity = await this.database.first('SELECT public_jwk_json FROM capacity_providers WHERE id=?', [principal.capacityProviderId]);
+			const value: unknown = typeof identity?.public_jwk_json === 'string' ? JSON.parse(identity.public_jwk_json) : identity?.public_jwk_json;
+			if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Registered public identity is required');
+			const jwk = object(value);
+			if (jwk.kty !== 'OKP' || jwk.crv !== 'Ed25519' || typeof jwk.x !== 'string' || !jwk.x
+				|| (jwk.alg !== undefined && jwk.alg !== 'EdDSA') || Object.keys(jwk).some(key => !['kty', 'crv', 'x', 'alg'].includes(key))) throw new Error('Invalid registered public identity');
+			const key = createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: jwk.x }, format: 'jwk' });
+			const keyId = `provider-${createHash('sha256').update(jwk.x).digest('hex').slice(0, 16)}`;
+			for (const offer of offers) for (const receipt of offer.conformance) {
+				const bytes = Buffer.from(receipt.signature.value, 'base64url');
+				const unsigned = { ...receipt, signature: { ...receipt.signature, value: '' } };
+				if (receipt.signature.keyId !== keyId || bytes.length !== 64 || bytes.toString('base64url') !== receipt.signature.value
+					|| !verify(null, Buffer.from(canonicalJson(unsigned)), key, bytes)) throw new Error('Invalid qualification signature');
+			}
+		} catch {
+			throw new CapacityGovernanceError('provider_capability_conformance_invalid', 'Capability qualification is not signed by the registered provider identity.', 409);
 		}
 	}
 

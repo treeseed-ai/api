@@ -11,6 +11,7 @@ import {
 	type CapabilityAccountingLimits,
 } from '@treeseed/sdk/agent-capacity';
 import { assignmentSourceBranch, simulationSourceBranch } from '@treeseed/sdk/capacity-provider/sandbox';
+import { capabilityOfferSchema, validateCapabilityOfferQualification } from '@treeseed/sdk/capacity-provider/contracts';
 import { CapacityGovernanceError } from '../../../../../database.ts';
 import type { ProviderLeasePrincipal } from '../../../../accounts/lease-authority-service.ts';
 import type { ProviderSynthesisExecutionProvider } from '../../../providers/provider-synthesis-context-service.ts';
@@ -29,7 +30,8 @@ const stable = (value: unknown): string => {
 const id = (prefix: string, values: unknown[]) => `${prefix}_${createHash('sha256').update(stable(values)).digest('base64url').slice(0, 32)}`;
 const knowledgeId = (nodeId: string) => `knowledge-${createHash('sha256').update(nodeId).digest('hex').slice(0, 24)}`;
 
-function eligibleProviders(requiredCapabilities: string[], providers: ProviderSynthesisExecutionProvider[], lanePurpose: 'workday' | 'communication') {
+function eligibleProviders(requiredCapabilities: string[], providers: ProviderSynthesisExecutionProvider[], lanePurpose: 'workday' | 'communication',
+	qualification: { now: Date; providerId: string }) {
 	if (!requiredCapabilities.length) throw new CapacityGovernanceError(
 		'capacity_execution_capabilities_required',
 		'An executable node must declare its provider capability demand before admission.', 409,
@@ -44,7 +46,10 @@ function eligibleProviders(requiredCapabilities: string[], providers: ProviderSy
 		const lane = [...provider.lanes].filter((candidate) => candidate.purpose === lanePurpose
 			&& requiredCapabilities.every((capability) => !candidate.capabilities.length || candidate.capabilities.includes(capability)))
 			.sort((left, right) => right.priority - left.priority || left.id.localeCompare(right.id))[0];
-		const offer = [...provider.offers].filter((candidate) => {
+		const offer = (Array.isArray(provider.offers) ? provider.offers : []).flatMap(value => {
+			const parsed = capabilityOfferSchema.safeParse(value);
+			return parsed.success && validateCapabilityOfferQualification(parsed.data, qualification).ok ? [parsed.data] : [];
+		}).filter((candidate) => {
 			const capabilities = candidate.capabilities.map((capability) => capability.id);
 			return requiredCapabilities.every((capability) => capabilities.includes(capability));
 		}).sort((left, right) => left.capabilities.length - right.capabilities.length || left.offerId.localeCompare(right.offerId))[0];
@@ -108,6 +113,7 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant 
 			.filter((value): value is string => Boolean(value)))]
 		: [];
 	const contentRefs = candidate.contextRefs.filter((reference) => reference.store === 'treedx');
+	const readableModels = new Set<string>(requested.content.read);
 	const treeDxBase = candidate.node.workspace === 'treedx' ? projectTreeDxWorkspaceReference(candidate) : undefined;
 	const bookRef = contentRefs.find((reference) => reference.model === 'book'
 		&& reference.repository === treeDxBase?.repository && reference.commit && reference.path);
@@ -134,7 +140,7 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant 
 	return {
 		contentRead: uniqueReferences([candidate.node.sourceRef, ...communicationDiscussionReference(candidate),
 			...(candidate.node.authorityRefs ?? []), ...contentRefs]
-			.filter((reference) => reference.store === 'treedx' && requested.content.read.includes(reference.model))),
+			.filter((reference) => reference.store === 'treedx' && readableModels.has(reference.model))),
 		contentWrite,
 		sourceRead,
 		sourceWrite: candidate.node.workspace === 'git' && requested.tools.includes('source.write')
@@ -157,8 +163,7 @@ function workspace(candidate: ReadyExecutionNode, assignmentId: string, exactGra
 		`Node ${candidate.node.id} has no exact writable paths for its ${candidate.node.workspace} workspace.`, 409);
 	const predecessorCommits = candidate.node.workspace === 'git'
 		? [...new Set(candidate.predecessorResults.flatMap((result) => result.references)
-			.filter((item) => item.kind === 'git' && item.repository === reference.repository)
-			.map((item) => item.commit))]
+			.flatMap((item) => item.kind === 'git' && item.repository === reference.repository ? [item.commit] : []))]
 		: [];
 	const lineageBase = candidate.node.workspace === 'git' ? candidate.lineageSourceCommit : undefined;
 	// A revision may have one current upstream commit plus the Actor's own older
@@ -179,8 +184,7 @@ function workspace(candidate: ReadyExecutionNode, assignmentId: string, exactGra
 		`Node ${candidate.node.id} has multiple Git predecessor commits; an explicitly release-authorized integration assignment must establish one base.`,
 		409, { nodeId: candidate.node.id, predecessorCommits,
 			predecessorResults: candidate.predecessorResults.flatMap((result) => result.references
-				.filter((item) => item.kind === 'git' && item.repository === reference.repository)
-				.map((item) => ({ resultId: result.id, commit: item.commit }))) });
+				.flatMap((item) => item.kind === 'git' && item.repository === reference.repository ? [{ resultId: result.id, commit: item.commit }] : [])) });
 	return candidate.node.workspace === 'git'
 		? { mode: 'git' as const, repository: reference.repository,
 			baseCommit: explicitIntegration ? reference.commit : lineageBase ?? revisionBase ?? predecessorCommits[0] ?? reference.commit,
@@ -204,9 +208,11 @@ export function buildAssignmentAttempt(input: {
 	opportunity: LivingAllocationInputs[string]['opportunity'] }; accountingLimits: CapabilityAccountingLimits;
 	executionProviderId: string; laneId: string; lanePurpose: 'workday' | 'communication'; providerConcurrencyLimit: number } {
 	const { candidate } = input;
-	if (!candidate.node.estimate) throw new CapacityGovernanceError('execution_node_estimate_missing', 'Ready execution nodes require an estimate.', 409);
+	const estimate = candidate.node.estimate;
+	if (!estimate) throw new CapacityGovernanceError('execution_node_estimate_missing', 'Ready execution nodes require an estimate.', 409);
 	const communication = candidate.node.kind === 'communication';
-	const eligible = eligibleProviders(candidate.node.requiredCapabilities ?? [], input.providers, communication ? 'communication' : 'workday');
+	const eligible = eligibleProviders(candidate.node.requiredCapabilities ?? [], input.providers, communication ? 'communication' : 'workday',
+		{ now: new Date(input.now), providerId: input.principal.capacityProviderId });
 	const assignmentId = id('assignment', [candidate.node.teamId,candidate.node.id,candidate.node.nodeRevision,
 		candidate.node.sourceRef.digest,candidate.node.sourceRef.commit,input.attempt]);
 	const appliedPlan = appliedWorkdaySchema.parse(input.run.parameters.appliedPlan);
@@ -233,7 +239,7 @@ export function buildAssignmentAttempt(input: {
 		const limits = selected.provider.accountingLimits!;
 		const observation = selected.provider.accountingObservation!;
 		const capabilityLimits = limits.capabilityLimits[capability]!;
-		const allocationEstimate = candidate.node.estimate;
+		const allocationEstimate = estimate;
 		const remaining = (dailyLimitSeconds: number, value: typeof observation.modelUsage | undefined) => value
 			? remainingCapabilitySeconds({ now: input.now, maximumObservationAgeSeconds: 90, dailyLimitSeconds,
 				observation: value, ledgerActiveSeconds: 0, ledgerReservedSeconds: 0 }).availableSeconds : 0;
