@@ -1,11 +1,12 @@
 import { FetchTransport, TreeDxClient } from '@treeseed/treedx/treedx/client';
-import { TREEDX_OPENAPI_OPERATIONS, type TreeDxOpenApiOperation } from '@treeseed/treedx';
+import { TREEDX_OPENAPI_OPERATIONS } from '@treeseed/treedx';
 import { treeDxScopedPathAllows } from '../../capacity/policy/treedx-proxy-access.ts';
 export { treeDxScopedPathAllows } from '../../capacity/policy/treedx-proxy-access.ts';
 
 type InputRecord = Record<string, unknown>;
+type AdoptedOperation = (typeof TREEDX_OPENAPI_OPERATIONS)[number];
 
-const operations = new Map(TREEDX_OPENAPI_OPERATIONS.map((operation) => [operation.operationId, operation]));
+const operations = new Map<string, AdoptedOperation>(TREEDX_OPENAPI_OPERATIONS.map((operation) => [operation.operationId, operation]));
 const reservedQueryKeys = new Set(['assignmentId', 'treeDxProxyHandleId', 'treeDxProxyToken']);
 const contentExtensions = ['.mdx', '.md', '.markdown', '.json', '.yaml', '.yml', '.toml'];
 
@@ -21,13 +22,13 @@ function camelCase(value: string) {
 	return value.replace(/_([a-z])/gu, (_match, character: string) => character.toUpperCase());
 }
 
-export function requireTreeDxOperation(operationId: string): TreeDxOpenApiOperation {
+export function requireTreeDxOperation(operationId: string): AdoptedOperation {
 	const operation = operations.get(operationId);
 	if (!operation) throw new Error(`TreeDX operation ${operationId} is absent from the adopted OpenAPI contract.`);
 	return operation;
 }
 
-export function treeDxPathParameters(operation: TreeDxOpenApiOperation, inputPath: unknown) {
+export function treeDxPathParameters(operation: AdoptedOperation, inputPath: unknown) {
 	const source = record(inputPath);
 	return Object.fromEntries([...operation.path.matchAll(/\{([^}]+)\}/gu)].map((match) => {
 		const parameter = match[1]!;
@@ -44,7 +45,7 @@ export function treeDxQuery(value: unknown) {
 		&& ['string', 'number', 'boolean'].includes(typeof entry))) as Record<string, string | number | boolean>;
 }
 
-export function treeDxOperationScope(operation: TreeDxOpenApiOperation, input: { path?: unknown; query?: unknown; body?: unknown },
+export function treeDxOperationScope(operation: AdoptedOperation, input: { path?: unknown; query?: unknown; body?: unknown },
 	fallbackRepositoryIds: string[] = []) {
 	const path = record(input.path); const query = record(input.query); const body = record(input.body);
 	const values = [path, query, body];
@@ -71,7 +72,7 @@ export function createOfficialTreeDxClient(input: { baseUrl: string; token: stri
 
 export async function invokeOfficialTreeDxOperation(input: {
 	client: TreeDxClient;
-	operation: TreeDxOpenApiOperation;
+	operation: AdoptedOperation;
 	path: unknown;
 	query: unknown;
 	body: unknown;
