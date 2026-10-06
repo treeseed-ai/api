@@ -70,10 +70,14 @@ jobs:
         working-directory: .treeseed/tools/treedx/apps/api
         run: MIX_ENV=dev mix compile
       - uses: treeseed-ai/sdk/.github/actions/install-exact-sdk@cbc03314871d271bce7275c5cee71d950397a0c3
+        env:
+          NODE_ENV: production
         with:
           github-token: ${{ github.token }}
           paths: |
             node_modules/@treeseed/sdk
+      - name: Reconcile installed dependencies with the original locked tree
+        run: npm prune --ignore-scripts --no-audit --no-fund --workspaces=false
       - name: Provision disposable signed native TreeDX
         run: node --import tsx scripts/verification/native-treedx.ts start
       - name: Verify all native TreeDX client SDK prerequisites

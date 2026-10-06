@@ -28,15 +28,20 @@ it('capacity execution dependency closure selects the sole exact SDK authority f
 	const installers = job.steps.map(object).filter(step => typeof step.uses === 'string' && step.uses.includes('/install-exact-sdk@'));
 	expect(installers).toHaveLength(1);
 	expect(String(object(installers[0]?.with).paths).trim().split(/\s+/u)).toEqual(['node_modules/@treeseed/sdk']);
+	expect(object(installers[0]?.env).NODE_ENV).toBe('production');
+	const prune = job.steps.map(object).find(step => step.run === 'npm prune --ignore-scripts --no-audit --no-fund --workspaces=false');
+	expect(prune).toBeDefined();
+	expect(job.steps.indexOf(prune)).toBeGreaterThan(job.steps.indexOf(installers[0]));
+	expect(job.steps.indexOf(prune)).toBeLessThan(job.steps.findIndex(step => object(step).run === 'npm run verify:direct'));
 	expect(readFileSync('package.json')).toEqual(bytes); expect(readFileSync('package-lock.json')).toEqual(lockBytes);
 });
 
 it('native capacity candidate hydration preserves exact SDK bytes and admits only a complete valid dependency tree and SBOM', () => {
 	const root = mkdtempSync(resolve(tmpdir(), 'api-capacity-sdk-closure-'));
-	const inputs = new Map(['package.json', 'package-lock.json', 'scripts/build/hydrate-exact-sdk.sh'].map(path => [path, readFileSync(path)]));
+	const inputs = new Map(['package.json', 'package-lock.json', 'scripts/build/hydrate-exact-sdk.sh', '.github/workflows/verify.yml'].map(path => [path, readFileSync(path)]));
 	const sdkBytes = readFileSync('node_modules/@treeseed/sdk/package.json');
-	const run = (command: string, args: string[], cwd = root) => spawnSync(command, args,
-		{ cwd, env: process.env, encoding: 'utf8', timeout: 15_000, maxBuffer: 8 * 1024 * 1024 });
+	const run = (command: string, args: string[], cwd = root, env: NodeJS.ProcessEnv = process.env) => spawnSync(command, args,
+		{ cwd, env, encoding: 'utf8', timeout: 15_000, maxBuffer: 8 * 1024 * 1024 });
 	const requireSuccess = (result: ReturnType<typeof run>) => {
 		expect(result.error).toBeUndefined(); expect(result.signal).toBeNull(); expect(result.status, result.stdout + result.stderr).toBe(0);
 	};
@@ -55,12 +60,28 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 		requireSuccess(run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--workspaces=false']));
 		const hydrated = run('bash', ['scripts/build/hydrate-exact-sdk.sh', 'artifacts/sealed-sdk', 'install']);
 		requireSuccess(hydrated);
+		// Exercise real SDK-prefix installation residue, then the same owning CI cleanup.
+		const installArgs = ['install', '--prefix', 'node_modules/@treeseed/sdk', '--ignore-scripts', '--no-save', '--package-lock=false', '--no-audit', '--no-fund'];
+		requireSuccess(run('npm', installArgs, root, { ...process.env, NODE_ENV: 'development' }));
+		const polluted = run('npm', ['ls', '--all', '--omit=dev', '--json']);
+		expect(polluted.error).toBeUndefined(); expect(polluted.signal).toBeNull(); expect(polluted.status).toBe(1);
+		expect(polluted.stdout + polluted.stderr).toContain('extraneous:');
+		const workflow = object(object(object(parse(readFileSync('.github/workflows/verify.yml', 'utf8'))).jobs).verify);
+		if (!Array.isArray(workflow.steps)) throw new Error('Original verification cleanup required');
+		const installer = workflow.steps.map(object).find(step => typeof step.uses === 'string' && step.uses.includes('/install-exact-sdk@'));
+		const nodeEnv = object(installer?.env).NODE_ENV;
+		expect(nodeEnv).toBe('production'); if (typeof nodeEnv !== 'string') throw new Error('Original SDK installation environment required');
+		requireSuccess(run('npm', installArgs, root, { ...process.env, NODE_ENV: nodeEnv }));
+		const prune = workflow.steps.map(object).find(step => step.run === 'npm prune --ignore-scripts --no-audit --no-fund --workspaces=false');
+		if (typeof prune?.run !== 'string') throw new Error('Original owning dependency cleanup required');
+		requireSuccess(run('bash', ['-euo', 'pipefail', '-c', prune.run]));
 		const tree = run('npm', ['ls', '--all', '--omit=dev', '--json']); requireSuccess(tree);
 		const publicEntry = createRequire(resolve(root, 'package.json')).resolve('@treeseed/sdk/agent-capacity');
 		for (const consumer of ['node_modules/@treeseed/deployment/package.json', 'node_modules/@treeseed/identity/package.json', 'node_modules/@treeseed/deployment/node_modules/@treeseed/identity/package.json']) {
 			expect(createRequire(resolve(root, consumer)).resolve('@treeseed/sdk/agent-capacity')).toBe(publicEntry);
 		}
 		const sbom = run('npm', ['sbom', '--omit=dev', '--sbom-format', 'cyclonedx']); requireSuccess(sbom);
+		expect(polluted.status).toBe(1); expect(polluted.stdout + polluted.stderr).toContain('extraneous:');
 		const document = object(JSON.parse(sbom.stdout));
 		if (!Array.isArray(document.components)) throw new Error('Actual nonempty dependency SBOM required');
 		expect(document.components.length).toBeGreaterThan(0);
