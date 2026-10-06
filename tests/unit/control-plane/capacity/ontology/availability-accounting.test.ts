@@ -2,12 +2,33 @@ import { describe, expect, it } from 'vitest';
 import { assertMonotonicAvailabilityAccounting } from '../../../../../src/api/capacity/services/accounts/availability-accounting.ts';
 import { serializeAvailabilitySessionRow } from '../../../../../src/api/capacity/repositories/accounts/availability-session.ts';
 import { canonicalOfferBuildInput } from '../execution/fixtures/assignment-attempt-fixtures.ts';
+import { serializeCapacityExecutionProvider } from '../../../../../src/api/capacity/repositories/capacity/providers/execution-provider.ts';
+import { deriveNativeCapacity, resolveNativeAccountingWindow } from '../../../../../src/api/capacity/services/capacity/accounting/native-capacity.ts';
 const now = '2026-09-16T12:00:00.000Z';
 const observation = { day: '2026-09-16', observedAt: now, healthy: true, activeSeconds: 100, reservedSeconds: 0 };
 const adapter = { id: 'codex-implementation', adapter: 'codex', isolation: 'microvm', nativeLimits: { modelConfigurationId: 'terra-medium', dailyActiveSecondsLimit: 28800,
 	capabilityLimits: { implementation: { dailyActiveSecondsLimit: 28800 } } }, accountingObservation: {
 		modelUsage: observation, capabilityUsage: { implementation: observation } } };
 describe('availability usage continuity', () => {
+	it('derives native budget identity from the canonical provider and adapter without rewriting native limits or observations', () => {
+		for (const providerId of ['provider-one', 'renamed-provider']) for (const kind of ['configured-adapter', 'renamed-adapter']) {
+			const nativeLimit = { id: 'daily-limit', executionProviderId: 'execution', scope: 'daily', nativeUnit: 'token',
+				limitAmount: 100, reserveBufferPercent: 10, confidence: 'high', source: 'configured', createdAt: now, updatedAt: now };
+			const provider = serializeCapacityExecutionProvider({ id: 'execution', capacity_provider_id: providerId,
+				display_name: 'Configured supply', adapter: kind, status: 'active', capabilities_json: '[]', native_unit: 'token',
+				quota_visibility: 'exact', max_concurrent_runners: 1, native_limits_json: JSON.stringify([nativeLimit]),
+				metadata_json: '{}', created_at: now, updated_at: now });
+			const input = { executionProvider: provider, nativeLimit, now, reservationDebits: { activeReservedNativeAmount: 3, activeConsumedNativeAmount: 4 } };
+			const held = structuredClone(input), result = deriveNativeCapacity(input);
+			expect(result).toMatchObject({ executionProviderId: 'execution', capacityProviderId: providerId, executionProviderKind: kind,
+				nativeUnit: 'token', configuredNativeLimit: 100, activeReservedNativeAmount: 3, activeConsumedNativeAmount: 4,
+				reserveBufferNativeAmount: 10, availableNativeAmount: 83, confidence: 'high' });
+			expect(input).toEqual(held); expect(deriveNativeCapacity(input)).toEqual(result);
+			const unknown = { ...input, nativeLimit: { ...nativeLimit, scope: 'session' } };
+			expect(resolveNativeAccountingWindow(unknown)).toEqual({ startAt: null, endAt: null, source: 'unknown', known: false });
+			expect(deriveNativeCapacity(unknown).availableNativeAmount).toBe(0);
+		}
+	});
 	it('retains every canonical executable offer and exact runtime build in public availability readback without rewriting stored authority', () => {
 		const provider = canonicalOfferBuildInput().providers[0]!;
 		const row = { id: 'session', membership_id: 'membership', team_id: 'team', capacity_provider_id: 'provider',

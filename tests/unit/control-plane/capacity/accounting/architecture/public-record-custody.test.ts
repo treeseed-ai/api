@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createCapacityQueryOperations } from '../../../../../../src/api/control-plane/catalog/capacity/capacity.ts';
 import { createCapacityQueryService } from '../../../../../../src/api/control-plane/repositories/capacity/capacity-query-service.ts';
@@ -6,6 +7,9 @@ import { OperationRegistry } from '../../../../../../src/api/control-plane/catal
 import { createProviderAssignmentService } from '../../../../../../src/api/control-plane/repositories/providers/provider-assignment-service.ts';
 import { splitPostgresSqlStatements } from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
 import { frozenAttempt, settlementDatabase, terminalUsage } from './settlement-fixture.ts';
+import { workdayStartDatabase } from '../../workdays/scheduling/architecture/workday-start-fixture.ts';
+import { upsertCapacityExecutionProviderOperations } from '../../../../../../src/api/capacity/repositories/capacity/providers/execution-provider.ts';
+import { NativeCapacityService } from '../../../../../../src/api/capacity/services/capacity/capacity-core/native-capacity-service.ts';
 
 const operator = { id: 'isolated-operator', roles: ['admin'] };
 const provider = { principal: { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider', scopes: ['provider:usage:write', 'provider:assignments:write'] } };
@@ -28,6 +32,35 @@ async function fixture() {
 // SQL, with settlement first through the public provider service. Supplied
 // principals/usage are INPUTS, not authenticated HTTP or external native charges.
 describe('public all-attempt accounting record custody', () => {
+	it('native provider budget readback retains canonical SQL provider and adapter identity and denies foreign or suspended membership without financial writes', async () => {
+		const f = await workdayStartDatabase(); try {
+			await f.db.exec(readFileSync('drizzle/control-plane/0008_capability_ontology.sql', 'utf8'));
+			// Actual allocated public key; this fixture does not issue credentials.
+			const publicJwk = generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' });
+			await f.query('UPDATE capacity_providers SET public_jwk_json=?,fingerprint=? WHERE id=?',
+				[JSON.stringify(publicJwk), createHash('sha256').update(JSON.stringify(publicJwk)).digest('hex'), 'provider']);
+			const at = f.intent.startsAt, nativeLimits = [{ id: 'native-daily', executionProviderId: 'native-execution', scope: 'daily',
+				nativeUnit: 'token', limitAmount: 100, reserveBufferPercent: 10, confidence: 'high', source: 'configured', createdAt: at, updatedAt: at }];
+			const input = { providerId: 'provider', createdAt: at, executionProviders: [{ id: 'native-execution', displayName: 'Configured native supply',
+				adapter: 'arbitrary-configured-adapter', status: 'active', nativeUnit: 'token', quotaVisibility: 'exact', maxConcurrentRunners: 1, nativeLimits }] };
+			const held = structuredClone(input);
+			await f.store.batch(upsertCapacityExecutionProviderOperations(input));
+			const rows = await f.all('SELECT * FROM capacity_execution_providers ORDER BY id'), baseline = await f.snapshot();
+			const service = new NativeCapacityService(f.store), result = await service.provider('team', 'provider', { now: at });
+			expect(result).toMatchObject({ entries: [{ executionProviderId: 'native-execution', capacityProviderId: 'provider',
+				executionProviderKind: 'arbitrary-configured-adapter', nativeUnit: 'token', configuredNativeLimit: 100,
+				activeReservedNativeAmount: 0, activeConsumedNativeAmount: 0, availableNativeAmount: 90 }], availableNativeByUnit: { token: 90 } });
+			expect(await service.provider('foreign-team', 'provider', { now: at })).toEqual({ entries: [], availableNativeByUnit: {} });
+			expect(await service.provider('team', 'foreign-provider', { now: at })).toEqual({ entries: [], availableNativeByUnit: {} });
+			expect(await service.provider('team', 'provider', { now: at })).toEqual(result);
+			expect(await f.snapshot()).toEqual(baseline); expect(await f.all('SELECT * FROM capacity_execution_providers ORDER BY id')).toEqual(rows);
+			await f.query("UPDATE capacity_provider_team_memberships SET status='suspended' WHERE id='membership'");
+			const suspended = await f.first("SELECT * FROM capacity_provider_team_memberships WHERE id='membership'");
+			expect(await service.provider('team', 'provider', { now: at })).toEqual({ entries: [], availableNativeByUnit: {} });
+			expect(await f.first("SELECT * FROM capacity_provider_team_memberships WHERE id='membership'")).toEqual(suspended);
+			expect(await f.snapshot()).toEqual(baseline); expect(await f.all('SELECT * FROM capacity_execution_providers ORDER BY id')).toEqual(rows); expect(input).toEqual(held);
+		} finally { await f.close(); }
+	});
 	it('public diagnostic replay rejects every changed counter and descriptor while retaining original failed usage and terminal settlement', async () => {
 		const f = await fixture();
 		try {
