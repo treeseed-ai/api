@@ -36,6 +36,7 @@ interface ProviderAssignmentLifecycleStore extends CapacityGovernanceDatabase, P
 export interface ProviderAssignmentLifecycleMutationResult {
 	assignment: DurableProviderAssignment; leaseToken: string | null; leaseSeconds: number | null;
 }
+
 async function assertRequiredSignals(database: CapacityGovernanceDatabase, assignment: DurableProviderAssignment) {
 	const required = Array.isArray(record(assignment.allowedOutputs).publishedSignals)
 		? [...new Set((record(assignment.allowedOutputs).publishedSignals as unknown[]).map(String).map((value) => value.replace(/_/gu, '-')).filter(Boolean))] : [];

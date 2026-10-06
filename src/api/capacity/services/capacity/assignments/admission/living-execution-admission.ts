@@ -155,6 +155,8 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		// concurrency. The count in the reservation INSERT is therefore atomic.
 		{ query: `SELECT id FROM capacity_workday_runs WHERE team_id=? AND id=? AND status='running' FOR UPDATE`,
 			params: [assignment.teamId, assignment.workdayId] },
+		...(input.invocationId ? [{ query: `SELECT id FROM agent_invocation_requests WHERE id=? AND team_id=? FOR UPDATE`,
+			params: [input.invocationId, assignment.teamId] }] : []),
 		...initializeCapabilityCounters(assignment, claims, input.now),
 		{ query: `SELECT node.id FROM execution_nodes node
 			WHERE node.team_id=? AND node.id=? AND node.node_revision=? AND node.status='ready'
@@ -189,6 +191,12 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 			AND ${claims.map(() => `EXISTS (SELECT 1 FROM capacity_admission_counters WHERE id=? AND committed_amount+?<=LEAST(hard_limit,?))`).join(' AND ')}
 			AND EXISTS (SELECT 1 FROM capacity_workday_runs run
 				WHERE run.team_id=? AND run.id=? AND run.status='running')
+			${input.invocationId ? `AND EXISTS (SELECT 1 FROM agent_invocation_requests invocation
+				WHERE invocation.id=? AND invocation.team_id=? AND invocation.status IN ('admitted','running')
+				AND (invocation.assignment_id IS NULL OR invocation.assignment_id=? OR EXISTS (
+					SELECT 1 FROM capacity_provider_assignments prior WHERE prior.id=invocation.assignment_id
+					AND prior.team_id=invocation.team_id AND prior.invocation_id=invocation.id
+					AND prior.status IN ('returned','failed','cancelled'))))` : ''}
 			AND (SELECT COUNT(*) FROM capacity_provider_assignments active
 				WHERE active.team_id=? AND active.work_day_id=? AND active.execution_kind=?
 				AND active.status IN ('pending','leased','running')) < ?
@@ -202,6 +210,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 					nodeRevision: assignment.nodeRevision, graphRevision: assignment.graphRevision }),input.now,input.now,admissionToken,...common,
 			...claims.flatMap(claim => [claim.id, assignment.limits.maximumSeconds, claim.hardLimit]),
 			assignment.teamId, assignment.workdayId,
+			...(input.invocationId ? [input.invocationId, assignment.teamId, assignment.id] : []),
 			assignment.teamId, assignment.workdayId, input.executionKind, input.workdayConcurrencyLimit,
 			assignment.teamId, principal.capacityProviderId, input.laneId, providerConcurrencyLimit] },
 		...commitCapabilityCounters(assignment, claims, admissionToken, input.now),
@@ -241,7 +250,10 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 					predecessorResults: input.predecessorResults, authorizedContext, treedxProxyHandle: input.treedxProxyHandle }),input.now,
 				assignment.id,assignment.teamId,assignment.reservationId,admissionToken] },
 		...(input.invocationId ? [{ query: `UPDATE agent_invocation_requests SET assignment_id=?, status='running', updated_at=?
-			WHERE id=? AND team_id=? AND status IN ('admitted','running') AND (assignment_id IS NULL OR assignment_id=?)
+			WHERE id=? AND team_id=? AND status IN ('admitted','running') AND (assignment_id IS NULL OR assignment_id=? OR EXISTS (
+				SELECT 1 FROM capacity_provider_assignments prior WHERE prior.id=agent_invocation_requests.assignment_id
+				AND prior.team_id=agent_invocation_requests.team_id AND prior.invocation_id=agent_invocation_requests.id
+				AND prior.status IN ('returned','failed','cancelled')))
 			AND EXISTS (SELECT 1 FROM capacity_provider_assignments admitted
 				WHERE admitted.id=? AND admitted.team_id=? AND admitted.reservation_id=?
 				AND admitted.invocation_id=? AND admitted.status='pending')`,
@@ -268,6 +280,18 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 				assignment.nodeId,assignment.nodeRevision] },
 	]);
 	const committed = await store.getProviderAssignment(assignment.teamId, assignment.id);
+	if (input.invocationId) {
+		const invocation = await store.first('SELECT status,assignment_id FROM agent_invocation_requests WHERE id=? AND team_id=?',
+			[input.invocationId, assignment.teamId]);
+		if (committed && invocation?.assignment_id !== assignment.id) throw new CapacityGovernanceError(
+			'communication_invocation_binding_failed', 'Conversation assignment was not bound to its authoritative invocation.', 409,
+			{ invocationId: input.invocationId, assignmentId: assignment.id,
+				observedStatus: invocation?.status ?? null, observedAssignmentId: invocation?.assignment_id ?? null });
+		if (!committed && (!invocation || !['admitted','running'].includes(String(invocation.status)))) throw new CapacityGovernanceError(
+			'communication_invocation_not_admissible', 'Conversation invocation is not available for assignment admission.', 409,
+			{ invocationId: input.invocationId, observedStatus: invocation?.status ?? null,
+				observedAssignmentId: invocation?.assignment_id ?? null });
+	}
 	if (!committed) {
 		const active = await store.first(`SELECT COUNT(*) AS active_count FROM capacity_provider_assignments
 			WHERE team_id=? AND work_day_id=? AND execution_kind=? AND status IN ('pending','leased','running')`,

@@ -34,7 +34,19 @@ export async function commitLivingExecutionLifecycle(
 		await database.batch([...operations.slice(0, 1), ...projection, ...operations.slice(1)]);
 		return true;
 	};
-	return transaction ? apply(transaction) : capacityTransaction(input.store, apply);
+	// An inherited transaction owns preceding settlement and must be rolled
+	// back by its caller. Never retry against its aborted connection.
+	if (transaction) return apply(transaction);
+	for (let attempt = 0; ; attempt += 1) {
+		try { return await capacityTransaction(input.store, apply); }
+		catch (error) {
+			const conflict = error as { code?: unknown; constraint?: unknown };
+			if (attempt >= 3 || conflict.code !== '23505'
+				|| conflict.constraint !== 'execution_graph_revisions_pkey') throw error;
+			// The failed transaction has rolled back. Reacquire the team lock and
+			// reread projection on a fresh connection, keeping original inputs.
+		}
+	}
 }
 
 const stable = (value: unknown): string => {

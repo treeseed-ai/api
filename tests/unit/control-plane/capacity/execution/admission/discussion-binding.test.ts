@@ -19,8 +19,8 @@ async function admissionOperations(attemptId: string = assignment.id) {
 			executionProviderId: attempt.provider.executionProviderId, reservationId: attempt.reservationId, projectAgentClassId: 'class' },
 		created_at: attempt.createdAt, updated_at: attempt.createdAt });
 	const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed),
-		first: vi.fn(async () => ({ id: attempt.nodeId })),
-		batch: async (batch: typeof operations) => { operations = batch; } };
+		batch: async (batch: typeof operations) => { operations = batch; },
+		first: vi.fn(async () => ({ id: attempt.nodeId, status: 'running', assignment_id: attempt.id })) };
 	await admitLivingExecutionAssignment(store as never, {
 		principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
 		assignment: attempt,
@@ -41,6 +41,28 @@ async function bindingOperation(attemptId: string = assignment.id) {
 }
 
 describe('conversation admission binding in PostgreSQL', () => {
+	it.each(['returned', 'failed', 'cancelled', 'foreign-team', 'foreign-invocation', 'leased'])('rebinds only its own terminal conversation attempt: %s', async (scenario) => {
+		const db = new PGlite();
+		try {
+			await db.exec(`CREATE TABLE agent_invocation_requests (id text,team_id text,assignment_id text,status text,updated_at text);
+				CREATE TABLE capacity_provider_assignments (id text,team_id text,reservation_id text,invocation_id text,status text);
+				INSERT INTO agent_invocation_requests VALUES ('invocation','team','prior','running',NULL);`);
+			await db.query('INSERT INTO capacity_provider_assignments VALUES ($1,$2,$3,$4,$5)', ['prior',
+				scenario === 'foreign-team' ? 'foreign' : 'team', 'prior-reservation',
+				scenario === 'foreign-invocation' ? 'foreign' : 'invocation',
+				scenario.startsWith('foreign-') ? 'failed' : scenario]);
+			await db.query(`INSERT INTO capacity_provider_assignments VALUES ($1,'team',$2,'invocation','pending')`,
+				[assignment.id, assignment.reservationId]);
+			const candidate = (await db.query('SELECT * FROM capacity_provider_assignments ORDER BY id')).rows;
+			const operation = await bindingOperation(); let index = 0;
+			await db.query(operation.query.replace(/\?/gu, () => `$${++index}`), operation.params);
+			await db.query(operation.query.replace(/\?/gu, (() => { let position = 0; return () => `$${++position}`; })()), operation.params);
+			expect((await db.query('SELECT assignment_id,status FROM agent_invocation_requests')).rows).toEqual([
+				{ assignment_id: ['returned', 'failed', 'cancelled'].includes(scenario) ? assignment.id : 'prior', status: 'running' },
+			]);
+			expect((await db.query('SELECT * FROM capacity_provider_assignments ORDER BY id')).rows).toEqual(candidate);
+		} finally { await db.close(); }
+	});
 	it.each(['leased', 'pending', 'completed'])('preserves source custody when a losing admission reaches an existing %s assignment', async (status) => {
 		const db = new PGlite();
 		try {
