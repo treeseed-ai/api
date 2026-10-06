@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-scene-passed-expectation-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/provider-prerequisites.test.ts
+    testName: every capacity execution component step explicitly requires passed evidence from its original verifier
   api.golden.execution-template-binary-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

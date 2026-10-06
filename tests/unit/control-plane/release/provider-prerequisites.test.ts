@@ -11,6 +11,19 @@ function object(value: unknown): Record<string, unknown> {
 	return value as Record<string, unknown>;
 }
 
+it('every capacity execution component step explicitly requires passed evidence from its original verifier', () => {
+	const source = readFileSync('guarantees/agent/golden/scenes/component-boundaries.scene.yaml');
+	const scene = object(parse(source.toString('utf8')));
+	expect(scene.scope).toBe('local-component-tests');
+	if (!Array.isArray(scene.workflow)) throw new Error('Original capacity execution workflow required');
+	expect(scene.workflow.length).toBeGreaterThan(0);
+	for (const value of scene.workflow) {
+		const step = object(value);
+		expect(step.expect, String(step.id)).toEqual({ status: 'passed' });
+	}
+	expect(readFileSync('guarantees/agent/golden/scenes/component-boundaries.scene.yaml')).toEqual(source);
+});
+
 it('provider compiler preflights strict diagnostics before replacing held outputs instead of accepting transpile-only declarations', () => {
 	const source = ts.createSourceFile('build-dist.ts', readFileSync('scripts/build/build-dist.ts', 'utf8'), ts.ScriptTarget.Latest, true);
 	const declarations = source.statements.find((value): value is ts.FunctionDeclaration => ts.isFunctionDeclaration(value) && value.name?.text === 'emitDeclarations');

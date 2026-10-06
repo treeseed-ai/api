@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-scene-passed-expectation-unit
+    action: { verifier: api.golden.execution-scene-passed-expectation-unit }
+    expect: { status: passed }
   - id: execution-continuation-optionality-unit
     action: { verifier: api.golden.execution-continuation-optionality-unit }
     expect: { status: passed }
@@ -203,18 +206,25 @@ workflow:
     expect: { status: passed }
   - id: execution-proposal-evaluation-native
     action: { verifier: api.golden.execution-proposal-evaluation-native }
+    expect: { status: passed }
   - id: execution-proposal-evaluation-unit
     action: { verifier: api.golden.execution-proposal-evaluation-unit }
+    expect: { status: passed }
   - id: execution-usage-clock-unit
     action: { verifier: api.golden.execution-usage-clock-unit }
+    expect: { status: passed }
   - id: execution-usage-clock-native
     action: { verifier: api.golden.execution-usage-clock-native }
+    expect: { status: passed }
   - id: execution-schedule-update-unit
     action: { verifier: api.golden.execution-schedule-update-unit }
+    expect: { status: passed }
   - id: execution-workspace-response-native
     action: { verifier: api.golden.execution-workspace-response-native }
+    expect: { status: passed }
   - id: execution-decision-replay-native
     action: { verifier: api.golden.execution-decision-replay-native }
+    expect: { status: passed }
   - id: execution-terminal-orphan-unit
     action: { verifier: api.golden.execution-terminal-orphan-unit }
     expect: { status: passed }
