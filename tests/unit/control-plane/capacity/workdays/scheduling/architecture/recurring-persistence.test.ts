@@ -40,6 +40,39 @@ async function recurrence() {
 	} catch (error) { await base.db.close(); throw error; }
 }
 describe('real owning recurring schedule SQL and durable start receipt replay', () => {
+	it('real recurring schedule persistence denies coerced numerical authority without native writes and retains default explicit and stale-version behavior', async () => {
+		const f = await recurrence(); try {
+			const original = await f.create(), defaulted = await f.service.create('team', { id: 'defaulted', intent: f.intent });
+			expect(original?.cadenceSeconds).toBe(60); expect(original?.stateVersion).toBe(1); expect(defaulted?.cadenceSeconds).toBe(3600);
+			const invalid = [
+				...['60', null, true, false, [], [60], {}, NaN, Infinity, -Infinity, -1, 0, 59, 60.5]
+					.flatMap(value => [{ action: 'create', field: 'cadenceSeconds', value }, { action: 'update', field: 'cadenceSeconds', value }]),
+				...['1', null, true, false, [], [1], {}, NaN, Infinity, -Infinity, -1, 0, 1.5]
+					.map(value => ({ action: 'update', field: 'stateVersion', value })),
+			];
+			const outcomes = [];
+			for (const [index, { action, field, value }] of invalid.entries()) {
+				const current = await f.service.get('team', 'schedule'); expect(current).not.toBeNull();
+				const input = action === 'create' ? { id: `invalid-${index}`, intent: f.intent, [field]: value }
+					: { stateVersion: current!.stateVersion, [field]: value };
+				const held = structuredClone(input), before = await f.snapshot(); let cause: unknown;
+				try { if (action === 'create') await f.service.create('team', input); else await f.service.update('team', 'schedule', input); }
+				catch (error) { cause = error; }
+				expect(input).toEqual(held); outcomes.push({ cause, before, after: await f.snapshot() });
+			}
+			for (const outcome of outcomes) {
+				expect(outcome.cause).toMatchObject({ status: 400, code: 'capacity_workday_schedule_value_invalid' });
+				expect(outcome.after).toEqual(outcome.before);
+			}
+			const unchanged = await f.service.update('team', 'schedule', {});
+			expect(unchanged?.cadenceSeconds).toBe(60); expect(unchanged?.stateVersion).toBe(2);
+			const updated = await f.service.update('team', 'schedule', { stateVersion: 2, cadenceSeconds: 3600 });
+			expect(updated?.cadenceSeconds).toBe(3600); expect(updated?.stateVersion).toBe(3);
+			const before = await f.snapshot();
+			await expect(f.service.update('team', 'schedule', { stateVersion: 2 })).rejects.toMatchObject({ status: 409, code: 'capacity_workday_schedule_version_stale' });
+			expect(await f.snapshot()).toEqual(before); expect(f.guarded).toEqual([]); expect(f.intent).toEqual(original?.intent);
+		} finally { await f.db.close(); }
+	});
 	it('persists one high-level recurring intent with exact mode and no duplicate derived capacity authority', async () => {
 		const f = await recurrence(); try {
 			const before = structuredClone(f.intent), created = await f.create(); expect(created?.intent).toEqual(before);

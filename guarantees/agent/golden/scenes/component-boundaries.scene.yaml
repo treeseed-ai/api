@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-recurring-numeric-unit
+    action: { verifier: api.golden.execution-recurring-numeric-unit }
+    expect: { status: passed }
+  - id: execution-recurring-numeric-native
+    action: { verifier: api.golden.execution-recurring-numeric-native }
+    expect: { status: passed }
   - id: execution-canonical-optionality-native
     action: { verifier: api.golden.execution-canonical-optionality-native }
     expect: { status: passed }

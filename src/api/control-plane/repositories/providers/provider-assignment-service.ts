@@ -11,7 +11,7 @@ import { parseCommunicationAddresses } from '@treeseed/sdk/operator-contracts';
 import { assignmentReferenceSchema } from '@treeseed/sdk/agent-capacity';
 import { redactTranscriptValue } from './transcript-redaction.ts';
 import { providerPrincipal, type ProviderPrincipal } from './provider-runtime-service.ts';
-import { assignmentActivityType, assignmentRecord as record, assignmentWorkdayRunId, assertProviderOwnsAssignment, type ProviderAssignmentStore } from './provider-assignment-support.ts';
+import { assignmentActivityType, assignmentRecord as record, assignmentWorkdayRunId, assertProviderOwnsAssignment, type AssignmentObservation, type ProviderAssignmentStore } from './provider-assignment-support.ts';
 import { commitDiscussionMessage } from '../../../discussions/content.ts';
 import { loadDiscussions } from '../../../discussions/content.ts';
 import { recordAssignmentDiscussionResponse } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-discussion-response-service.ts';
@@ -33,22 +33,24 @@ export function normalizeStoredTimestamp(value: unknown) {
 	const parsed = new Date(value); return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : '';
 }
 
-async function communicationProvenance(store: ProviderAssignmentStore, assignment: Record<string, unknown>) {
-	if (String(assignment.execution_kind ?? assignment.executionKind ?? '') !== 'conversation') return null;
-	const invocationId = String(assignment.invocation_id ?? assignment.invocationId ?? '');
-	const invocation = invocationId ? await store.first('SELECT * FROM agent_invocation_requests WHERE id=? AND team_id=? LIMIT 1', [invocationId, assignment.team_id ?? assignment.teamId]) : null;
+async function communicationProvenance(store: ProviderAssignmentStore, assignment: AssignmentObservation) {
+	const raw = record(assignment);
+	if (String(raw.execution_kind ?? assignment.executionKind ?? '') !== 'conversation') return null;
+	const invocationId = String(raw.invocation_id ?? assignment.invocationId ?? '');
+	const invocation = invocationId ? await store.first('SELECT * FROM agent_invocation_requests WHERE id=? AND team_id=? LIMIT 1', [invocationId, raw.team_id ?? assignment.teamId]) : null;
 	if (!invocation) return null; const metadata = discussionInvocationProvenance(invocation).metadata; const communication = record(metadata.communication);
-	const topicId = String(communication.topicId ?? ''); const topic = topicId ? await store.first('SELECT id,slug FROM communication_discussion_topics WHERE id=? AND team_id=? LIMIT 1', [topicId, assignment.team_id ?? assignment.teamId]) : null;
+	const topicId = String(communication.topicId ?? ''); const topic = topicId ? await store.first('SELECT id,slug FROM communication_discussion_topics WHERE id=? AND team_id=? LIMIT 1', [topicId, raw.team_id ?? assignment.teamId]) : null;
 	return topic ? { invocation, metadata, communication, topic } : null;
 }
 
-async function appendCommunicationEvent(store: ProviderAssignmentStore, assignment: Record<string, unknown>, type: string, summary: string, actor: { kind: string; id: string; handle?: string }, payload: Record<string, unknown> = {}) {
+async function appendCommunicationEvent(store: ProviderAssignmentStore, assignment: AssignmentObservation, type: string, summary: string, actor: { kind: string; id: string; handle?: string }, payload: Record<string, unknown> = {}) {
 	const provenance = await communicationProvenance(store, assignment); if (!provenance) return null;
-	const assignmentId = String(assignment.id), invocationId = String(assignment.invocation_id ?? assignment.invocationId ?? ''), sendId = String(provenance.communication.sendId ?? '');
+	const raw = record(assignment);
+	const assignmentId = String(assignment.id), invocationId = String(raw.invocation_id ?? assignment.invocationId ?? ''), sendId = String(provenance.communication.sendId ?? '');
 	const eventIdentity = payload.traceSequence == null ? type : `${type}:${String(payload.traceSequence)}`;
 	const id = `topic-event-${stableId(String(provenance.topic.id), `${assignmentId}:${eventIdentity}`)}`, now = new Date().toISOString();
 	await store.run(`INSERT INTO communication_topic_events (id,topic_id,team_id,event_type,occurred_at,send_id,invocation_id,assignment_id,actor_kind,actor_id,actor_handle,summary,payload_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb) ON CONFLICT (id) DO NOTHING`, [id, provenance.topic.id, assignment.team_id ?? assignment.teamId, type, now,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb) ON CONFLICT (id) DO NOTHING`, [id, provenance.topic.id, raw.team_id ?? assignment.teamId, type, now,
 		sendId || null, invocationId || null, assignmentId, actor.kind, actor.id, actor.handle ?? null, summary, JSON.stringify(payload)]);
 	return now;
 }
@@ -63,7 +65,7 @@ export function discussionInvocationProvenance(invocation: Record<string, unknow
 	};
 }
 
-function providerEventInput(assignment: Record<string, unknown>, body: Record<string, unknown>) {
+function providerEventInput(assignment: AssignmentObservation, body: Record<string, unknown>) {
 	const id = typeof body.id === 'string' ? body.id.trim() : '';
 	const eventType = typeof body.eventType === 'string' ? body.eventType.trim() : '';
 	const component = typeof body.component === 'string' ? body.component.trim() : '';
@@ -93,7 +95,7 @@ function protectedEventMatches(envelope: Record<string, unknown>, event: ReturnT
 		&& isDeepStrictEqual(envelopes.decrypt(envelope), body.protectedPayload);
 }
 
-async function protectedEventMetadata(store: ProviderAssignmentStore, assignment: Record<string, unknown>, actor: ProviderPrincipal,
+async function protectedEventMetadata(store: ProviderAssignmentStore, assignment: AssignmentObservation, actor: ProviderPrincipal,
 	runId: string, body: Record<string, unknown>, event: ReturnType<typeof providerEventInput>, envelopes?: DiagnosticEnvelopeService) {
 	const payload = body.protectedPayload;
 	if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).length === 0) throw new CapacityGovernanceError(

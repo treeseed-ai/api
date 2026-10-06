@@ -12,7 +12,12 @@ const SCHEDULE_STATUSES = new Set<Status>(['active', 'paused', 'completed', 'fai
 
 function json<T>(value: unknown, fallback: T): T { try { return typeof value === 'string' ? JSON.parse(value) as T : value as T; } catch { return fallback; } }
 function text(value: unknown, fallback = '') { return typeof value === 'string' && value.trim() ? value.trim() : fallback; }
-function integer(value: unknown, fallback: number, minimum: number) { const parsed = Number(value ?? fallback); if (!Number.isInteger(parsed) || parsed < minimum) throw new CapacityGovernanceError('capacity_workday_schedule_value_invalid', `Schedule value must be an integer of at least ${minimum}.`, 400); return parsed; }
+function integer(value: unknown, fallback: number, minimum: number) {
+	const parsed = value === undefined ? fallback : value;
+	if (typeof parsed !== 'number' || !Number.isInteger(parsed) || parsed < minimum)
+		throw new CapacityGovernanceError('capacity_workday_schedule_value_invalid', `Schedule value must be an integer of at least ${minimum}.`, 400);
+	return parsed;
+}
 function inputKeys(input: Row, allowed: string[]) {
 	const unexpected = Object.keys(input).filter(key => !allowed.includes(key));
 	if (unexpected.length) throw new CapacityGovernanceError('capacity_workday_schedule_fields_invalid', `Unsupported schedule fields: ${unexpected.join(', ')}. Use canonical workday intent.`, 400);

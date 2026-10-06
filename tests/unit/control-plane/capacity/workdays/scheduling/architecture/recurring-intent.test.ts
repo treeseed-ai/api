@@ -8,6 +8,47 @@ export const intent = { schemaVersion: 'treeseed.workday-intent/v1' as const, te
 	planningOnly: true, allocation: { allocationWeight: 1, planningPercent: 20 }, operatorConstraints: { providerIds: ['provider'], maxConcurrency: 1 } };
 
 describe('manual and recurring canonical high-level intent', () => {
+	it('denies coerced recurrence cadence and state versions before writes while retaining omitted defaults and exact numeric authority', async () => {
+		const row = { id: 'schedule', team_id: 'team', status: 'active', purpose: 'Governed recurrence', cadence_seconds: 60,
+			intent_json: JSON.stringify(intent), last_run_id: null, next_run_at: intent.startsAt, state_version: 1,
+			created_at: intent.startsAt, updated_at: intent.startsAt };
+		const store: ConstructorParameters<typeof CapacityWorkdayScheduleService>[0] = {
+			ensureInitialized: async () => undefined, first: async <T extends Record<string, unknown>>(): Promise<T | null> => null,
+			all: async <T extends Record<string, unknown>>(): Promise<T[]> => [], run: async () => undefined, batch: async () => [],
+			getCapacityWorkdayRun: async () => null,
+			createCapacityWorkdayRun: async () => { throw new Error('Unexpected run creation'); },
+			preflightCapacityWorkdayRunRequest: async () => { throw new Error('Unexpected preflight'); },
+		};
+		const read = vi.spyOn(store, 'first').mockResolvedValue(row), writes = vi.spyOn(store, 'run');
+		const service = new CapacityWorkdayScheduleService(store), invalid = [
+			...['60', null, true, false, [], [60], {}, NaN, Infinity, -Infinity, -1, 0, 59, 60.5]
+				.flatMap(value => [{ action: 'create', field: 'cadenceSeconds', value }, { action: 'update', field: 'cadenceSeconds', value }]),
+			...['1', null, true, false, [], [1], {}, NaN, Infinity, -Infinity, -1, 0, 1.5]
+				.map(value => ({ action: 'update', field: 'stateVersion', value })),
+		];
+		const outcomes = [];
+		for (const { action, field, value } of invalid) {
+			read.mockClear(); writes.mockClear();
+			const input = action === 'create' ? { id: 'schedule', intent, [field]: value } : { [field]: value };
+			const held = structuredClone({ input, row }); let cause: unknown;
+			try { if (action === 'create') await service.create('team', input); else await service.update('team', 'schedule', input); }
+			catch (error) { cause = error; }
+			expect({ input, row }).toEqual(held);
+			outcomes.push({ cause, writes: writes.mock.calls.length, updates: read.mock.calls.filter(([sql]) => sql.startsWith('UPDATE ')).length });
+		}
+		for (const outcome of outcomes) {
+			expect(outcome.cause).toMatchObject({ status: 400, code: 'capacity_workday_schedule_value_invalid' });
+			expect(outcome.writes).toBe(0); expect(outcome.updates).toBe(0);
+		}
+		for (const cadenceSeconds of [undefined, 60, 3600]) {
+			writes.mockClear(); read.mockClear();
+			await service.create('team', { id: 'schedule', intent, ...(cadenceSeconds === undefined ? {} : { cadenceSeconds }) });
+			expect(writes.mock.calls).toHaveLength(1); expect(writes.mock.calls[0]![1]![3]).toBe(cadenceSeconds ?? 3600);
+			await service.update('team', 'schedule', { ...(cadenceSeconds === undefined ? {} : { cadenceSeconds }), stateVersion: 1 });
+			const update = read.mock.calls.find(([sql]) => sql.startsWith('UPDATE ')); expect(update?.[1]?.[2]).toBe(cadenceSeconds ?? 60);
+		}
+		await expect(service.update('team', 'schedule', { stateVersion: 2 })).rejects.toMatchObject({ status: 409, code: 'capacity_workday_schedule_version_stale' });
+	});
 	it('rejects a lost conditional schedule update from its own SQL result without certifying another writers matching version', async () => {
 		const row = { id: 'schedule', team_id: 'team', status: 'active', purpose: 'Governed recurrence', cadence_seconds: 60,
 			intent_json: JSON.stringify(intent), last_run_id: null, next_run_at: intent.startsAt, state_version: 1,

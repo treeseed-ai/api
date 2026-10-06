@@ -11,6 +11,7 @@ import { encryptedEnvelopeSchema } from '@treeseed/sdk/security';
 import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import { frozenAttempt } from '../capacity/accounting/architecture/settlement-fixture.ts';
 import { workdayStartDatabase } from '../capacity/workdays/scheduling/architecture/workday-start-fixture.ts';
+import { serializeProviderAssignmentRow } from '../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 
 describe('provider assignment timestamps', () => {
 	it('normalizes database Date values before returning communication receipts', () => {
@@ -22,9 +23,22 @@ describe('provider assignment timestamps', () => {
 
 describe('provider assignment workday identity', () => {
 	it('refuses protected ordinary execution evidence when encryption or exact current lease authority is unavailable without writing public events or hiding caller bytes', async () => {
-		const assignment = { id: 'assignment-1', teamId: 'team-1', capacityProviderId: 'provider-1', membershipId: 'membership-1',
-			workDayId: 'workday-run-1', status: 'leased', leaseState: 'leased', leaseToken: 'original-lease', runnerId: 'original-runner',
-			leaseExpiresAt: new Date(Date.now() + 30_000).toISOString(), metadata: {} };
+		const createdAt = new Date().toISOString(), deadline = new Date(Date.now() + 30_000).toISOString();
+		// Controlled UNIT authority, not an issued or refreshed native deadline.
+		const attempt = assignmentAttemptSchema.parse({ ...frozenAttempt, id: 'assignment-1', teamId: 'team-1',
+			workdayId: 'workday-run-1', status: 'leased', createdAt, deadline,
+			provider: { ...frozenAttempt.provider, providerId: 'provider-1' } });
+		const assignment = serializeProviderAssignmentRow({ id: attempt.id, team_id: attempt.teamId, project_id: attempt.projectId,
+			capacity_provider_id: attempt.provider.providerId, execution_provider_id: attempt.provider.executionProviderId,
+			membership_id: 'membership-1', project_agent_class_id: attempt.agentClass, work_day_id: attempt.workdayId,
+			mode: 'acting', status: 'leased', lease_state: 'leased', lease_token: 'original-lease', runner_id: 'original-runner',
+			lease_expires_at: deadline, reservation_id: attempt.reservationId, execution_node_id: attempt.nodeId,
+			execution_node_revision: attempt.nodeRevision, graph_revision: attempt.graphRevision, attempt_count: attempt.attempt,
+			assignment_attempt_json: JSON.stringify(attempt), capacity_envelope_json: JSON.stringify({ teamId: attempt.teamId,
+				projectId: attempt.projectId, workDayId: attempt.workdayId, mode: 'acting', projectAgentClassId: attempt.agentClass,
+				capacityProviderId: attempt.provider.providerId, executionProviderId: attempt.provider.executionProviderId, reservationId: attempt.reservationId }),
+			created_at: createdAt, updated_at: createdAt });
+		if (!assignment) throw new Error('Original owning assignment serializer must retain the controlled UNIT row.');
 		const writes: unknown[] = [];
 		const store: ProviderAssignmentStore = {
 			ensureInitialized: async () => undefined, first: async () => null, all: async () => [],
