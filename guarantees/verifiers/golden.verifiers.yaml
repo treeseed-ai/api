@@ -336,6 +336,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/release/provider-prerequisites.test.ts
     testName: "complete provider suites provision the exact native TreeDX engine and original signed bootstrap before verification and retain explicit cleanup after scenes"
+  api.golden.execution-compiler-prerequisite-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/provider-prerequisites.test.ts
+    testName: "provider compiler preflights strict diagnostics before replacing held outputs instead of accepting transpile-only declarations"
+  api.golden.execution-compiler-prerequisite-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/provider-prerequisites.test.ts
+    testName: "native original provider compiler denies invalid typed inputs without replacing candidate bytes and admits only a valid controlled retry"
   api.golden.execution-lease-clocks-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

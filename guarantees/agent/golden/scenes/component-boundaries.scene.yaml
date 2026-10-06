@@ -194,6 +194,12 @@ workflow:
   - id: execution-native-treedx-prerequisite-unit
     action: { verifier: api.golden.execution-native-treedx-prerequisite-unit }
     expect: { status: passed }
+  - id: execution-compiler-prerequisite-unit
+    action: { verifier: api.golden.execution-compiler-prerequisite-unit }
+    expect: { status: passed }
+  - id: execution-compiler-prerequisite-native
+    action: { verifier: api.golden.execution-compiler-prerequisite-native }
+    expect: { status: passed }
   - id: execution-lease-clocks-unit
     action: { verifier: api.golden.execution-lease-clocks-unit }
     expect: { status: passed }

@@ -106,17 +106,22 @@ function emitDeclarations() {
 			emitDeclarationOnly: true,
 			declarationDir: distRoot,
 			noEmit: false,
+			strict: true,
+			noEmitOnError: true,
+			noCheck: false,
 		},
 	});
-	const result = program.emit();
-	if (result.emitSkipped) {
-		const diagnostics = ts.formatDiagnosticsWithColorAndContext(result.diagnostics, {
+	const render = (diagnostics: readonly ts.Diagnostic[]) => ts.formatDiagnosticsWithColorAndContext(diagnostics, {
 			getCanonicalFileName: (fileName) => fileName,
 			getCurrentDirectory: () => process.cwd(),
 			getNewLine: () => '\n',
 		});
-		throw new Error(`Declaration build failed.\n${diagnostics}`);
-	}
+	const diagnostics = ts.getPreEmitDiagnostics(program);
+	if (diagnostics.length) throw new Error(`Declaration build failed.\n${render(diagnostics)}`);
+	return () => {
+		const result = program.emit();
+		if (result.emitSkipped || result.diagnostics.length) throw new Error(`Declaration build failed.\n${render(result.diagnostics)}`);
+	};
 }
 
 function assertRequiredOutputs() {
@@ -133,6 +138,7 @@ function assertRequiredOutputs() {
 	}
 }
 
+const emit = emitDeclarations();
 rmSync(distRoot, { recursive: true, force: true });
 
 for (const filePath of walkFiles(srcRoot)) {
@@ -144,5 +150,5 @@ for (const filePath of walkFiles(srcRoot)) {
 
 transpileScript(resolve(scriptsRoot, 'support', 'migrate-db.ts'));
 
-emitDeclarations();
+emit();
 assertRequiredOutputs();
