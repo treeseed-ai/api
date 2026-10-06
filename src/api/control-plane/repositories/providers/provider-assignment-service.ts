@@ -39,7 +39,7 @@ async function communicationProvenance(store: ProviderAssignmentStore, assignmen
 	const invocationId = String(raw.invocation_id ?? assignment.invocationId ?? '');
 	const invocation = invocationId ? await store.first('SELECT * FROM agent_invocation_requests WHERE id=? AND team_id=? LIMIT 1', [invocationId, raw.team_id ?? assignment.teamId]) : null;
 	if (!invocation) return null; const metadata = discussionInvocationProvenance(invocation).metadata; const communication = record(metadata.communication);
-	const topicId = String(communication.topicId ?? ''); const topic = topicId ? await store.first('SELECT id,slug FROM communication_discussion_topics WHERE id=? AND team_id=? LIMIT 1', [topicId, raw.team_id ?? assignment.teamId]) : null;
+	const topicId = String(communication.topicId ?? ''); const topic = topicId ? await store.first<{ id: string; slug: string }>('SELECT id,slug FROM communication_discussion_topics WHERE id=? AND team_id=? LIMIT 1', [topicId, raw.team_id ?? assignment.teamId]) : null;
 	return topic ? { invocation, metadata, communication, topic } : null;
 }
 

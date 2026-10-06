@@ -1,6 +1,6 @@
 import { createHash,randomUUID } from 'node:crypto';
 import { CapacityGovernanceError } from '../../../database.ts';
-import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
+import { validateAgentDefinitionModel, type AgentDefinition, type CapacityWorkdayRunRecord } from '@treeseed/sdk/agent-capacity';
 import { decodeWorkdayAgentProfileSnapshot } from '../workdays/policy/workday-agent-profile-policy.ts';
 import { assignmentPreparationSeconds } from '../assignments/planning/assignment-time-budget.ts';
 import { reconcileAssignmentContent } from '../assignments/lifecycle/assignment-content-readback.ts';
@@ -11,13 +11,13 @@ export function conversationRunDurationSeconds(productiveSeconds: number): numbe
 	return Math.max(1, productiveSeconds) + assignmentPreparationSeconds(undefined);
 }
 
-interface DiscussionInvocationStore {
+export interface DiscussionInvocationStore {
 	first(query: string, params?: unknown[]): Promise<Row | null>;
 	all(query: string, params?: unknown[]): Promise<Row[]>;
 	run(query: string, params?: unknown[]): Promise<unknown>;
-	createCapacityWorkdayRun(teamId: string, input: Row): Promise<Row>;
+	createCapacityWorkdayRun(teamId: string, input: Row): Promise<CapacityWorkdayRunRecord>;
 	tickCapacityWorkdayRun(teamId: string, runId: string, now?: string, idempotencyKey?: string): Promise<Row>;
-	updateCapacityWorkdayRun(teamId: string, runId: string, input: Row): Promise<Row | null>;
+	updateCapacityWorkdayRun(teamId: string, runId: string, input: Row): Promise<CapacityWorkdayRunRecord | null>;
 }
 
 export async function terminalizeCompletedConversationInvocation(

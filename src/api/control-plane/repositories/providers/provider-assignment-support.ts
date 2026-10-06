@@ -4,11 +4,13 @@ import type { ProviderPrincipal } from './provider-runtime-service.ts';
 import type { ProviderAssignmentLeaseResult } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-lease-service.ts';
 import type { ProviderAssignmentLifecycleMutationResult } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-lifecycle-service.ts';
 import type { ProviderAssignment } from '@treeseed/sdk/agent-capacity';
+import type { DiscussionInvocationStore } from '../../../capacity/services/capacity/invocations/discussion-invocation-service.ts';
 
 export type AssignmentObservation = ProviderAssignment | Record<string, unknown>;
 type AssignmentMutation = ProviderAssignmentLifecycleMutationResult | Record<string, unknown>;
 
-export interface ProviderAssignmentStore extends CapacityGovernanceDatabase {
+export interface ProviderAssignmentStore extends CapacityGovernanceDatabase, Pick<DiscussionInvocationStore,
+	'createCapacityWorkdayRun' | 'tickCapacityWorkdayRun' | 'updateCapacityWorkdayRun'> {
 	leaseNextProviderAssignment(principal: ProviderPrincipal, input: Record<string, unknown>): Promise<Partial<ProviderAssignmentLeaseResult>>;
 	getProviderAssignment(teamId: string, assignmentId: string): Promise<ProviderAssignment | null>;
 	renewProviderAssignmentLease(principal: ProviderPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<AssignmentMutation | null>;
