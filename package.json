@@ -19,6 +19,7 @@
     "node": ">=22"
   },
   "overrides": {
+    "@treeseed/sdk": "$@treeseed/sdk",
     "libsodium": "0.7.15",
     "libsodium-sumo": "0.7.15"
   },
