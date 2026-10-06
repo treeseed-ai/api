@@ -13,7 +13,7 @@ export function artifactStorageRoot(config) {
     return path.resolve(root, '.treeseed/generated/hosted-artifacts');
 }
 
-export function safeStoragePathSegment(value) {
+export function safeStoragePathSegment(value: unknown) {
     return String(value ?? '')
         .split('/')
         .map((part) => part.trim())
@@ -21,7 +21,7 @@ export function safeStoragePathSegment(value) {
         .join('/');
 }
 
-export function safeIdPart(value, fallback = 'item') {
+export function safeIdPart(value: unknown, fallback = 'item') {
     return String(value ?? fallback)
         .trim()
         .toLowerCase()
@@ -74,11 +74,11 @@ export function missingSchemaError(error) {
         || message.includes('undefined column');
 }
 
-export function objectValue(value, fallback: any = {}) {
+export function objectValue(value: unknown, fallback: any = {}) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : fallback;
 }
 
-export function arrayValue(value) {
+export function arrayValue(value: unknown) {
     return Array.isArray(value) ? value : [];
 }
 
@@ -88,17 +88,23 @@ export const LOCAL_CONTENT_MATERIALIZATIONS = new Set(['none', 'existing_path', 
 
 export const CONTENT_PUBLISH_TARGETS = new Set(['none', 'cloudflare_r2']);
 
-export function stringValue(value, fallback = '') {
+export function stringValue(value: unknown, fallback = '') {
     const next = typeof value === 'string' ? value.trim() : '';
     return next || fallback;
 }
 
-export function optionalStringValue(value, fallback = null) {
+export function optionalStringValue(value: unknown, fallback: string): string;
+export function optionalStringValue(value: unknown, fallback?: null): string | null;
+export function optionalStringValue(value: unknown, fallback: string | null): string | null;
+export function optionalStringValue(value: unknown, fallback: string | null = null) {
     const next = typeof value === 'string' ? value.trim() : '';
     return next || fallback;
 }
 
-export function numberValue(value, fallback = null) {
+export function numberValue(value: unknown, fallback: number): number;
+export function numberValue(value: unknown, fallback?: null): number | null;
+export function numberValue(value: unknown, fallback: number | null): number | null;
+export function numberValue(value: unknown, fallback: number | null = null) {
     if (typeof value === 'number' && Number.isFinite(value))
         return value;
     if (typeof value === 'string' && value.trim()) {
@@ -131,7 +137,7 @@ export function principalIsAdmin(principal) {
             || principal.roles?.includes?.('platform_admin')));
 }
 
-export function normalizeBaseUrl(baseUrl) {
+export function normalizeBaseUrl(baseUrl: unknown) {
     return String(baseUrl ?? '').trim().replace(/\/+$/u, '');
 }
 
@@ -159,7 +165,7 @@ export function normalizeAllocationSlices(value, fallback: any = []) {
     }));
 }
 
-export function normalizedStrings(values) {
+export function normalizedStrings(values: unknown) {
     return arrayValue(values).map((value) => String(value ?? '').trim()).filter(Boolean);
 }
 
