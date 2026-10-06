@@ -91,6 +91,7 @@
     "@electric-sql/pglite": "0.5.8",
     "@modelcontextprotocol/client": "2.0.0",
     "@types/node": "^24.6.0",
+    "@types/pg": "8.23.1",
     "@types/tar-stream": "3.1.4",
     "esbuild": "^0.28.0",
     "tsx": "^4.21.0",
