@@ -122,20 +122,22 @@ describe('immutable assignment-attempt construction', () => {
 			.toThrow('Writable TreeDX content must belong to the assignment project library.');
 	});
 
-	it('preserves a proposal-owned exact Knowledge identity in the assignment grant', () => {
+	it('uses the exact Book and frozen grant without admitting a retired node output selector', () => {
 		const exact = structuredClone(candidate);
 		exact.contextRefs = [{ store: 'treedx', model: 'book', id: 'sdk-core', repository: 'library', commit: '9'.repeat(40), path: 'books/sdk-core.md', revision: 1, digest: `sha256:${'1'.repeat(64)}` }] as never;
 		exact.node.workspace = 'treedx';
-		exact.node.output = { model: 'knowledge', id: 'sdk-workday-contract-inventory-v1' };
 		exact.node.requestedPermissions = { content: { read: ['proposal', 'book'], write: ['knowledge'] }, tools: ['source.read'] } as never;
 		exact.effectiveProfile.permissionCeiling = exact.node.requestedPermissions;
-		const result = buildAssignmentAttempt({ candidate: { ...exact, lineageSourceCommit: '9'.repeat(40) } as never, run,
+		const input = { candidate: { ...exact, lineageSourceCommit: '9'.repeat(40) } as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
-			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
-		expect(result.assignment.grant.contentWrite[0]).toMatchObject({
-			id: 'sdk-workday-contract-inventory-v1', path: 'knowledge/sdk-core/sdk-workday-contract-inventory-v1.md',
-		});
+			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' };
+		const held = structuredClone(input), result = buildAssignmentAttempt(input), target = result.assignment.grant.contentWrite[0]!;
+		expect(target.id).toMatch(/^knowledge-[a-f0-9]+$/u); expect(target.path).toBe(`knowledge/sdk-core/${target.id}.md`);
+		for (const output of [undefined, null, '', {}, [], { model: 'knowledge', id: 'sdk-workday-contract-inventory-v1' }]) {
+			const supplied = structuredClone(input); Object.assign(supplied.candidate.node, { output }); const before = structuredClone(supplied);
+			expect(() => buildAssignmentAttempt(supplied)).toThrow(); expect(supplied).toEqual(before);
+		} expect(buildAssignmentAttempt(input)).toEqual(result); expect(input).toEqual(held);
 	});
 
 	it('rejects an acting Knowledge writer without an exact Book reference before consuming capacity', () => {

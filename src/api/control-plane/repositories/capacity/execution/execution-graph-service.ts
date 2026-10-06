@@ -1,7 +1,7 @@
 import { applyOperationalState, recoverIncompleteReviewCycles, reviewCycleLimitReached, recoverInterruptedGovernanceReviews,
 	recoverableGovernanceReviewAttemptHistory, stable, digest, record, text, type TeamGraph } from './execution-graph-state.ts';
 import {
-	graphRevisionSchema,
+	graphRevisionSchema, validateExecutionGraph,
 	validateAgentDefinitionModel,
 	type AgentDefinition,
 	type ExecutionEdge,
@@ -206,8 +206,8 @@ function visibleGraph(graph: TeamGraph, query: Row): TeamGraph {
 	const ids = new Set(nodes.map((node) => node.id));
 	return { ...graph, nodes, edges: graph.edges.filter((edge) => ids.has(edge.fromNodeId) && ids.has(edge.toNodeId)) };
 }
-
 export async function persistExecutionGraph(store: any, graph: TeamGraph, current: TeamGraph, revisionRecord: GraphRevision) {
+	if (!validateExecutionGraph(graph.nodes, graph.edges).ok) throw new CapacityOperationError(422, 'execution_graph_invalid', 'Only canonical execution graphs can be persisted.');
 	const now = revisionRecord.createdAt;
 	const operations: Array<{ query: string; params: unknown[] }> = [{
 		query: 'SELECT id FROM teams WHERE id=? FOR UPDATE', params: [graph.teamId],
@@ -234,16 +234,16 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 		query: `INSERT INTO execution_nodes (
 			id,team_id,project_id,workday_id,work_item_id,kind,pair_role,source_ref_json,authority_refs_json,
 			rule_revision,node_revision,agent_class,status,estimate_json,required_capabilities_json,
-			requested_permissions_json,output_json,workspace,acceptance_criteria_json,maximum_review_cycles,condition_json,
+			requested_permissions_json,workspace,acceptance_criteria_json,maximum_review_cycles,condition_json,
 			graph_revision_created,graph_revision_updated,created_at,updated_at,priority
-		) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE ${revisionGuard}
+		) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE ${revisionGuard}
 		ON CONFLICT (id) DO UPDATE SET
 			project_id=excluded.project_id,workday_id=excluded.workday_id,work_item_id=excluded.work_item_id,
 			kind=excluded.kind,pair_role=excluded.pair_role,source_ref_json=excluded.source_ref_json,
 			authority_refs_json=excluded.authority_refs_json,rule_revision=excluded.rule_revision,
 			node_revision=excluded.node_revision,agent_class=excluded.agent_class,status=excluded.status,
 			estimate_json=excluded.estimate_json,required_capabilities_json=excluded.required_capabilities_json,
-			requested_permissions_json=excluded.requested_permissions_json,output_json=excluded.output_json,workspace=excluded.workspace,
+			requested_permissions_json=excluded.requested_permissions_json,workspace=excluded.workspace,
 			acceptance_criteria_json=excluded.acceptance_criteria_json,maximum_review_cycles=excluded.maximum_review_cycles,
 			condition_json=excluded.condition_json,priority=excluded.priority,
 			graph_revision_updated=excluded.graph_revision_updated,updated_at=excluded.updated_at`,
@@ -251,7 +251,7 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 			JSON.stringify(node.sourceRef),JSON.stringify(node.authorityRefs ?? []),node.ruleRevision,node.nodeRevision,
 			node.agentClass ?? null,node.status,node.estimate ? JSON.stringify(node.estimate) : null,
 			node.requiredCapabilities ? JSON.stringify(node.requiredCapabilities) : null,
-			node.requestedPermissions ? JSON.stringify(node.requestedPermissions) : null,node.output ? JSON.stringify(node.output) : null,node.workspace ?? null,
+			node.requestedPermissions ? JSON.stringify(node.requestedPermissions) : null,node.workspace ?? null,
 			node.acceptanceCriteria ? JSON.stringify(node.acceptanceCriteria) : null,node.maximumReviewCycles ?? null,
 			node.condition ? JSON.stringify(node.condition) : null,node.graphRevisionCreated,node.graphRevisionUpdated,now,now,node.priority ?? null,
 			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt,revisionRecord.graphDigest],

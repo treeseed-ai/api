@@ -1,6 +1,26 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-output-retirement-grant-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/assignment-attempt-builder.test.ts
+    testName: uses the exact Book and frozen grant without admitting a retired node output selector
+  api.golden.execution-output-retirement-projection-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-contract.test.ts
+    testName: rejects retired work-item output selectors before projection without changing exact governed source or configured profile authority
+  api.golden.execution-output-retirement-sql-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-integration.test.ts
+    testName: native graph cutover removes output selector storage and denies represented selector inputs without writes before exact replay
+  api.golden.execution-output-retirement-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-postgres.test.ts
+    testName: full PostgreSQL cutover removes duplicated output storage while independent graph reads and concurrent replay preserve exact authority
   api.golden.execution-work-item-slugs-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -1556,6 +1576,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/recurring-intent.test.ts
     testName: "retains one execution mode and exact governed intent without derived capacity or duplicate scheduling policy"
+  api.golden.execution-recurrence-numbers-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/recurring-intent.test.ts
+    testName: "denies coerced recurrence cadence and state versions before writes while retaining omitted defaults and exact numeric authority"
+  api.golden.execution-recurrence-numbers-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/recurring-persistence.test.ts
+    testName: "real recurring schedule persistence denies coerced numerical authority without native writes and retains default explicit and stale-version behavior"
   api.golden.architecture-recurring-intent-unit-2:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

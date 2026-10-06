@@ -5,6 +5,23 @@ import { emptyLivingGraph, graphNode, graphProjection, graphSource, graphState, 
 // Authoring only until the complete architecture/assignment test contract is
 // present. Embedded SQL transactions are not separate-server concurrency proof.
 describe('living graph original SQL and public service integration', () => {
+	it('native graph cutover removes output selector storage and denies represented selector inputs without writes before exact replay', async () => {
+		const f = await livingGraphDatabase(); try {
+			expect((await f.query("SELECT column_name FROM information_schema.columns WHERE table_name='execution_nodes' AND column_name='output_json'")).rows).toEqual([]);
+			const projection = graphProjection(), original = graphState(projection), held = structuredClone(original);
+			await f.persist(original, emptyLivingGraph(), projection.revision); const before = await f.snapshot();
+			for (const output of [undefined, null, '', {}, [], { model: 'knowledge', id: 'selected' }]) {
+				const supplied = structuredClone(original); Object.assign(graphNode(supplied, 'first', 'actor'), { output }); const input = structuredClone(supplied);
+				for (let retry = 0; retry < 2; retry++) {
+					expect(() => applyOperationalState(original, supplied, 2)).toThrowError(expect.objectContaining({ status: 422, code: 'execution_graph_invalid' }));
+					await expect(f.persist(supplied, original, projection.revision)).rejects.toThrow();
+					expect(await f.snapshot()).toEqual(before); expect(supplied).toEqual(input);
+				}
+			}
+			await f.persist(original, original, projection.revision); expect(await f.snapshot()).toEqual(before);
+			expect(await f.service.show(f.principal, 'team', {})).toEqual(original); expect(original).toEqual(held);
+		} finally { await f.db.close(); }
+	});
 	it('real graph reconciliation denies missing assignable condition and review-pair fields before persistence while retaining exact native condition authority for unchanged replay', async () => {
 		const f = await livingGraphDatabase(); try {
 			const projection = graphProjection(), original = graphState(projection), held = structuredClone(original);

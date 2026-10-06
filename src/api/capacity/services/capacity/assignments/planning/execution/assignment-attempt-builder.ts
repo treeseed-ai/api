@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
 	appliedWorkdaySchema,
+	executionNodeSchema,
 	assignmentAttemptSchema,
 	calculateAssignmentAllocation,
 	remainingCapabilitySeconds,
@@ -135,22 +136,20 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant 
 		&& requested.content.write.includes('knowledge') && !bookRef) throw new CapacityGovernanceError(
 		'assignment_knowledge_book_reference_missing',
 		`Node ${candidate.node.id} needs an exact Book reference before it can write a Knowledge page.`, 409);
-	const requestedOutput = candidate.node.output;
-	const outputId = (model: string) => requestedOutput?.model === model ? requestedOutput.id : undefined;
 	const contentWrite = candidate.node.workspace === 'treedx' && treeDxBase?.repository && treeDxBase.commit
 		? requested.content.write.flatMap((model) => candidate.node.kind === 'communication' && model === 'discussion'
 			? communicationWritePaths(candidate.node.sourceRef.path).map((path, index) => ({ store: 'treedx' as const, model,
 				id: `${candidate.node.id}:${model}:${index + 1}`, repository: treeDxBase.repository, commit: treeDxBase.commit, path }))
 			: model === 'knowledge'
-				? bookRef ? [{ store: 'treedx' as const, model, id: outputId(model) ?? knowledgeId(candidate.node.id),
+				? bookRef ? [{ store: 'treedx' as const, model, id: knowledgeId(candidate.node.id),
 					repository: treeDxBase.repository, commit: treeDxBase.commit,
-					path: `knowledge/${bookRef.id}/${outputId(model) ?? knowledgeId(candidate.node.id)}.md` }]
+					path: `knowledge/${bookRef.id}/${knowledgeId(candidate.node.id)}.md` }]
 					: []
 				: [model === candidate.node.sourceRef.model && candidate.node.sourceRef.path
 				? candidate.node.sourceRef
-				: ({ store: 'treedx' as const, model, id: outputId(model) ?? `${assignmentId}:${model}`,
+				: ({ store: 'treedx' as const, model, id: `${assignmentId}:${model}`,
 					repository: treeDxBase.repository, commit: treeDxBase.commit,
-					path: `${model}s/${outputId(model) ?? assignmentId}.mdx` })]) : [];
+					path: `${model}s/${assignmentId}.mdx` })]) : [];
 	return {
 		contentRead: uniqueReferences([candidate.node.sourceRef, ...communicationDiscussionReference(candidate),
 			...(candidate.node.authorityRefs ?? []), ...contentRefs]
@@ -221,6 +220,7 @@ export function buildAssignmentAttempt(input: {
 	opportunity: LivingAllocationInputs[string]['opportunity'] }; accountingLimits: CapabilityAccountingLimits;
 	executionProviderId: string; laneId: string; lanePurpose: 'workday' | 'communication'; providerConcurrencyLimit: number } {
 	const { candidate } = input;
+	executionNodeSchema.parse(candidate.node);
 	const estimate = candidate.node.estimate;
 	if (!estimate) throw new CapacityGovernanceError('execution_node_estimate_missing', 'Ready execution nodes require an estimate.', 409);
 	const communication = candidate.node.kind === 'communication';

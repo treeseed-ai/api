@@ -7,6 +7,21 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { verifyDatabaseMigrations } from '../../../../../../../../src/api/support/verify-database-migrations.ts';
 describe('independent PostgreSQL connection graph custody', () => {
+	it('full PostgreSQL cutover removes duplicated output storage while independent graph reads and concurrent replay preserve exact authority', async () => {
+		const f = await postgresGraph(); try {
+			for (const db of [f.left, f.right]) expect((await db.pool.query("SELECT column_name FROM information_schema.columns WHERE table_name='execution_nodes' AND column_name='output_json'")).rows).toEqual([]);
+			const projection = graphProjection(), graph = graphState(projection), held = structuredClone(graph), receipt = { ...projection.revision, graphDigest: graph.digest };
+			await persistExecutionGraph(f.stores[0], graph, emptyLivingGraph(), receipt); const before = await f.snapshot();
+			for (const output of [undefined, null, '', {}, [], { model: 'knowledge', id: 'selected' }]) {
+				const supplied = structuredClone(graph); Object.assign(graphNode(supplied, 'first', 'actor'), { output }); const input = structuredClone(supplied);
+				for (const store of f.stores) await expect(persistExecutionGraph(store, supplied, graph, receipt)).rejects.toThrow();
+				expect(await f.snapshot()).toEqual(before); expect(supplied).toEqual(input);
+			}
+			await Promise.all(f.stores.map(store => persistExecutionGraph(store, graph, graph, receipt)));
+			for (const store of f.stores) expect(await createExecutionGraphService(store).show(f.principal, 'team', {})).toEqual(graph);
+			expect(await f.snapshot()).toEqual(before); expect(graph).toEqual(held);
+		} finally { await f.close(); }
+	}, 30_000);
 	it('native terminal graph reconciliation publishes changed and omitted priorities through independent pools without rewriting historical authority or retrying terminal work', async () => {
 		const f = await postgresGraph();
 		try {

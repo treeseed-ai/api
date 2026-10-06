@@ -144,7 +144,6 @@ function workNode(input: {
 			? ['treeseed.engineering.review']
 			: Array.isArray(input.workItem.requiredCapabilities) ? input.workItem.requiredCapabilities : [],
 		requestedPermissions: requestedPermissions(input.workItem, input.profile, input.pairRole),
-		...(input.pairRole === 'actor' && input.workItem.output ? { output: input.workItem.output } : {}),
 		workspace: input.pairRole === 'reviewer' ? 'treedx' : input.workItem.workspace,
 		acceptanceCriteria: input.workItem.acceptanceCriteria,
 		maximumReviewCycles: reviewed ? Number(input.workItem.maximumReviewCycles) : 1,

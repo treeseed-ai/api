@@ -6,6 +6,16 @@ import { persistExecutionGraph } from '../../../../../../../../src/api/control-p
 import { emptyLivingGraph, graphNode, graphProfiles, graphProjection, graphSource, graphState } from './living-graph-fixture.ts';
 
 describe('complete governed living graph contract authoring', () => {
+	it('rejects retired work-item output selectors before projection without changing exact governed source or configured profile authority', () => {
+		const source = graphSource(), original = graphProjection([source]);
+		for (const output of [undefined, null, '', {}, [], { model: 'knowledge', id: 'selected' }]) {
+			const supplied = structuredClone(source), plan = supplied.frontmatter.executionPlan;
+			if (!plan || typeof plan !== 'object' || !('workItems' in plan) || !Array.isArray(plan.workItems)) throw new Error('Original work items required.');
+			Object.assign(plan.workItems[0], { output }); const held = structuredClone(supplied);
+			expect(() => graphProjection([supplied])).toThrow(); expect(supplied).toEqual(held);
+		}
+		expect(graphProjection([source])).toEqual(original); expect(original.nodes.every(node => !Object.hasOwn(node, 'output'))).toBe(true);
+	});
 	it('reconciles every recovered terminal pair priority without changing issued node authority or reopening terminal history', () => {
 		for (const role of ['actor', 'reviewer'] as const) for (const status of ['completed', 'failed', 'cancelled', 'blocked'] as const) {
 			if (role === 'actor' && status === 'blocked') continue;
@@ -61,7 +71,7 @@ describe('complete governed living graph contract authoring', () => {
 			kind: node.kind, pair_role: node.pairRole, source_ref_json: JSON.stringify(node.sourceRef), authority_refs_json: JSON.stringify(node.authorityRefs),
 			rule_revision: node.ruleRevision, node_revision: node.nodeRevision, agent_class: node.agentClass, status: node.status,
 			estimate_json: JSON.stringify(node.estimate), required_capabilities_json: JSON.stringify(node.requiredCapabilities),
-			requested_permissions_json: JSON.stringify(node.requestedPermissions), output_json: JSON.stringify(node.output), workspace: node.workspace,
+			requested_permissions_json: JSON.stringify(node.requestedPermissions), workspace: node.workspace,
 			acceptance_criteria_json: JSON.stringify(node.acceptanceCriteria), maximum_review_cycles: node.maximumReviewCycles,
 			graph_revision_created: node.graphRevisionCreated, graph_revision_updated: node.graphRevisionUpdated };
 		const before = structuredClone(row);

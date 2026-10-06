@@ -3,6 +3,18 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-output-retirement-grant-unit
+    action: { verifier: api.golden.execution-output-retirement-grant-unit }
+    expect: { status: passed }
+  - id: execution-output-retirement-projection-unit
+    action: { verifier: api.golden.execution-output-retirement-projection-unit }
+    expect: { status: passed }
+  - id: execution-output-retirement-sql-native
+    action: { verifier: api.golden.execution-output-retirement-sql-native }
+    expect: { status: passed }
+  - id: execution-output-retirement-postgres-native
+    action: { verifier: api.golden.execution-output-retirement-postgres-native }
+    expect: { status: passed }
   - id: execution-work-item-slugs-native
     action: { verifier: api.golden.execution-work-item-slugs-native }
     expect: { status: passed }
@@ -919,6 +931,12 @@ workflow:
     expect: { status: passed }
   - id: architecture-recurring-intent-unit-1
     action: { verifier: api.golden.architecture-recurring-intent-unit-1 }
+    expect: { status: passed }
+  - id: execution-recurrence-numbers-unit
+    action: { verifier: api.golden.execution-recurrence-numbers-unit }
+    expect: { status: passed }
+  - id: execution-recurrence-numbers-native
+    action: { verifier: api.golden.execution-recurrence-numbers-native }
     expect: { status: passed }
   - id: architecture-recurring-intent-unit-2
     action: { verifier: api.golden.architecture-recurring-intent-unit-2 }
