@@ -212,8 +212,16 @@ describe('public workday selection custody', () => {
 	it('validates before normalization and preserves omitted selection', () => {
 		const { agentSelection, ...unselected } = input();
 		expect(parsePublicWorkdayIntent('team', unselected).agentSelection).toBeUndefined();
-		for (const invalid of [{}, null, { agentSlugs: [] }, { agentSlugs: [''] }, { activityTypes: ['acting'] }]) expect(() => parsePublicWorkdayIntent('team', { ...input(), agentSelection: invalid })).toThrow(/invalid/u);
+		for (const invalid of [{}, null, { agentSlugs: [] }, { agentSlugs: [''] }, { activityTypes: ['acting'] },
+			...[' ', null, 1, {}, [], 'é', 'reviewer?', 'x'.repeat(201)].map(value => ({ ...agentSelection, agentSlugs: ['reviewer', value] }))]) {
+			const supplied = { ...input(), agentSelection: invalid }, held = structuredClone(supplied);
+			expect(() => parsePublicWorkdayIntent('team', supplied)).toThrow(/invalid/u); expect(supplied).toEqual(held);
+		}
 		expect(parsePublicWorkdayIntent('team', { ...input(), agentSelection: { ...agentSelection, agentSlugs: [' reviewer ', 'reviewer'] } }).agentSelection?.agentSlugs).toEqual(['reviewer']);
+		for (const identity of ['A', 'a', 'id._:/-', 'x'.repeat(200)]) {
+			const supplied = { ...input(), agentSelection: { ...agentSelection, agentSlugs: [` ${identity} `, identity] } }, held = structuredClone(supplied);
+			expect(parsePublicWorkdayIntent('team', supplied).agentSelection?.agentSlugs).toEqual([identity]); expect(supplied).toEqual(held);
+		}
 		const canonical = parsePublicWorkdayIntent('team', input());
 		expect(parsePublicWorkdayIntent('team', canonical as unknown as Record<string, unknown>)).toEqual(canonical);
 		expect(canonical.agentSelection).not.toHaveProperty('classIds');

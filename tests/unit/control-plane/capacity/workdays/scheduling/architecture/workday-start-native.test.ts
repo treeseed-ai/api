@@ -7,6 +7,25 @@ import { workdayStartDatabase } from './workday-start-fixture.ts';
 // AUTHORING ONLY: no execution receipt. Native SQL/HTTP controls do not prove
 // separate PostgreSQL connections, actual TreeDX policy or provider consumption.
 describe('first manual and recurring admission through the same public owning path', () => {
+	it('real public preflight preserves canonical normalized agent selection and denies malformed mixed members without native authority repair', async () => {
+		const f = await workdayStartDatabase(); try {
+			const slug = f.definition.id;
+			for (const value of [' ', null, 1, {}, [], 'é', 'agent?', 'x'.repeat(201)]) {
+				const body = { ...f.intent, agentSelection: { agentSlugs: [slug, value] } }, held = structuredClone(body);
+				const before = await f.snapshot(), calls = structuredClone(f.calls);
+				await expect(f.publicService.preflight(f.principal, 'team', body)).rejects.toMatchObject({ status: 400, code: 'workday_intent_invalid' });
+				expect(await f.snapshot()).toEqual(before); expect(f.calls).toEqual(calls); expect(body).toEqual(held);
+			}
+			const body = { ...f.intent, agentSelection: { agentSlugs: [` ${slug} `, slug] } }, held = structuredClone(body);
+			const receipt = await f.publicService.preflight(f.principal, 'team', body), after = await f.snapshot();
+			expect(receipt.id).toBeTruthy(); expect(after.receipts).toHaveLength(1);
+			const row = after.receipts[0]!;
+			const stored = typeof row.response_json === 'string' ? JSON.parse(row.response_json) : row.response_json;
+			expect(stored).toMatchObject({ intent: { agentSelection: { agentSlugs: [slug], mode: 'intersection' } } });
+			for (const table of ['workdays', 'schedules', 'nodes', 'edges', 'revisions', 'events', 'assignments', 'reservations', 'usage', 'ledger'] as const) expect(after[table]).toEqual([]);
+			expect(body).toEqual(held); expect(await f.snapshot()).toEqual(after);
+		} finally { await f.close(); }
+	});
 	it('real public workday policy reads and preflight deny every missing stored policy field without inserting defaults or admission truth', async () => {
 		const f = await workdayStartDatabase(); try {
 			const original = { revision: 1, policy: structuredClone(DEFAULT_WORKDAY_POLICY) }, intent = structuredClone(f.intent);

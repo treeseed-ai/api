@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
 	validateWorkdayIntent,
+	validateWorkdayIntentSelection,
 	normalizeWorkdayIntent,
 	normalizeWorkdayAgentSelection,
 	validateWorkdayPreflight,
@@ -50,6 +51,12 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 	const forbiddenConstraints=Object.keys(constraints).filter((key)=>!['providerIds','maxConcurrency'].includes(key));
 	if(forbiddenConstraints.length) diagnosticsError('workday_intent_derived_fields_forbidden','Workday constraints contain retired or unsupported fields.',forbiddenConstraints.map((path)=>({code:'field_forbidden',path:`operatorConstraints.${path}`})));
 	const startsAt=text(input.startsAt)||new Date().toISOString();
+	if(input.agentSelection!==undefined) {
+		const diagnostics=validateWorkdayIntentSelection(input.agentSelection);
+		if(diagnostics.length) diagnosticsError('workday_intent_invalid','Workday intent is invalid.',diagnostics);
+	}
+	const agentSelection=input.agentSelection===undefined?undefined:Object.fromEntries(
+		Object.entries(normalizeWorkdayAgentSelection(input.agentSelection)).filter(([,value])=>!Array.isArray(value)||value.length>0));
 	const intent:WorkdayIntent={
 		schemaVersion:'treeseed.workday-intent/v1', teamId, profileId:text(input.profileId)||'default', projects,
 		startsAt,
@@ -61,7 +68,7 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 		...(input.continueFromWorkdayId!==undefined?{continueFromWorkdayId:input.continueFromWorkdayId as string}:{}),
 		...(Array.isArray(input.proposalIds)?{proposalIds:[...new Set(input.proposalIds.map(text).filter(Boolean))].sort()}:input.proposalIds!==undefined?{proposalIds:input.proposalIds as string[]}:{}),
 		...(Array.isArray(input.decisionIds)?{decisionIds:[...new Set(input.decisionIds.map(text).filter(Boolean))].sort()}:input.decisionIds!==undefined?{decisionIds:input.decisionIds as string[]}:{}),
-		...(input.agentSelection!==undefined?{agentSelection:input.agentSelection as WorkdayIntent['agentSelection']}:{}),
+		...(agentSelection!==undefined?{agentSelection:agentSelection as WorkdayIntent['agentSelection']}:{}),
 		...(input.allocation!==undefined?{allocation:input.allocation as WorkdayIntent['allocation']}:{}),
 		...(Object.keys(constraints).length?{operatorConstraints:{
 			...(Array.isArray(constraints.providerIds)?{providerIds:constraints.providerIds.map(text).filter(Boolean)}:{}),
@@ -71,8 +78,6 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 	const diagnostics=validateWorkdayIntent(intent);
 	if(projects!=='all'&&!projects.length) diagnostics.push({code:'projects_required',path:'projects',message:'Select at least one project or all.'});
 	if(diagnostics.length) diagnosticsError('workday_intent_invalid','Workday intent is invalid.',diagnostics);
-	if(intent.agentSelection!==undefined) intent.agentSelection=Object.fromEntries(Object.entries(normalizeWorkdayAgentSelection(intent.agentSelection))
-		.filter(([,value])=>!Array.isArray(value)||value.length>0)) as WorkdayIntent['agentSelection'];
 	return normalizeWorkdayIntent(intent);
 }
 
