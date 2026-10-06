@@ -1,7 +1,7 @@
 import { isoNow,ControlPlaneStore,optionalStringValue } from "../../../../persistence/store.ts";
 import { assertExpectedProposalVersion,simulationEvidence } from '../support/simulation-evidence.ts';
 import { assertGovernanceProposalReady } from '../contracts/governance-proposal-readiness.ts';
-export async function startGovernanceProposalVotingMethod(this: ControlPlaneStore, principal, proposalId, input: any = {}) {
+export async function startGovernanceProposalVotingMethod(this: ControlPlaneStore, principal: ApiPrincipal | null | undefined, proposalId: string, input: any = {}) {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
     if (!proposal)
@@ -32,3 +32,4 @@ export async function startGovernanceProposalVotingMethod(this: ControlPlaneStor
     });
     return this.getGovernanceProposal(proposalId);
 }
+import type { ApiPrincipal } from '../../../../types.ts';

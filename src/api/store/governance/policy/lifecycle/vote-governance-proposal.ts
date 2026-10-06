@@ -1,8 +1,8 @@
-import { governanceVotingProvider } from '../../../../governance/voting.ts';
+import { governanceVotingProvider, type GovernanceEligibleVoter } from '../../../../governance/voting.ts';
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,objectValue,optionalStringValue,principalIsAdmin,requireEnumValue } from "../../../../persistence/store.ts";
 import { assertExpectedProposalVersion,simulationEvidence } from '../support/simulation-evidence.ts';
-export async function voteGovernanceProposalMethod(this: ControlPlaneStore, principal, proposalId, input: any = {}) {
+export async function voteGovernanceProposalMethod(this: ControlPlaneStore, principal: ApiPrincipal, proposalId: string, input: any = {}) {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
     if (!proposal)
@@ -15,7 +15,7 @@ export async function voteGovernanceProposalMethod(this: ControlPlaneStore, prin
     }
     const vote = requireEnumValue(input.vote, new Set(['support', 'object', 'abstain']), 'Governance vote') as 'support' | 'object' | 'abstain';
     const snapshot = await this.latestGovernanceElectorateSnapshot(proposal.id, proposal.activeVersion);
-    const eligible = snapshot?.eligibleVoters?.some((voter) => voter.userId === principal?.id);
+    const eligible = snapshot?.eligibleVoters?.some((voter: GovernanceEligibleVoter) => voter.userId === principal?.id);
     if (!eligible && !principalIsAdmin(principal)) {
         const error: Error & Record<string, any> = new Error('User is not eligible to vote on this proposal.');
         error.status = 403;
@@ -60,3 +60,4 @@ export async function voteGovernanceProposalMethod(this: ControlPlaneStore, prin
     });
     return this.evaluateGovernanceProposal(proposal.id);
 }
+import type { ApiPrincipal } from '../../../../types.ts';
