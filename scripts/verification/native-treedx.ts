@@ -7,12 +7,12 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+import { isMap, isSeq, parseDocument } from 'yaml';
 import { TreeDxDelegationAuthority } from '../../src/api/control-plane/treedx/delegation-authority.ts';
 
 // CI-only native fixture provisioning, never a replacement test/scene runner.
 // Existing tests require an external native engine trusting the original signer.
 const [action, directory] = process.argv.slice(2);
-const engineCommit = '29c40be3b106393ab358874c57a3498598108b66';
 const prefix = join(tmpdir(), 'api-native-treedx-');
 const childEnvironment = { ...process.env };
 delete childEnvironment.GH_TOKEN; delete childEnvironment.GITHUB_TOKEN;
@@ -86,6 +86,13 @@ if (action === 'serve-jwks') {
 	assert.ok(process.env.GITHUB_ENV && process.env.GITHUB_WORKSPACE, 'CI-only native setup');
 	const workspace = await realpath(process.env.GITHUB_WORKSPACE);
 	const source = join(workspace, '.treeseed/tools/treedx');
+	const steps = parseDocument(await readFile(join(workspace, '.github/workflows/verify.yml'), 'utf8')).getIn(['jobs', 'verify', 'steps'], true);
+	assert.ok(isSeq(steps), 'Original native prerequisite workflow required');
+	const checkouts = steps.items.filter(value => isMap(value) && value.get('name') === 'Checkout exact native TreeDX');
+	assert.equal(checkouts.length, 1);
+	const checkout = checkouts[0]; assert.ok(isMap(checkout));
+	const engineCommit = checkout.getIn(['with', 'ref']);
+	assert.ok(typeof engineCommit === 'string' && /^[a-f0-9]{40}$/u.test(engineCommit), 'Exact native engine commit required');
 	assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(), engineCommit);
 	assert.equal(execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: source, encoding: 'utf8' }), '');
 	const root = await mkdtemp(prefix); await exportEnvironment({ API_NATIVE_TREEDX_ROOT: root });

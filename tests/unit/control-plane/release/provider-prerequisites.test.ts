@@ -111,6 +111,9 @@ it('complete provider suites provision the exact native TreeDX engine and origin
 	expect(steps.indexOf(verify!)).toBeLessThan(steps.indexOf(scene!));
 	expect(steps.indexOf(scene!)).toBeLessThan(steps.indexOf(stop!));
 	const source = readFileSync('scripts/verification/native-treedx.ts', 'utf8');
+	expect(source).toContain("getIn(['jobs', 'verify', 'steps'], true)");
+	expect(source).toContain("checkout.getIn(['with', 'ref'])");
+	expect(source).not.toMatch(/const engineCommit = ['"][a-f0-9]{40}['"]/u);
 	expect(source).toContain('new TreeDxDelegationAuthority(');
 	expect(source).toContain("TREESEED_TREEDX_AUTH_VERIFIER: 'jwks_oidc'");
 	expect(source).toContain("['phx.server', '--no-compile', '--no-deps-check']");
