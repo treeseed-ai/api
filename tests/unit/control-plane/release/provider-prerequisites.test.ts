@@ -1,7 +1,8 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import { createRequire } from 'node:module';
 import { parse } from 'yaml';
 import { expect, it } from 'vitest';
 import ts from 'typescript';
@@ -10,6 +11,61 @@ function object(value: unknown): Record<string, unknown> {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Original workflow object required');
 	return value as Record<string, unknown>;
 }
+
+it('capacity execution dependency closure selects the sole exact SDK authority for every transitive consumer', () => {
+	const bytes = readFileSync('package.json'), lockBytes = readFileSync('package-lock.json');
+	const manifest = object(JSON.parse(bytes.toString('utf8'))), lock = object(JSON.parse(lockBytes.toString('utf8')));
+	const authority = object(manifest.dependencies)['@treeseed/sdk'];
+	expect(authority).toMatch(/^git\+https:\/\/github\.com\/treeseed-ai\/sdk\.git#[a-f0-9]{40}$/u);
+	expect(object(manifest.overrides)['@treeseed/sdk']).toBe('$@treeseed/sdk');
+	const packages = object(lock.packages), sdk = object(packages['node_modules/@treeseed/sdk']);
+	expect(Object.keys(packages).filter(path => path.endsWith('node_modules/@treeseed/sdk'))).toEqual(['node_modules/@treeseed/sdk']);
+	expect(object(object(packages['']).dependencies)['@treeseed/sdk']).toBe(authority);
+	expect(String(sdk.resolved).split('#')[1]).toBe(String(authority).split('#')[1]);
+	expect(readFileSync('scripts/build/hydrate-exact-sdk.sh', 'utf8')).not.toContain('node_modules/@treeseed/deployment/node_modules/@treeseed/sdk');
+	expect(readFileSync('package.json')).toEqual(bytes); expect(readFileSync('package-lock.json')).toEqual(lockBytes);
+});
+
+it('native capacity candidate hydration preserves exact SDK bytes and admits only a complete valid dependency tree and SBOM', () => {
+	const root = mkdtempSync(resolve(tmpdir(), 'api-capacity-sdk-closure-'));
+	const inputs = new Map(['package.json', 'package-lock.json', 'scripts/build/hydrate-exact-sdk.sh'].map(path => [path, readFileSync(path)]));
+	const sdkBytes = readFileSync('node_modules/@treeseed/sdk/package.json');
+	const run = (command: string, args: string[], cwd = root) => spawnSync(command, args,
+		{ cwd, env: process.env, encoding: 'utf8', timeout: 15_000, maxBuffer: 8 * 1024 * 1024 });
+	const requireSuccess = (result: ReturnType<typeof run>) => {
+		expect(result.error).toBeUndefined(); expect(result.signal).toBeNull(); expect(result.status, result.stdout + result.stderr).toBe(0);
+	};
+	try {
+		mkdirSync(resolve(root, 'artifacts/sealed-sdk'), { recursive: true });
+		for (const [path, bytes] of inputs) { mkdirSync(resolve(root, path, '..'), { recursive: true }); writeFileSync(resolve(root, path), bytes); }
+		const pack = run('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', resolve(root, 'artifacts/sealed-sdk'), './node_modules/@treeseed/sdk'], process.cwd());
+		requireSuccess(pack);
+		const inventory: unknown = JSON.parse(pack.stdout);
+		if (!Array.isArray(inventory) || inventory.length !== 1) throw new Error('One actual held SDK package required');
+		const packed = object(inventory[0]);
+		expect(packed.name).toBe('@treeseed/sdk'); expect(packed.version).toBe(object(JSON.parse(sdkBytes.toString('utf8'))).version);
+		if (typeof packed.filename !== 'string') throw new Error('Actual packed SDK filename required');
+		const archive = resolve(root, 'artifacts/sealed-sdk', packed.filename), archiveBytes = readFileSync(archive);
+		requireSuccess(run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--workspaces=false']));
+		const hydrated = run('bash', ['scripts/build/hydrate-exact-sdk.sh', 'artifacts/sealed-sdk', 'install']);
+		requireSuccess(hydrated);
+		const tree = run('npm', ['ls', '--all', '--omit=dev', '--json']); requireSuccess(tree);
+		const publicEntry = createRequire(resolve(root, 'package.json')).resolve('@treeseed/sdk/agent-capacity');
+		for (const consumer of ['node_modules/@treeseed/deployment/package.json', 'node_modules/@treeseed/identity/package.json', 'node_modules/@treeseed/deployment/node_modules/@treeseed/identity/package.json']) {
+			expect(createRequire(resolve(root, consumer)).resolve('@treeseed/sdk/agent-capacity')).toBe(publicEntry);
+		}
+		const sbom = run('npm', ['sbom', '--omit=dev', '--sbom-format', 'cyclonedx']); requireSuccess(sbom);
+		const document = object(JSON.parse(sbom.stdout));
+		if (!Array.isArray(document.components)) throw new Error('Actual nonempty dependency SBOM required');
+		expect(document.components.length).toBeGreaterThan(0);
+		const sdks = document.components.map(object).filter(component => component.name === '@treeseed/sdk' || component.name === 'sdk' && component.group === '@treeseed');
+		expect(sdks).toHaveLength(1); expect(sdks[0]?.version).toBe(packed.version);
+		expect(readFileSync(resolve(root, 'node_modules/@treeseed/sdk/package.json'))).toEqual(sdkBytes);
+		expect(readFileSync(archive)).toEqual(archiveBytes);
+		for (const [path, bytes] of inputs) { expect(readFileSync(path)).toEqual(bytes); expect(readFileSync(resolve(root, path))).toEqual(bytes); }
+		expect(readFileSync('node_modules/@treeseed/sdk/package.json')).toEqual(sdkBytes);
+	} finally { rmSync(root, { recursive: true, force: true }); expect(existsSync(root)).toBe(false); }
+});
 
 it('every capacity execution component step explicitly requires passed evidence from its original verifier', () => {
 	const source = readFileSync('guarantees/agent/golden/scenes/component-boundaries.scene.yaml');

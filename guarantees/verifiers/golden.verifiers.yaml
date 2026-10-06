@@ -1,6 +1,16 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-sdk-closure-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/provider-prerequisites.test.ts
+    testName: capacity execution dependency closure selects the sole exact SDK authority for every transitive consumer
+  api.golden.execution-sdk-closure-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/provider-prerequisites.test.ts
+    testName: native capacity candidate hydration preserves exact SDK bytes and admits only a complete valid dependency tree and SBOM
   api.golden.execution-scene-passed-expectation-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
