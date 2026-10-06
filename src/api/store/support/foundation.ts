@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, type BinaryLike, type KeyObject } from 'node:crypto';
 import { redactSensitiveValue } from '../../../security/redact-sensitive-value.ts';
 import { TEAM_ROLE_CAPABILITIES } from './index.ts';
 
@@ -115,12 +115,12 @@ export function numberValue(value: unknown, fallback: number | null = null) {
     return fallback;
 }
 
-export function enumValue(value, allowed, fallback) {
+export function enumValue<T>(value: unknown, allowed: ReadonlySet<string>, fallback: T) {
     const next = typeof value === 'string' ? value.trim() : '';
     return allowed.has(next) ? next : fallback;
 }
 
-export function requireEnumValue(value, allowed, label) {
+export function requireEnumValue(value: unknown, allowed: ReadonlySet<string>, label: string) {
     const next = typeof value === 'string' ? value.trim() : '';
     if (allowed.has(next))
         return next;
@@ -141,7 +141,7 @@ export function normalizeBaseUrl(baseUrl: unknown) {
     return String(baseUrl ?? '').trim().replace(/\/+$/u, '');
 }
 
-export function signAssertionPayload(payload, secret) {
+export function signAssertionPayload(payload: BinaryLike, secret: BinaryLike | KeyObject) {
     return createHmac('sha256', secret).update(payload).digest('base64url');
 }
 
@@ -199,7 +199,7 @@ export function serializeApprovalRequest(row) {
     };
 }
 
-export function isoDate(value) {
+export function isoDate(value: unknown) {
     if (typeof value !== 'string' || !value.trim()) {
         return null;
     }
