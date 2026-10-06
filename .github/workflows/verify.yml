@@ -74,7 +74,6 @@ jobs:
           github-token: ${{ github.token }}
           paths: |
             node_modules/@treeseed/sdk
-            node_modules/@treeseed/deployment/node_modules/@treeseed/sdk
       - name: Provision disposable signed native TreeDX
         run: node --import tsx scripts/verification/native-treedx.ts start
       - name: Verify all native TreeDX client SDK prerequisites

@@ -23,6 +23,11 @@ it('capacity execution dependency closure selects the sole exact SDK authority f
 	expect(object(object(packages['']).dependencies)['@treeseed/sdk']).toBe(authority);
 	expect(String(sdk.resolved).split('#')[1]).toBe(String(authority).split('#')[1]);
 	expect(readFileSync('scripts/build/hydrate-exact-sdk.sh', 'utf8')).not.toContain('node_modules/@treeseed/deployment/node_modules/@treeseed/sdk');
+	const job = object(object(object(parse(readFileSync('.github/workflows/verify.yml', 'utf8'))).jobs).verify);
+	if (!Array.isArray(job.steps)) throw new Error('Original verification steps required');
+	const installers = job.steps.map(object).filter(step => typeof step.uses === 'string' && step.uses.includes('/install-exact-sdk@'));
+	expect(installers).toHaveLength(1);
+	expect(String(object(installers[0]?.with).paths).trim().split(/\s+/u)).toEqual(['node_modules/@treeseed/sdk']);
 	expect(readFileSync('package.json')).toEqual(bytes); expect(readFileSync('package-lock.json')).toEqual(lockBytes);
 });
 
@@ -36,6 +41,7 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 		expect(result.error).toBeUndefined(); expect(result.signal).toBeNull(); expect(result.status, result.stdout + result.stderr).toBe(0);
 	};
 	try {
+		requireSuccess(run('npm', ['ls', '--all', '--omit=dev', '--json'], process.cwd()));
 		mkdirSync(resolve(root, 'artifacts/sealed-sdk'), { recursive: true });
 		for (const [path, bytes] of inputs) { mkdirSync(resolve(root, path, '..'), { recursive: true }); writeFileSync(resolve(root, path), bytes); }
 		const pack = run('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', resolve(root, 'artifacts/sealed-sdk'), './node_modules/@treeseed/sdk'], process.cwd());
