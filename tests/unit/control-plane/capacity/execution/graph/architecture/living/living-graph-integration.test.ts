@@ -32,7 +32,6 @@ describe('living graph original SQL and public service integration', () => {
 			const invalid = [
 				...fields.map(field => { const value = structuredClone(actor); delete value[field]; return value; }),
 				...['workItemId', 'maximumReviewCycles'].map(field => Object.fromEntries(Object.entries(actor).filter(([key]) => key !== field))),
-				{ ...actor, condition },
 				{ ...actor, kind: 'condition', pairRole: null, condition },
 				{ ...Object.fromEntries(Object.entries(actor).filter(([key]) => !fields.some(field => field === key))), kind: 'condition', pairRole: null },
 			];
@@ -56,6 +55,22 @@ describe('living graph original SQL and public service integration', () => {
 			const replayed = applyOperationalState(next, candidate, 3);
 			expect(replayed.nodes).toEqual(next.nodes); expect(await f.snapshot()).toEqual(snapshot);
 			expect(original).toEqual(held); expect(invalid).toEqual(supplied);
+		} finally { await f.db.close(); }
+	});
+	it('owning SQL retains canonical optional condition data and condition capability declarations without granting assignable authority', async () => {
+		const f = await livingGraphDatabase(); try {
+			const projection = graphProjection(), original = graphState(projection), actor = graphNode(original, 'first', 'actor');
+			const condition = { conditionType: 'lifecycle' as const, subjectRef: actor.sourceRef, expectedState: 'workday-closing' };
+			await f.persist(original, emptyLivingGraph(), projection.revision); const initial = await f.snapshot(); let current = original;
+			for (const conditionOnly of [false, true]) {
+				const supplied = structuredClone(current), target = supplied.nodes.find(node => node.id === actor.id)!; target.condition = condition;
+				if (conditionOnly) { target.kind = 'condition'; target.pairRole = null; for (const field of ['agentClass', 'estimate', 'requestedPermissions', 'workspace'] as const) delete target[field]; }
+				const held = structuredClone(supplied), next = applyOperationalState(current, supplied, current.revision + 1), receipt = graphProjection(undefined, next.revision).revision;
+				await f.persist(next, current, receipt); expect(await f.service.show(f.principal, 'team', {})).toEqual(next);
+				expect(next.nodes.find(node => node.id === actor.id)?.requiredCapabilities).toEqual(actor.requiredCapabilities);
+				expect((await f.snapshot()).assignments).toEqual(initial.assignments); expect(supplied).toEqual(held);
+				current = next;
+			}
 		} finally { await f.db.close(); }
 	});
 	it('owning graph reconciliation denies overlong class and duplicated exact node authority before SQL persistence while retaining the original graph for unchanged retry', async () => {

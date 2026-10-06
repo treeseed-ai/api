@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-canonical-optionality-native
+    action: { verifier: api.golden.execution-canonical-optionality-native }
+    expect: { status: passed }
   - id: execution-output-retirement-grant-unit
     action: { verifier: api.golden.execution-output-retirement-grant-unit }
     expect: { status: passed }

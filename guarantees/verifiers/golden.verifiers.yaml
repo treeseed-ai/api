@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-canonical-optionality-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-integration.test.ts
+    testName: owning SQL retains canonical optional condition data and condition capability declarations without granting assignable authority
   api.golden.execution-output-retirement-grant-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
