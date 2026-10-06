@@ -34,7 +34,7 @@ export function assignmentBelongsToRun(row: Row, node: ExecutionNode | undefined
 	const refs = Array.isArray(attempt.authorityRefs) ? attempt.authorityRefs : [];
 	return canonicalJson(attempt.sourceRef) === canonicalJson(node.sourceRef)
 		&& canonicalJson(refs.filter(ref => record(ref).model === 'decision'))
-			=== canonicalJson(node.authorityRefs.filter(ref => ref.model === 'decision'));
+			=== canonicalJson((node.authorityRefs ?? []).filter(ref => ref.model === 'decision'));
 }
 
 /** Derive history from ordinary workday records; no copied campaign/result authority. */

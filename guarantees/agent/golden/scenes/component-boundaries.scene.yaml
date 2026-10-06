@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-continuation-optionality-unit
+    action: { verifier: api.golden.execution-continuation-optionality-unit }
+    expect: { status: passed }
+  - id: execution-continuation-optionality-native
+    action: { verifier: api.golden.execution-continuation-optionality-native }
+    expect: { status: passed }
   - id: execution-reservation-provider-unit
     action: { verifier: api.golden.execution-reservation-provider-unit }
     expect: { status: passed }

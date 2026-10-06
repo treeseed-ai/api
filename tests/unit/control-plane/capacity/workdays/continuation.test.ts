@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import pg from 'pg';
-import { validateWorkdayContinuation, workdayContinuationHistory, workdayLineageSql } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-continuation.ts';
+import { assignmentBelongsToRun, validateWorkdayContinuation, workdayContinuationHistory, workdayLineageSql } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-continuation.ts';
 import { workdayStartDatabase } from './scheduling/architecture/workday-start-fixture.ts';
 import { settleCapacityReservationExactlyOnce } from '../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
-import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, assignmentResultSchema, executionNodeSchema } from '@treeseed/sdk/agent-capacity';
 import { assignment } from '../execution/fixtures/assignment.ts';
 
 const previous = { id: 'previous', team_id: 'team', execution_kind: 'workday', execution_mode: 'simulation',
@@ -14,6 +14,52 @@ const fixture = (rows = [previous]) => ({
 	all: vi.fn(async () => [{ decision_id: 'decision', assignment_attempt_json: '{}' }]),
 });
 describe('settled workday continuation', () => {
+	it('preserves canonical omitted node authority without admitting foreign decisions or changed source history', () => {
+		const sourceRef = { store: 'postgresql', model: 'workday', id: 'source-workday' };
+		const node = executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1', id: 'planning-node', teamId: 'team', projectId: 'project',
+			workdayId: 'next', kind: 'planning', pairRole: null, sourceRef, ruleRevision: 1, nodeRevision: 1, agentClass: 'renamed-planner', status: 'ready',
+			estimate: { expectedSeconds: 1, maximumSeconds: 2 }, requiredCapabilities: [], requestedPermissions: { content: { read: [], write: [] }, tools: [] },
+			workspace: 'read-only', graphRevisionCreated: 1, graphRevisionUpdated: 1 });
+		const row = { work_day_id: 'previous', assignment_attempt_json: { sourceRef, authorityRefs: [sourceRef] } }, held = structuredClone({ node, row });
+		for (const candidate of [node, { ...node, authorityRefs: [] }]) {
+			expect(assignmentBelongsToRun(row, candidate, 'next', new Set(['previous']))).toBe(true);
+			expect(assignmentBelongsToRun(row, candidate, 'next', new Set())).toBe(false);
+			expect(assignmentBelongsToRun({ ...row, assignment_attempt_json: { sourceRef: { ...sourceRef, id: 'changed' }, authorityRefs: [sourceRef] } }, candidate, 'next', new Set(['previous']))).toBe(false);
+			expect(assignmentBelongsToRun({ ...row, assignment_attempt_json: { sourceRef, authorityRefs: [{ store: 'postgresql', model: 'decision', id: 'foreign-decision' }] } }, candidate, 'next', new Set(['previous']))).toBe(false);
+		}
+		expect({ node, row }).toEqual(held);
+	});
+	it('native settled lineage and retained canonical attempt admit omitted node authority but reject changed source or decision readback without writes', async () => {
+		const f = await workdayStartDatabase(); try {
+			const at = f.intent.startsAt, sourceRef = { store: 'postgresql', model: 'workday', id: 'source-workday' };
+			await f.query(`INSERT INTO capacity_workday_runs (id,team_id,capacity_provider_id,status,execution_kind,execution_mode,trigger_kind,parameters_json,created_at,updated_at)
+				VALUES ('previous','team','provider','completed','workday','simulation','manual',?,?,?)`, ['{"scheduledProjectIds":["project"]}', at, at]);
+			const attempt = assignmentAttemptSchema.parse({ ...structuredClone(assignment), id: 'old-attempt', idempotencyKey: 'old-attempt',
+				workdayId: 'previous', sourceRef, authorityRefs: [sourceRef] });
+			await f.query(`INSERT INTO capacity_provider_assignments (id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,work_day_id,mode,
+				status,lease_state,attempt_count,assignment_attempt_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				['old-attempt', 'membership', 'team', 'project', 'provider', 'class', 'previous', 'planning', 'completed', 'released', 1, JSON.stringify(attempt), at, at]);
+			const node = executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1', id: 'planning-node', teamId: 'team', projectId: 'project',
+				workdayId: 'next', kind: 'planning', pairRole: null, sourceRef, ruleRevision: 1, nodeRevision: 1, agentClass: 'renamed-planner', status: 'ready',
+				estimate: { expectedSeconds: 1, maximumSeconds: 2 }, requiredCapabilities: [], requestedPermissions: { content: { read: [], write: [] }, tools: [] },
+				workspace: 'read-only', graphRevisionCreated: 1, graphRevisionUpdated: 1 }), held = structuredClone(node);
+			const history = new Set((await workdayContinuationHistory(f.store, 'team', 'previous', 'simulation', 'provider')).map(row => String(row.id)));
+			const baseline = await f.snapshot(), row = await f.first("SELECT * FROM capacity_provider_assignments WHERE id='old-attempt'");
+			if (!row) throw new Error('Original persisted attempt required');
+			expect(assignmentBelongsToRun(row, node, 'next', history)).toBe(true);
+			for (const changed of [{ ...attempt, sourceRef: { ...sourceRef, id: 'changed' } },
+				{ ...attempt, authorityRefs: [{ store: 'postgresql', model: 'decision', id: 'foreign-decision' }] }]) {
+				await f.query("UPDATE capacity_provider_assignments SET assignment_attempt_json=? WHERE id='old-attempt'", [JSON.stringify(changed)]);
+				const before = await f.snapshot(), supplied = await f.first("SELECT * FROM capacity_provider_assignments WHERE id='old-attempt'");
+				if (!supplied) throw new Error('Retained changed input required');
+				expect(assignmentBelongsToRun(supplied, node, 'next', history)).toBe(false); expect(await f.snapshot()).toEqual(before);
+			}
+			await f.query("UPDATE capacity_provider_assignments SET assignment_attempt_json=? WHERE id='old-attempt'", [JSON.stringify(attempt)]);
+			expect(await f.snapshot()).toEqual(baseline); expect(node).toEqual(held); expect(f.calls).toEqual([]);
+			// Real original SQL/lineage/predicate with controlled canonical inputs;
+			// not a genuinely executed previous attempt or governed continuation.
+		} finally { await f.close(); }
+	});
 	it('native original settlement permits released returned history without rewriting its failed result and denies retained leases or unsettled reservations on the same immutable lineage', async () => {
 		const f = await workdayStartDatabase(); try {
 			const at = f.intent.startsAt, parameters = '{"scheduledProjectIds":["project"]}';

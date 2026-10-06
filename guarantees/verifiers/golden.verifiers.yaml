@@ -1,6 +1,16 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-continuation-optionality-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/continuation.test.ts
+    testName: preserves canonical omitted node authority without admitting foreign decisions or changed source history
+  api.golden.execution-continuation-optionality-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/continuation.test.ts
+    testName: native settled lineage and retained canonical attempt admit omitted node authority but reject changed source or decision readback without writes
   api.golden.execution-reservation-provider-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
