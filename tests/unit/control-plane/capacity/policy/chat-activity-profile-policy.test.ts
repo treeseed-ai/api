@@ -27,6 +27,8 @@ describe('chat activity profile policy', () => {
 			'src/api/capacity/policy/workdays/chat-activity-profile.ts',
 			'src/api/capacity/policy/authority/agent-authority-presets.ts',
 			'src/api/capacity/services/capacity/workdays/policy/workday-agent-policy.ts',
+			'src/api/capacity/policy/group-definition.ts',
+			'src/api/capacity/policy/workdays/signal-scope.ts',
 		]) expect(existsSync(path), path).toBe(false);
 		const remaining = readFileSync('src/api/capacity/services/capacity/workdays/assignments/workday-assignment-context-service.ts', 'utf8');
 		expect(remaining).not.toContain('resolveCapacityWorkdayAssignmentIntent');
