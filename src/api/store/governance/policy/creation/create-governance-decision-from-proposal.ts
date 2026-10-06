@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { GovernanceDecisionRow } from '../../../support/governance/policy/governance.ts';
 import { isoNow,ControlPlaneStore,serializeGovernanceDecision } from "../../../../persistence/store.ts";
 import { resolveDecisionDependencySnapshots, validateDecisionAuthority } from '../../../../governance/decision-authority.ts';
 import { reconcileExecutionGraph } from '../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
@@ -8,10 +9,10 @@ export async function createGovernanceDecisionFromProposalMethod(this: ControlPl
     const proposal = await this.getGovernanceProposal(proposalId);
     if (!proposal)
         return null;
-    const existing = await this.first<Record<string, unknown> & { id: string; created_at: string }>(`SELECT * FROM governance_decisions WHERE proposal_id = ? LIMIT 1`, [proposalId]);
+    const existing = await this.first<GovernanceDecisionRow>(`SELECT * FROM governance_decisions WHERE proposal_id = ? LIMIT 1`, [proposalId]);
     if (existing?.id && existing.status !== 'creating') {
         const validation = await validateDecisionAuthority(this, String(existing.id), {
-            teamId: proposal.teamId, projectId: proposal.projectId,
+            teamId: proposal.teamId, ...(proposal.projectId ? { projectId: proposal.projectId } : {}),
         });
         if (!validation.valid) throw Object.assign(new Error(validation.message ?? 'The retained decision authority is not current.'), {
             status: 409, code: validation.code,
@@ -80,7 +81,7 @@ export async function createGovernanceDecisionFromProposalMethod(this: ControlPl
         timestamp,
         timestamp,
     ]);
-    const reserved = await this.first('SELECT * FROM governance_decisions WHERE proposal_id = ? LIMIT 1', [proposalId]);
+    const reserved = await this.first<GovernanceDecisionRow>('SELECT * FROM governance_decisions WHERE proposal_id = ? LIMIT 1', [proposalId]);
     if (!reserved) throw new Error('Decision reservation did not persist.');
     if (reserved.id !== id || reserved.status !== 'creating') return this.createGovernanceDecisionFromProposal(proposalId, input);
     const decisionRef = await publishProposalDecision(this, proposal, reserved, votes);
@@ -100,7 +101,8 @@ export async function createGovernanceDecisionFromProposalMethod(this: ControlPl
             ON CONFLICT (id) DO NOTHING`,
             params: [`decision-created:${id}`, JSON.stringify({ proposalContentHash: proposal.activeContentHash }), id] },
     ]);
-    const validation = await validateDecisionAuthority(this, String(id), { teamId: proposal.teamId, projectId: proposal.projectId });
+    const validation = await validateDecisionAuthority(this, String(id), { teamId: proposal.teamId,
+        ...(proposal.projectId ? { projectId: proposal.projectId } : {}) });
     if (!validation.valid) throw Object.assign(new Error(validation.message ?? 'Decision projection lost its proposal authority.'), { status: 409, code: validation.code });
 	await reconcileExecutionGraph(this, proposal.teamId, { projectId: proposal.projectId }, `decision:${id}:${proposal.activeVersion}`);
     return this.getGovernanceDecision(id);

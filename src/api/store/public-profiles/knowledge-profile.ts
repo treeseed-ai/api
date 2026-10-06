@@ -1,3 +1,5 @@
+import type { ControlPlaneStore } from '../../persistence/store.ts';
+
 function record(value: unknown): Record<string, any> {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {};
 }
@@ -33,9 +35,9 @@ function trailEntry(item: any) {
 	};
 }
 
-export async function publicTeamKnowledgeProfile(store: any, teamId: string) {
-	const projects = (await store.listTeamProjects(teamId)).map(publicProject).filter(Boolean);
-	const trail = projects.map((item: any) => trailEntry({ ...item, title: item.name }))
+export async function publicTeamKnowledgeProfile(store: Pick<ControlPlaneStore, 'listTeamProjects'>, teamId: string) {
+	const projects = (await store.listTeamProjects(teamId)).map(publicProject).filter(item => item != null);
+	const trail = projects.map((item) => trailEntry({ ...item, title: item.name }))
 		.filter((item) => item.occurredAt)
 		.sort((left, right) => String(right.occurredAt).localeCompare(String(left.occurredAt)))
 		.slice(0, 24);

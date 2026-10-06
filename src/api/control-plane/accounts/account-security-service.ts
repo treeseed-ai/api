@@ -13,11 +13,12 @@ import {
 } from '../../app/support/index.ts';
 
 type ServiceResult = { ok: true; [key: string]: unknown } | { ok: false; status: number; code: string; message: string; details?: unknown };
+type AccountPrincipal = Parameters<typeof consumeReauthentication>[1] & Parameters<typeof accountDeletionBlockers>[1];
 const fail = (status: number, code: string, message: string, details?: unknown): ServiceResult => ({ ok: false, status, code, message, details });
 
 export function createAccountSecurityService(store: any, emailContext: any) {
 	return {
-		async updatePassword(user: Record<string, any>, input: Record<string, unknown>): Promise<ServiceResult> {
+		async updatePassword(user: AccountPrincipal, input: Record<string, unknown>): Promise<ServiceResult> {
 			await store.ensureInitialized();
 			const password = String(input.password ?? input.newPassword ?? '');
 			if (!validateControlPlanePassword(password)) return fail(400, 'invalid_password', 'Password must be at least 12 characters.');
@@ -78,7 +79,7 @@ export function createAccountSecurityService(store: any, emailContext: any) {
 			return { ok: true, changed: true };
 		},
 
-		async deletionBlockers(user: Record<string, any>) {
+		async deletionBlockers(user: AccountPrincipal) {
 			const [blockers, account] = await Promise.all([
 				accountDeletionBlockers(store, user),
 				store.first('SELECT updated_at FROM users WHERE id = ? LIMIT 1', [user.id]),
@@ -86,7 +87,7 @@ export function createAccountSecurityService(store: any, emailContext: any) {
 			return { blockers, canDelete: blockers.length === 0, updatedAt: String(account?.updated_at ?? '0') };
 		},
 
-		async removeAccount(user: Record<string, any>, input: Record<string, unknown>): Promise<ServiceResult> {
+		async removeAccount(user: AccountPrincipal, input: Record<string, unknown>): Promise<ServiceResult> {
 			await store.ensureInitialized();
 			if (!accountDeletionConfirmationMatches(String(input.confirmation ?? ''))) return fail(409, 'confirmation_required', 'Type "DELETE MY ACCOUNT" to delete this account.');
 			const blockers = await accountDeletionBlockers(store, user);

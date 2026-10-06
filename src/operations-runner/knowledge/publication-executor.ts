@@ -99,7 +99,7 @@ export function createKnowledgePublicationExecutor(options: any) {
 			if (publication.status === 'completed') {
 				if (!workspace || !review) throw new Error('Completed publication workflow records are missing.');
 				const current = await publicationStorage.readCurrent(workspace.teamId);
-				if (workspace.status !== 'published' || review.status !== 'approved'
+				if (!current || workspace.status !== 'published' || review.status !== 'approved'
 					|| publication.published_revision !== current?.revision || !containsPublicationCommit(current, publication, workspace)) {
 					throw new Error('Completed publication state does not match the current immutable manifest.');
 				}

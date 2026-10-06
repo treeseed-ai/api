@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,objectValue,serializeTreeDxInstance,serializeTreeDxShare } from "../../../../persistence/store.ts";
-export async function createTreeDxShareMethod(this: ControlPlaneStore, teamId, input: any = {}) {
+import type { TreeDxInstanceRow, TreeDxShareRow } from "../../../../persistence/store.ts";
+export async function createTreeDxShareMethod(this: ControlPlaneStore, teamId: string, input: any = {}) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const instance = input.instanceId
-        ? serializeTreeDxInstance(await this.first(`SELECT * FROM treedx_instances WHERE id = ? LIMIT 1`, [input.instanceId]))
+        ? serializeTreeDxInstance(await this.first<TreeDxInstanceRow>(`SELECT * FROM treedx_instances WHERE id = ? LIMIT 1`, [input.instanceId]))
         : await this.getPrimaryTreeDxInstance(teamId);
     if (instance && instance.teamId !== teamId)
         return null;
@@ -29,5 +30,5 @@ export async function createTreeDxShareMethod(this: ControlPlaneStore, teamId, i
         timestamp,
         null,
     ]);
-    return serializeTreeDxShare(await this.first(`SELECT * FROM treedx_shares WHERE id = ? LIMIT 1`, [id]));
+    return serializeTreeDxShare(await this.first<TreeDxShareRow>(`SELECT * FROM treedx_shares WHERE id = ? LIMIT 1`, [id]));
 }

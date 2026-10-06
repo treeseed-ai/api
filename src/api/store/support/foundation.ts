@@ -2,11 +2,14 @@ import { createHmac, type BinaryLike, type KeyObject } from 'node:crypto';
 import { redactSensitiveValue } from '../../../security/redact-sensitive-value.ts';
 import { TEAM_ROLE_CAPABILITIES } from './index.ts';
 
-export function getNodeBuiltin(name) {
-    return globalThis.process?.getBuiltinModule?.(name) ?? null;
+export function getNodeBuiltin(name: 'fs'): typeof import('node:fs') | null;
+export function getNodeBuiltin(name: 'path'): typeof import('node:path') | null;
+export function getNodeBuiltin(name: 'fs' | 'path'): typeof import('node:fs') | typeof import('node:path') | null {
+    return name === 'fs' ? globalThis.process?.getBuiltinModule?.('node:fs') ?? null
+        : globalThis.process?.getBuiltinModule?.('node:path') ?? null;
 }
 
-export function artifactStorageRoot(config) {
+export function artifactStorageRoot(config: { agentArtifactStorageRoot?: unknown; repoRoot?: unknown }) {
     const path = getNodeBuiltin('path');
     if (!path) return null;
     const root = String(config.agentArtifactStorageRoot ?? config.repoRoot ?? process.cwd()).trim();
@@ -34,18 +37,33 @@ export function isoNow() {
     return new Date().toISOString();
 }
 
-export function parseJson(value, fallback) {
+export function parseJson(value: unknown, fallback: unknown) {
     if (!value)
         return fallback;
     try {
-        return JSON.parse(value);
+        return JSON.parse(String(value));
     }
     catch {
         return fallback;
     }
 }
 
-export function serializeSeedRun(row) {
+export type SeedRunRow = {
+    id: string; seed_name: string; seed_version: number; environments_json: string;
+    mode: string; state: string; actor_type: string | null; actor_id: string | null;
+    manifest_hash: string; plan_json: string; result_json: string | null; error_json: string | null;
+    created_at: string; updated_at: string; completed_at: string | null;
+};
+
+type SerializedSeedRun = {
+    id: string; seedName: string; seedVersion: number; environments: ReturnType<typeof parseJson>;
+    mode: string; state: string; actorType: string | null; actorId: string | null;
+    manifestHash: string; plan: ReturnType<typeof redactSensitiveValue>; result: ReturnType<typeof redactSensitiveValue>;
+    error: ReturnType<typeof redactSensitiveValue>; createdAt: string; updatedAt: string; completedAt: string | null;
+};
+export function serializeSeedRun(row: SeedRunRow): SerializedSeedRun;
+export function serializeSeedRun(row: SeedRunRow | null | undefined): SerializedSeedRun | null;
+export function serializeSeedRun(row: SeedRunRow | null | undefined) {
     if (!row) return null;
     return {
         id: row.id,
@@ -66,8 +84,9 @@ export function serializeSeedRun(row) {
     };
 }
 
-export function missingSchemaError(error) {
-    const message = String(error?.message ?? error ?? '').toLowerCase();
+export function missingSchemaError(error: unknown) {
+    const message = String(error && (typeof error === 'object' || typeof error === 'function') && 'message' in error
+        ? error.message ?? error : error ?? '').toLowerCase();
     return message.includes('no such table')
         || message.includes('no such column')
         || message.includes('does not exist')
@@ -130,7 +149,7 @@ export function requireEnumValue(value: unknown, allowed: ReadonlySet<string>, l
     throw error;
 }
 
-export function principalIsAdmin(principal) {
+export function principalIsAdmin(principal: { permissions?: readonly string[]; roles?: readonly string[] } | null | undefined) {
     return Boolean(principal
         && (principal.permissions?.includes?.('*:*:*')
             || principal.roles?.includes?.('platform_admin')
@@ -145,12 +164,14 @@ export function signAssertionPayload(payload: BinaryLike, secret: BinaryLike | K
     return createHmac('sha256', secret).update(payload).digest('base64url');
 }
 
-export function uniqueCapabilities(roles: any = []) {
+export function uniqueCapabilities(roles: readonly string[] = []) {
     const capabilities = roles.flatMap((role) => TEAM_ROLE_CAPABILITIES[role] ?? []);
     return [...new Set(capabilities)];
 }
 
-export function normalizeAllocationSlices(value, fallback: any = []) {
+export function normalizeAllocationSlices(value: unknown, fallback: readonly {
+    id?: unknown; name?: unknown; label?: unknown; percentage?: unknown; allocationPercent?: unknown;
+}[] = []) {
     const raw = Array.isArray(value) ? value : fallback;
     return raw
         .map((slice) => ({
@@ -158,7 +179,7 @@ export function normalizeAllocationSlices(value, fallback: any = []) {
         name: String(slice?.name ?? slice?.label ?? slice?.id ?? '').trim(),
         percentage: numberValue(slice?.percentage ?? slice?.allocationPercent, null),
     }))
-        .filter((slice) => slice.id && slice.name && slice.percentage !== null)
+        .filter((slice): slice is { id: string; name: string; percentage: number } => Boolean(slice.id && slice.name && slice.percentage !== null))
         .map((slice) => ({
         ...slice,
         percentage: Math.max(0, Math.min(100, slice.percentage)),
@@ -169,7 +190,7 @@ export function normalizedStrings(values: unknown) {
     return arrayValue(values).map((value) => String(value ?? '').trim()).filter(Boolean);
 }
 
-export function serializeApprovalRequest(row) {
+export function serializeApprovalRequest(row: Record<string, unknown> | null | undefined) {
     if (!row)
         return null;
     return {
@@ -207,24 +228,25 @@ export function isoDate(value: unknown) {
     return Number.isFinite(parsed.valueOf()) ? parsed.toISOString() : null;
 }
 
-export function compareDatesDesc(left, right) {
-    const leftTime = isoDate(left) ? new Date(left).getTime() : 0;
-    const rightTime = isoDate(right) ? new Date(right).getTime() : 0;
+export function compareDatesDesc(left: unknown, right: unknown) {
+    const leftDate = isoDate(left), rightDate = isoDate(right);
+    const leftTime = leftDate ? new Date(leftDate).getTime() : 0;
+    const rightTime = rightDate ? new Date(rightDate).getTime() : 0;
     return rightTime - leftTime;
 }
 
-export function latestDate(...values) {
+export function latestDate(...values: unknown[]) {
     return values
         .map((value) => isoDate(value))
         .filter(Boolean)
         .sort(compareDatesDesc)[0] ?? null;
 }
 
-export function uniqueStrings(values) {
-    return [...new Set(values.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim()))];
+export function uniqueStrings(values: readonly unknown[]) {
+    return [...new Set(values.filter((value): value is string => typeof value === 'string' && Boolean(value.trim())).map((value) => value.trim()))];
 }
 
-export function toActivityItem(kind, input) {
+export function toActivityItem(kind: string, input: Record<string, unknown>) {
     return {
         kind,
         id: input.id,
@@ -237,7 +259,7 @@ export function toActivityItem(kind, input) {
     };
 }
 
-export function serializeEntitlement(row) {
+export function serializeEntitlement(row: Record<string, unknown> | null | undefined) {
     if (!row)
         return null;
     return {
@@ -252,7 +274,7 @@ export function serializeEntitlement(row) {
     };
 }
 
-export function redactBuyerUserId(value) {
+export function redactBuyerUserId(value: unknown) {
     if (!value)
         return null;
     const text = String(value);

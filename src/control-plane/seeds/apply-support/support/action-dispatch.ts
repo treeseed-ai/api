@@ -1,22 +1,32 @@
 import { mergeSeedMetadata,projectSeedMetadata } from '../index.js';
 import { applyTeamLibrarySeed, isTeamLibrarySeed } from '../projects/projects-core/managed-team-seed.js';
+import type { SeedPlanAction } from '../../contracts/types.ts';
+import type { ControlPlaneStore } from '../../../../api/persistence/store.ts';
 
-export async function applyAction({ action, store, ids, manifestHash, appliedAt, plan }) {
+export async function applyAction({ action, store, ids, manifestHash, appliedAt, plan }: {
+    action: SeedPlanAction; store: ControlPlaneStore;
+    ids: { teams: Map<string, string>; projects: Map<string, string>; projectTeams: Map<string, string | undefined> };
+    manifestHash: string; appliedAt: string; plan: { seed: string; actions: readonly SeedPlanAction[] };
+}) {
     if (action.action === 'skip' || action.action === 'unchanged')
         return null;
     if (isTeamLibrarySeed(action)) return applyTeamLibrarySeed({ action, store, ids, manifestHash, appliedAt });
     const metadata = mergeSeedMetadata(action.existing?.metadata, action.payload.metadata, action, manifestHash, appliedAt);
     if (action.kind === 'team') {
         const existing = action.existing;
-        const team = existing
-            ? (await store.updateTeamSettings(existing.id, {
+        let team;
+        if (existing) {
+            const updated = await store.updateTeamSettings(existing.id, {
                 name: action.payload.name,
                 displayName: action.payload.displayName,
                 logoUrl: action.payload.logoUrl,
                 profileSummary: action.payload.profileSummary,
                 metadata,
-            })).ok === false ? existing : await store.getTeam(existing.id)
-            : await store.createTeam({
+            });
+            if (!updated) throw new Error(`Seed team could not be read back for ${action.key}.`);
+            team = updated.ok === false ? existing : await store.getTeam(existing.id);
+        } else {
+            team = await store.createTeam({
                 slug: action.payload.slug,
                 name: action.payload.name,
                 displayName: action.payload.displayName,
@@ -24,6 +34,8 @@ export async function applyAction({ action, store, ids, manifestHash, appliedAt,
                 profileSummary: action.payload.profileSummary,
                 metadata,
             });
+        }
+        if (!team) throw new Error(`Seed team could not be read back for ${action.key}.`);
         ids.teams.set(action.key, team.id);
         return team;
     }
@@ -71,7 +83,8 @@ export async function applyAction({ action, store, ids, manifestHash, appliedAt,
                 name: action.payload.name,
                 description: action.payload.description,
                 metadata: projectMetadata,
-            })).project;
+            }))?.project;
+        if (!project) throw new Error(`Seed project could not be read back for ${action.key}.`);
         ids.projects.set(action.key, project.id);
 		ids.projectTeams.set(action.key, teamId);
         return project;
@@ -80,7 +93,7 @@ export async function applyAction({ action, store, ids, manifestHash, appliedAt,
         const projectId = ids.projects.get(action.payload.projectKey);
         if (!projectId)
             throw new Error(`Missing project for ${action.key}.`);
-        const projectAction = plan.actions.find((entry) => entry.key === action.payload.projectKey);
+        const projectAction = plan.actions.find((entry): entry is Extract<SeedPlanAction, { kind: 'project' }> => entry.kind === 'project' && entry.key === action.payload.projectKey);
         const teamId = ids.projectTeams.get(action.payload.projectKey)
 			?? (projectAction ? ids.teams.get(projectAction.payload.teamKey) : null);
         if (!teamId)

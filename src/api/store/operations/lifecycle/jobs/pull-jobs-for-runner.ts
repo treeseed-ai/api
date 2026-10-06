@@ -1,8 +1,8 @@
 import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
-export async function pullJobsForRunnerMethod(this: ControlPlaneStore, projectId, input: any = {}) {
+export async function pullJobsForRunnerMethod(this: ControlPlaneStore, projectId: string, input: any = {}) {
     await this.ensureInitialized();
     const limit = Math.max(1, Math.min(Number(input.limit ?? 1), 20));
-    const rows = await this.all(`SELECT * FROM remote_jobs
+    const rows = await this.all<JobRow>(`SELECT * FROM remote_jobs
 			 WHERE project_id = ? AND status = 'pending'
 			 ORDER BY created_at ASC
 			 LIMIT ?`, [projectId, limit]);
@@ -22,3 +22,4 @@ export async function pullJobsForRunnerMethod(this: ControlPlaneStore, projectId
     }
     return claimed;
 }
+import type { JobRow } from "../../../support/operations/operations.ts";

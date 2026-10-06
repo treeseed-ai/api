@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
 import { resolveApiConfig } from '../configuration/runtime-config.ts';
-import type { Server } from 'node:http';
+import type { Server, IncomingMessage, ServerResponse } from 'node:http';
 import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
+import { ReadableStream as NativeReadableStream } from 'node:stream/web';
 import { fileURLToPath } from 'node:url';
 import { createPlatformApiApp } from './app.js';
 import { createControlPlanePostgresDatabase } from './control-plane-postgres.js';
@@ -12,11 +13,11 @@ import { ControlPlaneStore } from '../persistence/store.js';
 import { loadManagedApiIdentityRuntime } from '../configuration/identity-runtime.ts';
 import { apiStartupDiagnostic, apiStartupStage } from './startup-diagnostics.ts';
 
-function hasRequestBody(method) {
+export function hasRequestBody(method: string | undefined) {
 	return method !== 'GET' && method !== 'HEAD';
 }
 
-async function honoNodeHandler(app, request, response) {
+async function honoNodeHandler(app: Pick<ReturnType<typeof createPlatformApiApp>, 'fetch'>, request: IncomingMessage, response: ServerResponse) {
 	const req = request;
 	const res = response;
 	const requestController = new AbortController();
@@ -24,10 +25,13 @@ async function honoNodeHandler(app, request, response) {
 	res.once('close', () => requestController.abort());
 	const origin = req.headers.host ? `http://${req.headers.host}` : 'http://127.0.0.1';
 	const url = new URL(req.url ?? '/', origin);
+	const body = hasRequestBody(req.method) ? Readable.toWeb(req) : undefined;
+	if (body !== undefined && !(body instanceof ReadableStream)) throw new Error('Native request stream is unavailable.');
 	const requestInit: RequestInit & { duplex: 'half' } = {
 		method: req.method,
-		headers: req.headers,
-		body: hasRequestBody(req.method) ? req : undefined,
+		headers: new Headers(Object.entries(req.headers).flatMap<[string, string]>(([name, value]) => value === undefined
+			? [] : [[name, Array.isArray(value) ? value.join(',') : value]])),
+		body,
 		duplex: 'half',
 		signal: requestController.signal,
 	};
@@ -44,6 +48,7 @@ async function honoNodeHandler(app, request, response) {
 		return;
 	}
 
+	if (!(webResponse.body instanceof NativeReadableStream)) throw new Error('Native response stream is unavailable.');
 	Readable.fromWeb(webResponse.body).pipe(res);
 }
 

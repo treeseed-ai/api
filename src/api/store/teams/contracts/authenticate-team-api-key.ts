@@ -1,5 +1,5 @@
 import { equalHash,isoNow,ControlPlaneStore,parseJson,stableHash,tokenPrefix } from "../../../persistence/store.ts";
-export async function authenticateTeamApiKeyMethod(this: ControlPlaneStore, token) {
+export async function authenticateTeamApiKeyMethod(this: ControlPlaneStore, token: string) {
     await this.ensureInitialized();
     const prefix = tokenPrefix(token);
     const rows = await this.all(`SELECT team_api_keys.*, teams.name AS team_name, teams.display_name AS team_display_name

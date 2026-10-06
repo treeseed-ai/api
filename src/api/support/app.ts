@@ -1,5 +1,6 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
+import type { AppVariables } from '../types.ts';
 import { PostgresAuthProvider } from '../auth/postgres-provider.ts';
 import { installApiIdentityRoutes } from '../auth/browser/api-routes.ts';
 import { identityResourceCatalog } from '../auth/browser/resource-catalog.ts';
@@ -145,7 +146,7 @@ export function createPlatformApiApp(options: any = {}) {
 		fetchImpl: options.fetchImpl ?? fetch,
 		internalPrefix: options.internalPrefix ?? '/internal/core',
 	};
-	const app = new Hono();
+	const app = new Hono<{ Variables: AppVariables }>();
 	app.get('/.well-known/treedx-jwks.json', (context) => context.json(delegationAuthority.jwks(), 200, {
 		'cache-control': 'public, max-age=60, stale-while-revalidate=300',
 	}));
@@ -280,7 +281,7 @@ export function createPlatformApiApp(options: any = {}) {
 			workflowConfiguration: createWorkflowConfigurationService(store),
 		});
 	const mcpBusForPrincipal = async (principal: { id: string }) => {
-			const teams = await store.listTeamsForPrincipal(principal);
+			const teams: Awaited<ReturnType<ControlPlaneStore['listTeamsForPrincipal']>> = await store.listTeamsForPrincipal(principal);
 			return new SessionEventMcpBus(sessionEvents, teams.map((team) => String(team.id)).filter(Boolean));
 	};
 	if (identityRuntime) installApiIdentityRoutes(app, identityRuntime, {

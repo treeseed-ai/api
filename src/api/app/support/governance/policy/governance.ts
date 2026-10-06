@@ -1,5 +1,8 @@
 import { ensurePrincipal,isTeamApiPrincipal,jsonError,principalHasPermission,principalIsSeedAdmin } from '../../index.ts';
-export async function requireTeamAccess(c, store, teamId, permission = null) {
+import type { Context } from 'hono';
+import type { AppVariables } from '../../../../types.ts';
+import type { ControlPlaneStore } from '../../../../persistence/store.ts';
+export async function requireTeamAccess(c: Context<{ Variables: AppVariables }>, store: ControlPlaneStore, teamId: string, permission: string | null = null): ReturnType<typeof ensurePrincipal> {
     const auth = await ensurePrincipal(c);
     if (auth.response) {
         return auth;
@@ -46,7 +49,7 @@ export async function requireTeamAccess(c, store, teamId, permission = null) {
 	}
     return { principal };
 }
-export async function requireSellerTeamAccess(c, store, teamId, permission = 'projects:read:team') {
+export async function requireSellerTeamAccess(c: Context<{ Variables: AppVariables }>, store: ControlPlaneStore, teamId: string, permission = 'projects:read:team') {
     const auth = await ensurePrincipal(c);
     if (auth.response)
         return auth;

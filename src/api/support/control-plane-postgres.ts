@@ -21,7 +21,7 @@ function attachPostgresPoolErrorLogger(pool: Pool) {
 }
 
 type PostgresQueryable = Pick<Pool | PoolClient, 'query'>;
-type PreparedResult = { success: true; results: QueryResultRow[]; meta: { changes: number } };
+export type PreparedResult = { success: true; results: QueryResultRow[]; meta: { changes: number } };
 
 export async function executePostgresBatch(client: PostgresQueryable, statements: Array<{ query: string; bindings?: unknown[]; params?: unknown[] }>): Promise<PreparedResult[]> {
 	const results: PreparedResult[] = [];

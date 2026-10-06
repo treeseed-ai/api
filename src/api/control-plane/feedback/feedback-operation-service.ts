@@ -39,7 +39,8 @@ export function createFeedbackOperationService(store: any, options: any = {}) {
 			const parsed = parseFeedbackBody(bodyValue); if ('error' in parsed) throw new FeedbackOperationError(400, 'feedback_invalid', parsed.error);
 			const input = parsed.value;
 			input.context.canonicalPath = derivedCanonicalPath(new Request(requestUrl, { headers: requestHeaders }), input.context.canonicalPath);
-			input.context.environment = process.env.TREESEED_ENVIRONMENT?.trim() || (process.env.NODE_ENV === 'production' ? 'production' : 'local');
+			const environment = process.env.TREESEED_ENVIRONMENT?.trim() || (process.env.NODE_ENV === 'production' ? 'production' : 'local');
+			input.context.environment = environment === 'local' || environment === 'staging' || environment === 'production' ? environment : undefined;
 			input.context.buildId = process.env.TREESEED_BUILD_ID ?? process.env.TREESEED_SOURCE_CLOSURE ?? undefined;
 			input.context.revision = process.env.TREESEED_SOURCE_CLOSURE ?? undefined;
 			if (input.context.projectId) {

@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,normalizeTeamRoleKey } from "../../../persistence/store.ts";
-export async function upsertTeamMemberMethod(this: ControlPlaneStore, teamId, userId, roleKey = 'contributor') {
+export async function upsertTeamMemberMethod(this: ControlPlaneStore, teamId: string, userId: string, roleKey = 'contributor') {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const role = normalizeTeamRoleKey(roleKey);
-    let membership = await this.first(`SELECT * FROM team_memberships WHERE team_id = ? AND user_id = ? LIMIT 1`, [teamId, userId]);
+    let membership = await this.first<{ id: string }>(`SELECT * FROM team_memberships WHERE team_id = ? AND user_id = ? LIMIT 1`, [teamId, userId]);
     if (!membership?.id) {
         const membershipId = randomUUID();
         await this.run(`INSERT INTO team_memberships (id, team_id, user_id, status, created_at, updated_at)

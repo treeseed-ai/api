@@ -1,8 +1,9 @@
 import { redactSensitiveValue } from "../../../../../security/redact-sensitive-value.ts";
 import { isoNow,ControlPlaneStore,objectValue,serializeTreeDxDeployment } from "../../../../persistence/store.ts";
-export async function updateTreeDxDeploymentMethod(this: ControlPlaneStore, deploymentId, patch: any = {}) {
+import type { TreeDxDeploymentRow } from "../../../../persistence/store.ts";
+export async function updateTreeDxDeploymentMethod(this: ControlPlaneStore, deploymentId: string, patch: any = {}) {
     await this.ensureInitialized();
-    const existing = serializeTreeDxDeployment(await this.first(`SELECT * FROM treedx_deployments WHERE id = ? LIMIT 1`, [deploymentId]));
+    const existing = serializeTreeDxDeployment(await this.first<TreeDxDeploymentRow>(`SELECT * FROM treedx_deployments WHERE id = ? LIMIT 1`, [deploymentId]));
     if (!existing)
         return null;
     const timestamp = isoNow();
@@ -34,5 +35,5 @@ export async function updateTreeDxDeploymentMethod(this: ControlPlaneStore, depl
         terminal ? patch.completedAt ?? timestamp : patch.completedAt ?? existing.completedAt ?? null,
         deploymentId,
     ]);
-    return serializeTreeDxDeployment(await this.first(`SELECT * FROM treedx_deployments WHERE id = ? LIMIT 1`, [deploymentId]));
+    return serializeTreeDxDeployment(await this.first<TreeDxDeploymentRow>(`SELECT * FROM treedx_deployments WHERE id = ? LIMIT 1`, [deploymentId]));
 }

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,objectValue,serializeTreeDxInstance } from "../../../../persistence/store.ts";
+import type { TreeDxInstanceRow } from "../../../../persistence/store.ts";
 
 export function mergeRepositoryTopologyMetadata(existing: unknown, requested: unknown) {
     const current = objectValue(existing, {});
@@ -17,13 +18,13 @@ export function mergeRepositoryTopologyMetadata(existing: unknown, requested: un
     };
 }
 
-export async function upsertProjectTreeDxLibraryMethod(this: ControlPlaneStore, projectId, input: any = {}) {
+export async function upsertProjectTreeDxLibraryMethod(this: ControlPlaneStore, projectId: string, input: any = {}) {
     await this.ensureInitialized();
     const project = await this.getProject(projectId);
     if (!project)
         return null;
     const instance = input.instanceId
-        ? serializeTreeDxInstance(await this.first(`SELECT * FROM treedx_instances WHERE id = ? LIMIT 1`, [input.instanceId]))
+        ? serializeTreeDxInstance(await this.first<TreeDxInstanceRow>(`SELECT * FROM treedx_instances WHERE id = ? LIMIT 1`, [input.instanceId]))
         : await this.getPrimaryTreeDxInstance(project.teamId);
     if (!instance || instance.teamId !== project.teamId)
         return null;

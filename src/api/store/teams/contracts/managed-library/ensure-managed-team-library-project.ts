@@ -17,7 +17,9 @@ export async function ensureManagedTeamLibraryProjectMethod(this:ControlPlaneSto
 	const details=await this.createProject(teamId,{slug:MANAGED_TEAM_PROJECT_SLUG,name:'Team Library',description:'System-managed shared knowledge for this team.',metadata:{kind:MANAGED_TEAM_PROJECT_KIND,systemManaged:true,
 		libraryOnly:true,library:{repositoryName,defaultBranch:'main',integrationBranch:'staging',status:'provisioning'},
 		inventory:{status:'active'},provisioning:{state:'pending',requiredFiles:['README.md','objectives/core']}}});
-	const project=details?.project??details,teamRow=await this.first('SELECT metadata_json FROM teams WHERE id = ? LIMIT 1',[teamId]);
+	const project=details?.project;
+	if(!project)throw new Error('Managed Team Library project could not be read back.');
+	const teamRow=await this.first('SELECT metadata_json FROM teams WHERE id = ? LIMIT 1',[teamId]);
 	const metadata=parseJson(teamRow?.metadata_json,{});metadata.teamLibrary={projectId:project.id,projectSlug:MANAGED_TEAM_PROJECT_SLUG,state:'provisioning'};
 	await this.run('UPDATE teams SET metadata_json = ?, updated_at = ? WHERE id = ?',[JSON.stringify(metadata),isoNow(),teamId]);
 	return project;

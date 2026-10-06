@@ -2,9 +2,12 @@ import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { ControlPlaneOperationError, type BoundOperation } from './operation-registry.ts';
 import { deleteTeamCapacityAggregate } from '../../capacity/services/teams/team-deletion-service.ts';
 import { consumeReauthentication } from '../../app/support/accounts/authentication-password.ts';
+import type { TreeDxProxyOperationService } from '../repositories/treedx/proxy-operation-service.ts';
+import type { ControlPlaneStore } from '../../persistence/store.ts';
 
 export interface TeamOperationDependencies {
 	store: {
+		run: ControlPlaneStore['run'];
 		listTeamsForPrincipal(principal: Record<string, unknown>): Promise<Array<Record<string, unknown>>>;
 		loadTeamProfileByName(name: string, principal?: Record<string, unknown> | null): Promise<Record<string, unknown> | null>;
 		getTeam(teamId: string): Promise<Record<string, unknown> | null>;
@@ -14,11 +17,11 @@ export interface TeamOperationDependencies {
 		resolvePrincipalTeamContext(teamId: string, principal: Record<string, unknown>): Promise<{ roles?: string[] } | null>;
 		listTeamMembers(teamId: string): Promise<Array<Record<string, any>>>;
 		listTeamInvites(teamId: string): Promise<Array<Record<string, unknown>>>;
-		createTeamInvite(teamId: string, input: { email: unknown; roleKey: unknown; invitedByUserId: string }): Promise<Record<string, any>>;
-		revokeTeamInvite(teamId: string, inviteId: string): Promise<Record<string, any>>;
+		createTeamInvite(teamId: string, input: Parameters<ControlPlaneStore['createTeamInvite']>[1]): Promise<Record<string, any>>;
+		revokeTeamInvite(teamId: string, inviteId: string, expectedUpdatedAt?: Parameters<ControlPlaneStore['revokeTeamInvite']>[2]): Promise<Record<string, any>>;
 		getTeamInviteByToken(token: string): Promise<Record<string, any>>;
 		acceptTeamInvite(token: string, principalId: string): Promise<Record<string, any>>;
-		first(query: string, parameters?: unknown[]): Promise<Record<string, any> | null>;
+		first: ControlPlaneStore['first'];
 		createTeam(input: Record<string, unknown>): Promise<Record<string, any>>;
 		getTeamDeletionReadiness(teamId: string): Promise<Record<string, any>>;
 		updateTeamSettings(teamId: string, input: Record<string, unknown>): Promise<Record<string, any> | null>;
@@ -37,15 +40,15 @@ export interface TeamOperationDependencies {
 	deliverTeamInvite(input: { invite: Record<string, any>; team: Record<string, unknown>; token: string }): Promise<void>;
 	reconcileManagedTeamLibrary(teamId:string):Promise<Record<string,unknown>>;
 	deleteManagedTeamLibraryResources(input:{teamId:string;project:Record<string,any>}):Promise<Record<string,unknown>>;
-	treeDxProxy:{invoke(descriptor:unknown,input:Record<string,unknown>,context:Record<string,unknown>):Promise<unknown>};
+	treeDxProxy: Pick<TreeDxProxyOperationService, 'invoke'>;
 }
 
-function authenticatedPrincipal(context: { principal?: Record<string, any> }) {
+function authenticatedPrincipal(context: { principal?: NonNullable<import('./operation-registry.ts').OperationInvocationContext['principal']> }) {
 	if (!context.principal) throw new ControlPlaneOperationError(401, 'authentication_required', 'Authentication is required.');
 	return context.principal;
 }
 
-async function requireTeamRead(dependencies: TeamOperationDependencies, teamId: string, context: { principal?: Record<string, any> }) {
+async function requireTeamRead(dependencies: TeamOperationDependencies, teamId: string, context: Parameters<typeof authenticatedPrincipal>[0]) {
 	const principal = authenticatedPrincipal(context);
 	const team = await dependencies.store.getTeam(teamId);
 	if (!team) throw new ControlPlaneOperationError(404, 'team_missing', 'The team was not found.');
@@ -55,7 +58,7 @@ async function requireTeamRead(dependencies: TeamOperationDependencies, teamId: 
 	return { principal, team };
 }
 
-async function requireTeamManagement(dependencies: TeamOperationDependencies, teamId: string, context: { principal?: Record<string, any> }) {
+async function requireTeamManagement(dependencies: TeamOperationDependencies, teamId: string, context: Parameters<typeof authenticatedPrincipal>[0]) {
 	const access = await requireTeamRead(dependencies, teamId, context);
 	if (access.principal.roles?.some((role: string) => role === 'admin' || role === 'platform_admin')) return access;
 	const membership = await dependencies.store.resolvePrincipalTeamContext(teamId, access.principal);
@@ -65,7 +68,7 @@ async function requireTeamManagement(dependencies: TeamOperationDependencies, te
 	return access;
 }
 
-async function requireTeamOwner(dependencies: TeamOperationDependencies, teamId: string, context: { principal?: Record<string, any> }) {
+async function requireTeamOwner(dependencies: TeamOperationDependencies, teamId: string, context: Parameters<typeof authenticatedPrincipal>[0]) {
 	const access = await requireTeamRead(dependencies, teamId, context);
 	if (access.principal.roles?.some((role: string) => role === 'admin' || role === 'platform_admin')) return access;
 	const membership = await dependencies.store.resolvePrincipalTeamContext(teamId, access.principal);
@@ -114,10 +117,11 @@ export function createTeamMembersOperation(dependencies: TeamOperationDependenci
 		async handler(input, context) {
 			await requireTeamRead(dependencies, input.path.teamId, context);
 			const members = await dependencies.store.listTeamMembers(input.path.teamId);
-			const query = String(input.query.q ?? '').trim().toLowerCase();
+			const suppliedQuery: Record<string, unknown> = input.query;
+			const query = String(suppliedQuery.q ?? '').trim().toLowerCase();
 			const filtered = query ? members.filter((member) => `${member.displayName ?? ''} ${member.email ?? ''} ${member.roleKey ?? ''}`.toLowerCase().includes(query)) : members;
-			const limit = Math.min(100, Math.max(1, Number(input.query.limit ?? 50) || 50));
-			const offset = Math.max(0, Number(input.query.cursor ?? 0) || 0);
+			const limit = Math.min(100, Math.max(1, Number(suppliedQuery.limit ?? 50) || 50));
+			const offset = Math.max(0, Number(suppliedQuery.cursor ?? 0) || 0);
 			const nextOffset = offset + limit;
 			return { items: filtered.slice(offset, nextOffset), total: filtered.length,
 				ownerCount: members.filter((member) => member.roles?.includes('team_owner')).length,
@@ -132,8 +136,9 @@ export function createTeamInvitesOperation(dependencies: TeamOperationDependenci
 		async handler(input, context) {
 			await requireTeamManagement(dependencies, input.path.teamId, context);
 			const invites = await dependencies.store.listTeamInvites(input.path.teamId);
-			const limit = Math.min(100, Math.max(1, Number(input.query.limit ?? 50) || 50));
-			const offset = Math.max(0, Number(input.query.cursor ?? 0) || 0);
+			const suppliedQuery: Record<string, unknown> = input.query;
+			const limit = Math.min(100, Math.max(1, Number(suppliedQuery.limit ?? 50) || 50));
+			const offset = Math.max(0, Number(suppliedQuery.cursor ?? 0) || 0);
 			const nextOffset = offset + limit;
 			return { items: invites.slice(offset, nextOffset), total: invites.length, cursor: nextOffset < invites.length ? String(nextOffset) : null };
 		},
@@ -446,7 +451,7 @@ export function createTeamDeleteOperation(dependencies: TeamOperationDependencie
 		let treeDx:unknown=null;
 		if(library?.repositoryId)treeDx=await dependencies.treeDxProxy.invoke(
 			CONTROL_PLANE_OPERATIONS.treedx.repositories.retire.descriptor,
-			{path:{projectId:String(teamLibrary.id),repoId:String(library.repositoryId)},query:{},body:{}},context as Record<string,unknown>);
+			{path:{projectId:String(teamLibrary.id),repoId:String(library.repositoryId)},query:{},body:{}},context);
 		const resources=await dependencies.deleteManagedTeamLibraryResources({teamId:input.path.teamId,project:teamLibrary});
 		const result = await deleteTeamCapacityAggregate(dependencies.store as any, input.path.teamId, String(body.confirmation ?? ''));
 		if (!result.ok) teamMutationFailure(result, 'team_delete_failed', 'The team could not be deleted.');

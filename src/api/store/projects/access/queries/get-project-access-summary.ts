@@ -1,5 +1,6 @@
 import { ControlPlaneStore } from "../../../../persistence/store.ts";
-export async function getProjectAccessSummaryMethod(this: ControlPlaneStore, projectId, principal) {
+import type { OperationInvocationContext } from '../../../../control-plane/catalog/operation-registry.ts';
+export async function getProjectAccessSummaryMethod(this: ControlPlaneStore, projectId: string, principal: OperationInvocationContext['principal'] | null) {
     await this.ensureInitialized();
     const details = await this.getProjectDetails(projectId);
     if (!details)
@@ -9,7 +10,7 @@ export async function getProjectAccessSummaryMethod(this: ControlPlaneStore, pro
     const roles = context?.roles ?? [];
     const subjectId = typeof principal?.id === 'string' && principal.id ? principal.id : details.project.teamId;
     const subjectType = principal?.roles?.includes?.('team_api_key') ? 'api_key' : 'user';
-    const environmentRole = (environment) => {
+    const environmentRole = (environment: string) => {
         if (team.summary.canAdminProduction || (environment === 'staging' && team.summary.canAdminStaging))
             return 'admin';
         if (roles.includes('contributor') || roles.includes('reviewer'))

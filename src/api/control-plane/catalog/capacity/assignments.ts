@@ -1,14 +1,8 @@
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { CapacityOperationError } from '../../repositories/capacity/capacity-operation-error.ts';
-import { ControlPlaneOperationError, type BoundOperation, type OperationInvocationContext } from '../operation-registry.ts';
-type Principal = OperationInvocationContext['principal'];
-export interface AssignmentOperationDependencies { assignments: {
-	list(principal: Principal, teamId: string, query: Record<string, unknown>): Promise<Record<string, unknown>>;
-	show(principal: Principal, teamId: string, assignmentId: string): Promise<Record<string, unknown>>;
-	explain(principal: Principal, teamId: string, assignmentId: string): Promise<Record<string, unknown>>;
-	cancel(principal: Principal, teamId: string, assignmentId: string, body: Record<string, unknown>, idempotencyKey?: string): Promise<Record<string, unknown>>;
-	retry(principal: Principal, teamId: string, assignmentId: string, body: Record<string, unknown>, idempotencyKey?: string): Promise<Record<string, unknown>>;
-}; }
+import { ControlPlaneOperationError, type BoundOperation } from '../operation-registry.ts';
+import type { createAssignmentService } from '../../repositories/capacity/assignment-service.ts';
+export interface AssignmentOperationDependencies { assignments: ReturnType<typeof createAssignmentService>; }
 function result<T>(call: () => T | Promise<T>) { return Promise.resolve().then(call).catch((error) => {
 	if (error instanceof CapacityOperationError) throw new ControlPlaneOperationError(error.status, error.code, error.message);
 	throw error;

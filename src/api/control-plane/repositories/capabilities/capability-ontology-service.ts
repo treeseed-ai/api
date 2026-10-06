@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { capabilityContractDigest, capabilityDefinitionDigest, capabilityDefinitionSchema, CORE_CAPABILITY_DEFINITIONS, CORE_CAPABILITY_ONTOLOGY_CREATED_AT, CORE_CAPABILITY_ONTOLOGY_GENERATION, type CapabilityDefinition } from '@treeseed/sdk/capacity-provider';
 import type { CapacityGovernanceDatabase } from '../../../capacity/database.ts';
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
+import { providerPrincipal } from '../providers/provider-runtime-service.ts';
 
-type ProviderAuth = { principal?: { capacityProviderId: string; teamId: string; membershipId: string } } | null | undefined;
 function decode<T>(value: unknown): T { return JSON.parse(String(value)) as T; }
 
 export function createCapabilityOntologyService(store: CapacityGovernanceDatabase) {
@@ -46,8 +46,8 @@ export function createCapabilityOntologyService(store: CapacityGovernanceDatabas
 			const page = await this.list({ limit: 500 }); const row = await store.first(`SELECT signature_json,created_at FROM capability_ontology_generations WHERE generation=?`, [page.generation]);
 			return { schemaVersion: 'treeseed.capability-ontology/v1', generation: page.generation, digest: page.ontologyDigest, definitions: page.items.filter(({ id }) => id.startsWith('treeseed.')), createdAt: String(row!.created_at), signature: decode(row!.signature_json) };
 		},
-		async propose(auth: ProviderAuth, body: Record<string, unknown>) {
-			await ensureSeed(); const principal = auth?.principal; if (!principal) throw new CapacityGovernanceError('provider_access_token_required','Provider authentication is required.',401);
+		async propose(auth: unknown, body: Record<string, unknown>) {
+			await ensureSeed(); const principal = providerPrincipal(auth, []);
 			const provider = await store.first(`SELECT fingerprint FROM capacity_providers WHERE id=? AND status='active'`, [principal.capacityProviderId]);
 			if (!provider) throw new CapacityGovernanceError('provider_not_found','The provider identity is unavailable.',404);
 			const definition = capabilityDefinitionSchema.parse(body.definition);
@@ -59,8 +59,8 @@ export function createCapabilityOntologyService(store: CapacityGovernanceDatabas
 			await store.run(`INSERT INTO provider_capability_proposals (id,capacity_provider_id,capability_id,version,definition_digest,status,definition_json,signature_json,created_at,updated_at) VALUES (?,?,?,?,?,'active-namespaced',?,?,?,?)`, [id, principal.capacityProviderId, definition.id, definition.version, definition.digest, JSON.stringify(definition), JSON.stringify(signature), now, now]);
 			return { id, status: 'active-namespaced', definition };
 		},
-		async proposal(auth: ProviderAuth, id: string) {
-			const principal = auth?.principal; if (!principal) throw new CapacityGovernanceError('provider_access_token_required','Provider authentication is required.',401);
+		async proposal(auth: unknown, id: string) {
+			const principal = providerPrincipal(auth, []);
 			const row = await store.first(`SELECT * FROM provider_capability_proposals WHERE id=? AND capacity_provider_id=?`, [id, principal.capacityProviderId]);
 			if (!row) throw new CapacityGovernanceError('capability_proposal_not_found','Capability proposal not found.',404);
 			return { id: row.id, status: row.status, definition: decode(row.definition_json), createdAt: row.created_at, updatedAt: row.updated_at };

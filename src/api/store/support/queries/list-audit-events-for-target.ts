@@ -1,5 +1,5 @@
 import { ControlPlaneStore,serializeAuditEvent } from "../../../persistence/store.ts";
-export async function listAuditEventsForTargetMethod(this: ControlPlaneStore, targetType, targetId, limit = 50) {
+export async function listAuditEventsForTargetMethod(this: ControlPlaneStore, targetType: string, targetId: string, limit: unknown = 50) {
     await this.ensureInitialized();
     const rows = await this.all(`SELECT * FROM audit_events
 			 WHERE target_type = ? AND target_id = ?

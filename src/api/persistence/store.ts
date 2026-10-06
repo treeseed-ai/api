@@ -1,5 +1,6 @@
 import '../store/interface.ts';
 import * as extractedMethods from '../store/methods.ts';
+import type { PreparedResult } from '../support/control-plane-postgres.ts';
 export * from '../store/support/index.ts';
 
 export class ControlPlaneStore {
@@ -7,11 +8,11 @@ export class ControlPlaneStore {
     // Declare it explicitly because this legacy store is still typechecked in
     // transpile-only mode and constructor assignment alone is not emitted in its
     // inferred declaration shape.
-    declare config: Record<string, unknown>;
+    declare config: Record<string, unknown> & { fetchImpl?: typeof fetch; agentArtifactStorageRoot?: unknown; repoRoot?: unknown };
     declare db: {
         prepare(query: string): {
             bind(...params: unknown[]): {
-                run(): Promise<unknown>;
+                run(): Promise<PreparedResult>;
                 first(): Promise<Record<string, unknown> | null>;
                 all(): Promise<{ results?: Record<string, unknown>[] }>;
             };
@@ -22,7 +23,7 @@ export class ControlPlaneStore {
     };
     declare initializationPromise: Promise<unknown> | null;
     declare artifactBucket: unknown;
-    constructor(config, db) {
+    constructor(config: ControlPlaneStore['config'], db: ControlPlaneStore['db']) {
         this.config = config;
         this.db = db;
         this.initializationPromise = null;

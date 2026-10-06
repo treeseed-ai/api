@@ -1,5 +1,5 @@
 import { isoNow,ControlPlaneStore,normalizeProjectArchitecture,parseJson } from "../../../../persistence/store.ts";
-export async function updateProjectMethod(this: ControlPlaneStore, projectId, input) {
+export async function updateProjectMethod(this: ControlPlaneStore, projectId: string, input: Record<string, unknown> & { metadata?: Record<string, unknown> | null }) {
     await this.ensureInitialized();
     const existing = await this.first(`SELECT * FROM projects WHERE id = ? LIMIT 1`, [projectId]);
     if (!existing) {
@@ -21,7 +21,7 @@ export async function updateProjectMethod(this: ControlPlaneStore, projectId, in
 		projectId,
 		...(input.expectedRevision ? [input.expectedRevision] : []),
     ]);
-	if (input.expectedRevision && (updated.meta?.changes ?? updated.changes ?? 0) !== 1) return null;
+	if (input.expectedRevision && updated.meta.changes !== 1) return null;
     if (metadata?.architecture) {
         await this.projectArchitectureContentBindings(projectId, normalizeProjectArchitecture(metadata.architecture)).catch(() => null);
     }

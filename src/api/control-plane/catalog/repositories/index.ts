@@ -2,6 +2,7 @@ import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { RepositoryOperationError } from '../../repositories/repository-operation-error.ts';
 import { WorkflowOperationError } from '../../repositories/workflow-operation-error.ts';
 import { ControlPlaneOperationError, type BoundOperation, type OperationInvocationContext } from '../operation-registry.ts';
+import type { createWorkflowService } from '../../repositories/workflow-service.ts';
 
 export interface RepositoryOperationDependencies {
 	githubConnector: {
@@ -15,15 +16,7 @@ export interface RepositoryOperationDependencies {
 		status(principal: OperationInvocationContext['principal'], projectId: string): Promise<Record<string, any>>;
 		update(principal: OperationInvocationContext['principal'], projectId: string, body: Record<string, unknown>, ifMatch?: string): Promise<Record<string, any>>;
 	};
-	workflows: {
-		operations(principal: OperationInvocationContext['principal'], projectId: string, query: Record<string, unknown>): Promise<Record<string, any>>;
-		runs(principal: OperationInvocationContext['principal'], projectId: string, query: Record<string, unknown>): Promise<Record<string, any>>;
-		update(principal: OperationInvocationContext['principal'], projectId: string, operationId: string, body: Record<string, unknown>, ifMatch?: string): Promise<Record<string, any>>;
-		dispatch(principal: OperationInvocationContext['principal'], projectId: string, operationId: string, body: Record<string, unknown>, idempotencyKey?: string): Promise<Record<string, any>>;
-		run(principal: OperationInvocationContext['principal'], runId: string): Promise<Record<string, any>>;
-		cancel(principal: OperationInvocationContext['principal'], runId: string): Promise<Record<string, any>>;
-		artifacts(principal: OperationInvocationContext['principal'], runId: string): Promise<Record<string, any>>;
-	};
+	workflows: ReturnType<typeof createWorkflowService>;
 	workflowConfiguration: {
 		publicKey(principal: OperationInvocationContext['principal'], projectId: string, query: Record<string, unknown>): Promise<Record<string, any>>;
 		list(principal: OperationInvocationContext['principal'], projectId: string, kind: 'secrets' | 'variables', query: Record<string, unknown>): Promise<Record<string, any>>;

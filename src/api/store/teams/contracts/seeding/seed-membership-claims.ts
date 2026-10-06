@@ -26,7 +26,7 @@ async function removeOwnedBindings(store: ControlPlaneStore, claim: Record<strin
 
 export async function getSeedTeamMembershipClaimMethod(this: ControlPlaneStore, seedName: string, resourceKey: string) {
 	await this.ensureInitialized();
-	return this.first(`SELECT * FROM seed_team_membership_claims WHERE seed_name = ? AND resource_key = ? LIMIT 1`, [seedName, resourceKey]);
+	return this.first<Record<string, unknown> & { id: string; roles_json: string | null }>(`SELECT * FROM seed_team_membership_claims WHERE seed_name = ? AND resource_key = ? LIMIT 1`, [seedName, resourceKey]);
 }
 
 export async function reconcileSeedTeamMembershipClaimMethod(this: ControlPlaneStore, input: ClaimInput) {

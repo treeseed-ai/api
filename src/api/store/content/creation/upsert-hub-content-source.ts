@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,serializeHubContentSource } from "../../../persistence/store.ts";
-export async function upsertHubContentSourceMethod(this: ControlPlaneStore, hubId, input) {
+export async function upsertHubContentSourceMethod(this: ControlPlaneStore, hubId: string, input: Record<string, unknown>) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const project = await this.getProject(hubId);

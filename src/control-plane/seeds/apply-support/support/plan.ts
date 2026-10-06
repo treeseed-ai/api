@@ -2,8 +2,16 @@ import { resolve } from 'node:path';
 import { loadAndPlanCoreSeed } from '../../planning/load-core-seed-plan.ts';
 import { planPortableSeedBundle } from '../../planning/plan-portable-seed-bundle.ts';
 import { createLocalSeedStore,createSeedRunIfAvailable,manifestHashFor,manifestRefIsAllowed,mutationActions,reconcilePlanWithStore,seedRunInput } from '../index.js';
+import type { ControlPlaneStore } from '../../../../api/persistence/store.ts';
+import type { OperationInvocationContext } from '../../../../api/control-plane/catalog/operation-registry.ts';
 
-export async function planSeedWithStore(input) {
+type SeedPlanInput = Pick<Parameters<typeof planPortableSeedBundle>[0], 'seedName' | 'environments'> & {
+    mode?: 'plan' | 'apply'; store?: ControlPlaneStore; env?: NodeJS.ProcessEnv;
+    manifestRef?: string; audit?: boolean; actor?: Parameters<typeof seedRunInput>[0]['actor'] & { principal?: OperationInvocationContext['principal'] };
+} & ({ bundle: Parameters<typeof planPortableSeedBundle>[0]['bundle']; projectRoot?: string }
+    | { bundle?: undefined; projectRoot: string });
+
+export async function planSeedWithStore(input: SeedPlanInput) {
     if (input.bundle) {
         const planned = await planPortableSeedBundle({
             bundle: input.bundle,
@@ -63,6 +71,6 @@ export async function planSeedWithStore(input) {
     };
 }
 
-export async function planLocalSeedFromCli(input) {
+export async function planLocalSeedFromCli(input: SeedPlanInput) {
     return planSeedWithStore(input);
 }

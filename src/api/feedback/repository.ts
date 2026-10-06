@@ -79,7 +79,7 @@ export async function changeFeedbackStatus(store: any, input: { id: string; acto
 		resolved: ['in_progress'],
 	};
 	if (!allowed[current.status as FeedbackStatus]?.includes(input.status)) return { code: 'invalid_transition' } as const;
-	const noteRequired = input.status === 'resolved' || (current.status === 'resolved' && input.status !== 'resolved');
+	const noteRequired = input.status === 'resolved' || current.status === 'resolved';
 	if (noteRequired && !input.note?.trim()) return { code: 'note_required' } as const;
 	const now = new Date().toISOString();
 	const updated = await store.first('UPDATE feedback_submissions SET status = ?, resolved_at = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ? RETURNING version', [input.status, input.status === 'resolved' ? now : null, now, input.id, input.version]);

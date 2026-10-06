@@ -1,6 +1,130 @@
 import { createHash } from 'node:crypto';
 import { arrayValue,parseJson,safeIdPart } from '../../index.ts';
 
+// Existing native SQL column contracts; no additional persistence model.
+export interface GovernanceProposalRow extends Record<string, unknown> {
+    id: string;
+    team_id: string;
+    project_id: string | null;
+    scope: string;
+    status: string;
+    title: string;
+    summary: string;
+    body: string;
+    proposal_type: string;
+    proposal_types_json: string;
+    content_proposal_slug: string | null;
+    content_decision_slug: string | null;
+    active_version: number;
+    active_content_hash: string;
+    governance_provider_id: string;
+    governance_provider_version: string;
+    governance_policy_id: string | null;
+    decision_id: string | null;
+    voting_starts_at: string | null;
+    voting_ends_at: string | null;
+    closed_at: string | null;
+    closed_reason: string | null;
+    created_by_type: string;
+    created_by_id: string | null;
+    metadata_json: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface GovernanceElectorateSnapshotRow extends Record<string, unknown> {
+    id: string;
+    proposal_id: string;
+    proposal_version: number;
+    provider_id: string;
+    provider_version: string;
+    rule_snapshot_json: string;
+    chambers_json: string;
+    eligible_voters_json: string;
+    delegations_json: string;
+    eligible_weight_total: number;
+    active_weight_total: number;
+    created_at: string;
+}
+
+export interface GovernanceVoteRow extends Record<string, unknown> {
+    id: string;
+    proposal_id: string;
+    proposal_version: number;
+    user_id: string;
+    vote: string;
+    reason: string | null;
+    chamber_votes_json: string;
+    effective_weights_json: string;
+    delegated_from_json: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface GovernanceDelegationRow extends Record<string, unknown> {
+    id: string;
+    team_id: string;
+    scope: string;
+    from_user_id: string;
+    to_user_id: string;
+    chambers_json: string;
+    status: string;
+    reason: string | null;
+    created_at: string;
+    revoked_at: string | null;
+    expires_at: string | null;
+    metadata_json: string;
+}
+
+export interface GovernanceDecisionRow extends Record<string, unknown> {
+    id: string;
+    team_id: string;
+    project_id: string | null;
+    proposal_id: string;
+    proposal_version: number;
+    proposal_content_hash: string;
+    status: string;
+    title: string;
+    summary: string;
+    content_decision_slug: string | null;
+    governance_provider_id: string;
+    governance_rule_json: string;
+    electorate_snapshot_id: string | null;
+    vote_result_json: string;
+    voter_reasons_json: string;
+    proposal_snapshot_json: string;
+    decision_record_json: string;
+    created_by_type: string;
+    created_by_id: string | null;
+    created_at: string;
+    updated_at: string;
+    superseded_at: string | null;
+}
+
+export interface GovernanceEventRow extends Record<string, unknown> {
+    id: string;
+    event_type: string;
+    actor_type: string;
+    actor_id: string | null;
+    team_id: string;
+    project_id: string | null;
+    proposal_id: string | null;
+    decision_id: string | null;
+    proposal_version: number | null;
+    prior_state: string | null;
+    next_state: string | null;
+    message: string | null;
+    evidence_json: string;
+    created_at: string;
+}
+
+export interface GovernancePolicyRow extends Record<string, unknown> {
+    id: string; team_id: string; project_id?: string; scope?: string;
+    provider_id: string; provider_version: string; config_json: string; active: number;
+    created_by: string | null; created_at: string; updated_at: string; superseded_at: string | null;
+}
+
+
 export function governanceContentHash(input: any = {}) {
     const payload = {
         title: String(input.title ?? '').trim(),
@@ -22,11 +146,11 @@ export function governanceContentHash(input: any = {}) {
     return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
 
-export function governanceSlug(value, fallback = 'proposal') {
+export function governanceSlug(value: unknown, fallback = 'proposal') {
     return safeIdPart(value, fallback).replace(/_+/gu, '-');
 }
 
-export function serializeGovernancePolicy(row) {
+export function serializeGovernancePolicy(row: GovernancePolicyRow | null | undefined) {
     if (!row)
         return null;
     return {
@@ -45,7 +169,7 @@ export function serializeGovernancePolicy(row) {
     };
 }
 
-export function serializeGovernanceProposal(row) {
+export function serializeGovernanceProposal(row: GovernanceProposalRow | null | undefined) {
     if (!row)
         return null;
     return {
@@ -58,7 +182,7 @@ export function serializeGovernanceProposal(row) {
         summary: row.summary,
         body: row.body,
         proposalType: row.proposal_type,
-        proposalTypes: parseJson(row.proposal_types_json, [row.proposal_type]).filter((value) => typeof value === 'string' && value),
+        proposalTypes: parseJson(row.proposal_types_json, [row.proposal_type]).filter((value: unknown) => typeof value === 'string' && value),
         contentProposalSlug: row.content_proposal_slug,
         contentDecisionSlug: row.content_decision_slug,
         activeVersion: Number(row.active_version ?? 1),
@@ -79,7 +203,7 @@ export function serializeGovernanceProposal(row) {
     };
 }
 
-export function serializeGovernanceElectorateSnapshot(row) {
+export function serializeGovernanceElectorateSnapshot(row: GovernanceElectorateSnapshotRow | null | undefined) {
     if (!row)
         return null;
     return {
@@ -98,7 +222,7 @@ export function serializeGovernanceElectorateSnapshot(row) {
     };
 }
 
-export function serializeGovernanceVote(row) {
+export function serializeGovernanceVote(row: GovernanceVoteRow | null | undefined) {
     if (!row)
         return null;
     return {
@@ -116,7 +240,7 @@ export function serializeGovernanceVote(row) {
     };
 }
 
-export function serializeGovernanceDelegation(row) {
+export function serializeGovernanceDelegation(row: GovernanceDelegationRow | null | undefined) {
     if (!row)
         return null;
     return {
@@ -135,7 +259,7 @@ export function serializeGovernanceDelegation(row) {
     };
 }
 
-export function serializeGovernanceDecision(row) {
+export function serializeGovernanceDecision(row: GovernanceDecisionRow | null | undefined) {
     if (!row)
         return null;
     return {
@@ -164,7 +288,7 @@ export function serializeGovernanceDecision(row) {
     };
 }
 
-export function serializeGovernanceEvent(row) {
+export function serializeGovernanceEvent(row: GovernanceEventRow | null | undefined) {
     if (!row)
         return null;
     return {

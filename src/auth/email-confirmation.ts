@@ -1,4 +1,4 @@
-import type { APIContext } from 'astro';
+import type { AuthContext } from './config.ts';
 import React from 'react';
 import { sendAuthEmail } from './email.ts';
 import { render } from './react-email-render.ts';
@@ -149,7 +149,7 @@ function firstName(value: string) {
 }
 
 export async function sendEmailConfirmation(
-	context: Pick<APIContext, 'locals' | 'url'> | undefined,
+	context: AuthContext | undefined,
 	input: EmailConfirmationInput,
 ) {
 	const email = input.email.trim();

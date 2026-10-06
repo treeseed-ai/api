@@ -1,10 +1,12 @@
 import { actorId,actorType,stableJson } from '../index.js';
+import type { ControlPlaneStore } from '../../../../api/persistence/store.ts';
+import type { SeedPlanSummary } from '../../contracts/types.ts';
 
-export function planApprovalMetadata(plan, manifestHash) {
+export function planApprovalMetadata(plan: { seed: unknown; version: unknown; environments: readonly unknown[]; summary: SeedPlanSummary }, manifestHash: unknown) {
 	return { seed: { name: plan.seed, version: plan.version, environments: plan.environments, manifestHash, planSummary: plan.summary } };
 }
 
-export function approvalMatchesPlan(approval, plan, manifestHash) {
+export function approvalMatchesPlan(approval: { state?: unknown; metadata?: { seed?: { name?: unknown; version?: unknown; manifestHash?: unknown; environments?: unknown; planSummary?: unknown } } } | null | undefined, plan: Parameters<typeof planApprovalMetadata>[0], manifestHash: unknown) {
 	const seed = approval?.metadata?.seed;
 	return Boolean(approval
 		&& approval.state === 'approved'
@@ -15,9 +17,12 @@ export function approvalMatchesPlan(approval, plan, manifestHash) {
 		&& stableJson(seed?.planSummary ?? {}) === stableJson(plan.summary));
 }
 
-export function findApprovalAnchor(plan) {
+export function findApprovalAnchor(plan: { actions: readonly {
+    kind: unknown; key: unknown; payload: Record<string, unknown> & { teamKey?: unknown; slug?: unknown };
+    existing?: { id?: string; slug?: unknown } | null;
+}[] }) {
 	const project = plan.actions.find((action) => action.kind === 'project' && action.existing?.id);
-	if (!project) return null;
+	if (!project?.existing?.id) return null;
 	const teamAction = plan.actions.find((action) => action.key === project.payload.teamKey);
 	if (!teamAction?.existing?.id) return null;
 	return {
@@ -28,7 +33,11 @@ export function findApprovalAnchor(plan) {
 	};
 }
 
-export async function createProductionApproval({ store, plan, manifestHash, actor }) {
+export async function createProductionApproval({ store, plan, manifestHash, actor }: {
+    store: Pick<ControlPlaneStore, 'createApprovalRequest' | 'upsertTeamInboxItem'>;
+    plan: Parameters<typeof findApprovalAnchor>[0] & Parameters<typeof planApprovalMetadata>[0];
+    manifestHash: unknown; actor?: Parameters<typeof actorId>[0] & Parameters<typeof actorType>[0];
+}) {
 	const anchor = findApprovalAnchor(plan);
 	if (!anchor) return { ok: false, message: 'Production seed apply requires an existing project approval anchor.' };
 	const metadata = planApprovalMetadata(plan, manifestHash);
@@ -46,6 +55,7 @@ export async function createProductionApproval({ store, plan, manifestHash, acto
 		policySnapshot: { policy: 'seed.production.apply.requires_approval', environments: plan.environments },
 		metadata,
 	});
+	if (!request) return { ok: false, message: 'Production seed approval request could not be read back.' };
 	await store.upsertTeamInboxItem(anchor.teamId, {
 		id: `seed-approval:${request.id}`,
 		projectId: anchor.projectId,
@@ -60,6 +70,6 @@ export async function createProductionApproval({ store, plan, manifestHash, acto
 	return { ok: true, approvalRequest: request };
 }
 
-export function redactSeedApplyResult(result) {
+export function redactSeedApplyResult<T>(result: T): T {
 	return result;
 }

@@ -8,7 +8,7 @@ export const WORK_CONTENT_LABELS = {
 	decisions: { singular: 'decision', plural: 'decisions', title: 'Decision' },
 };
 
-export const RELATION_FIELD_BY_COLLECTION = {
+export const RELATION_FIELD_BY_COLLECTION: Readonly<Record<string, string | null>> = {
 	objectives: 'relatedObjectives',
 	questions: 'relatedQuestions',
 	notes: 'relatedNotes',
@@ -16,7 +16,9 @@ export const RELATION_FIELD_BY_COLLECTION = {
 	decisions: null,
 };
 
-const CONTENT_RELATION_POLICIES = {
+const CONTENT_RELATION_POLICIES: Readonly<Record<string, Readonly<Record<string, {
+	sourceField: string; targetField?: string; sourceSingle?: boolean; targetSingle?: boolean;
+}>>>> = {
 	objectives: {
 		questions: { sourceField: 'relatedQuestions', targetField: 'relatedObjectives' },
 	},
@@ -42,18 +44,18 @@ const CONTENT_RELATION_POLICIES = {
 	},
 };
 
-export function allowedRelatedCollections(collection) {
+export function allowedRelatedCollections(collection: string) {
 	return Object.keys(CONTENT_RELATION_POLICIES[collection] ?? {});
 }
 
-export function contentRelationPolicy(parentCollection, targetCollection) {
+export function contentRelationPolicy(parentCollection: string, targetCollection: string) {
 	return CONTENT_RELATION_POLICIES[parentCollection]?.[targetCollection] ?? null;
 }
 
-export function canCreateRelatedContent(parentCollection, targetCollection, canManageProject = true) {
+export function canCreateRelatedContent(parentCollection: string, targetCollection: string, canManageProject = true) {
 	return Boolean(canManageProject && contentRelationPolicy(parentCollection, targetCollection));
 }
 
-export function relationFieldForCollection(collection) {
+export function relationFieldForCollection(collection: string) {
 	return RELATION_FIELD_BY_COLLECTION[collection] ?? null;
 }

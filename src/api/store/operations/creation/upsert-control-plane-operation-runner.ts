@@ -1,5 +1,9 @@
 import { isoNow,ControlPlaneStore,serializeControlPlaneOperationRunner } from "../../../persistence/store.ts";
-export async function upsertControlPlaneOperationRunnerMethod(this: ControlPlaneStore, input) {
+export async function upsertControlPlaneOperationRunnerMethod(this: ControlPlaneStore, input: {
+    runnerId?: string; id?: string; runnerKey?: string; name?: string; environment?: string;
+    status?: string; version?: string | null; capabilities?: unknown; activeJobCount?: unknown;
+    maxConcurrentJobs?: unknown; heartbeatAt?: string | null; metadata?: unknown;
+}) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const id = input.runnerId ?? input.id;
@@ -34,5 +38,6 @@ export async function upsertControlPlaneOperationRunnerMethod(this: ControlPlane
         timestamp,
         timestamp,
     ]);
-    return serializeControlPlaneOperationRunner(await this.first(`SELECT * FROM control_plane_operation_runners WHERE id = ?`, [id]));
+    return serializeControlPlaneOperationRunner(await this.first<ControlPlaneOperationRunnerRow>(`SELECT * FROM control_plane_operation_runners WHERE id = ?`, [id]));
 }
+import type { ControlPlaneOperationRunnerRow } from "../../support/operations/operations.ts";

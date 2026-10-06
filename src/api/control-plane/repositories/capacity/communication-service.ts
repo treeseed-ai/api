@@ -178,7 +178,7 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 	async function diagnosticsFor(assignment: Row, invocation: Row, full: boolean) {
 		await store.run(`UPDATE communication_execution_trace_events SET protected_payload_json=NULL,protected_payload_envelope_json=NULL
 			WHERE assignment_id=? AND protected_payload_expires_at IS NOT NULL AND protected_payload_expires_at<=?`, [assignment.id, new Date().toISOString()]);
-		const traces = text(assignment.id) ? await store.all('SELECT * FROM communication_execution_trace_events WHERE assignment_id=? ORDER BY sequence', [assignment.id]) : [];
+		const traces: Row[] = text(assignment.id) ? await store.all('SELECT * FROM communication_execution_trace_events WHERE assignment_id=? ORDER BY sequence', [assignment.id]) : [];
 		const metadata = record(invocation.metadata_json); const capacity = record(assignment.capacity_envelope_json);
 		const traceEvents = traces.map((trace: Row) => ({ sequence: Number(trace.sequence), type: text(trace.event_type), occurredAt: timestamp(trace.occurred_at), summary: text(trace.summary), payload: record(trace.payload_json),
 			...(full && trace.protected_payload_envelope_json ? { protectedPayload: diagnosticEnvelopes?.decrypt(record(trace.protected_payload_envelope_json)) ?? { unavailable: 'diagnostics_encryption_key_unavailable' } }
@@ -196,7 +196,7 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 	}
 
 	async function sendReceipt(teamId: string, sendId: string, replayed = false, diagnostics: 'metadata' | 'full' = 'metadata') {
-		const invocations = await store.all(`SELECT * FROM agent_invocation_requests WHERE team_id=? AND execution_kind='conversation'
+		const invocations: Row[] = await store.all(`SELECT * FROM agent_invocation_requests WHERE team_id=? AND execution_kind='conversation'
 			AND metadata_json::jsonb->'communication'->>'sendId'=? ORDER BY requested_at,id`, [teamId, sendId]);
 		if (!invocations.length) throw new CapacityOperationError(404, 'communication_send_not_found', 'Communication send not found.');
 		const assignments = await store.all(`SELECT assignment.* FROM capacity_provider_assignments assignment

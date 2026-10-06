@@ -17,7 +17,7 @@ export function isGitHubConnectorKind(value: string): value is GitHubConnectorKi
 	return value === 'repository' || value === 'workflow';
 }
 
-export function githubConnectorRequiredPermissions(kind: GitHubConnectorKind) {
+export function githubConnectorRequiredPermissions(kind: GitHubConnectorKind): Record<string, 'read' | 'write'> {
 	return kind === 'repository'
 		? { contents: 'write' as const, checks: 'read' as const, administration: 'write' as const }
 		: { contents: 'read' as const, actions: 'write' as const };

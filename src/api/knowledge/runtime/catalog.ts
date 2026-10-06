@@ -212,7 +212,7 @@ export const knowledgePageSummary = (page: KnowledgePageDefinition): KnowledgePa
 	visibility: page.visibility, status: page.status, audiences: page.audiences, updatedAt: page.updatedAt,
 });
 
-export function resolveKnowledgePage(pages: KnowledgePageDefinition[], request: KnowledgeContextRequest) {
+export function resolveKnowledgePage<T extends KnowledgePageDefinition>(pages: readonly T[], request: KnowledgeContextRequest) {
 	return pages.find((page) => page.id === request.pageId)
 		?? pages.find((page) => Boolean(request.capabilityId && page.context.capabilityIds.includes(request.capabilityId)))
 		?? pages.find((page) => Boolean(request.routePattern && page.context.routePatterns.includes(request.routePattern)))

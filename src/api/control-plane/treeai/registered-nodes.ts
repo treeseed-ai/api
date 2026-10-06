@@ -4,7 +4,7 @@ import type { OperationInvocationContext } from '../catalog/operation-registry.t
 import type { TreeDxDelegationAuthority } from '../treedx/delegation-authority.ts';
 import { CapacityOperationError } from '../repositories/capacity/capacity-operation-error.ts';
 
-const fail = (status: 403 | 404 | 409 | 412 | 503, code: string, message: string): never => { throw new CapacityOperationError(status, code, message); };
+function fail(status: 403 | 404 | 409 | 412 | 503, code: string, message: string): never { throw new CapacityOperationError(status, code, message); }
 type Runtime = { nodeId: string; teamId: string; projectId: string; endpoints: Record<string, string> };
 export function localAiRuntime(env: NodeJS.ProcessEnv): Runtime | null {
 	if (!env.TREESEED_AI_RUNTIME) return null;
@@ -32,7 +32,7 @@ export function createRegisteredAiNodes(store: any, authority: TreeDxDelegationA
 	const configured = (teamId: string, nodeId: string, projectId: string) => {
 		if (!runtime || runtime.nodeId !== nodeId || runtime.teamId !== teamId || runtime.projectId !== projectId)
 			fail(409, 'ai_runtime_binding_unavailable', 'This runtime is not assigned to the requested team and project by the host manager.');
-		return runtime!;
+		return runtime;
 	};
 	const health = async (purpose: string) => {
 		const services = purpose === 'both' ? ['inference', 'training'] : [purpose];
@@ -59,17 +59,17 @@ export function createRegisteredAiNodes(store: any, authority: TreeDxDelegationA
 			if (!saved) fail(412, 'ai_version_conflict', 'The AI registration changed while saving.');
 			return { id, teamId, configuration, version: 1, status: 'registered', healthy: true, noop: false };
 		},
-		async observe(row: any) { const config = JSON.parse(row.configuration_json); return { healthy: runtime?.nodeId === row.id && runtime.teamId === row.team_id && runtime.projectId === config.projectId && await health(config.purpose) }; },
+		async observe(row: { id: string; team_id: string; configuration_json: string }) { const config = JSON.parse(row.configuration_json); return { healthy: runtime?.nodeId === row.id && runtime.teamId === row.team_id && runtime.projectId === config.projectId && await health(config.purpose) }; },
 		async resolve(nodeId: string, operationId: TreeAiOperationId, context: OperationInvocationContext) {
 			if (!runtime || nodeId !== runtime.nodeId) return null;
 			const operation = TREEAI_UPSTREAM_OPERATIONS.find(item => item.operationId === operationId);
 			if (!operation) fail(404, 'ai_operation_not_found', 'AI operation not found.');
-			await authorize(context.principal, runtime.teamId, operation!.kind !== 'read'); await store.ensureInitialized();
+			await authorize(context.principal, runtime.teamId, operation.kind !== 'read'); await store.ensureInitialized();
 			const row = await store.first('SELECT * FROM team_ai_instances WHERE team_id=? AND id=?', [runtime.teamId, nodeId]);
 			if (!row) return null;
 			const config = JSON.parse(row.configuration_json); configured(row.team_id, nodeId, config.projectId);
-			if (config.origin !== 'managed-local' || !['both', operation!.service].includes(config.purpose) || !runtime.endpoints[operation!.service]) fail(403, 'ai_capability_denied', 'This AI service is not registered for that capability.');
-			return { endpoints: runtime.endpoints, token: authority.mintAi({ actorId: context.principal!.id, teamId: runtime.teamId, nodeId, service: operation!.service, scopes: operation!.scopes }) };
+			if (config.origin !== 'managed-local' || !['both', operation.service].includes(config.purpose) || !runtime.endpoints[operation.service]) fail(403, 'ai_capability_denied', 'This AI service is not registered for that capability.');
+			return { endpoints: runtime.endpoints, token: authority.mintAi({ actorId: context.principal!.id, teamId: runtime.teamId, nodeId, service: operation.service, scopes: operation.scopes }) };
 		},
 	};
 }

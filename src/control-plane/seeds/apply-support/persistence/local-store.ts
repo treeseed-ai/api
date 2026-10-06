@@ -2,7 +2,7 @@ import { resolveApiDatabaseUrl } from '../../../../api/configuration/runtime-con
 import { ControlPlaneStore } from '../../../../api/persistence/store.js';
 import { createControlPlanePostgresDatabase } from '../../../../api/support/control-plane-postgres.js';
 
-export function resolveLocalSeedEnv(_projectRoot, env = process.env) {
+export function resolveLocalSeedEnv(_projectRoot: string | undefined, env = process.env) {
     const localEnv: Record<string, string | undefined> = {
         ...env,
         TREESEED_ENVIRONMENT: env.TREESEED_ENVIRONMENT ?? 'local',
@@ -16,7 +16,7 @@ export function resolveLocalSeedEnv(_projectRoot, env = process.env) {
     return localEnv;
 }
 
-export async function createLocalSeedStore(projectRoot, env = process.env) {
+export async function createLocalSeedStore(projectRoot: string | undefined, env = process.env) {
     const localEnv = resolveLocalSeedEnv(projectRoot, env);
     const apiDatabaseUrl = resolveApiDatabaseUrl(localEnv);
     if (!apiDatabaseUrl) {

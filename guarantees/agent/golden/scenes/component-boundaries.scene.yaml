@@ -2165,3 +2165,111 @@ workflow:
   - id: execution-runner-close-failure-unit
     action: { verifier: api.golden.execution-runner-close-failure-unit }
     expect: { status: passed }
+  - id: execution-publication-custody-unit
+    action: { verifier: api.golden.execution-publication-custody-unit }
+    expect: { status: passed }
+  - id: execution-publication-custody-native
+    action: { verifier: api.golden.execution-publication-custody-native }
+    expect: { status: passed }
+  - id: execution-tool-failure-status-unit
+    action: { verifier: api.golden.execution-tool-failure-status-unit }
+    expect: { status: passed }
+  - id: execution-tool-failure-status-native
+    action: { verifier: api.golden.execution-tool-failure-status-native }
+    expect: { status: passed }
+  - id: execution-governance-failure-status-unit
+    action: { verifier: api.golden.execution-governance-failure-status-unit }
+    expect: { status: passed }
+  - id: execution-electorate-scope-unit
+    action: { verifier: api.golden.execution-electorate-scope-unit }
+    expect: { status: passed }
+  - id: execution-electorate-scope-native
+    action: { verifier: api.golden.execution-electorate-scope-native }
+    expect: { status: passed }
+  - id: execution-electorate-readback-unit
+    action: { verifier: api.golden.execution-electorate-readback-unit }
+    expect: { status: passed }
+  - id: execution-electorate-readback-native
+    action: { verifier: api.golden.execution-electorate-readback-native }
+    expect: { status: passed }
+  - id: execution-schema-consumer-unit
+    action: { verifier: api.golden.execution-schema-consumer-unit }
+    expect: { status: passed }
+  - id: execution-schema-consumer-native
+    action: { verifier: api.golden.execution-schema-consumer-native }
+    expect: { status: passed }
+  - id: execution-http-method-unit
+    action: { verifier: api.golden.execution-http-method-unit }
+    expect: { status: passed }
+  - id: execution-http-transport-native
+    action: { verifier: api.golden.execution-http-transport-native }
+    expect: { status: passed }
+  - id: execution-recipe-command-unit
+    action: { verifier: api.golden.execution-recipe-command-unit }
+    expect: { status: passed }
+  - id: execution-recipe-command-native
+    action: { verifier: api.golden.execution-recipe-command-native }
+    expect: { status: passed }
+  - id: execution-error-serialization-unit
+    action: { verifier: api.golden.execution-error-serialization-unit }
+    expect: { status: passed }
+  - id: execution-error-serialization-native
+    action: { verifier: api.golden.execution-error-serialization-native }
+    expect: { status: passed }
+  - id: execution-seed-approval-unit
+    action: { verifier: api.golden.execution-seed-approval-unit }
+    expect: { status: passed }
+  - id: execution-seed-approval-native
+    action: { verifier: api.golden.execution-seed-approval-native }
+    expect: { status: passed }
+  - id: execution-workflow-readback-unit
+    action: { verifier: api.golden.execution-workflow-readback-unit }
+    expect: { status: passed }
+  - id: execution-workflow-readback-native
+    action: { verifier: api.golden.execution-workflow-readback-native }
+    expect: { status: passed }
+  - id: execution-seed-action-readback-unit
+    action: { verifier: api.golden.execution-seed-action-readback-unit }
+    expect: { status: passed }
+  - id: execution-seed-action-readback-native
+    action: { verifier: api.golden.execution-seed-action-readback-native }
+    expect: { status: passed }
+  - id: execution-identity-failure-status-unit
+    action: { verifier: api.golden.execution-identity-failure-status-unit }
+    expect: { status: passed }
+  - id: execution-identity-failure-status-native
+    action: { verifier: api.golden.execution-identity-failure-status-native }
+    expect: { status: passed }
+  - id: execution-identity-email-readback-unit
+    action: { verifier: api.golden.execution-identity-email-readback-unit }
+    expect: { status: passed }
+  - id: execution-identity-email-readback-native
+    action: { verifier: api.golden.execution-identity-email-readback-native }
+    expect: { status: passed }
+  - id: execution-managed-library-readback-unit
+    action: { verifier: api.golden.execution-managed-library-readback-unit }
+    expect: { status: passed }
+  - id: execution-managed-library-readback-native
+    action: { verifier: api.golden.execution-managed-library-readback-native }
+    expect: { status: passed }
+  - id: execution-runtime-environment-unit
+    action: { verifier: api.golden.execution-runtime-environment-unit }
+    expect: { status: passed }
+  - id: execution-runtime-environment-native
+    action: { verifier: api.golden.execution-runtime-environment-native }
+    expect: { status: passed }
+  - id: execution-managed-repository-policy-unit
+    action: { verifier: api.golden.execution-managed-repository-policy-unit }
+    expect: { status: passed }
+  - id: execution-managed-repository-policy-native
+    action: { verifier: api.golden.execution-managed-repository-policy-native }
+    expect: { status: passed }
+  - id: execution-template-binary-unit
+    action: { verifier: api.golden.execution-template-binary-unit }
+    expect: { status: passed }
+  - id: execution-template-bounds-unit
+    action: { verifier: api.golden.execution-template-bounds-unit }
+    expect: { status: passed }
+  - id: execution-template-parser-native
+    action: { verifier: api.golden.execution-template-parser-native }
+    expect: { status: passed }

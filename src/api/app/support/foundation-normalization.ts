@@ -1,4 +1,4 @@
-export function parseBooleanEnvValue(value) {
+export function parseBooleanEnvValue(value: unknown) {
     const normalized = String(value ?? '').trim().toLowerCase();
     if (!normalized)
         return null;
@@ -8,10 +8,10 @@ export function parseBooleanEnvValue(value) {
         return false;
     return null;
 }
-export function normalizeUsername(value) {
+export function normalizeUsername(value: unknown) {
     return String(value ?? '').trim().toLowerCase();
 }
-export function parseJsonObject(value, fallback: any = {}) {
+export function parseJsonObject(value: unknown, fallback: any = {}) {
     if (!value)
         return fallback;
     try {
@@ -22,9 +22,9 @@ export function parseJsonObject(value, fallback: any = {}) {
         return fallback;
     }
 }
-export function normalizeBaseUrl(baseUrl) {
+export function normalizeBaseUrl(baseUrl: unknown) {
     return String(baseUrl ?? '').trim().replace(/\/+$/u, '');
 }
-export function parseBase64urlJson(value) {
+export function parseBase64urlJson(value: unknown) {
     return JSON.parse(Buffer.from(String(value ?? ''), 'base64url').toString('utf8'));
 }

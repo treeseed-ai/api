@@ -2,13 +2,17 @@ import { getSiteAuthConfig } from '../../../../auth/config.ts';
 import { backfillUserEmailAddresses,normalizeBaseUrl,parseBooleanEnvValue,redactedRequestTarget } from '../index.ts';
 import { reconcileManagedTeamLibraries, reconcileManagedTeamLibrary } from '../../../teams/managed-team-library-service.ts';
 import { recoverManagedLibraryStartup } from '../../../teams/managed-library-recovery.ts';
-export async function accountDeletionBlockers(store, principal) {
+import type { Context, Env, Hono } from 'hono';
+import type { AuthContext } from '../../../../auth/config.ts';
+import type { ApiAppRuntime, ApiExtension } from '../../../types.ts';
+import type { ControlPlaneStore } from '../../../persistence/store.ts';
+export async function accountDeletionBlockers(store: Pick<ControlPlaneStore, 'listTeamsForPrincipal'>, principal: NonNullable<Parameters<ControlPlaneStore['listTeamsForPrincipal']>[0]>) {
     const teams = await store.listTeamsForPrincipal(principal);
-    const blockers = teams
+    const blockers: Array<{ code: string; message: string; teamId?: string; teamSlug?: string; teamName?: string }> = teams
         .filter((team) => {
         const ownsTeam = Array.isArray(team.roles)
             ? team.roles.some((role) => role === 'owner' || role === 'team_owner')
-            : team.role === 'owner' || team.role === 'team_owner';
+            : 'role' in team && (team.role === 'owner' || team.role === 'team_owner');
         return ownsTeam && team.metadata?.kind !== 'personal_research';
     })
         .map((team) => ({
@@ -22,10 +26,10 @@ export async function accountDeletionBlockers(store, principal) {
         blockers.push({ code: 'platform_admin', message: 'Remove platform admin role before deleting this account.' });
     return blockers;
 }
-export function base64Url(value) {
+export function base64Url(value: string | Uint8Array) {
     return Buffer.from(value).toString('base64url');
 }
-export function shouldLogApiRequests(config, options: any = {}) {
+export function shouldLogApiRequests(config: { environment?: unknown } | null | undefined, options: { logRequests?: unknown } = {}) {
     if (typeof options.logRequests === 'boolean')
         return options.logRequests;
     const explicit = parseBooleanEnvValue(process.env.TREESEED_API_REQUEST_LOGS);
@@ -37,7 +41,7 @@ export function shouldLogApiRequests(config, options: any = {}) {
     return environment === 'local';
 }
 export const SENSITIVE_QUERY_PARAM_PATTERN = /(?:token|secret|password|credential|assertion|signature|api[_-]?key|access[_-]?key|private[_-]?key|code)/iu;
-export function installApiRequestLogger(app) {
+export function installApiRequestLogger<E extends Env>(app: Hono<E>) {
     app.use('*', async (c, next) => {
         const startedAt = Date.now();
         const method = c.req.method;
@@ -52,7 +56,7 @@ export function installApiRequestLogger(app) {
         }
     });
 }
-export async function readJsonOrFormBody(c) {
+export async function readJsonOrFormBody(c: Context) {
     const contentType = c.req.header('content-type') ?? '';
     if (contentType.includes('application/json')) {
         const json = await c.req.json().catch(() => null);
@@ -66,11 +70,11 @@ export async function readJsonOrFormBody(c) {
     }
     return Object.fromEntries(Object.entries(form).map(([key, value]) => [key, typeof value === 'string' ? value : String(value ?? '')]));
 }
-export function trimmedHeaderValue(c, name) {
+export function trimmedHeaderValue(c: Context, name: string) {
     const value = c.req.header(name);
     return typeof value === 'string' ? value.trim() : '';
 }
-export function requestClientIp(c) {
+export function requestClientIp(c: Context) {
     const forwardedFor = trimmedHeaderValue(c, 'x-forwarded-for')
         .split(',')
         .map((part) => part.trim())
@@ -82,7 +86,7 @@ export function requestClientIp(c) {
         || forwardedFor
         || null);
 }
-export async function ensureControlPlaneCredentialSchema(store) {
+export async function ensureControlPlaneCredentialSchema(store: ControlPlaneStore) {
     await store.ensureInitialized();
     if (process.env.TREESEED_DEVELOPMENT_MODE === 'live') return;
     await backfillUserEmailAddresses(store);
@@ -90,41 +94,41 @@ export async function ensureControlPlaneCredentialSchema(store) {
 	const libraries = await reconcileManagedTeamLibraries(store,process.env);
 	recoverManagedLibraryStartup(libraries, teamId => reconcileManagedTeamLibrary(store,teamId,process.env));
 }
-export function sanitizedReturnTo(value) {
+export function sanitizedReturnTo(value: unknown) {
     const target = String(value ?? '/app/');
     return target.startsWith('/') && !target.startsWith('//') ? target : '/app/';
 }
-export function confirmationUrlFor(context, token, returnTo) {
+export function confirmationUrlFor(context: AuthContext, token: string, returnTo: unknown) {
     const authConfig = getSiteAuthConfig(context);
     const target = new URL('/auth/confirm-email', `${authConfig.siteBaseUrl.replace(/\/+$/u, '')}/`);
     target.searchParams.set('token', token);
     target.searchParams.set('returnTo', sanitizedReturnTo(returnTo));
     return target.toString();
 }
-export function teamInviteAcceptUrlFor(context, token) {
+export function teamInviteAcceptUrlFor(context: AuthContext, token: string) {
     const authConfig = getSiteAuthConfig(context);
     return new URL(`/team-invites/${encodeURIComponent(token)}/accept`, `${authConfig.siteBaseUrl.replace(/\/+$/u, '')}/`).toString();
 }
-export function optionalTrimmedString(value) {
+export function optionalTrimmedString(value: unknown) {
     return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
-export function enumValue(value, allowed, fallback = null) {
+export function enumValue(value: unknown, allowed: readonly string[], fallback: string | null = null) {
     const candidate = typeof value === 'string' ? value.trim() : '';
     return allowed.includes(candidate) ? candidate : fallback;
 }
-export function unknownKeys(body, allowed) {
+export function unknownKeys(body: unknown, allowed: readonly string[]) {
     const allow = new Set(allowed);
     return Object.keys(body && typeof body === 'object' && !Array.isArray(body) ? body : {})
         .filter((key) => !allow.has(key));
 }
-export function yamlScalar(value) {
+export function yamlScalar(value: unknown) {
     const text = String(value ?? '');
     if (/^[a-zA-Z0-9_:/.-]+$/u.test(text) && !['true', 'false', 'null'].includes(text.toLowerCase())) {
         return text;
     }
     return JSON.stringify(text);
 }
-export function yamlLines(value, indent = 0) {
+export function yamlLines(value: unknown, indent = 0): string[] {
     const pad = ' '.repeat(indent);
     if (Array.isArray(value)) {
         if (value.length === 0)
@@ -146,7 +150,7 @@ export function yamlLines(value, indent = 0) {
     }
     return [`${pad}${yamlScalar(value)}`];
 }
-export function isLoopbackUrl(value) {
+export function isLoopbackUrl(value: string | URL) {
     try {
         const url = new URL(value);
         return url.hostname === '127.0.0.1' || url.hostname === 'localhost';
@@ -155,14 +159,15 @@ export function isLoopbackUrl(value) {
         return false;
     }
 }
-export function findById(items, id) {
+export function findById<T extends { id?: unknown; taskId?: unknown; workDayId?: unknown; work_day_id?: unknown }>(items: readonly T[] | null | undefined, id: unknown) {
     const key = String(id ?? '');
     return Array.isArray(items)
         ? items.find((item) => String(item?.id ?? item?.taskId ?? item?.workDayId ?? item?.work_day_id ?? '') === key)
         : null;
 }
-export function resolveAgentArtifactBucket(runtime) {
-    const env = runtime?.env && typeof runtime.env === 'object' ? runtime.env : {};
+export function resolveAgentArtifactBucket(runtime: unknown) {
+    const candidateEnv = runtime && (typeof runtime === 'object' || typeof runtime === 'function') && 'env' in runtime ? runtime.env : null;
+    const env = candidateEnv && typeof candidateEnv === 'object' ? candidateEnv as Record<string, unknown> : {};
     const binding = String(env.TREESEED_AGENT_ARTIFACT_BUCKET_BINDING
         ?? env.CONTENT_BUCKET_BINDING
         ?? 'TREESEED_CONTENT_BUCKET').trim();
@@ -171,9 +176,9 @@ export function resolveAgentArtifactBucket(runtime) {
         binding ? env[binding] : null,
         env.TREESEED_CONTENT_BUCKET,
     ];
-    return candidates.find((candidate) => candidate && typeof candidate === 'object' && typeof candidate.put === 'function') ?? null;
+    return candidates.find((candidate) => candidate && typeof candidate === 'object' && 'put' in candidate && typeof candidate.put === 'function') ?? null;
 }
-export function scheduleBackgroundBootstrap(c, task) {
+export function scheduleBackgroundBootstrap(c: Context, task: () => unknown | Promise<unknown>) {
     const promise = Promise.resolve()
         .then(task)
         .catch((error) => {
@@ -191,19 +196,19 @@ export function scheduleBackgroundBootstrap(c, task) {
     }
     return promise;
 }
-export function base64urlJson(value) {
+export function base64urlJson(value: Record<string, unknown> | readonly unknown[]) {
     return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
 }
-export function canonicalArchitectureTopology(value) {
+export function canonicalArchitectureTopology(value: unknown) {
     if (value === 'combined_compatibility')
         return 'single_repository_site';
     if (value === 'split_software_content')
         return 'split_site_content';
-    if (['single_repository_site', 'split_site_content', 'parent_workspace'].includes(value))
+    if (value === 'single_repository_site' || value === 'split_site_content' || value === 'parent_workspace')
         return value;
     return 'split_site_content';
 }
-export function decodeRouteParam(value) {
+export function decodeRouteParam(value: unknown) {
     let decoded = String(value ?? '');
     for (let index = 0; index < 2; index += 1) {
         try {
@@ -218,7 +223,7 @@ export function decodeRouteParam(value) {
     }
     return decoded;
 }
-export function uiRuntimeLocals(config) {
+export function uiRuntimeLocals(config: { repoRoot?: unknown; environment?: unknown } | null | undefined) {
     return {
         runtime: {
             resolved: {
@@ -298,9 +303,9 @@ export const AGENT_TASK_SIGNATURES = {
         priorityClass: 'background',
     },
 };
-export function createApiExtension(options: any = {}) {
+export function createApiExtension(options: Partial<ApiExtension> & { extendApp?: ApiExtension['mount'] } = {}): ApiExtension {
     return {
         name: options.name ?? 'treeseed-api',
-        mount: options.mount ?? ((app, runtime) => options.extendApp?.(app, runtime)),
+        mount: options.mount ?? ((app, runtime: ApiAppRuntime) => options.extendApp?.(app, runtime)),
     };
 }

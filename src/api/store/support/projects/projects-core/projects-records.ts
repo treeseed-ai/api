@@ -26,49 +26,54 @@ export interface ProjectArchitecture extends Record<string, unknown> {
     requiresLocalContentForDeploy?: boolean;
 }
 
-export function projectArchitectureError(message, code = 'invalid_project_architecture') {
+export function projectArchitectureError(message: string, code = 'invalid_project_architecture') {
     const error: Error & Record<string, any> = new Error(message);
     error.code = code;
     return error;
 }
 
-export function normalizeProjectPath(value, fallback) {
+export function normalizeProjectPath(value: unknown, fallback: string) {
     const text = typeof value === 'string' ? value.trim() : '';
     return text || fallback;
 }
 
-export function normalizeProjectContentPublishTarget(value): ProjectContentPublishTarget | undefined {
+export function normalizeProjectContentPublishTarget(input: unknown): ProjectContentPublishTarget | undefined {
+    const value = input;
     if (value === undefined || value === null)
         return undefined;
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw projectArchitectureError('contentPublishTarget must be an object when provided.');
     }
-    const kind = normalizeProjectPath(value.kind, '');
+    const fields = value as Record<string, unknown>;
+    const kind = normalizeProjectPath(fields.kind, '');
     if (!CONTENT_PUBLISH_TARGETS.has(kind)) {
-        throw projectArchitectureError(`Unsupported content publish target: ${kind || String(value.kind)}.`);
+        throw projectArchitectureError(`Unsupported content publish target: ${kind || String(fields.kind)}.`);
     }
     const target: ProjectContentPublishTarget = { kind };
-    if (typeof value.bucket === 'string' && value.bucket.trim())
-        target.bucket = value.bucket.trim();
-    if (typeof value.prefix === 'string' && value.prefix.trim())
-        target.prefix = value.prefix.trim();
-    if (typeof value.manifestPath === 'string' && value.manifestPath.trim())
-        target.manifestPath = value.manifestPath.trim();
-    if (value.metadata && typeof value.metadata === 'object' && !Array.isArray(value.metadata))
-        target.metadata = value.metadata;
+    if (typeof fields.bucket === 'string' && fields.bucket.trim())
+        target.bucket = fields.bucket.trim();
+    if (typeof fields.prefix === 'string' && fields.prefix.trim())
+        target.prefix = fields.prefix.trim();
+    if (typeof fields.manifestPath === 'string' && fields.manifestPath.trim())
+        target.manifestPath = fields.manifestPath.trim();
+    if (fields.metadata && typeof fields.metadata === 'object' && !Array.isArray(fields.metadata))
+        target.metadata = fields.metadata as Record<string, unknown>;
     return target;
 }
 
-export function normalizeProjectArchitecture(input): ProjectArchitecture {
-    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+export function normalizeProjectArchitecture(value: unknown): ProjectArchitecture {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw projectArchitectureError('Project architecture must be an object.');
     }
+    const input = value as Record<string, unknown>;
+    const metadata = input.metadata && (typeof input.metadata === 'object' || typeof input.metadata === 'function')
+        ? input.metadata as Record<string, unknown> : null;
     if (input.repositoryTopology !== undefined
         || input.contentRoot !== undefined
-        || input.metadata?.repositoryTopology !== undefined
-        || input.metadata?.contentRoot !== undefined
-        || input.metadata?.sitePath !== undefined
-        || input.metadata?.contentPath !== undefined) {
+        || metadata?.repositoryTopology !== undefined
+        || metadata?.contentRoot !== undefined
+        || metadata?.sitePath !== undefined
+        || metadata?.contentPath !== undefined) {
         throw projectArchitectureError('Project topology must be declared as canonical architecture, not legacy metadata.', 'legacy_project_topology_rejected');
     }
     if (containsForbiddenPlaintextSecretMaterial(input).length > 0) {
@@ -125,7 +130,7 @@ export function normalizeProjectArchitecture(input): ProjectArchitecture {
     return architecture;
 }
 
-export function projectArchitectureContentSource(architecture) {
+export function projectArchitectureContentSource(architecture: ProjectArchitecture | null | undefined) {
     if (!architecture)
         return null;
     if (architecture.contentRuntimeSource === 'treedx_snapshot')
@@ -135,15 +140,15 @@ export function projectArchitectureContentSource(architecture) {
     return 'local_directory';
 }
 
-export function projectDeletionConfirmationMatches(value, projectSlug) {
+export function projectDeletionConfirmationMatches(value: unknown, projectSlug: unknown) {
     return String(value ?? '') === `${TEAM_DELETION_CONFIRMATION_PREFIX}${String(projectSlug ?? '').trim().toLowerCase()}`;
 }
 
-export function normalizeProjectSlug(value) {
+export function normalizeProjectSlug(value: unknown) {
     return String(value ?? '').trim().toLowerCase();
 }
 
-export function validateProjectSlug(value) {
+export function validateProjectSlug(value: unknown): { ok: false; code: string; message: string } | { ok: true; slug: string } {
     const slug = normalizeProjectSlug(value);
     if (!slug) {
         return { ok: false, code: 'missing', message: 'Project slug is required.' };
@@ -162,7 +167,20 @@ export function validateProjectSlug(value) {
     return { ok: true, slug };
 }
 
-export function serializeProject(row) {
+// Exact columns returned by the original projects table; SQL remains the
+// authority. This is a query type, not another project or runtime schema.
+export interface ProjectRow extends Record<string, unknown> {
+    id: string;
+    team_id: string;
+    slug: string;
+    name: string;
+    description: string | null;
+    metadata_json: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export function serializeProject(row: ProjectRow | null | undefined) {
     if (!row)
         return null;
     return {
@@ -177,7 +195,10 @@ export function serializeProject(row) {
     };
 }
 
-export function summarizeProjectHealth({ hosting, connection, deployments, jobs }) {
+export function summarizeProjectHealth({ hosting, connection, deployments, jobs }: {
+    hosting: unknown; connection: unknown; deployments: Array<{ status: string; environment: string }>;
+    jobs: Array<{ status: string; operation: string }>;
+}) {
     const failedDeployment = deployments.find((deployment) => deployment.status === 'failed');
     if (failedDeployment) {
         return {
@@ -216,7 +237,7 @@ export function summarizeProjectHealth({ hosting, connection, deployments, jobs 
     };
 }
 
-export function serializeProjectSummarySnapshot(row) {
+export function serializeProjectSummarySnapshot(row: Record<string, unknown> | null | undefined) {
     if (!row)
         return null;
     return {

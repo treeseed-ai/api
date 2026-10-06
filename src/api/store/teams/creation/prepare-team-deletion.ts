@@ -1,5 +1,5 @@
 import { ControlPlaneStore,teamDeletionConfirmationMatches } from "../../../persistence/store.ts";
-export async function prepareTeamDeletionMethod(this: ControlPlaneStore, teamId, confirmation) {
+export async function prepareTeamDeletionMethod(this: ControlPlaneStore, teamId: string, confirmation: unknown) {
     await this.ensureInitialized();
     const team = await this.getTeam(teamId);
     if (!team)

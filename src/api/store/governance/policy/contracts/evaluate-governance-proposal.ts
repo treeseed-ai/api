@@ -26,6 +26,11 @@ export async function evaluateGovernanceProposalMethod(this: ControlPlaneStore, 
         await assertGovernanceProposalReady.call(this, proposalId, 'voting');
     }
     const snapshot = await this.latestGovernanceElectorateSnapshot(proposal.id, proposal.activeVersion) ?? await this.snapshotGovernanceElectorate(proposal.id);
+    if (!snapshot) {
+        throw Object.assign(new Error('Proposal evaluation requires a readable persisted electorate snapshot.'), {
+            status: 409, code: 'governance_electorate_required',
+        });
+    }
     const provider = governanceVotingProvider(proposal.governanceProviderId);
     const effectiveVotes = await this.effectiveGovernanceVotes(proposal) as Array<{
         userId: string;

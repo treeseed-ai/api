@@ -1,5 +1,5 @@
 import { ControlPlaneStore } from "../../../persistence/store.ts";
-export async function membershipOwnerCountMethod(this: ControlPlaneStore, teamId) {
+export async function membershipOwnerCountMethod(this: ControlPlaneStore, teamId: string) {
     await this.ensureInitialized();
     const row = await this.first(`SELECT COUNT(*) AS count
 			 FROM team_memberships

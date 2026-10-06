@@ -1,9 +1,9 @@
 import { ControlPlaneStore,serializeGovernanceDelegation } from "../../../../persistence/store.ts";
 export async function activeGovernanceDelegationSnapshotsMethod(this: ControlPlaneStore, teamId: string, scope = 'team') {
-    const rows = await this.all(`SELECT * FROM governance_delegations
+    const rows = await this.all<GovernanceDelegationRow>(`SELECT * FROM governance_delegations
 			 WHERE team_id = ? AND status = 'active' AND (scope = ? OR scope = 'team')
 			 ORDER BY created_at ASC`, [teamId, scope]);
-    return rows.map(serializeGovernanceDelegation).map((delegation) => ({
+    return rows.map(row => serializeGovernanceDelegation(row)!).map((delegation) => ({
         id: delegation.id,
         fromUserId: delegation.fromUserId,
         toUserId: delegation.toUserId,
@@ -14,3 +14,4 @@ export async function activeGovernanceDelegationSnapshotsMethod(this: ControlPla
         createdAt: delegation.createdAt,
     }));
 }
+import type { GovernanceDelegationRow } from "../../../support/governance/policy/governance.ts";

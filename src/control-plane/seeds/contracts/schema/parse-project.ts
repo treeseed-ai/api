@@ -111,7 +111,7 @@ export function parseRecipeCommand(value: unknown, path: string, diagnostics: Se
 		diagnostics.push(errorDiagnostic('seed.invalid_object', 'Expected command to be an object.', path));
 		return undefined;
 	}
-	const argv = stringArrayField(value, 'argv', path, diagnostics);
+	const argv = stringArrayField(value, 'argv', path, diagnostics) ?? [];
 	if (argv.length === 0) {
 		diagnostics.push(errorDiagnostic('seed.recipe_command_missing_argv', 'Recipe command must include argv.', `${path}.argv`));
 	}

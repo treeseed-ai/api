@@ -39,7 +39,7 @@ async function projectFor(store: any, principal: Principal, projectId: string) {
 	if (!administrator(principal) && !await store.principalCanAccessTeam(principal, details.project.teamId)) {
 		throw new DiscussionServiceError(403, 'project_access_denied', 'Project access is required.');
 	}
-	return details.project;
+	return { project: details.project, principal };
 }
 
 async function cancelArchivedDiscussionCapacity(store: any, projectId: string, discussionId: string,
@@ -121,7 +121,7 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 			}
 			if (!projectId) throw new DiscussionServiceError(409, 'discussion_project_required',
 				'The team needs an active project with a TreeDX repository before starting a Discussion.');
-			const project = await projectFor(store, principal, projectId);
+			const { project } = await projectFor(store, principal, projectId);
 			if (project.teamId !== teamId) throw new DiscussionServiceError(403, 'discussion_project_team_mismatch',
 				'Discussion project does not belong to the selected team.');
 			const messageBody = text(body.body);
@@ -210,9 +210,9 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 			const status = body.status === 'open' || body.status === 'resolved' || body.status === 'closed' ? body.status : null;
 			if (!projectId || !status) throw new DiscussionServiceError(422, 'discussion_status_invalid',
 				'Discussion lifecycle requires a project and open, resolved, or closed status.');
-			const project = await projectFor(store, principal, projectId);
+			const { project, principal: authorizedPrincipal } = await projectFor(store, principal, projectId);
 			try {
-				const result = await changeDiscussionStatus({ store, projectId, teamId: project.teamId, discussionId, status, principal });
+				const result = await changeDiscussionStatus({ store, projectId, teamId: project.teamId, discussionId, status, principal: authorizedPrincipal });
 				if (status === 'closed') await cancelArchivedDiscussionCapacity(store, projectId, discussionId,
 					(teamId, assignmentId, key) => invocationStore.cancelCapacityAssignment(teamId, assignmentId,
 						{ idempotencyKey: key, reason: 'The source Discussion was archived.' }));

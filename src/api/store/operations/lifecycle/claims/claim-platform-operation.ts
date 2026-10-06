@@ -11,7 +11,7 @@ export async function claimPlatformOperationMethod(this: ControlPlaneStore, inpu
         ? ` AND (${capabilities.map(() => `(namespace || ':' || operation) = ?`).join(' OR ')})`
         : '';
     const rows = input.operationId
-        ? await this.all(`SELECT * FROM platform_operations
+        ? await this.all<PlatformOperationRow>(`SELECT * FROM platform_operations
 				 WHERE id = ? AND (
 				    status = 'queued'
 				    OR (status IN ('leased', 'running') AND lease_expires_at IS NOT NULL AND lease_expires_at < ?)
@@ -33,7 +33,7 @@ export async function claimPlatformOperationMethod(this: ControlPlaneStore, inpu
 				                     AND replication.source_ref LIKE 'refs/heads/%'
 				               ) THEN 3 ELSE 4 END,
 				          created_at ASC LIMIT ?`, [input.operationId, now, ...capabilities, limit])
-        : await this.all(`SELECT * FROM platform_operations
+        : await this.all<PlatformOperationRow>(`SELECT * FROM platform_operations
 				 WHERE (
 				    status = 'queued'
 				    OR (status IN ('leased', 'running') AND lease_expires_at IS NOT NULL AND lease_expires_at < ?)
@@ -73,3 +73,4 @@ export async function claimPlatformOperationMethod(this: ControlPlaneStore, inpu
 	});
     return this.findPlatformOperationById(row.id);
 }
+import type { PlatformOperationRow } from "../../../support/operations/operations.ts";

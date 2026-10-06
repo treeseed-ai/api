@@ -23,5 +23,6 @@ export async function recordGovernanceEventMethod(this: ControlPlaneStore, input
         JSON.stringify(input.evidence ?? {}),
         timestamp,
     ]);
-    return serializeGovernanceEvent(await this.first(`SELECT * FROM governance_events WHERE id = ? LIMIT 1`, [id]));
+    return serializeGovernanceEvent(await this.first<GovernanceEventRow>(`SELECT * FROM governance_events WHERE id = ? LIMIT 1`, [id]));
 }
+import type { GovernanceEventRow } from "../../../support/governance/policy/governance.ts";

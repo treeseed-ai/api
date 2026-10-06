@@ -59,7 +59,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		return { ...metadata, registrationKey: this.secrets.decrypt(String(row.encrypted_reveal_value), `${teamId}:${Number(row.generation)}`) };
 	}
 
-	async rotateRegistrationKey(teamId: string, actorId: string | null, idempotencyKey: string) {
+	async rotateRegistrationKey(teamId: string, actorId: string | null, idempotencyKey: string | undefined) {
 		if (!idempotencyKey) throw new CapacityGovernanceError('idempotency_key_required', 'Idempotency-Key is required.', 400);
 		await this.assertTeamExists(teamId);
 		const prior = await this.repository.registrationKeyByRotationIdempotency(teamId, idempotencyKey);
@@ -161,7 +161,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		return request;
 	}
 
-	async approve(teamId: string, requestId: string, actorId: string, idempotencyKey: string, teamAlias?: string | null) {
+	async approve(teamId: string, requestId: string, actorId: string, idempotencyKey: string | undefined, teamAlias?: string | null) {
 		if (!idempotencyKey) throw new CapacityGovernanceError('idempotency_key_required', 'Idempotency-Key is required.', 400);
 		await this.assertTeamExists(teamId);
 		const existing = await this.repository.expireRegistrationRequest(requestId, nowIso());
@@ -184,7 +184,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		return approved;
 	}
 
-	async reject(teamId: string, requestId: string, actorId: string, reason: string, idempotencyKey: string) {
+	async reject(teamId: string, requestId: string, actorId: string, reason: string, idempotencyKey: string | undefined) {
 		if (!idempotencyKey) throw new CapacityGovernanceError('idempotency_key_required', 'Idempotency-Key is required.', 400);
 		await this.assertTeamExists(teamId);
 		if (!reason.trim()) throw new CapacityGovernanceError('rejection_reason_required', 'Rejection reason is required.', 400);
@@ -418,7 +418,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		return committed;
 	}
 
-	async authorizeTeamCredentialRotation(teamId: string, membershipId: string, actorId: string, idempotencyKey: string) {
+	async authorizeTeamCredentialRotation(teamId: string, membershipId: string, actorId: string, idempotencyKey: string | undefined) {
 		if (!idempotencyKey) throw new CapacityGovernanceError('idempotency_key_required', 'Idempotency-Key is required.', 400);
 		const membership = await this.repository.membershipById(membershipId);
 		if (!membership || membership.teamId !== teamId) throw new CapacityGovernanceError('provider_membership_not_found', 'Provider membership does not exist.', 404);
@@ -446,7 +446,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		return authorization;
 	}
 
-	async updateMembership(teamId: string, membershipId: string, actorId: string, status: 'approved' | 'suspended' | 'revoked', idempotencyKey: string, actorType: 'team-principal' | 'provider-identity' = 'team-principal') {
+	async updateMembership(teamId: string, membershipId: string, actorId: string, status: 'approved' | 'suspended' | 'revoked', idempotencyKey: string | undefined, actorType: 'team-principal' | 'provider-identity' = 'team-principal') {
 		if (!idempotencyKey) throw new CapacityGovernanceError('idempotency_key_required', 'Idempotency-Key is required.', 400);
 		const current = await this.repository.membershipById(membershipId);
 		if (!current || current.teamId !== teamId) throw new CapacityGovernanceError('provider_membership_not_found', 'Provider membership does not exist.', 404);

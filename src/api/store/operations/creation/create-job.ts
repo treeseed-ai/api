@@ -1,9 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,serializeJob } from "../../../persistence/store.ts";
-export async function createJobMethod(this: ControlPlaneStore, input) {
+export async function createJobMethod(this: ControlPlaneStore, input: {
+    id?: string; projectId: string; namespace: string; operation: string; status?: unknown;
+    preferredMode?: string; selectedTarget: string; capability?: unknown; input?: unknown;
+    requestedByType: string; requestedById?: string | null; idempotencyKey?: string | null;
+}) {
     await this.ensureInitialized();
     if (input.idempotencyKey) {
-        const existing = await this.first(`SELECT * FROM remote_jobs WHERE project_id = ? AND idempotency_key = ? ORDER BY created_at DESC LIMIT 1`, [input.projectId, input.idempotencyKey]);
+        const existing = await this.first<JobRow>(`SELECT * FROM remote_jobs WHERE project_id = ? AND idempotency_key = ? ORDER BY created_at DESC LIMIT 1`, [input.projectId, input.idempotencyKey]);
         if (existing) {
             return serializeJob(existing);
         }
@@ -39,3 +43,4 @@ export async function createJobMethod(this: ControlPlaneStore, input) {
     });
     return this.findJobById(id);
 }
+import type { JobRow } from "../../support/operations/operations.ts";

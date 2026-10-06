@@ -1,6 +1,121 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-template-binary-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/projects/platform-project-creation-service.test.ts
+    testName: template binary stream denies a nonbinary dependency chunk with its own retained diagnostic
+  api.golden.execution-template-bounds-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/projects/platform-project-creation-service.test.ts
+    testName: template input bounds deny oversized compressed bytes or malformed gzip without changing supplied bytes
+  api.golden.execution-template-parser-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/projects/platform-project-creation-service.test.ts
+    testName: native tar and gzip template parsing retains exact binary bytes and bounds unsafe empty and oversized expanded entries
+  api.golden.execution-runtime-environment-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/feedback/feedback-operations.test.ts
+    testName: retains only canonical runtime environment values without deriving authority from caller context
+  api.golden.execution-runtime-environment-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/feedback/feedback-operations.test.ts
+    testName: native submission persistence reads back canonical environment omission and preserves exact replay without extra audit
+  api.golden.execution-managed-repository-policy-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/teams/managed-library-authority.test.ts
+    testName: managed execution context denies malformed repository visibility or lifecycle before resolving credentials
+  api.golden.execution-managed-repository-policy-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/teams/managed-team-library-readiness.test.ts
+    testName: native managed execution context denies malformed stored repository policy without credential delivery or persistent mutation
+  api.golden.execution-identity-failure-status-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/account-operations.test.ts
+    testName: identity prerequisites retain supported failure status and deny coercion before publishing success
+  api.golden.execution-identity-failure-status-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/account-operations.test.ts
+    testName: public identity HTTP boundary preserves failed observations and exact successful retry without coercing status
+  api.golden.execution-identity-email-readback-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/account-operations.test.ts
+    testName: identity email preparation denies missing read-back before or after confirmation without false successful receipts
+  api.golden.execution-identity-email-readback-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/account-operations.test.ts
+    testName: native identity email preparation retains missing-readback failures and confirmation rows before current-authority retry
+  api.golden.execution-managed-library-readback-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/teams/managed-team-library-readiness.test.ts
+    testName: managed execution context refuses missing project read-back before publishing team library metadata
+  api.golden.execution-managed-library-readback-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/teams/managed-team-library-readiness.test.ts
+    testName: native managed execution context retains moved project and entitlement rows without false team metadata before current-authority retry
+  api.golden.execution-seed-action-readback-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/seeds/content-only-project.test.ts
+    testName: execution seed actions deny missing team or project read-back without publishing derived identity maps
+  api.golden.execution-seed-action-readback-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/seeds/content-only-project.test.ts
+    testName: native execution seed updates retain moved PostgreSQL rows and require independently supplied current authority for a fresh success
+  api.golden.execution-workflow-readback-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/services/workflow-configuration-policy.test.ts
+    testName: execution workflow configuration refuses missing owning read-back before successful audit and keeps exact retry inputs
+  api.golden.execution-workflow-readback-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/services/workflow-configuration-policy.test.ts
+    testName: native execution workflow configuration retains interrupted PostgreSQL authority without false successful audit before independent exact retry
+  api.golden.execution-seed-approval-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/seeds/seed-operations.test.ts
+    testName: execution seed approval denies missing owning read-back before inbox publication and preserves exact successful inputs
+  api.golden.execution-seed-approval-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/seeds/seed-operations.test.ts
+    testName: native execution seed approval retains interrupted PostgreSQL rows without a false inbox and independently reads a fresh exact retry
+  api.golden.execution-error-serialization-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/catalog/database-capacity-error.test.ts
+    testName: shared execution error serialization preserves supported statuses and the original cause without coercing malformed status authority
+  api.golden.execution-error-serialization-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/catalog/database-capacity-error.test.ts
+    testName: real Hono execution error boundaries retain denial history and exact successful retry without accepting malformed upstream statuses
+  api.golden.execution-recipe-command-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/seeds/seed-operations.test.ts
+    testName: returns exact execution recipe command diagnostics for missing malformed and empty argv without changing supplied inputs
+  api.golden.execution-recipe-command-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/seeds/seed-operations.test.ts
+    testName: native seed file planning denies invalid execution command bytes without repairing inputs and admits only the explicit valid retry
   api.golden.execution-registration-key-readback-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -3716,3 +3831,68 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/release/runner-drain.test.ts
     testName: "preserves runner failure and listener drain with missing asynchronous or throwing store close without repairing supplied custody"
+  api.golden.execution-publication-custody-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/knowledge-publication-transport.test.ts
+    testName: "owning publication reader preserves complete governed inputs and rejects missing malformed project entry and object custody without repair"
+  api.golden.execution-publication-custody-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/knowledge-publication-transport.test.ts
+    testName: "native publication storage refuses malformed retained manifest bytes and admits only restored exact custody without changing published objects or revisions"
+  api.golden.execution-tool-failure-status-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/catalog/database-capacity-error.test.ts
+    testName: "preserves every supported capacity failure status including upstream bad gateway without coercing malformed authority"
+  api.golden.execution-tool-failure-status-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treeai/proxy-operations.test.ts
+    testName: "native agent tool upstream bad gateway retains exact public failure and permits only a fresh unchanged retry"
+  api.golden.execution-governance-failure-status-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/catalog/database-capacity-error.test.ts
+    testName: "workday catalog retains supported governance failures and denies unsupported statuses without replacing the original cause"
+  api.golden.execution-electorate-scope-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/admin-voting.test.ts
+    testName: "denies every malformed persisted proposal scope before electorate policy reads or writes without normalizing authority"
+  api.golden.execution-electorate-scope-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-denial-native.test.ts
+    testName: "native electorate snapshot rejects each retained invalid proposal scope before policy or electorate writes through concurrent denial and exact retry"
+  api.golden.execution-electorate-readback-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/admin-voting.test.ts
+    testName: "denies missing electorate readback before evaluating votes or changing the retained proposal"
+  api.golden.execution-electorate-readback-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-denial-native.test.ts
+    testName: "native governance evaluation retains interrupted electorate history and rejects absent readback before a fresh unchanged retry can close the proposal"
+  api.golden.execution-schema-consumer-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/mcp/authorization-equivalence.test.ts
+    testName: "keeps provider and workday Standard Schema projections exact while native validation denies caller derived authority"
+  api.golden.execution-schema-consumer-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/mcp/authorization-equivalence.test.ts
+    testName: "real REST and MCP workday protocol consumers retain exact parsed inputs and deny malformed intent before the controlled handler"
+  api.golden.execution-http-method-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/accounts/identity/server-cutover.test.ts
+    testName: "classifies execution transport methods without inventing a body for GET or HEAD"
+  api.golden.execution-http-transport-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/accounts/identity/server-cutover.test.ts
+    testName: "native API listener preserves exact execution request bytes and headers through bodyless methods and retained downstream failure"
