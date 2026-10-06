@@ -184,7 +184,7 @@ describe('first manual and recurring admission through the same public owning pa
 		const f = await workdayStartDatabase(); try {
 			const baseline = await f.snapshot(), original = structuredClone(f.intent);
 			const malformed = [[], [''], [' \t\n '], ['valid', ''], ['valid', ' '], ['valid', null], ['valid', 1],
-				['valid', {}], ['valid', []], null, 'valid', Array.from({ length: 65 }, (_, index) => `decision-${index}`), ['x'.repeat(129)]];
+				['valid', {}], ['valid', []], null, 'valid', Array.from({ length: 65 }, (_, index) => `decision-${index}`), ['x'.repeat(201)], ['é'], ['e\u0301'], ['\uE000'], ['\u{10000}'], ['decision?']];
 			const inputs: Array<{ body: Record<string, unknown>; code: string }> = malformed.map(decisionIds => ({
 				body: { ...f.intent, decisionIds }, code: 'workday_intent_invalid',
 			}));

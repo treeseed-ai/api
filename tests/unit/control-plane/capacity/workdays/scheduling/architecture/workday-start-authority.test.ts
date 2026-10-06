@@ -6,8 +6,8 @@ const intent = { schemaVersion: 'treeseed.workday-intent/v1', teamId: 'team', pr
 
 describe('first-start compiler authority before native admission', () => {
 	it('normalizes repeated public decision selectors in exact code point order without deriving authority or changing omitted planning controls', () => {
-		const expected = ['A', 'Z', 'a', 'e\u0301', 'é', '\uE000', '\u{10000}'];
-		const permutations = [expected, [...expected].reverse(), ['\u{10000}', 'é', 'A', '\uE000', 'e\u0301', 'a', 'Z']];
+		const expected = ['A', 'Z', 'a', 'a-1', 'a.1', 'a/1', 'a:1'];
+		const permutations = [expected, [...expected].reverse(), ['a:1', 'a.1', 'A', 'a/1', 'a-1', 'a', 'Z']];
 		for (const planningOnly of [false, true]) {
 			for (const permutation of permutations) {
 				const input = { ...intent, planningOnly, decisionIds: [...permutation.map(id => ` ${id} `), 'A', ' A '] };
@@ -19,14 +19,14 @@ describe('first-start compiler authority before native admission', () => {
 			const parsed = parsePublicWorkdayIntent('team', omitted);
 			expect(parsed).toEqual(omitted); expect(Object.hasOwn(parsed, 'decisionIds')).toBe(false); expect(omitted).toEqual(before);
 		}
-		for (const decisionIds of [Array.from({ length: 64 }, (_, index) => `decision-${String(index).padStart(2, '0')}`), ['x'.repeat(128)]]) {
+		for (const decisionIds of [Array.from({ length: 64 }, (_, index) => `decision-${String(index).padStart(2, '0')}`), ['x'.repeat(200)]]) {
 			const input = { ...intent, decisionIds }, before = structuredClone(input);
 			expect(parsePublicWorkdayIntent('team', input)).toEqual(input); expect(input).toEqual(before);
 		}
 	});
 	it('rejects every malformed mixed decision selector and named caller derived identity before normalization can discard it', () => {
 		const malformed = [[], [''], [' \t\n '], ['valid', ''], ['valid', ' '], ['valid', null], ['valid', 1],
-			['valid', {}], ['valid', []], null, 'valid', Array.from({ length: 65 }, (_, index) => `decision-${index}`), ['x'.repeat(129)]];
+			['valid', {}], ['valid', []], null, 'valid', Array.from({ length: 65 }, (_, index) => `decision-${index}`), ['x'.repeat(201)], ['é'], ['e\u0301'], ['\uE000'], ['\u{10000}'], ['decision?']];
 		for (const decisionIds of malformed) {
 			const input = { ...intent, decisionIds }, before = structuredClone(input);
 			expect(() => parsePublicWorkdayIntent('team', input)).toThrow(expect.objectContaining({ status: 400, code: 'workday_intent_invalid' }));

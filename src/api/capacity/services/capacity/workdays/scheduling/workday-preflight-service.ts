@@ -11,7 +11,7 @@ import {
 	type WorkdayStartReceipt,
 	type WorkdayStartRequest,
 } from '@treeseed/sdk/operator-contracts';
-import type { ExecutionNode, CapacityWorkdayRunRecord } from '@treeseed/sdk/agent-capacity';
+import { leaseSchema, type ExecutionNode, type CapacityWorkdayRunRecord } from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../database.ts';
 import { canonicalJson,sha256 } from '../../../../security.ts';
 import { decodeExecutionNode } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-storage.ts';
@@ -42,7 +42,7 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 	if(input.teamId!==undefined&&text(input.teamId)!==teamId) diagnosticsError('workday_intent_team_mismatch','Workday intent team must match the route team.',[{code:'team_mismatch',path:'teamId'}]);
 	if(input.planningOnly!==undefined&&typeof input.planningOnly!=='boolean') diagnosticsError('workday_intent_invalid','Workday intent is invalid.',[{code:'planning_only_invalid',path:'planningOnly'}]);
 	if(input.decisionIds!==undefined&&(!Array.isArray(input.decisionIds)||!input.decisionIds.length
-		||input.decisionIds.some(value=>typeof value!=='string'||!value.trim()||value.length>128))) {
+		||input.decisionIds.some(value=>typeof value!=='string'||!leaseSchema.shape.id.safeParse(value.trim()).success))) {
 		diagnosticsError('workday_intent_invalid','Workday intent is invalid.',[{code:'decision_selection_invalid',path:'decisionIds'}]);
 	}
 	const projects=input.projects==='all'?'all':Array.isArray(input.projects)?input.projects.map(text).filter(Boolean):[];
