@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: verification-prerequisite-custody
+    action: { verifier: api.golden.verification-prerequisite-custody }
+    expect: { status: passed }
   - id: review-calibration-no-floor
     action: { verifier: api.golden.review-calibration-no-floor }
     expect: { status: passed }

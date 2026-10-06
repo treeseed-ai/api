@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.verification-prerequisite-custody:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/publication.test.ts
+    testName: "declares exact recursive source custody and real PostgreSQL for the complete prerequisite suite before capacity scenes"
   api.golden.review-calibration-no-floor:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
