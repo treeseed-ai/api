@@ -205,7 +205,8 @@ export async function assignNextReadyExecutionNode(
 				const allocationInputs = await livingAllocationInputs(store, { run, runs, providers: executionProviders,
 					capacityProviderId: principal.capacityProviderId, capabilityId: candidate.node.requiredCapabilities?.[0] ?? '',
 					agentClass: candidate.node.agentClass!, activity: candidate.effectiveProfile.activity,
-					proposalGovernanceReview: isProposalGovernanceReview(candidate.node), now });
+					proposalGovernanceReview: candidate.node.kind === 'reviewing' && candidate.node.pairRole === null
+						&& candidate.node.sourceRef.model === 'proposal', now });
 				const selected = buildAssignmentAttempt({
 					candidate, run, principal, providerSessionId, providers: executionProviders, allocationInputs,
 					attempt: priorAttempts + 1, now,

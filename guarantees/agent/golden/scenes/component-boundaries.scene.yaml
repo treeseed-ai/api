@@ -3,6 +3,15 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: review-calibration-no-floor
+    action: { verifier: api.golden.review-calibration-no-floor }
+    expect: { status: passed }
+  - id: review-history-scope
+    action: { verifier: api.golden.review-history-scope }
+    expect: { status: passed }
+  - id: governance-review-not-dispatched
+    action: { verifier: api.golden.governance-review-not-dispatched }
+    expect: { status: passed }
   - id: transaction-reprojection
     action: { verifier: api.golden.transaction-reprojection }
     expect: { status: passed }

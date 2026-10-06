@@ -240,7 +240,6 @@ export function buildAssignmentAttempt(input: {
 		// Estimates size a maximum attempt; positive available supply may shorten it.
 		const allocation = calculateAssignmentAllocation({ estimate: allocationEstimate,
 			measurements: planningTurn ? [] : allocationInputs.measurements,
-			observedViabilityFloor: isProposalGovernanceReview(candidate.node),
 			constraints: [{ id: 'execution-window', remainingSeconds: availableSeconds },
 				{ id: 'utc-day-window', remainingSeconds: Math.max(0, (utcDayEnd - Date.parse(input.now)) / 1000) },
 				{ id: 'model-day', remainingSeconds: remaining(limits.dailyActiveSecondsLimit, observation.modelUsage) },

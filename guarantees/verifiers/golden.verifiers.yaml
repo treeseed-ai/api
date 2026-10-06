@@ -1,6 +1,21 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.review-calibration-no-floor:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/assignment-attempt-builder.test.ts
+    testName: "calibrates exact review history without inventing a minimum allocation floor"
+  api.golden.review-history-scope:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/allocation-inputs.test.ts
+    testName: "uses only proposal-governance history for proposal reviews, never paired-review duration"
+  api.golden.governance-review-not-dispatched:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/scheduling/proposal-review-phase.test.ts
+    testName: "does not admit a separate proposal Reviewer in either phase"
   api.golden.transaction-reprojection:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
