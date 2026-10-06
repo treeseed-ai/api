@@ -3911,3 +3911,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/accounts/identity/server-cutover.test.ts
     testName: "native API listener preserves exact execution request bytes and headers through bodyless methods and retained downstream failure"
+  api.golden.execution-publisher-prerequisite-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/provider-prerequisites.test.ts
+    testName: "capacity candidate source delivery reuses the same complete native verification authority before sealing declared artifacts"

@@ -5,6 +5,7 @@ on:
     branches: [staging, main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   verify:
@@ -78,6 +79,7 @@ jobs:
             node_modules/@treeseed/sdk
       - name: Reconcile installed dependencies with the original locked tree
         run: npm prune --ignore-scripts --no-audit --no-fund --workspaces=false
+      - run: ./scripts/build/hydrate-exact-sdk.sh artifacts/sealed-sdk download
       - name: Provision disposable signed native TreeDX
         run: node --import tsx scripts/verification/native-treedx.ts start
       - name: Verify all native TreeDX client SDK prerequisites
@@ -91,7 +93,10 @@ jobs:
       - name: Verify concurrent PostgreSQL pool and workday policy allocation
         run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/accounts/postgres/pool-budget.test.ts tests/unit/control-plane/capacity/workdays/profile-postgres.test.ts tests/unit/control-plane/capacity/workdays/continuation.test.ts tests/unit/control-plane/capacity/workdays/lifecycle/concurrent-runs-postgres.test.ts tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts tests/unit/control-plane/capacity/execution/admission/postgres.test.ts tests/unit/control-plane/capacity/communication/discussion-supply-postgres.test.ts tests/unit/control-plane/providers/assignments/provider-discussion-response-postgres.test.ts
       - name: Pack verified artifact
-        run: mkdir -p artifacts && npm pack --json --ignore-scripts --pack-destination artifacts
+        run: |
+          mkdir -p source-assets
+          npm pack --json --ignore-scripts --pack-destination source-assets
+          npm sbom --sbom-format cyclonedx > source-assets/sbom.cdx.json
       - name: Execute coded golden component scenes
         uses: treeseed-ai/reviewer/.github/actions/run-scenes@98e14a4da20054c64b8a1751ed204161550209bb
         with:
@@ -99,7 +104,14 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: api-${{ github.sha }}
-          path: artifacts/*.tgz
+          path: source-assets/*.tgz
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: api-source-${{ github.sha }}
+          path: |
+            source-assets/
+            artifacts/sealed-sdk/
           if-no-files-found: error
       - name: Retain native prerequisite logs
         if: always() && env.API_NATIVE_TREEDX_ROOT != ''
