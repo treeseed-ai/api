@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
 import { projectCommunicationInvocations } from '../../../../../../src/api/capacity/policy/execution/communication-execution-projector.ts';
+import { reconcileCommunicationExecutionGraph } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 
 const definition = {
 	schemaVersion: 'treeseed.agent/v1' as const, id: 'sdk/architect', name: 'SDK Architect', agentClass: 'architect',
@@ -12,6 +13,29 @@ const definition = {
 };
 
 describe('communication living-graph projection', () => {
+	it('projects chat in the one team graph without validating unrelated accepted proposal content', async () => {
+		const acceptedRef = { store: 'treedx', model: 'proposal', id: 'legacy-accepted', revision: 1,
+			digest: `sha256:${'b'.repeat(64)}`, repository: 'treeseed-ai/sdk-library', commit: 'a'.repeat(40), path: 'proposals/legacy.mdx' };
+		const all = vi.fn(async (sql: string) => {
+			if (sql.includes('governance_proposals')) throw new Error('Unrelated accepted proposal is not executable');
+			if (sql.includes('FROM execution_nodes')) return [{ id: 'accepted-condition', team_id: 'team', project_id: 'sdk',
+				kind: 'condition', pair_role: null, source_ref_json: acceptedRef, authority_refs_json: [], rule_revision: 1,
+				node_revision: 1, status: 'blocked', condition_json: { conditionType: 'authority', subjectRef: acceptedRef,
+					expectedState: 'accepted' }, graph_revision_created: 1, graph_revision_updated: 1 }];
+			if (sql.includes('FROM project_agent_classes')) return [{ project_id: 'sdk', handler_refs_json: { agents: [definition] } }];
+			if (sql.includes('FROM agent_invocation_requests')) return [{ id: 'invocation', team_id: 'team', project_id: 'sdk',
+				agent_id: 'architect', execution_id: 'conversation-invocation', repository_id: 'treeseed-ai/sdk-library',
+				metadata_json: { sourceMessagePath: 'discussion-messages/smoke/request.mdx', sourceCommit: 'a'.repeat(40),
+					productiveSeconds: 180 }, content_refs_json: [] }];
+			return [];
+		});
+		const store = { all, first: vi.fn(async () => ({ revision: 1, graph_digest: `sha256:${'c'.repeat(64)}` })) };
+		const planned = await reconcileCommunicationExecutionGraph(store, 'team', { plan: true });
+		expect(planned).toMatchObject({ baseRevision: 1, changes: { added: ['communication:invocation:conversation-invocation'],
+			stale: [], completed: [] } });
+		expect(all.mock.calls.some(([sql]) => sql.includes('governance_proposals'))).toBe(false);
+		expect(all.mock.calls.some(([sql]) => sql.includes('FROM capacity_workday_runs') && !sql.includes('agent_invocation_requests'))).toBe(false);
+	});
 	it('projects an addressed message as one ready read-only chat assignment source', () => {
 		const projected = projectCommunicationInvocations({ teamId: 'team', revision: 3,
 			profiles: { 'sdk:architect': definition }, sources: [{

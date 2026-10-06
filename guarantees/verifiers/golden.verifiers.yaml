@@ -1,6 +1,71 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.verification-prerequisite-custody:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/publication.test.ts
+    testName: "declares exact recursive source custody and real PostgreSQL for the complete prerequisite suite before capacity scenes"
+  api.golden.review-calibration-no-floor:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/assignment-attempt-builder.test.ts
+    testName: "calibrates exact review history without inventing a minimum allocation floor"
+  api.golden.review-history-scope:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/allocation-inputs.test.ts
+    testName: "uses only proposal-governance history for proposal reviews, never paired-review duration"
+  api.golden.governance-review-not-dispatched:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/scheduling/proposal-review-phase.test.ts
+    testName: "does not admit a separate proposal Reviewer in either phase"
+  api.golden.transaction-reprojection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/assignments/assignment-graph-transition-retry.test.ts
+    testName: "reprojects only the rolled-back graph operations against the committed revision"
+  api.golden.transaction-retry-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/assignments/assignment-graph-transition-retry.test.ts
+    testName: "fails closed on unrelated uniqueness errors and bounded repeated contention"
+  api.golden.transaction-inherited-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/assignments/assignment-graph-transition-retry.test.ts
+    testName: "propagates an inherited transaction failure without reusing its aborted connection"
+  api.golden.invocation-terminal-returned:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rebinds only its own terminal conversation attempt: returned"
+  api.golden.invocation-terminal-failed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rebinds only its own terminal conversation attempt: failed"
+  api.golden.invocation-terminal-cancelled:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rebinds only its own terminal conversation attempt: cancelled"
+  api.golden.invocation-terminal-foreign-team:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rebinds only its own terminal conversation attempt: foreign-team"
+  api.golden.invocation-terminal-foreign-invocation:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rebinds only its own terminal conversation attempt: foreign-invocation"
+  api.golden.invocation-terminal-leased:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rebinds only its own terminal conversation attempt: leased"
   api.golden.progress-postgres-custody:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

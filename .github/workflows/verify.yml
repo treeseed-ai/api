@@ -27,6 +27,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - uses: actions/setup-node@v4
         with:
@@ -37,13 +39,15 @@ jobs:
       - name: Install dependencies
         timeout-minutes: 20
         run: npm ci --ignore-scripts --workspaces=false --no-audit --no-fund
-      - uses: treeseed-ai/sdk/.github/actions/install-exact-sdk@a12f06dc33c02161cedb4d74928fb915a803911f
+      - uses: treeseed-ai/sdk/.github/actions/install-exact-sdk@752ebfd1508f1e1eedbad66c2ceb99500400f759
         with:
           github-token: ${{ github.token }}
           paths: |
             node_modules/@treeseed/sdk
             node_modules/@treeseed/deployment/node_modules/@treeseed/sdk
       - run: npm run verify:direct
+        env:
+          TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
       - name: Verify real PostgreSQL backup-writer migration closure
         env:
           TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
@@ -59,7 +63,7 @@ jobs:
       - name: Pack verified artifact
         run: mkdir -p artifacts && npm pack --json --ignore-scripts --pack-destination artifacts
       - name: Execute coded golden component scenes
-        uses: treeseed-ai/reviewer/.github/actions/run-scenes@e29c5bf2db97188c47fdc67a7a098e81a95ced22
+        uses: treeseed-ai/reviewer/.github/actions/run-scenes@98e14a4da20054c64b8a1751ed204161550209bb
         env:
           TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
         with:

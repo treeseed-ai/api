@@ -11,7 +11,7 @@ export type LivingAllocationInputs = Record<string, { measurements: AllocationMe
 /** Read existing graph/reservation/usage authority; no performance or allocation store. */
 export async function livingAllocationInputs(store: CapacityGovernanceDatabase, input: {
 	run: DurableCapacityWorkdayRun; runs: DurableCapacityWorkdayRun[]; providers: ProviderSynthesisExecutionProvider[]; capacityProviderId: string;
-	capabilityId: string; agentClass: string; activity: string; now: string;
+	capabilityId: string; agentClass: string; activity: string; proposalGovernanceReview?: boolean; now: string;
 }): Promise<LivingAllocationInputs> {
 	const result: LivingAllocationInputs = {};
 	for (const provider of input.providers) {
@@ -76,6 +76,9 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 			AND assignment.assignment_attempt_json::jsonb->'provider'->>'modelConfigurationId'=?
 			AND assignment.assignment_attempt_json::jsonb->'provider'->>'executionCapabilityId'=?
 			AND assignment.assignment_attempt_json::jsonb->'effectiveProfile'->>'activity'=?
+			AND ${input.proposalGovernanceReview
+				? "node.kind='reviewing' AND node.pair_role IS NULL AND node.source_ref_json::jsonb->>'model'='proposal'"
+				: "NOT (node.kind='reviewing' AND node.pair_role IS NULL AND node.source_ref_json::jsonb->>'model'='proposal')"}
 			AND usage.accounting_mode='aggregate' AND ((assignment.status='completed'
 				AND (node.pair_role IS DISTINCT FROM 'actor'
 					OR EXISTS (SELECT 1 FROM capacity_provider_assignments review
