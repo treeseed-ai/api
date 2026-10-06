@@ -2144,3 +2144,9 @@ workflow:
   - id: execution-admission-late-replay-native
     action: { verifier: api.golden.execution-admission-late-replay-native }
     expect: { status: passed }
+  - id: execution-registration-key-readback-unit
+    action: { verifier: api.golden.execution-registration-key-readback-unit }
+    expect: { status: passed }
+  - id: execution-registration-key-readback-native
+    action: { verifier: api.golden.execution-registration-key-readback-native }
+    expect: { status: passed }

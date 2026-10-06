@@ -18,6 +18,31 @@ type Owner = Awaited<ReturnType<typeof dependencyOperator>>;
 type Registration = Awaited<ReturnType<Owner['register']>>;
 type State = Awaited<ReturnType<Owner['state']>>;
 const record = z.record(z.string(), z.unknown());
+it('native public registration status refuses an absent committed key without false audit and admits only a fresh original persistence retry', async () => {
+	const f = await dependencyOperator();
+	try {
+		const credential = await f.token(), rest = CONTROL_PLANE_OPERATIONS.providers.registrationCode.status.descriptor.rest; assert.ok(rest);
+		const path = rest.path.replace('{teamId}', 'team');
+		const get = () => f.app.request(new Request(`https://localhost${path}`, { headers: { authorization: `Bearer ${credential}` } }));
+		const baseline = await f.state(); expect(await f.state(f.right)).toEqual(baseline);
+		await f.left.pool.query("CREATE FUNCTION registration_key_absence() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$");
+		await f.left.pool.query("CREATE TRIGGER registration_key_absence BEFORE INSERT ON team_capacity_registration_keys FOR EACH ROW WHEN (NEW.team_id='team') EXECUTE FUNCTION registration_key_absence()");
+		await denied(await get(), 404, 'registration_key_missing');
+		expect(await f.state()).toEqual(baseline); expect(await f.state(f.right)).toEqual(baseline);
+		await f.left.pool.query('DROP TRIGGER registration_key_absence ON team_capacity_registration_keys');
+		await f.left.pool.query('DROP FUNCTION registration_key_absence()');
+		expect((await f.right.pool.query("SELECT tgname FROM pg_trigger WHERE tgname='registration_key_absence'")).rows).toEqual([]);
+		expect((await f.right.pool.query("SELECT proname FROM pg_proc WHERE proname='registration_key_absence'")).rows).toEqual([]);
+		const response = await get(); expect(response.status).toBe(200);
+		const result = CONTROL_PLANE_OPERATIONS.providers.registrationCode.status.schema.output.parse(await response.json());
+		expect(z.object({ teamId: z.literal('team'), generation: z.literal(1) }).parse(result.data)).toEqual({ teamId: 'team', generation: 1 });
+		const committed = await f.state(); unchangedExcept(baseline, committed, ['team_capacity_registration_keys', 'capacity_audit_events']);
+		expect(additions(baseline, committed, 'team_capacity_registration_keys', 1)[0]).toMatchObject({ team_id: 'team', generation: 1, status: 'active' });
+		expect(additions(baseline, committed, 'capacity_audit_events', 1)[0]).toMatchObject({ action: 'registration-key.created', team_id: 'team' });
+		const replay = await get(); expect(replay.status).toBe(200); expect(await replay.json()).toEqual(result);
+		expect(await f.state()).toEqual(committed); expect(await f.state(f.right)).toEqual(committed);
+	} finally { await f.close(); }
+});
 function registeredProviderId(registration: Registration) {
 	const fingerprint = z.string().regex(/^sha256:[A-Za-z0-9_-]{43}$/u).parse(registration.inputs.payload.providerFingerprint);
 	const expected = `provider_${fingerprint.slice('sha256:'.length, 'sha256:'.length + 32)}`;

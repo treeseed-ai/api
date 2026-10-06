@@ -1,12 +1,6 @@
-import {
-PROVIDER_MEMBERSHIP_SCOPES,
-validateProviderSupplyOffer,
-type CapacityProviderIdentityRotationRequest,
-type CapacityProviderSignedProof,
-type ProviderAccessTokenIssue,
-type ProviderRegistrationSubmission,
-type ProviderTeamCredentialIssue,
-} from '@treeseed/sdk/capacity-provider';
+import { PROVIDER_MEMBERSHIP_SCOPES, validateProviderSupplyOffer, type CapacityProviderIdentityRotationRequest,
+type CapacityProviderSignedProof, type ProviderAccessTokenIssue, type ProviderRegistrationSubmission,
+type ProviderTeamCredentialIssue } from '@treeseed/sdk/capacity-provider';
 import { randomUUID } from 'node:crypto';
 import { CapacityGovernanceError } from '../../database.ts';
 import { CapacityCredentialAuthorizationRepository } from '../../repositories/accounts/credential-authorization.ts';
@@ -48,6 +42,7 @@ export class CapacityRegistrationService {
 		const issued = this.secrets.issue('registration');
 		const now = nowIso();
 		const created = await this.repository.createRegistrationKey({ id: randomUUID(), teamId, generation: 1, prefix: issued.prefix, hash: issued.hash, encryptedRevealValue: this.secrets.encrypt(issued.plaintext, `${teamId}:1`), actorId, now });
+		if (!created) throw new CapacityGovernanceError('registration_key_missing', 'Team capacity registration key does not exist.', 404);
 await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-principal', actorId, action: 'registration-key.created', resourceType: 'team-capacity-registration-key', resourceId: created?.keyPrefix, now });
 		return created;
 	}
@@ -58,8 +53,10 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		if (!row) throw new CapacityGovernanceError('registration_key_missing', 'Team capacity registration key does not exist.', 404);
 		const now = nowIso();
 		await this.repository.recordRegistrationKeyReveal(teamId, now);
+		const metadata = await this.repository.registrationKeyMetadata(teamId);
+		if (!metadata) throw new CapacityGovernanceError('registration_key_missing', 'Team capacity registration key does not exist.', 404);
 		await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-principal', actorId, action: 'registration-key.revealed', resourceType: 'team-capacity-registration-key', resourceId: String(row.key_prefix), now });
-		return { ...(await this.repository.registrationKeyMetadata(teamId)), registrationKey: this.secrets.decrypt(String(row.encrypted_reveal_value), `${teamId}:${Number(row.generation)}`) };
+		return { ...metadata, registrationKey: this.secrets.decrypt(String(row.encrypted_reveal_value), `${teamId}:${Number(row.generation)}`) };
 	}
 
 	async rotateRegistrationKey(teamId: string, actorId: string | null, idempotencyKey: string) {

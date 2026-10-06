@@ -1,6 +1,16 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-registration-key-readback-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/provider-registration-code.test.ts
+    testName: "refuses missing committed registration key metadata before returning a status or reveal receipt or recording a false audit"
+  api.golden.execution-registration-key-readback-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/bootstrap/dependency-bootstrap-postgres.test.ts
+    testName: "native public registration status refuses an absent committed key without false audit and admits only a fresh original persistence retry"
   api.golden.execution-continuation-optionality-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
