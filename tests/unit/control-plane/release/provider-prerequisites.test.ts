@@ -101,7 +101,7 @@ it('complete provider suites provision the exact native TreeDX engine and origin
 	const steps = job.steps.map(object), checkout = steps.find(step => step.name === 'Checkout exact native TreeDX');
 	expect(checkout?.uses).toBe('actions/checkout@v4');
 	expect(object(checkout?.with)).toEqual({ repository: 'treeseed-ai/treedx',
-		ref: '29c40be3b106393ab358874c57a3498598108b66', path: '.treeseed/tools/treedx' });
+		ref: '2aa547cd9a560dd64a9c44eec36b1084fb423f05', path: '.treeseed/tools/treedx' });
 	const start = steps.find(step => step.run === 'node --import tsx scripts/verification/native-treedx.ts start');
 	const stop = steps.find(step => step.run === 'node --import tsx scripts/verification/native-treedx.ts stop');
 	const verify = steps.find(step => step.run === 'npm run verify:direct');

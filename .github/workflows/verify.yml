@@ -44,7 +44,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: treeseed-ai/treedx
-          ref: 29c40be3b106393ab358874c57a3498598108b66
+          ref: 2aa547cd9a560dd64a9c44eec36b1084fb423f05
           path: .treeseed/tools/treedx
       - name: Checkout exact execution authority
         uses: actions/checkout@v4
