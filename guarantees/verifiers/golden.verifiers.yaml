@@ -1,6 +1,21 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-workload-endpoint-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/accounts/workloads/registration.test.ts
+    testName: retains canonical endpoint validation across package schema versions and compiles its full owning plan strictly
+  api.golden.execution-workload-descriptor-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/accounts/migration/identity-migration-configuration.test.ts
+    testName: rejects malformed canonical issuer and resource descriptors without leaking native URL parser errors
+  api.golden.execution-workload-endpoint-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/accounts/workloads/registration-postgres.test.ts
+    testName: binds both digests, preserves IDs, rejects human/revoked state and rolls back a batch
   api.golden.execution-profile-cutover-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

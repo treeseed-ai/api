@@ -24,4 +24,12 @@ describe('managed Identity migration descriptor uses the SDK schema dialect',()=
     const value=descriptor();value.workloads[0]!.issuer='http://untrusted.example.test';
     expect(()=>identityMigrationConfigurationSchema.parse(value)).toThrow();
   });
+  it('rejects malformed canonical issuer and resource descriptors without leaking native URL parser errors',()=>{
+    for (const endpoint of ['', 'not-a-url', 'https://', null, undefined, {}, []]) {
+      for (const field of ['issuer', 'resource'] as const)
+        expect(identityMigrationConfigurationSchema.safeParse({ ...descriptor(), [field]: endpoint }).success).toBe(false);
+      const value = descriptor();
+      expect(identityMigrationConfigurationSchema.safeParse({ ...value, workloads: [{ ...value.workloads[0], issuer: endpoint }] }).success).toBe(false);
+    }
+  });
 });
