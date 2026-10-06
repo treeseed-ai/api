@@ -244,7 +244,7 @@ export function buildAssignmentAttempt(input: {
 	// execution start clamps that reservation after actual setup/queueing, without
 	// precharging the entire (usually unspent) preparation ceiling.
 	const availableSeconds = candidate.node.kind === 'reporting' && appliedPlan.state === 'closing'
-		? candidate.node.estimate.maximumSeconds : Math.max(0, (Date.parse(windowEnd) - Date.parse(input.now)) / 1000);
+		? estimate.maximumSeconds : Math.max(0, (Date.parse(windowEnd) - Date.parse(input.now)) / 1000);
 	const capability = candidate.node.requiredCapabilities![0]!;
 	const considered = eligible.flatMap((selected) => {
 		const allocationInputs = input.allocationInputs[selected.provider.id];

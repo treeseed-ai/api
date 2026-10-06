@@ -86,7 +86,7 @@ async function readExisting(value:KnowledgeGatewayConnection,commit:string,paths
 	if(text(response.resolvedRef)!==commit)throw new CapacityOperationError(409,'agent_team_target_moved','Target definition bytes did not match the planned commit.');
 	return new Map(fileRows(response).filter((file)=>typeof file.content==='string').map((file)=>[text(file.path),String(file.content)]));
 }
-async function classes(store:any,projectId:string){const page=await store.listProjectAgentClassesPage(projectId,{limit:200,cursor:null});return Array.isArray(page?.items)?page.items.map(record):[];}
+async function classes(store:any,projectId:string):Promise<Row[]>{const page=await store.listProjectAgentClassesPage(projectId,{limit:200,cursor:null});return Array.isArray(page?.items)?page.items.map(record):[];}
 function projectionMatches(entries:Row[],definitions:ReturnType<typeof adapt>[],commit:string){return definitions.every((item)=>entries.some((entry)=>
 	text(entry.slug)===item.agentClass&&entry.status==='active'&&text(record(entry.metadata).immutableRef)===commit
 	&&stable(classAgents(entry))===stable([validateAgentDefinitionModel(parseFrontmatterDocument(item.content).frontmatter).data])));}
@@ -114,7 +114,7 @@ export class AgentTeamCloneService{
 		const sourceCommit=await acceptedSourceCommit(this.store,source.id),sourceConnection=await connection(this.store,source.id,false,[sourceCommit]);
 		const sourceSnapshot=await snapshotAgents(sourceConnection,sourceCommit).catch((error)=>failed('source_read',source.id,error));
 		if(!sourceSnapshot.files.length)throw new CapacityOperationError(409,'agent_team_source_empty','The source project has no valid agent definitions.');
-		const targetPlans=[];
+		const targetPlans:AgentTeamClonePlan['targets']=[];
 		for(const target of targets){
 			const targetState=await resolveTargetSnapshot(this.store,target.id),targetConnection=targetState.connection,targetSnapshotData=targetState.snapshot,definitions=sourceSnapshot.files.map((file)=>({source:file,...adapt(file,source,target)}));
 			const existing=await readExisting(targetConnection,targetSnapshotData.commit,definitions.map((item)=>projectLibraryPath(targetConnection.contentPath,item.path))).catch((error)=>failed('target_definition_read',target.id,error));

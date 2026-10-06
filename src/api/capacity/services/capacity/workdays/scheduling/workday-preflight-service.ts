@@ -166,7 +166,7 @@ export class WorkdayPreflightService {
 			const freshRoots = intent.continueFromWorkdayId ? [] : graphRows.filter((row) => {
 				const node = graphNodes.get(text(row.id));
 				if (!node || !projectIds.has(node.projectId) || !['acting','reviewing'].includes(node.kind)
-					|| !node.authorityRefs.some((ref) => ref.model === 'decision'
+					|| !(node.authorityRefs ?? []).some((ref) => ref.model === 'decision'
 						&& (selectedDecisions.has(ref.id) || selectedProposals.has(node.sourceRef.id)))) return false;
 				return edgeRows.filter((edge) => text(edge.to_node_id) === node.id).every((edge) => {
 					const predecessor = graphNodes.get(text(edge.from_node_id));
@@ -184,13 +184,14 @@ export class WorkdayPreflightService {
 		const planningEnabled=Number(record(runInput.parameters).planningPercent??policy.planningPercent)>0;
 		const selectedDemands=nodeRows.flatMap((entry)=>{
 			const node=decodeExecutionNode(entry) as ExecutionNode;
-			const decisionRef=node.authorityRefs.find((reference)=>reference.model==='decision');
+			const decisionRef=node.authorityRefs?.find((reference)=>reference.model==='decision');
 			if(selectedProposals.size&&node.sourceRef.model==='proposal'&&!selectedProposals.has(node.sourceRef.id)) return [];
 			if(!node.id||selectedDecisions.size&&(!decisionRef||!selectedDecisions.has(decisionRef.id))) return [];
 			const mode=node.kind==='acting'||node.kind==='reviewing'&&node.pairRole==='reviewer'?'acting' as const:'planning' as const;
 			if(mode==='planning'&&!planningEnabled) return [];
 			if(intent.planningOnly&&mode==='acting') return [];
 			if(mode==='acting'&&!decisionRef) return [];
+			const decisionRevision=decisionRef?.revision, sourceDigest=node.sourceRef.digest;
 			const selectedAgents=selectedAgentsByProject.get(node.projectId);
 			// Explicit agent/activity selectors choose only cooperative planning
 			// participants. Accepted decisions remain the sole acting authority.
@@ -199,8 +200,8 @@ export class WorkdayPreflightService {
 				&& (Array.isArray(agent.activityTypes)?agent.activityTypes.map(text):[]).includes(node.kind))) return [];
 			return [{id:`execution-node:${node.id}:revision:${node.nodeRevision}`,projectId:node.projectId,sourceType:'execution-node',sourceId:node.id,mode,
 				classSlug:node.agentClass??node.kind,requestedSeconds:integer(node.estimate?.expectedSeconds,1),priority:node.priority??0,
-				...(decisionRef?{actingAuthority:{ decisionId:decisionRef.id,decisionRevision:decisionRef.revision,executionNodeId:node.id,
-					executionNodeRevision:node.nodeRevision,graphRevision:integer(entry.graph_revision,0),sourceDigest:node.sourceRef.digest }}:{})}];
+				...(decisionRef&&typeof decisionRevision==='number'&&typeof sourceDigest==='string'?{actingAuthority:{ decisionId:decisionRef.id,decisionRevision,executionNodeId:node.id,
+					executionNodeRevision:node.nodeRevision,graphRevision:integer(entry.graph_revision,0),sourceDigest }}:{})}];
 		});
 		const classAccounting=[...new Set(selectedDemands.map((entry)=>entry.classSlug))].sort().map((classSlug)=>({classSlug,
 			allocatedSeconds:selectedDemands.filter((entry)=>entry.classSlug===classSlug).reduce((sum,entry)=>sum+entry.requestedSeconds,0),

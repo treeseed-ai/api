@@ -52,6 +52,24 @@ function fixture(acceptedDecision = false) {
 }
 
 describe('public workday selection custody', () => {
+	it('denies missing selected demand revision or source digest before storing any derived preflight authority', async () => {
+		for (const missing of ['revision', 'digest']) {
+			const f = fixture(), node = executionNodeRow({ id: 'node-review', kind: 'reviewing', agentClass: 'assurance', digest: 'source', expectedSeconds: 120, decisionRevision: 1 });
+			if (missing === 'revision') {
+				const refs = JSON.parse(node.authority_refs_json); delete refs[0].revision; node.authority_refs_json = JSON.stringify(refs);
+			} else {
+				const source = JSON.parse(node.source_ref_json); delete source.digest; node.source_ref_json = JSON.stringify(source);
+			}
+			const supplied = structuredClone(node);
+			f.store.preflightCapacityWorkdayRunRequest.mockResolvedValue({ projects: [{ id: 'project-sdk', agents: [] }], executionNodeDemands: [node] });
+			await expect(f.service.preflight('team', parsePublicWorkdayIntent('team', input()), 'actor')).rejects.toMatchObject({
+				name: 'ZodError', issues: expect.arrayContaining([expect.objectContaining({ code: 'custom',
+					path: missing === 'revision' ? ['authorityRefs', 0] : ['sourceRef'],
+					message: 'TreeDX references require commit or revision and digest.' })]),
+			});
+			expect(f.store.run).not.toHaveBeenCalled(); expect(f.stored()).toBeUndefined(); expect(node).toEqual(supplied);
+		}
+	});
 	it('denies a Decision outside the selected projects before reading its governed content or persisting preflight authority', async () => {
 		for (const projects of [['sdk'], ['project-sdk'], ['sdk', 'other-selected']]) {
 			const f = fixture(true), first = f.store.first.getMockImplementation()!;

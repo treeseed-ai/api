@@ -7,6 +7,46 @@ import { workdayStartDatabase } from './workday-start-fixture.ts';
 // AUTHORING ONLY: no execution receipt. Native SQL/HTTP controls do not prove
 // separate PostgreSQL connections, actual TreeDX policy or provider consumption.
 describe('first manual and recurring admission through the same public owning path', () => {
+	it('native public preflight denies incomplete persisted demand authority without repairing rows or creating admission truth', async () => {
+		const f = await workdayStartDatabase(); try {
+			// Controlled SQL projection inputs, not a genuinely accepted Decision
+			// or a provider execution. The real public service consumes these rows.
+			const source = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1, digest: `sha256:${'a'.repeat(64)}` };
+			const decision = { store: 'treedx', model: 'decision', id: 'decision', revision: 1, digest: `sha256:${'b'.repeat(64)}` };
+			await f.query(`INSERT INTO execution_graph_revisions (team_id,revision,rule_revision,changed_source_refs_json,graph_digest,changes_json,created_at)
+				VALUES (?,?,?,?,?,?,?)`, ['team', 1, 1, '[]', 'controlled-projection', '[]', f.intent.startsAt]);
+			await f.query(`INSERT INTO execution_nodes (id,team_id,project_id,work_item_id,kind,pair_role,source_ref_json,authority_refs_json,
+				rule_revision,node_revision,agent_class,status,estimate_json,required_capabilities_json,requested_permissions_json,workspace,maximum_review_cycles,
+				graph_revision_created,graph_revision_updated,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				['node-review', 'team', 'project', 'work-item', 'reviewing', 'reviewer', JSON.stringify(source), JSON.stringify([decision]),
+					1, 1, 'boundary-planner', 'ready', JSON.stringify({ expectedSeconds: 10, maximumSeconds: 20 }), '[]',
+					JSON.stringify({ content: { read: [], write: [] }, tools: [] }), 'treedx', 2,
+					1, 1, f.intent.startsAt, f.intent.startsAt]);
+			const body = { ...f.intent, planningOnly: false }, held = structuredClone(body);
+			for (const missing of ['revision', 'digest']) {
+				const authority = missing === 'revision' ? { store: decision.store, model: decision.model, id: decision.id, digest: decision.digest } : decision;
+				const subject = missing === 'digest' ? { store: source.store, model: source.model, id: source.id, revision: source.revision } : source;
+				await f.query('UPDATE execution_nodes SET authority_refs_json=?,source_ref_json=? WHERE id=?', [JSON.stringify([authority]), JSON.stringify(subject), 'node-review']);
+				const before = await f.snapshot();
+				let failure: unknown;
+				try { await f.publicService.preflight(f.principal, 'team', body); } catch (error) { failure = error; }
+				expect(failure).toMatchObject({ name: 'CapacityOperationError', status: 500, code: 'workday_operation_failed' });
+				if (!(failure instanceof Error)) throw new Error('Owning public validation error required');
+				expect(JSON.parse(failure.message)).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'custom',
+					path: missing === 'revision' ? ['authorityRefs', 0] : ['sourceRef'],
+					message: 'TreeDX references require commit or revision and digest.' })]));
+				expect(await f.snapshot()).toEqual(before); expect(body).toEqual(held);
+			}
+			await f.query('UPDATE execution_nodes SET authority_refs_json=?,source_ref_json=? WHERE id=?', [JSON.stringify([decision]), JSON.stringify(source), 'node-review']);
+			const restored = await f.snapshot(), receipt = await f.publicService.preflight(f.principal, 'team', body), after = await f.snapshot();
+			expect(receipt.selectedDemands).toEqual([expect.objectContaining({ sourceId: 'node-review', mode: 'acting', actingAuthority: {
+				decisionId: 'decision', decisionRevision: 1, executionNodeId: 'node-review', executionNodeRevision: 1, graphRevision: 1, sourceDigest: source.digest,
+			} })]);
+			expect(after.receipts).toHaveLength(1);
+			for (const table of ['workdays', 'schedules', 'nodes', 'edges', 'revisions', 'events', 'assignments', 'reservations', 'usage', 'ledger'] as const) expect(after[table]).toEqual(restored[table]);
+			expect(await f.snapshot()).toEqual(after); expect(body).toEqual(held);
+		} finally { await f.close(); }
+	});
 	it('real public preflight preserves canonical normalized agent selection and denies malformed mixed members without native authority repair', async () => {
 		const f = await workdayStartDatabase(); try {
 			const slug = f.definition.id;
