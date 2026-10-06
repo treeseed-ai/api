@@ -20,7 +20,7 @@ export function startWorkdayMaintenanceClock(scheduler: Pick<CapacityWorkdayMain
 }
 
 export async function runLoop() {
-    const healthState = { ready: false, status: 'booting', error: null };
+    const healthState: { ready: boolean; status: string; error: string | null } = { ready: false, status: 'booting', error: null };
     const healthServer = startHealthServer(loadHealthConfig(), healthState);
     const version = await packageVersion();
     const options = parseRunnerOptions();

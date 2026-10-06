@@ -5,5 +5,5 @@ export async function listTreeDxSharesForRecipientMethod(this: ControlPlaneStore
 	const now=new Date().toISOString();
 	const rows=await this.all(`SELECT * FROM treedx_shares WHERE target_team_id = ? AND status = 'active'
 		AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at ASC`,[targetTeamId,now]);
-	return rows.map(serializeTreeDxShare).filter(Boolean);
+	return rows.map(serializeTreeDxShare).filter((share): share is NonNullable<typeof share> => Boolean(share));
 }

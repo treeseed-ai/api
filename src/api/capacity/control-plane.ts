@@ -44,10 +44,10 @@ export interface CapacityControlPlaneHost extends CapacityGovernanceDatabase {
 	listTreeDxSharesForRecipient(teamId: string): Promise<Record<string, unknown>[]>;
 	getProjectDetails(projectId: string): Promise<Record<string, unknown> | null>;
 	getProjectTreeDxLibrary(projectId: string): Promise<Record<string, unknown> | null>;
-	listApprovalRequestsForProject(projectId: string, limit: number): Promise<Record<string, unknown>[]>;
+	listApprovalRequestsForProject(projectId: string, limit: number): ReturnType<import('../persistence/store.ts').ControlPlaneStore['listApprovalRequestsForProject']>;
 	listTeamProjects(teamId: string): Promise<WorkdayProject[]>;
 	getTeam(teamId: string): Promise<Record<string, unknown> | null>;
-	listHubRepositories(projectId: string): Promise<Record<string, unknown>[]>;
+	listHubRepositories(projectId: string): ReturnType<import('../persistence/store.ts').ControlPlaneStore['listHubRepositories']>;
 	getProjectArchitecture(projectId: string): Promise<Record<string, unknown> | null>;
 }
 type PublicSurface<T> = { [Key in keyof T]: T[Key] };
@@ -251,6 +251,7 @@ class CapacityControlPlane {
 			return listProjectDeletionBlockers(this.capacityContext, projectId);
 		}
 }
+export function createCapacityControlPlane<Host extends CapacityControlPlaneHost>(host: Host): CapacityControlPlaneStore & Host;
 export function createCapacityControlPlane(host: CapacityControlPlaneHost): CapacityControlPlaneStore {
 	const target = new CapacityControlPlane(host);
 	let provider!: ProviderControlPlane;

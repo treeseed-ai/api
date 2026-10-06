@@ -7,7 +7,7 @@ export async function issueUserSessionMethod(this: PostgresAuthStore, userId: st
     sessionType?: string;
     scopes?: string[];
     data?: Record<string, unknown>;
-} = {}): Promise<TokenRefreshResponse> {
+} = {}): Promise<TokenRefreshResponse & { status: 'approved' }> {
     await this.ensureInitialized();
     const principalRecord = await this.principalForUser(userId);
     const refreshToken = nextOpaqueToken('refresh');

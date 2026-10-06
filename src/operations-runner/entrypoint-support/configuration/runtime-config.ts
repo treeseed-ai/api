@@ -3,12 +3,14 @@ import { mkdir,readFile,rm,writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { readArg } from '../index.js';
 
-export function env(name, fallback = null) {
+export function env(name: string, fallback: string): string;
+export function env(name: string, fallback?: null): string | null;
+export function env(name: string, fallback: string | null = null) {
     const value = process.env[name];
     return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
-export function isLoopbackUrl(value) {
+export function isLoopbackUrl(value: unknown) {
     if (typeof value !== 'string' || !value.trim())
         return false;
     try {
@@ -30,7 +32,7 @@ export async function packageVersion() {
     }
 }
 
-export async function loadConfig({ requireSecrets = true }: any = {}) {
+export async function loadConfig({ requireSecrets = true }: { requireSecrets?: boolean } = {}) {
     const serverId = readArg('--server') ?? env('TREESEED_SERVER_ID', 'local');
     const apiTransport = env('TREESEED_PLATFORM_RUNNER_API_TRANSPORT', 'database');
     const forceHttpTransport = apiTransport === 'http';

@@ -247,11 +247,11 @@ class ControlPlanePostgresPreparedStatement {
 		return { success: true, results: [], meta: { changes: Number(result.rowCount ?? 0) } };
 	}
 
-	async all(): Promise<PreparedResult> {
+	async all<T extends Record<string, unknown> = Record<string, unknown>>(): Promise<{ success: true; results: T[]; meta: Record<string, never> }> {
 		await this.database.migrate();
 		if (/^\s*PRAGMA\s+table_info\(([^)]+)\)/iu.test(this.query)) {
 			const tableName = this.query.match(/^\s*PRAGMA\s+table_info\(([^)]+)\)/iu)?.[1]?.replace(/['"`]/gu, '') ?? '';
-			const result = await this.database.pool.query(
+			const result = await this.database.pool.query<T>(
 				`SELECT column_name AS name, data_type AS type
 				 FROM information_schema.columns
 				 WHERE table_schema = 'public' AND table_name = $1
@@ -260,12 +260,12 @@ class ControlPlanePostgresPreparedStatement {
 			);
 			return { success: true, results: result.rows, meta: {} };
 		}
-		const result = await this.database.pool.query(translateControlPlaneSqlToPostgres(this.query), this.bindings);
+		const result = await this.database.pool.query<T>(translateControlPlaneSqlToPostgres(this.query), this.bindings);
 		return { success: true, results: result.rows, meta: {} };
 	}
 
-	async first(): Promise<QueryResultRow | null> {
-		const result = await this.all();
+	async first<T extends Record<string, unknown> = Record<string, unknown>>(): Promise<T | null> {
+		const result = await this.all<T>();
 		return result.results[0] ?? null;
 	}
 
@@ -339,7 +339,7 @@ export class ControlPlanePostgresDatabase {
 		}
 	}
 
-	async exec(sql: string): Promise<PreparedResult> {
+	async exec(sql: string): Promise<{ success: true; results: []; meta: Record<string, never> }> {
 		for (const statement of splitSqlStatements(sql)) {
 			await this.pool.query(translateControlPlaneSqlToPostgres(statement));
 		}

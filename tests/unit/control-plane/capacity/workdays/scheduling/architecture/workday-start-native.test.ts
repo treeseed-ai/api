@@ -3,10 +3,29 @@ import { createHash } from 'node:crypto';
 import { appliedWorkdaySchema, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { canonicalJson } from '../../../../../../../src/api/capacity/security.ts';
 import { workdayStartDatabase } from './workday-start-fixture.ts';
+import { listTeamProjectsMethod } from '../../../../../../../src/api/store/projects/queries/identity/list-team-projects.ts';
 
 // AUTHORING ONLY: no execution receipt. Native SQL/HTTP controls do not prove
 // separate PostgreSQL connections, actual TreeDX policy or provider consumption.
 describe('first manual and recurring admission through the same public owning path', () => {
+	it('native owning workday project inventory retains exact team rows excludes completed deletion and remains immutable across concurrent reads', async () => {
+		const f = await workdayStartDatabase(); try {
+			await f.query('INSERT INTO teams (id,slug,name,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+				['foreign-team', 'foreign', 'Foreign', '{}', f.intent.startsAt, f.intent.startsAt]);
+			for (const [id, team, metadata] of [['deleted', 'team', '{"deletion":{"status":"succeeded"}}'], ['foreign', 'foreign-team', '{}']]) {
+				await f.query('INSERT INTO projects (id,team_id,slug,name,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?)',
+					[id, team, id, id, metadata, f.intent.startsAt, f.intent.startsAt]);
+			}
+			const rows = await f.all('SELECT * FROM projects ORDER BY id'), before = await f.snapshot(), calls = structuredClone(f.calls);
+			const expected = [{ id: 'project', teamId: 'team', slug: 'arbitrary-project', name: 'Project', description: null,
+				metadata: { library: { role: 'library' } }, createdAt: f.intent.startsAt, updatedAt: f.intent.startsAt }];
+			expect(await listTeamProjectsMethod.call(f.store, 'team')).toEqual(expected);
+			expect(await Promise.all([listTeamProjectsMethod.call(f.store, 'team'), listTeamProjectsMethod.call(f.store, 'team')])).toEqual([expected, expected]);
+			expect((await listTeamProjectsMethod.call(f.store, 'foreign-team')).map(project => project?.id)).toEqual(['foreign']);
+			expect(await listTeamProjectsMethod.call(f.store, 'absent-team')).toEqual([]);
+			expect(await f.all('SELECT * FROM projects ORDER BY id')).toEqual(rows); expect(await f.snapshot()).toEqual(before); expect(f.calls).toEqual(calls);
+		} finally { await f.close(); }
+	});
 	it('native public preflight denies incomplete persisted demand authority without repairing rows or creating admission truth', async () => {
 		const f = await workdayStartDatabase(); try {
 			// Controlled SQL projection inputs, not a genuinely accepted Decision

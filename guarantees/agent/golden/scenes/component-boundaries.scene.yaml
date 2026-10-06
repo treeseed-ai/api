@@ -2150,3 +2150,9 @@ workflow:
   - id: execution-registration-key-readback-native
     action: { verifier: api.golden.execution-registration-key-readback-native }
     expect: { status: passed }
+  - id: execution-project-inventory-unit
+    action: { verifier: api.golden.execution-project-inventory-unit }
+    expect: { status: passed }
+  - id: execution-project-inventory-native
+    action: { verifier: api.golden.execution-project-inventory-native }
+    expect: { status: passed }

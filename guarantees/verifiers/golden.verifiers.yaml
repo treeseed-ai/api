@@ -3691,3 +3691,13 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/admission/postgres.test.ts
     testName: "serializes competing claims and rolls back without orphan reservations or duplicate charges"
+  api.golden.execution-project-inventory-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workday-project-policy.test.ts
+    testName: "owning workday project inventory excludes absent and deleted rows without repairing supplied project bytes or broadening team selection"
+  api.golden.execution-project-inventory-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "native owning workday project inventory retains exact team rows excludes completed deletion and remains immutable across concurrent reads"
