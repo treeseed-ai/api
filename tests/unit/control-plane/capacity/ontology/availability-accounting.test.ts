@@ -4,12 +4,35 @@ import { serializeAvailabilitySessionRow } from '../../../../../src/api/capacity
 import { canonicalOfferBuildInput } from '../execution/fixtures/assignment-attempt-fixtures.ts';
 import { serializeCapacityExecutionProvider } from '../../../../../src/api/capacity/repositories/capacity/providers/execution-provider.ts';
 import { deriveNativeCapacity, resolveNativeAccountingWindow } from '../../../../../src/api/capacity/services/capacity/accounting/native-capacity.ts';
+import { serializeCapacityReservationRow } from '../../../../../src/api/capacity/repositories/capacity/accounting/reservation.ts';
 const now = '2026-09-16T12:00:00.000Z';
 const observation = { day: '2026-09-16', observedAt: now, healthy: true, activeSeconds: 100, reservedSeconds: 0 };
 const adapter = { id: 'codex-implementation', adapter: 'codex', isolation: 'microvm', nativeLimits: { modelConfigurationId: 'terra-medium', dailyActiveSecondsLimit: 28800,
 	capabilityLimits: { implementation: { dailyActiveSecondsLimit: 28800 } } }, accountingObservation: {
 		modelUsage: observation, capabilityUsage: { implementation: observation } } };
 describe('availability usage continuity', () => {
+	it('debits only the exact canonical provider and execution identity while retaining shared and failed reservation history', () => {
+		const nativeLimit = { id: 'limit', executionProviderId: 'execution', scope: 'daily', nativeUnit: 'token', limitAmount: 100,
+			reserveBufferPercent: 10, confidence: 'high', source: 'configured', createdAt: now, updatedAt: now };
+		const provider = serializeCapacityExecutionProvider({ id: 'execution', capacity_provider_id: 'provider', adapter: 'renamed-adapter',
+			display_name: 'Supply', status: 'active', native_unit: 'token', quota_visibility: 'exact', max_concurrent_runners: 1,
+			native_limits_json: JSON.stringify([nativeLimit]), capabilities_json: '[]', metadata_json: '{}', created_at: now, updated_at: now });
+		const rows = [
+			{ id: 'local', capacity_provider_id: 'provider', execution_provider_id: 'execution', state: 'reserved', reserved_native_amount: 3, consumed_native_amount: 0 },
+			{ id: 'shared', capacity_provider_id: 'provider', execution_provider_id: null, state: 'reserved', reserved_native_amount: 2, consumed_native_amount: 0 },
+			{ id: 'failed', capacity_provider_id: 'provider', execution_provider_id: 'execution', state: 'failed', reserved_native_amount: 4, consumed_native_amount: 4 },
+			{ id: 'foreign', capacity_provider_id: 'foreign-provider', execution_provider_id: 'execution', state: 'reserved', reserved_native_amount: 70, consumed_native_amount: 0 },
+			{ id: 'other-execution', capacity_provider_id: 'provider', execution_provider_id: 'other', state: 'reserved', reserved_native_amount: 50, consumed_native_amount: 0 },
+		].map(row => ({ idempotency_key: row.id, membership_id: 'membership', project_agent_class_id: 'class', mode: 'acting',
+			team_id: 'team', project_id: 'project', requested_seconds: 1, reserved_seconds: 1, active_seconds: 0, elapsed_seconds: 0,
+			released_seconds: 0, overrun_seconds: 0, native_unit: 'token', policy_snapshot_json: '{}', metadata_json: '{}', created_at: now, updated_at: now, ...row }));
+		const activeReservations = rows.map(row => serializeCapacityReservationRow(row)!);
+		const input = { executionProvider: provider, nativeLimit, now, activeReservations }, held = structuredClone(input), raw = structuredClone(rows);
+		const result = deriveNativeCapacity(input);
+		expect(result).toMatchObject({ capacityProviderId: 'provider', executionProviderId: 'execution', activeReservedNativeAmount: 5,
+			activeConsumedNativeAmount: 4, availableNativeAmount: 81 });
+		expect(deriveNativeCapacity(input)).toEqual(result); expect(input).toEqual(held); expect(rows).toEqual(raw);
+	});
 	it('derives native budget identity from the canonical provider and adapter without rewriting native limits or observations', () => {
 		for (const providerId of ['provider-one', 'renamed-provider']) for (const kind of ['configured-adapter', 'renamed-adapter']) {
 			const nativeLimit = { id: 'daily-limit', executionProviderId: 'execution', scope: 'daily', nativeUnit: 'token',

@@ -10,6 +10,7 @@ import { frozenAttempt, settlementDatabase, terminalUsage } from './settlement-f
 import { workdayStartDatabase } from '../../workdays/scheduling/architecture/workday-start-fixture.ts';
 import { upsertCapacityExecutionProviderOperations } from '../../../../../../src/api/capacity/repositories/capacity/providers/execution-provider.ts';
 import { NativeCapacityService } from '../../../../../../src/api/capacity/services/capacity/capacity-core/native-capacity-service.ts';
+import { serializeCapacityReservationRow } from '../../../../../../src/api/capacity/repositories/capacity/accounting/reservation.ts';
 
 const operator = { id: 'isolated-operator', roles: ['admin'] };
 const provider = { principal: { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider', scopes: ['provider:usage:write', 'provider:assignments:write'] } };
@@ -32,6 +33,47 @@ async function fixture() {
 // SQL, with settlement first through the public provider service. Supplied
 // principals/usage are INPUTS, not authenticated HTTP or external native charges.
 describe('public all-attempt accounting record custody', () => {
+	it('native budget SQL and supplied reservation readback agree despite another provider reusing the execution identity and retain failed charges', async () => {
+		const f = await workdayStartDatabase(); try {
+			await f.db.exec(readFileSync('drizzle/control-plane/0008_capability_ontology.sql', 'utf8'));
+			const at = f.intent.startsAt;
+			for (const providerId of ['provider', 'foreign-provider']) {
+				const publicJwk = generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }), encoded = JSON.stringify(publicJwk);
+				if (providerId === 'provider') await f.query('UPDATE capacity_providers SET public_jwk_json=?,fingerprint=? WHERE id=?', [encoded, createHash('sha256').update(encoded).digest('hex'), providerId]);
+				else await f.query('INSERT INTO capacity_providers (id,fingerprint,public_jwk_json,display_name,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+					[providerId, createHash('sha256').update(encoded).digest('hex'), encoded, 'Other supplied provider', at, at]);
+				const ids = providerId === 'provider' ? ['execution', 'other'] : ['execution'];
+				await f.store.batch(upsertCapacityExecutionProviderOperations({ providerId, createdAt: at, executionProviders: ids.map(id => ({
+					id, displayName: 'Configured supply', adapter: 'renamed-adapter', status: 'active', nativeUnit: 'token', quotaVisibility: 'exact', maxConcurrentRunners: 1,
+					nativeLimits: [{ id: `limit-${id}`, executionProviderId: id, scope: 'daily', nativeUnit: 'token', limitAmount: 100,
+						reserveBufferPercent: 10, confidence: 'high', source: 'configured', createdAt: at, updatedAt: at }],
+				})) }));
+			}
+			await f.query('INSERT INTO capacity_provider_team_memberships (id,team_id,capacity_provider_id,approved_at,approved_by_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)',
+				['foreign-membership', 'team', 'foreign-provider', at, 'operator', at, at]);
+			for (const row of [
+				{ id: 'local', providerId: 'provider', executionId: 'execution', state: 'reserved', reserved: 3, consumed: 0 },
+				{ id: 'shared', providerId: 'provider', executionId: null, state: 'reserved', reserved: 2, consumed: 0 },
+				{ id: 'failed', providerId: 'provider', executionId: 'execution', state: 'failed', reserved: 4, consumed: 4 },
+				{ id: 'foreign', providerId: 'foreign-provider', executionId: 'execution', state: 'reserved', reserved: 70, consumed: 0 },
+				{ id: 'other', providerId: 'provider', executionId: 'other', state: 'reserved', reserved: 50, consumed: 0 },
+			]) await f.query(`INSERT INTO capacity_reservations (id,idempotency_key,admission_token,membership_id,capacity_provider_id,execution_provider_id,
+				project_agent_class_id,mode,team_id,project_id,state,requested_seconds,reserved_seconds,native_unit,reserved_native_amount,consumed_native_amount,created_at,updated_at)
+				VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [row.id, row.id, row.id, row.providerId === 'provider' ? 'membership' : 'foreign-membership',
+				row.providerId, row.executionId, 'class', 'acting', 'team', 'project', row.state, 1, 1, 'token', row.reserved, row.consumed, at, at]);
+			const raw = await f.all('SELECT * FROM capacity_reservations ORDER BY id'), reservations = raw.map(row => serializeCapacityReservationRow(row)!);
+			const held = structuredClone(reservations), baseline = await f.snapshot(), service = new NativeCapacityService(f.store);
+			const sql = await service.provider('team', 'provider', { now: at });
+			expect(sql.entries.find(entry => entry.executionProviderId === 'execution')).toMatchObject({ activeReservedNativeAmount: 5,
+				activeConsumedNativeAmount: 4, availableNativeAmount: 81 });
+			expect(await service.provider('team', 'provider', { now: at, activeReservations: reservations })).toEqual(sql);
+			expect(await service.provider('team', 'provider', { now: at })).toEqual(sql);
+			expect(await f.snapshot()).toEqual(baseline); expect(await f.all('SELECT * FROM capacity_reservations ORDER BY id')).toEqual(raw);
+			expect(reservations).toEqual(held);
+			// Native owning SQL/service and public serializers; all seeded numbers
+			// are controlled inputs, NOT generated execution/usage or settlement.
+		} finally { await f.close(); }
+	});
 	it('native provider budget readback retains canonical SQL provider and adapter identity and denies foreign or suspended membership without financial writes', async () => {
 		const f = await workdayStartDatabase(); try {
 			await f.db.exec(readFileSync('drizzle/control-plane/0008_capability_ontology.sql', 'utf8'));

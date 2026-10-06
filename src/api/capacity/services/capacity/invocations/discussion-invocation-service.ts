@@ -358,7 +358,7 @@ export async function admitDiscussionInvocations(store: DiscussionInvocationStor
 		}
 		try {
 			const runIdentity = parent ? { id: parent.id, existing: true } : await nextConversationRunId(store, input.teamId, invocation.id);
-			const effectiveSeconds = Math.max(input.durationSeconds, invocation.productiveSeconds);
+			const effectiveSeconds = input.durationSeconds;
 			const claimToken=randomUUID();
 			await store.run(`UPDATE agent_invocation_requests SET status='admitted',execution_id=?,blocking_state_json=?,updated_at=? WHERE id=? AND status IN ('queued','blocked') AND (execution_id IS NULL OR execution_id='')`, [runIdentity.id,JSON.stringify({code:'communication_admission_claimed',claimToken}),new Date().toISOString(), invocation.id]);
 			const claimed = await store.first(`SELECT status,execution_id,blocking_state_json FROM agent_invocation_requests WHERE id=? LIMIT 1`, [invocation.id]);
