@@ -25,8 +25,6 @@ export function teamSupplyPolicy(team: JsonRecord | null): CapacitySupplyPolicy 
 		allowPlanningFailover: configured.allowPlanningFailover !== false,
 		allowActingFailover: configured.allowActingFailover === true,
 		preferredCapacityProviderIds: list('preferredCapacityProviderIds'),
-		preferredExecutionProviderIds: list('preferredExecutionProviderIds'),
 		disallowedCapacityProviderIds: list('disallowedCapacityProviderIds'),
-		disallowedExecutionProviderIds: list('disallowedExecutionProviderIds'),
 	};
 }

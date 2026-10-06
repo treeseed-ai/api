@@ -16,6 +16,15 @@ const executorRegistry = (executors: Executor[]) => new Map(
 	executors.map((executor) => [`${executor.namespace}:${executor.operation}`, executor]),
 );
 
+function operationFailure(error: unknown) {
+	const record = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+	return {
+		message: error instanceof Error ? error.message : String(error),
+		...(typeof record.code === 'string' ? { code: record.code } : {}),
+		...(Array.isArray(record.details) ? { details: record.details } : {}),
+	};
+}
+
 export async function runPlatformOperationOnce(options: any) {
 	const registry = executorRegistry(options.executors);
 	const claimed = await options.client.claimJob({
@@ -98,7 +107,7 @@ export async function runPlatformOperationOnce(options: any) {
 		const completed = await options.client.complete(operation.id, { runnerId: options.runnerId, output });
 		return { ok: true, claimed: true, operation: completed.operation, output };
 	} catch (error) {
-		const failure = { message: error instanceof Error ? error.message : String(error) };
+		const failure = operationFailure(error);
 		const eventKind = failure.message.toLowerCase().includes('cancel') ? 'runner.cancelled' : 'runner.retry_safe_failure';
 		if (eventKind === 'runner.cancelled' && options.client.cancel) {
 			const cancelled = await options.client.cancel(operation.id, {

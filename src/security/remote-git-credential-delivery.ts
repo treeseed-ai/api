@@ -18,22 +18,31 @@ export async function createRemoteGitCredentialDelivery(input: {
 }) {
 	const now = new Date();
 	const expiresAt = new Date(now.getTime() + 120_000).toISOString();
-	const idempotencyBase = `${input.operationId}:${input.purpose}:${input.reviewedCommit}`;
+	const refspec = input.refspec ?? `${input.sourceRef}:${input.destinationRef}`;
+	const digest = createHash('sha256').update(refspec).digest('hex');
+	// Retries may switch from an authoring ref to a reviewed-commit ref. A
+	// delivery is reusable only within the exact same authorization boundary.
+	const contextDigest = createHash('sha256').update(JSON.stringify([
+		input.actorId, input.teamId, input.projectId, input.repositoryBindingId,
+		input.credentialAuthorityId, input.nodeId, input.sourceRef, input.destinationRef,
+		input.expectedRemoteHead ?? '', digest,
+	])).digest('hex');
+	const idempotencyBase = `${input.operationId}:${input.purpose}:${input.reviewedCommit}:${contextDigest}`;
 	const attempts: any[] = await input.store.all(
-		`SELECT g.id, g.expires_at AS grant_expires_at, d.id AS delivery_id, d.status, d.expires_at FROM remote_git_operation_grants g
+		`SELECT g.id, g.idempotency_key, g.status AS grant_status, g.expires_at AS grant_expires_at,
+		 d.id AS delivery_id, d.status, d.expires_at FROM remote_git_operation_grants g
 		 LEFT JOIN remote_credential_deliveries d ON d.grant_id = g.id
 		 WHERE g.operation_id = ? AND g.idempotency_key LIKE ? ORDER BY g.created_at`,
 		[input.operationId, `${idempotencyBase}:%`],
 	);
-	const reusable = attempts.findLast((item) => item.status === 'ready' && Date.parse(item.expires_at) > Date.now());
+	const active = (item: any) => item.grant_status === 'delivered' && Date.parse(item.grant_expires_at) > now.getTime();
+	const reusable = attempts.findLast((item) => active(item) && item.status === 'ready' && Date.parse(item.expires_at) > now.getTime());
 	if (reusable) return { deliveryId: reusable.delivery_id as string, expiresAt: reusable.expires_at as string, reused: true };
 
-	const partial = attempts.findLast((item) => !item.delivery_id && Date.parse(item.grant_expires_at) > Date.now());
+	const partial = attempts.findLast((item) => active(item) && !item.delivery_id);
 	const grantId = partial?.id ?? randomUUID();
 	const candidateDeliveryId = randomUUID();
-	const idempotencyKey = `${idempotencyBase}:${partial ? attempts.indexOf(partial) + 1 : attempts.length + 1}`;
-	const refspec = input.refspec ?? `${input.sourceRef}:${input.destinationRef}`;
-	const digest = createHash('sha256').update(refspec).digest('hex');
+	const idempotencyKey = partial?.idempotency_key ?? `${idempotencyBase}:${attempts.length + 1}`;
 	if (!partial) {
 		await input.store.run(
 			`INSERT INTO remote_git_operation_grants (id, operation_id, actor_id, team_id, project_id, repository_binding_id,

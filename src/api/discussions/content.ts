@@ -9,12 +9,37 @@ import { isAgentAtlasContextReference, type AgentAtlasContextReference } from '@
 import { persistSessionEvent } from '../realtime/session-events.ts';
 import { validateContentRecord, type ContentModel } from '../content/content-validation.ts';
 import { discussionWorkspaceOperationKey,openDiscussionWorkspace } from './discussion-workspace.ts';
+import { parseCommunicationAddresses } from '@treeseed/sdk/operator-contracts';
 
 type Row = Record<string, unknown>;
 function text(value: unknown, fallback = '') { return typeof value === 'string' && value.trim() ? value.trim() : fallback; }
 function record(value: unknown): Row { if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row; if (typeof value === 'string') try { return record(JSON.parse(value)); } catch { return {}; } return {}; }
 function slug(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 72) || 'discussion'; }
 function normalizedDocument(value: unknown) { return typeof value === 'string' ? value.replaceAll('\r\n', '\n').trimEnd() : ''; }
+class DiscussionAuthoringError extends Error {
+	readonly code: string;
+	readonly cause: unknown;
+
+	constructor(stage: 'discussion-read' | 'reference-read' | 'changeset' | 'commit', cause: unknown) {
+		const upstream = cause && typeof cause === 'object' ? cause as Record<string, unknown> : {};
+		super(`TreeDX Discussion ${stage} failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+		this.name = 'DiscussionAuthoringError';
+		this.code = `discussion_authoring_${stage}_${text(upstream.code, 'failed')}`;
+		this.cause = cause;
+	}
+}
+export function discussionAuthoringWorkspaceRefs(authoringRef: string, workspace: { baseCommitSha?: string; baseRef?: string } | null | undefined) {
+	return [...new Set([authoringRef, text(workspace?.baseCommitSha), text(workspace?.baseRef)].filter(Boolean))];
+}
+export function discussionAuthoringAuthority(input: {
+	explicitRef?: string | null; parentWorkdayId?: string | null; executionMode?: string | null; authorType?: string | null;
+}) {
+	const simulation = input.executionMode === 'simulation' && Boolean(input.parentWorkdayId);
+	return {
+		ref: text(input.explicitRef) || (simulation ? `refs/heads/${input.parentWorkdayId}` : ''),
+		state: input.authorType === 'agent' || simulation ? 'unpublished' as const : 'integrated' as const,
+	};
+}
 export function discussionEventPathIdentity(value: string) {
 	const readable = value.toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 40) || 'event';
 	const digest = createHash('sha256').update(value).digest('hex').slice(0, 24);
@@ -36,12 +61,13 @@ function assertDiscussionContent(path: string, source: string) {
 }
 
 export function mentionedAgentSlugs(body: string) {
-	return [...new Set([...body.matchAll(/(?:^|\s)@([a-z0-9][a-z0-9-]{1,63})\b/giu)].map((match) => match[1]!.toLowerCase()))];
+	return parseCommunicationAddresses(body).map((address) => address.agentSlug);
 }
 
 export async function loadDiscussions(input: {
 	store: any; projectId: string; discussionId?: string; query?: string;
 	collection?: 'discussions' | 'messages' | 'events'; limit?: number; after?: string;
+	exactPaths?: string[]; exactMessageIds?: string[]; includeDiscussion?: boolean;
 }) {
 	const connection = await resolveKnowledgeGatewayConnection(input.store, {
 		projectId: input.projectId, write: false, communicationPaths: true,
@@ -49,10 +75,21 @@ export async function loadDiscussions(input: {
 	if (!connection) throw new Error('The project TreeDX repository is unavailable for Discussion history.');
 	const discussionRef = `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
 	const selected = input.discussionId ? slug(input.discussionId) : null;
+	const exactPaths = [...new Set([
+		...(input.exactPaths ?? []).map((path) => text(path)).filter(Boolean),
+		...(selected ? (input.exactMessageIds ?? []).map((messageId) => projectLibraryPath(connection.contentPath,
+			'discussion-messages', selected, `${text(messageId)}.mdx`)).filter((path) => !path.endsWith('/.mdx')) : []),
+		...(selected && input.includeDiscussion === true
+			? [projectLibraryPath(connection.contentPath, 'discussions', `${selected}.mdx`)] : []),
+	])];
 	const patterns = selected
 		? [projectLibraryPath(connection.contentPath, 'discussions', `${selected}.mdx`), projectLibraryPath(connection.contentPath, 'discussion-messages', selected, '**'), projectLibraryPath(connection.contentPath, 'discussion-events', selected, '**')]
 		: [projectLibraryPath(connection.contentPath, 'discussions/**')];
-	const listed = await connection.client.listRepositoryPaths({ repoId: connection.repositoryId, ref: discussionRef, paths: patterns, kinds: ['blob'], extensions: ['.md', '.mdx'], limit: 1_000, allowProtected: true });
+	// Known messages and discussion records must be read directly. Enumerating a
+	// repository tree for an idempotency check made every chat send proportional
+	// to the size of the library and could exhaust the gateway request deadline.
+	const listed = exactPaths.length ? { entries: exactPaths.map((path) => ({ path })), resolvedRef: discussionRef }
+		: await connection.client.listRepositoryPaths({ repoId: connection.repositoryId, ref: discussionRef, paths: patterns, kinds: ['blob'], extensions: ['.md', '.mdx'], limit: 1_000, allowProtected: true });
 	const readableAuthoring = await listReadableTreeDxAuthoringState(input.store, input.projectId);
 	const branchPaths = (listed.entries ?? []).map((entry: unknown) => text((entry as Row)?.path)).filter(Boolean);
 	const journalPaths = readableAuthoring.flatMap((state) => Array.isArray(state.changedPaths)
@@ -65,7 +102,11 @@ export async function loadDiscussions(input: {
 	const selectedDiscussionPaths = selected ? (path: string) => path === projectLibraryPath(connection.contentPath, 'discussions', `${selected}.mdx`)
 		|| path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussion-messages', selected)}/`)
 		|| path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussion-events', selected)}/`) : () => true;
+	// Journal overlays provide immutable content, not additional selection authority.
+	// An exact read must never be paginated out by unrelated topic history.
+	const exactSelection = new Set(exactPaths);
 	const eligiblePaths = [...new Set([...branchPaths, ...journalPaths])]
+		.filter((path) => exactSelection.size === 0 || exactSelection.has(path))
 		.filter(selectedDiscussionPaths)
 		.filter((path) => !collectionMarker || path.includes(collectionMarker));
 	const pathMatches = query ? eligiblePaths.filter((path) => path.toLowerCase().includes(query)) : [];
@@ -79,20 +120,24 @@ export async function loadDiscussions(input: {
 	// Keep the authorized branch identity on the read request. The resolved commit is
 	// authoritative evidence, but an unpublished authoring commit is intentionally
 	// not known when the short-lived gateway token is minted.
-	const read = paths.length ? await connection.client.readRepositoryFiles({ repoId: connection.repositoryId, ref: discussionRef, paths, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }) : { files: [] };
 	const latestUnpublishedByPath = new Map<string,string>();
 	for (const state of readableAuthoring) {
 		const commitSha=text(state.commitSha); const changedPaths=Array.isArray(state.changedPaths)?state.changedPaths.map(String):[];
 		for (const path of changedPaths) {
 			if (!selectedPaths.includes(path)) continue;
-			const isSelectedDiscussion=selected
+			const isSelectedDiscussion=exactSelection.has(path) || (selected
 				? path === projectLibraryPath(connection.contentPath, 'discussions', `${selected}.mdx`)
 					|| path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussion-messages', selected)}/`)
 					|| path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussion-events', selected)}/`)
-				: path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussions')}/`);
+				: path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussions')}/`));
 			if (isSelectedDiscussion) latestUnpublishedByPath.set(path,commitSha);
 		}
 	}
+	// Journal-backed messages may not exist on the branch yet. Resolve their
+	// authorized immutable commits before reading, rather than failing a whole
+	// send receipt with a branch-level 404 before its journal overlay is read.
+	const branchReadPaths = paths.filter((path) => !latestUnpublishedByPath.has(path));
+	const read = branchReadPaths.length ? await connection.client.readRepositoryFiles({ repoId: connection.repositoryId, ref: discussionRef, paths: branchReadPaths, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }) : { files: [] };
 	const immutableRefs = [...new Set(latestUnpublishedByPath.values())];
 	const immutableConnection = immutableRefs.length ? await resolveKnowledgeGatewayConnection(input.store, {
 		projectId: input.projectId, write: false, communicationPaths: true, readRefs: immutableRefs,
@@ -107,7 +152,9 @@ export async function loadDiscussions(input: {
 	const items = [...filesByPath.values()].map((file: unknown) => {
 		const row = file as Row; const path = text(row.path); const source = text(row.content);
 		assertDiscussionContent(path, source); const parsed = parseFrontmatterDocument(source);
-		return { id: path.split('/').at(-1)?.replace(/\.mdx?$/u, ''), path, frontmatter: parsed.frontmatter, body: parsed.body.trim() };
+		return { id: path.split('/').at(-1)?.replace(/\.mdx?$/u, ''), path,
+			immutableRef: latestUnpublishedByPath.get(path) ?? text((read as Row).resolvedRef, listed.resolvedRef),
+			frontmatter: parsed.frontmatter, body: parsed.body.trim() };
 	}).filter((item: Row) => !query || JSON.stringify(item).toLowerCase().includes(query));
 	const after = text(input.after);
 	const afterFiltered = items.filter((item: Row) => {
@@ -133,22 +180,33 @@ export async function loadDiscussions(input: {
 
 export async function commitDiscussionMessage(input: {
 	store: any; projectId: string; teamId: string; principal: Row; body: string;
+	lookupWorkday?: (teamId: string, workdayId: string) => Promise<{ executionMode: string } | null>;
 	intent: 'discuss' | 'propose'; discussionId?: string; topic?: string; fileRefs?: unknown[]; contextRefs?: AgentAtlasContextReference[];
 	authorType?: 'user' | 'agent' | 'system'; messageId?: string;
 	createDiscussion?: boolean;
 	replyTo?: string | null; sourceMessageRefs?: string[]; recipients?: string[]; authorAgentId?: string | null;
+	inboxIntent?: 'comment' | 'answer' | 'reply';
 	handoffId?: string | null; parentWorkdayId?: string | null; resultingOperationId?: string | null;
 	assignmentId?: string | null;
 	authoringRef?: string | null;
+	authoringWorkspace?: { workspaceId: string; baseCommitSha: string; baseRef: string; allowedPaths?: string[] } | null;
 }) {
-	const authoringRef = text(input.authoringRef);
+	const workday = input.parentWorkdayId && input.lookupWorkday
+		? await input.lookupWorkday(input.teamId, input.parentWorkdayId) : null;
+	if (input.parentWorkdayId && !workday) throw Object.assign(new Error('The addressed workday is unavailable.'), {
+		status: 409, code: 'discussion_workday_unavailable',
+	});
+	const authoring = discussionAuthoringAuthority({ explicitRef: input.authoringRef,
+		parentWorkdayId: input.parentWorkdayId, executionMode: workday?.executionMode, authorType: input.authorType });
+	const authoringRef = authoring.ref;
 	if (input.authorType === 'agent' && input.assignmentId && !/^refs\/heads\/assignment_[A-Za-z0-9_-]+$/u.test(authoringRef)) {
 		throw Object.assign(new Error('Assignment-authored Discussion messages require the exact isolated assignment ref.'), {
 			status: 409, code: 'discussion_assignment_ref_required', details: { assignmentId: input.assignmentId },
 		});
 	}
+	const workspaceRefs = discussionAuthoringWorkspaceRefs(authoringRef, input.authoringWorkspace);
 	const connection = await resolveKnowledgeGatewayConnection(input.store, { projectId: input.projectId, write: true, communicationPaths: true,
-		...(authoringRef ? { workspaceRefs: [authoringRef] } : {}) });
+		...(workspaceRefs.length ? { workspaceRefs } : {}), ...(input.authoringWorkspace?.allowedPaths?.length ? { workspacePaths: input.authoringWorkspace.allowedPaths } : {}) });
 	if (!connection) throw new Error('The project TreeDX repository is unavailable for Discussion authoring.');
 	const now = new Date().toISOString();
 	const discussionId = text(input.discussionId, randomUUID());
@@ -165,29 +223,56 @@ export async function commitDiscussionMessage(input: {
 	const eventPath = projectLibraryPath(root, 'discussion-events', slug(discussionId), `${now.replace(/[^0-9]/gu, '')}-${messageId}.mdx`);
 	const authorId = text(input.principal.id, 'unknown-user');
 	const authorName = text(input.principal.displayName, input.principal.name, authorId);
-	const discussion = serializeFrontmatterDocument({ title: topic, topic, status: 'active', teamId: input.teamId, projectId: input.projectId, visibility: 'team', participantIds: [authorId], agentIds: mentions, createdAt: now, updatedAt: now }, `# ${topic}\n`);
-	const message = serializeFrontmatterDocument({ title: `${authorName}: ${topic}`.slice(0, 120), discussionId, authorId, authorType: input.authorType ?? 'user', intent: input.intent,
-		mentionedAgents, recipientIds: recipients, fileRefs: Array.isArray(input.fileRefs) ? input.fileRefs : [], contextRefs: input.contextRefs ?? [],
-		...(input.replyTo ? { replyTo: input.replyTo } : {}), sourceMessageRefs: input.sourceMessageRefs ?? [],
-		...(input.authorAgentId ? { authorAgentId: input.authorAgentId } : {}), ...(input.handoffId ? { handoffId: input.handoffId } : {}),
-		...(input.parentWorkdayId ? { parentWorkdayId: input.parentWorkdayId } : {}), ...(input.resultingOperationId ? { resultingOperationId: input.resultingOperationId } : {}), createdAt: now }, `${input.body}\n`);
-	const event = serializeFrontmatterDocument({ title: 'Message committed', discussionId, messageId, phase: 'message.committed', sequence: Date.now(), occurredAt: now, metrics: {}, refs: [messagePath] }, `The user message was committed to TreeDX before assignment dispatch.\n`);
-	for (const [path, source] of [[discussionPath, discussion], [messagePath, message], [eventPath, event]]) {
-		assertDiscussionContent(path, source);
-	}
+	const discussion = serializeFrontmatterDocument({ schemaVersion: 'treeseed.discussion/v1', id: discussionId,
+		projectId: input.projectId, subjectRef: { store: 'postgresql', model: 'project', id: input.projectId },
+		status: 'open', participantClasses: [], title: topic, topic, teamId: input.teamId,
+		visibility: 'team', participantIds: [authorId], agentIds: mentions, createdAt: now, updatedAt: now }, `# ${topic}\n`);
 	const branchName = authoringRef || `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
-	const session = await openDiscussionWorkspace({ store:input.store,connection,projectId:input.projectId,branchName,
-		operationKey:discussionWorkspaceOperationKey('message',`${discussionId}\n${messageId}`) });
+	const session = await openDiscussionWorkspace({ store:input.store,connection,projectId:input.projectId,baseRef:connection.baseRef,branchName,
+		operationKey:discussionWorkspaceOperationKey('message',`${discussionId}\n${messageId}`),
+		...(input.authoringWorkspace ? { existingWorkspace: input.authoringWorkspace } : {}),
+	});
 	const workspace = session.workspace;
 	try {
+		const creating=input.createDiscussion===true||!input.discussionId;
+		const currentDiscussion=creating?discussion:(await connection.client.readFile({workspaceId:workspace.workspaceId,path:discussionPath})
+			.catch((error: unknown) => { throw new DiscussionAuthoringError('discussion-read', error); })).content;
+		assertDiscussionContent(discussionPath,currentDiscussion);
+		const discussionRef={store:'treedx' as const,model:'discussion',id:discussionId,path:discussionPath,
+			revision:1,digest:`sha256:${createHash('sha256').update(currentDiscussion).digest('hex')}`};
+		const messageReference=async(value:string)=>{
+			const prefix=projectLibraryPath(root,'discussion-messages');
+			const path=value.startsWith(`${prefix}/`)?value:projectLibraryPath(root,'discussion-messages',slug(discussionId),`${value}.mdx`);
+			if(!path.startsWith(`${prefix}/`)||path.split('/').includes('..'))throw new Error('Discussion message reference escaped its project library.');
+			const history=await loadDiscussions({store:input.store,projectId:input.projectId,exactPaths:[path],collection:'messages',limit:1})
+				.catch((error: unknown) => { throw new DiscussionAuthoringError('reference-read', error); });
+			const existing=history.messages.find((item:Row)=>item.path===path);
+			if(!existing||!/^[a-f0-9]{40}$/u.test(text(existing.immutableRef)))throw new Error('The referenced Discussion message has no exact readable TreeDX commit.');
+			return {store:'treedx' as const,model:'discussion-message',id:text(record(existing.frontmatter).id),path,
+				commit:text(existing.immutableRef)};
+		};
+		const replyToRef=input.replyTo?await messageReference(input.replyTo):undefined;
+		const sourceMessageRefs=await Promise.all((input.sourceMessageRefs??[]).map(messageReference));
+		const message=serializeFrontmatterDocument({schemaVersion:'treeseed.discussion-message/v1',id:messageId,
+			discussionRef,authorRef:{store:'postgresql',model:input.authorType==='agent'?'agent':'user',id:authorId},
+			title:`${authorName}: ${topic}`.slice(0,120),discussionId,authorId,authorType:input.authorType??'user',intent:input.intent,
+			mentionedAgents,recipientIds:recipients,fileRefs:Array.isArray(input.fileRefs)?input.fileRefs:[],contextRefs:input.contextRefs??[],
+			...(input.inboxIntent?{inboxIntent:input.inboxIntent}:{}),...(replyToRef?{replyToRef}:{}),sourceMessageRefs,
+			...(input.authorAgentId?{authorAgentId:input.authorAgentId}:{}),...(input.handoffId?{handoffId:input.handoffId}:{}),
+			...(input.parentWorkdayId?{parentWorkdayId:input.parentWorkdayId}:{}),
+			...(input.resultingOperationId?{resultingOperationId:input.resultingOperationId}:{}),createdAt:now},`${input.body}\n`);
+		const event=serializeFrontmatterDocument({title:'Message committed',discussionId,messageId,phase:'message.committed',sequence:Date.now(),occurredAt:now,metrics:{},refs:[messagePath]},`The user message was committed to TreeDX before assignment dispatch.\n`);
+		assertDiscussionContent(messagePath,message);
+		assertDiscussionContent(eventPath,event);
 		const changeset = await applyTextChangeset({ client: connection.client, workspace, changes: [
-			...(input.createDiscussion === true || !input.discussionId ? [{ path: discussionPath, before: null, after: discussion }] : []),
+			...(creating ? [{ path: discussionPath, before: null, after: discussion }] : []),
 			{ path: messagePath, before: null, after: message },
 			{ path: eventPath, before: null, after: event },
-		] });
-		const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `discussion: ${topic}`, author: { name: authorName, email: text(input.principal.email, 'discussion@users.treeseed.local') } });
+		] }).catch((error: unknown) => { throw new DiscussionAuthoringError('changeset', error); });
+		const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `discussion: ${topic}`, author: { name: authorName, email: text(input.principal.email, 'discussion@users.treeseed.local') } })
+			.catch((error: unknown) => { throw new DiscussionAuthoringError('commit', error); });
 		const actorType = input.authorType === 'agent' ? 'agent' : input.authorType === 'system' ? 'service' : 'user';
-		if (actorType === 'agent') {
+		if (authoring.state === 'unpublished') {
 			await recordTreeDxAuthoringState(input.store,'unpublished',{ projectId:input.projectId,repositoryId:connection.repositoryId,commitSha:commit.commitSha,ref:commit.branchName,changedPaths:commit.changedPaths,assignmentId:input.assignmentId ?? null,actorType,actorId:authorId });
 		} else {
 			if (commit.changedPaths.length) {
@@ -207,7 +292,9 @@ export async function commitDiscussionMessage(input: {
 				commitSha:commit.commitSha,ref:commit.branchName,changedPaths:commit.changedPaths,assignmentId:input.assignmentId ?? null,
 				actorType,actorId:authorId });
 		}
-		await projectTreeDxCommitSignals(input.store, { projectId: input.projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: `Discussion message: ${topic}`, actorType: input.authorType === 'agent' ? 'agent' : input.authorType === 'system' ? 'service' : 'user', actorId: authorId });
+		// Only integrated content enters the shared replication and graph signal path.
+		// Simulation/assignment messages remain readable from their exact journaled commit.
+		if (authoring.state === 'integrated') await projectTreeDxCommitSignals(input.store, { projectId: input.projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: `Discussion message: ${topic}`, actorType: input.authorType === 'agent' ? 'agent' : input.authorType === 'system' ? 'service' : 'user', actorId: authorId });
 		await session.close();
 		return { discussion: { id: discussionId, topic, path: discussionPath }, message: { id: messageId, authorLabel: authorName, body: input.body, path: messagePath }, event: { path: eventPath }, mentions, commitSha: commit.commitSha, changeset: { ...changeset, resultCommitSha: commit.commitSha }, snapshotDigest: createHash('sha256').update(commit.commitSha).digest('hex') };
 	} catch (error) {
@@ -277,7 +364,6 @@ export async function appendDiscussionEvent(input: {
 		title: text(input.event.title, phase), discussionId: input.discussionId,
 		phase, sequence: Number(input.event.eventIndex ?? Date.now()),
 		...(input.event.assignmentId ? { assignmentId: String(input.event.assignmentId) } : {}),
-		...(input.event.modeRunId ? { modeRunId: String(input.event.modeRunId) } : {}),
 		...(context.agentId ? { agentId: String(context.agentId) } : {}),
 		...(context.executionProviderId ? { providerId: String(context.executionProviderId) } : {}),
 		occurredAt, metrics: input.event.metadata ?? {}, refs,
@@ -323,7 +409,7 @@ export async function appendDiscussionEvent(input: {
 	};
 	const observed = await observeExisting();
 	if (observed) return observed;
-	const session = await openDiscussionWorkspace({ store:input.store,connection,projectId:input.projectId,branchName,
+	const session = await openDiscussionWorkspace({ store:input.store,connection,projectId:input.projectId,baseRef:connection.baseRef,branchName,
 		operationKey:discussionWorkspaceOperationKey('event',path) });
 	const workspace = session.workspace;
 	try {
@@ -345,7 +431,7 @@ export async function appendDiscussionEvent(input: {
 	}
 }
 
-export async function changeDiscussionStatus(input:{store:any;projectId:string;teamId:string;discussionId:string;status:'active'|'archived';principal:Row}){
+export async function changeDiscussionStatus(input:{store:any;projectId:string;teamId:string;discussionId:string;status:'open'|'resolved'|'closed';principal:Row}){
 	const connection=await resolveKnowledgeGatewayConnection(input.store,{projectId:input.projectId,write:true,communicationPaths:true});
 	if(!connection)throw new Error('The project TreeDX repository is unavailable for Discussion lifecycle changes.');
 	const path=projectLibraryPath(connection.contentPath,'discussions',`${slug(input.discussionId)}.mdx`); const branchName=`refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u,'')}`;
@@ -353,8 +439,8 @@ export async function changeDiscussionStatus(input:{store:any;projectId:string;t
 	if(!file)throw Object.assign(new Error('Unknown Discussion.'),{status:404,code:'discussion_not_found'});
 	const before=text(file.content); const parsed=parseFrontmatterDocument(before); const prior=text(parsed.frontmatter.status);
 	if(prior===input.status)return {discussionId:input.discussionId,path,status:input.status,replayed:true,commitSha:text((read as Row).resolvedRef,branchName)};
-	const now=new Date().toISOString(); const after=serializeFrontmatterDocument({...parsed.frontmatter,status:input.status,...((prior==='open'||prior==='resolved')?{legacyStatus:prior}:{}),updatedAt:now},parsed.body); assertDiscussionContent(path,after);
-	const session=await openDiscussionWorkspace({store:input.store,connection,projectId:input.projectId,branchName,
+	const now=new Date().toISOString(); const after=serializeFrontmatterDocument({...parsed.frontmatter,status:input.status,updatedAt:now},parsed.body); assertDiscussionContent(path,after);
+	const session=await openDiscussionWorkspace({store:input.store,connection,projectId:input.projectId,baseRef:connection.baseRef,branchName,
 		operationKey:discussionWorkspaceOperationKey('status',`${input.discussionId}\n${input.status}`)}); const workspace=session.workspace;
 	try{
 		await applyTextChangeset({client:connection.client,workspace,changes:[{path,before,after}]}); const actor=text(input.principal.displayName,input.principal.id,'Discussion operator');

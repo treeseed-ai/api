@@ -107,10 +107,9 @@ export async function listCapacityWorkdayContentArtifactRefs(
   const rows = await store.all(
     `SELECT assignment.id, assignment.lifecycle_output_json AS outputs_json
 		   FROM capacity_provider_assignments assignment
-		   JOIN capacity_workday_demands demand ON demand.assignment_id = assignment.id
 		  WHERE assignment.team_id = ?
 		    AND assignment.project_id = ?
-		    AND demand.workday_run_id = ?
+		    AND assignment.work_day_id = ?
 		    AND assignment.status = 'completed'
 		  ORDER BY assignment.completed_at DESC, assignment.id ASC
 		  LIMIT ?`,
@@ -196,13 +195,9 @@ export async function resolveCapacityWorkdayAssignmentIntent(
     artifacts.find((artifact) => artifact.model === "proposal") ??
     artifacts.find((artifact) => artifact.artifactKind === "planning_proposal");
   if (!proposal) {
-    return {
-      ...intent,
-      objective: `${intent.objective} No generated proposal exists yet, so create an objective-scoped planning note that states what proposal context is needed next.`,
-      artifactKind: "planning_note",
-      subjectModel: "objective",
-      subjectId: objectiveRef.replace(/^objective:/u, "") || "core",
-    };
+    // Existing library proposals are selected by the subsequent source resolver.
+    // An empty current workday artifact list does not establish their absence.
+    return { ...intent, upstreamEvidence: graphInputs };
   }
   const proposalId = proposal.contentPath.replace(
     /^.*\/([^/]+)\.(md|mdx)$/u,

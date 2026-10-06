@@ -1,0 +1,11 @@
+schemaVersion: treeseed.scene/v1
+id: api.golden.concurrency-admission
+title: Canonical five-slot admission
+scope: local-component-tests
+workflow:
+  - id: canonical-adapter-headroom
+    action: { verifier: api.golden.canonical-adapter-headroom }
+    expect: { status: passed }
+  - id: total-admission-ceiling
+    action: { verifier: api.golden.total-admission-ceiling }
+    expect: { status: passed }

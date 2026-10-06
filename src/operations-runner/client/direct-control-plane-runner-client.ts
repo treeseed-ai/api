@@ -13,7 +13,7 @@ type RunnerStore = {
 };
 
 export class DirectControlPlaneRunnerClient {
-	constructor(private readonly store: RunnerStore) {}
+	constructor(private readonly store: RunnerStore, private readonly ownsStore = true) {}
 
 	async register(input: Record<string, unknown>) {
 		return { ok: true, runner: await this.store.upsertControlPlaneOperationRunner(input) };
@@ -65,6 +65,6 @@ export class DirectControlPlaneRunnerClient {
 	}
 
 	async close() {
-		await this.store.db?.close?.();
+		if (this.ownsStore) await this.store.db?.close?.();
 	}
 }

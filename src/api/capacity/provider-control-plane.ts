@@ -5,22 +5,14 @@ import { listCapacityExecutionProviders } from './repositories/capacity/provider
 import { CapacityProviderIdentityRepository } from './repositories/capacity/providers/provider-identity.ts';
 import { listExecutionRunsForTeamPage as readExecutionRunsForTeamPage } from './repositories/support/execution-run.ts';
 import {
-persistAgentModeRun,
-readAgentModeRun,
-listAgentModeRunsPage as readAgentModeRunsPage,
-} from './repositories/support/mode-run.ts';
-import {
 AvailabilitySessionService,
 type ProviderAvailabilityPrincipal,
 } from './services/accounts/availability-session-service.ts';
 import type { ProviderLeasePrincipal } from './services/accounts/lease-authority-service.ts';
-import { CapacityAllocationService } from './services/capacity/allocations/allocation-service.ts';
 import { CapacityGrantService } from './services/capacity/allocations/grant-service.ts';
-import { admitSynthesizedProviderAssignment as admitSynthesizedAssignment } from './services/capacity/assignments/admission/assignment-admission-service.ts';
 import type { ProviderSynthesisRequest } from './services/capacity/assignments/context/assignment-synthesis-service.ts';
 import { leaseNextProviderAssignment as leaseProviderAssignment } from './services/capacity/assignments/lifecycle/assignment-lease-service.ts';
 import { ProviderAssignmentLifecycleService } from './services/capacity/assignments/lifecycle/assignment-lifecycle-service.ts';
-import { preflightProviderAssignmentCompletion } from './services/capacity/assignments/lifecycle/assignment-completion-preflight-service.ts';
 import { resolveProviderSynthesisContext } from './services/capacity/providers/provider-synthesis-context-service.ts';
 import { ProjectAgentClassService } from './services/projects/agents/project-agent-class-service.ts';
 
@@ -38,23 +30,18 @@ export interface ProviderControlPlaneContext extends CapacityGovernanceDatabase 
 }
 type ProviderServiceContext = ProviderControlPlaneContext
 	& ConstructorParameters<typeof ProjectAgentClassService>[0]
-	& Parameters<typeof admitSynthesizedAssignment>[0]
 	& Parameters<typeof leaseProviderAssignment>[0]
-	& ConstructorParameters<typeof ProviderAssignmentLifecycleService>[0]
-	& Parameters<typeof preflightProviderAssignmentCompletion>[0]
-	& Parameters<typeof persistAgentModeRun>[0];
+	& ConstructorParameters<typeof ProviderAssignmentLifecycleService>[0];
 
 export class ProviderControlPlane {
 	private readonly providerContext: ProviderServiceContext;
 	private readonly assignmentRepository: ProviderAssignmentRepository;
-	private readonly allocationService: CapacityAllocationService;
 	private readonly agentClassService: ProjectAgentClassService;
 	private readonly availabilityService: AvailabilitySessionService;
 
 	constructor(providerContext: ProviderControlPlaneContext) {
 		this.providerContext = providerContext as unknown as ProviderServiceContext;
 		this.assignmentRepository = new ProviderAssignmentRepository(this.providerContext);
-		this.allocationService = new CapacityAllocationService(this.providerContext);
 		this.agentClassService = new ProjectAgentClassService(this.providerContext);
 		this.availabilityService = new AvailabilitySessionService(this.providerContext);
 	}
@@ -77,33 +64,6 @@ export class ProviderControlPlane {
 		return new CapacityGrantService(this.providerContext).listPage(teamId, filters);
 	}
 
-	async createCapacityAllocationSet(teamId: string, input: JsonRecord = {}) {
-		const idempotencyKey = typeof input.idempotencyKey === 'string' ? input.idempotencyKey.trim() : '';
-		if (!idempotencyKey) throw new CapacityGovernanceError('capacity_idempotency_key_required', 'An idempotency key is required.', 400);
-		const { idempotencyKey: _idempotencyKey, ...policy } = input;
-		return this.allocationService.create(teamId, policy, typeof input.createdById === 'string' ? input.createdById : null, idempotencyKey);
-	}
-
-	async listCapacityAllocationSetsPage(teamId: string, { limit, cursor }: Partial<Parameters<CapacityAllocationService['listPage']>[1]> = {}) {
-		return this.allocationService.listPage(teamId, { limit, cursor });
-	}
-
-	nextCapacityAllocationVersion(teamId: string) {
-		return this.allocationService.nextVersion(teamId);
-	}
-
-	getCapacityAllocationSet(teamId: string, allocationSetId: string) {
-		return this.allocationService.get(teamId, allocationSetId);
-	}
-
-	getActiveCapacityAllocationSet(teamId: string) {
-		return this.allocationService.getActive(teamId);
-	}
-
-	activateCapacityAllocationSet(teamId: string, allocationSetId: string, idempotencyKey: string) {
-		return this.allocationService.activate(teamId, allocationSetId, idempotencyKey);
-	}
-
 	listProjectAgentClassesPage(projectId: string, filters: Partial<Parameters<ProjectAgentClassService['listPage']>[1]> = {}) {
 		return this.agentClassService.listPage(projectId, {
 			limit: normalizeCapacityPageLimit(filters.limit),
@@ -117,6 +77,10 @@ export class ProviderControlPlane {
 
 	createProjectAgentClass(projectId: string, input: JsonRecord, idempotencyKey: string) {
 		return this.agentClassService.create(projectId, input, idempotencyKey);
+	}
+
+	updateProjectAgentClass(projectId: string, classId: string, input: JsonRecord, idempotencyKey: string) {
+		return this.agentClassService.update(projectId, classId, input, idempotencyKey);
 	}
 
 	createProviderAvailabilitySession(principal: ProviderAvailabilityPrincipal, input: Parameters<AvailabilitySessionService['open']>[1]) {
@@ -156,13 +120,6 @@ export class ProviderControlPlane {
 		return this.assignmentRepository.get(teamId, assignmentId);
 	}
 
-	admitSynthesizedProviderAssignment(
-		principal: ProviderLeasePrincipal,
-		input: Parameters<typeof admitSynthesizedAssignment>[2],
-	) {
-		return admitSynthesizedAssignment(this.providerContext, principal, input);
-	}
-
 	leaseNextProviderAssignment(principal: ProviderLeasePrincipal, input: Parameters<typeof leaseProviderAssignment>[2] = {}) {
 		return leaseProviderAssignment(this.providerContext, principal, input);
 	}
@@ -179,27 +136,12 @@ export class ProviderControlPlane {
 		return new ProviderAssignmentLifecycleService(this.providerContext).complete(principal, assignmentId, input);
 	}
 
-	preflightProviderAssignmentCompletion(principal: ProviderLeasePrincipal, assignmentId: string, input: JsonRecord) {
-		return preflightProviderAssignmentCompletion(this.providerContext,principal,assignmentId,input);
-	}
-
 	failProviderAssignment(principal: ProviderLeasePrincipal, assignmentId: string, input: Parameters<ProviderAssignmentLifecycleService['fail']>[2]) {
 		return new ProviderAssignmentLifecycleService(this.providerContext).fail(principal, assignmentId, input);
-	}
-
-	createAgentModeRun(input: Parameters<typeof persistAgentModeRun>[1]) {
-		return persistAgentModeRun(this.providerContext, input);
-	}
-
-	listAgentModeRunsPage(projectId: string, filters: Parameters<typeof readAgentModeRunsPage>[2] = {}) {
-		return readAgentModeRunsPage(this.providerContext, projectId, filters);
 	}
 
 	listExecutionRunsForTeamPage(teamId: string, filters: Parameters<typeof readExecutionRunsForTeamPage>[2] = {}) {
 		return readExecutionRunsForTeamPage(this.providerContext, teamId, filters);
 	}
 
-	getAgentModeRun(teamId: string, modeRunId: string) {
-		return readAgentModeRun(this.providerContext, teamId, modeRunId);
-	}
 }

@@ -14,7 +14,6 @@ export interface RuntimeDiagnosticPage {
 interface RuntimeDiagnosticsRepository extends RuntimeDiagnosticsDatabase {
 	getProject(projectId: string): Promise<Record<string, unknown> | null>;
 	listProviderAssignmentsPage(teamId: string, filters: Record<string, unknown>): Promise<RuntimeDiagnosticPage>;
-	listAgentModeRunsPage(projectId: string, filters: Record<string, unknown>): Promise<RuntimeDiagnosticPage>;
 	listTreeDxProxyAuditPage(projectId: string, filters: Record<string, unknown>): Promise<RuntimeDiagnosticPage>;
 	listAgentFallbackOutputsPage(projectId: string, filters: Record<string, unknown>): Promise<RuntimeDiagnosticPage>;
 	listCapacityLedgerEntriesPage(projectId: string, filters: Record<string, unknown>): Promise<RuntimeDiagnosticPage>;
@@ -23,7 +22,6 @@ interface RuntimeDiagnosticsRepository extends RuntimeDiagnosticsDatabase {
 export interface RuntimeDiagnosticIndex {
 	totals: {
 		assignments: number;
-		modeRuns: number;
 		treeDxProxyAudit: number;
 		ledgerEntries: number;
 		fallbackOutputs: number;
@@ -43,13 +41,11 @@ export async function loadRuntimeDiagnosticIndex(
 	const totals = await database.first(
 		`SELECT
 			(SELECT COUNT(*) FROM capacity_provider_assignments WHERE team_id = ? AND project_id = ?) AS assignment_count,
-			(SELECT COUNT(*) FROM agent_mode_runs WHERE team_id = ? AND project_id = ?) AS mode_run_count,
 			(SELECT COUNT(*) FROM treedx_project_proxy_audit WHERE team_id = ? AND project_id = ?) AS treedx_audit_count,
 			(SELECT COUNT(*) FROM capacity_ledger_entries WHERE team_id = ? AND project_id = ?
 				AND phase IN ('task_completed_actual_settlement', 'reservation_released', 'task_failed_refund')) AS ledger_entry_count,
 			(SELECT COUNT(*) FROM agent_fallback_outputs WHERE team_id = ? AND project_id = ?) AS fallback_output_count`,
 		[
-			input.teamId, input.projectId,
 			input.teamId, input.projectId,
 			input.teamId, input.projectId,
 			input.teamId, input.projectId,
@@ -60,7 +56,6 @@ export async function loadRuntimeDiagnosticIndex(
 		return {
 			totals: {
 				assignments: Number(totals?.assignment_count ?? 0),
-				modeRuns: Number(totals?.mode_run_count ?? 0),
 				treeDxProxyAudit: Number(totals?.treedx_audit_count ?? 0),
 				ledgerEntries: Number(totals?.ledger_entry_count ?? 0),
 				fallbackOutputs: Number(totals?.fallback_output_count ?? 0),
@@ -87,7 +82,6 @@ export async function loadRuntimeDiagnosticIndex(
 	return {
 		totals: {
 			assignments: Number(totals?.assignment_count ?? 0),
-			modeRuns: Number(totals?.mode_run_count ?? 0),
 			treeDxProxyAudit: Number(totals?.treedx_audit_count ?? 0),
 			ledgerEntries: Number(totals?.ledger_entry_count ?? 0),
 			fallbackOutputs: Number(totals?.fallback_output_count ?? 0),
@@ -120,8 +114,7 @@ export async function buildProjectCapacityRuntimeDiagnostics(
 		limit: DEFAULT_CAPACITY_PAGE_LIMIT,
 	});
 	const assignments = assignmentPage.items;
-	const [modeRunPage, treeDxProxyAuditPage, fallbackOutputPage] = await Promise.all([
-		repository.listAgentModeRunsPage(projectId, { limit: DEFAULT_CAPACITY_PAGE_LIMIT }),
+	const [treeDxProxyAuditPage, fallbackOutputPage] = await Promise.all([
 		repository.listTreeDxProxyAuditPage(projectId, { limit: DEFAULT_CAPACITY_PAGE_LIMIT }),
 		repository.listAgentFallbackOutputsPage(projectId, { limit: DEFAULT_CAPACITY_PAGE_LIMIT }),
 	]);
@@ -144,7 +137,6 @@ export async function buildProjectCapacityRuntimeDiagnostics(
 				assignmentId: assignment.id,
 			}] : [];
 		}) as unknown as NonNullable<Parameters<typeof summarizeCapacityRuntimeDiagnostics>[0]['explanations']>,
-		modeRuns: modeRunPage.items as unknown as Parameters<typeof summarizeCapacityRuntimeDiagnostics>[0]['modeRuns'],
 		treeDxProxyAudit: treeDxProxyAuditPage.items,
 		ledgerEntries: ledgerPage.items as unknown as Parameters<typeof summarizeCapacityRuntimeDiagnostics>[0]['ledgerEntries'],
 		fallbackOutputs: fallbackOutputPage.items,
@@ -152,7 +144,6 @@ export async function buildProjectCapacityRuntimeDiagnostics(
 		auditedAssignmentIds: index.auditedAssignmentIds,
 		windows: {
 			assignments: { ...assignmentPage.page, total: index.totals.assignments },
-			modeRuns: { ...modeRunPage.page, total: index.totals.modeRuns },
 			treeDxProxyAudit: { ...treeDxProxyAuditPage.page, total: index.totals.treeDxProxyAudit },
 			ledgerEntries: { ...ledgerPage.page, total: index.totals.ledgerEntries },
 			fallbackOutputs: { ...fallbackOutputPage.page, total: index.totals.fallbackOutputs },

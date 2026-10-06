@@ -10,7 +10,8 @@ RUN npm config set fetch-retries 5 \
 	&& (npm ci --ignore-scripts || npm ci --ignore-scripts || npm ci --ignore-scripts)
 
 COPY . .
-RUN npm run build
+RUN ./scripts/build/hydrate-exact-sdk.sh artifacts/sealed-sdk install \
+	&& npm run build
 
 ENV NODE_ENV=production \
 	HOST=0.0.0.0 \
@@ -22,6 +23,4 @@ FROM runtime AS api
 CMD ["npm", "run", "start:api"]
 
 FROM runtime AS operations-runner
-CMD ["npm", "run", "start:runner"]
-
-FROM postgres:16-bookworm AS database
+CMD ["node", "./dist/operations-runner/entrypoint.js", "run"]

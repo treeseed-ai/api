@@ -1,8 +1,13 @@
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
+import { projectCreatePlanSchema, type ProjectCreateTarget } from '@treeseed/sdk/platform';
 import type { TreeDxProxyOperationService } from '../repositories/treedx/proxy-operation-service.ts';
 import { ControlPlaneOperationError, type BoundOperation } from './operation-registry.ts';
 
 export interface ProjectOperationDependencies {
+	platformProjectCreation?: {
+		plan(target: Partial<ProjectCreateTarget>): Promise<unknown>;
+		apply(plan: ReturnType<typeof projectCreatePlanSchema.parse>, idempotencyKey: string): Promise<unknown>;
+	};
 	treeDxProxy: TreeDxProxyOperationService;
 	capacity: {
 		evaluateProjectDeletionBlockers(projectId: string): Promise<Array<Record<string, unknown>>>;
@@ -118,9 +123,29 @@ export function createProjectCreateOperation(dependencies: ProjectOperationDepen
 		async handler(input, context) {
 			await teamManageAccess(dependencies, input.path.teamId, context);
 			const body = input.body as Record<string, unknown>;
+			if (body.mode === 'plan') {
+				if (!dependencies.platformProjectCreation) throw new ControlPlaneOperationError(503, 'platform_project_creation_unavailable', 'Platform project creation authority is unavailable.');
+				const target = body.target && typeof body.target === 'object' ? body.target as Record<string, unknown> : {};
+				if (target.team !== undefined && target.team !== input.path.teamId) throw new ControlPlaneOperationError(403, 'project_team_mismatch', 'The project target does not match the authorized team.');
+				try { return await dependencies.platformProjectCreation.plan({ ...target, team: input.path.teamId } as ProjectCreateTarget); }
+				catch (error) { throw new ControlPlaneOperationError(422, 'platform_project_plan_invalid', error instanceof Error ? error.message : 'The project plan is invalid.'); }
+			}
+			if (body.mode === 'apply') {
+				if (!dependencies.platformProjectCreation) throw new ControlPlaneOperationError(503, 'platform_project_creation_unavailable', 'Platform project creation authority is unavailable.');
+				if (!context.idempotencyKey) throw new ControlPlaneOperationError(400, 'idempotency_key_required', 'Project creation apply requires Idempotency-Key.');
+				try {
+					const plan = projectCreatePlanSchema.parse(body.plan);
+					if (plan.team !== input.path.teamId) throw new ControlPlaneOperationError(403, 'project_team_mismatch', 'The accepted plan does not match the authorized team.');
+					return await dependencies.platformProjectCreation.apply(plan, context.idempotencyKey);
+				} catch (error) {
+					if (error instanceof ControlPlaneOperationError) throw error;
+					throw new ControlPlaneOperationError(409, 'platform_project_apply_blocked', error instanceof Error ? error.message : 'Project creation is blocked.');
+				}
+			}
 			const slug = String(body.slug ?? '').trim();
 			const name = String(body.name ?? '').trim();
 			if (!slug || !name) throw new ControlPlaneOperationError(400, 'project_input_invalid', 'Project slug and name are required.');
+			if (slug === 'team') throw new ControlPlaneOperationError(409,'system_project_reserved','The team project is created and managed automatically.');
 			try {
 				return await dependencies.store.createProject(input.path.teamId, {
 					...(typeof body.id === 'string' ? { id: body.id } : {}), slug, name,
@@ -149,6 +174,7 @@ export function createProjectUpdateOperation(dependencies: ProjectOperationDepen
 		binding: CONTROL_PLANE_OPERATIONS.projects.update,
 		async handler(input, context) {
 			const access = await projectManageAccess(dependencies, input.path.projectId, context);
+			if(access.details.project.metadata?.kind==='system-team-library')throw new ControlPlaneOperationError(409,'system_project_managed','The Team Library cannot be renamed, transferred, archived, or edited as a normal project.');
 			const currentRevision = String(access.details.project.updatedAt ?? '');
 			if (currentRevision !== context.ifMatch) throw new ControlPlaneOperationError(412, 'project_revision_changed', 'The project changed since it was read.');
 			const body = input.body as Record<string, unknown>;
@@ -177,6 +203,7 @@ function projectInventoryOperation(
 		binding,
 		async handler(input, context) {
 			const access = await projectManageAccess(dependencies, input.path.projectId, context);
+			if(access.details.project.metadata?.kind==='system-team-library')throw new ControlPlaneOperationError(409,'system_project_managed','The Team Library lifecycle is bound to its team.');
 			if (status === 'archived') {
 				const blockers = await dependencies.capacity.evaluateProjectDeletionBlockers(input.path.projectId);
 				if (blockers.length) throw new ControlPlaneOperationError(409, 'project_blocked', 'The project still has active work and cannot be archived.');
@@ -214,6 +241,7 @@ export function createProjectDeleteOperation(dependencies: ProjectOperationDepen
 		binding: CONTROL_PLANE_OPERATIONS.projects.remove,
 		async handler(input, context) {
 			const access = await projectManageAccess(dependencies, input.path.projectId, context);
+			if(access.details.project.metadata?.kind==='system-team-library')throw new ControlPlaneOperationError(409,'system_project_managed','The Team Library is deleted only with its owning team.');
 			const currentRevision = String(access.details.project.updatedAt ?? '');
 			if (currentRevision !== context.ifMatch) throw new ControlPlaneOperationError(412, 'project_revision_changed', 'The project changed since it was read.');
 			const expected = `DELETE ${access.details.project.slug}`;

@@ -7,18 +7,18 @@ export function compileDefaultChatActivityProfile(
 	// Discussion responses are authored only by treeseed.discussion.respond.
 	// Generic content tools retain custody only for explicitly linked artifacts
 	// and the assignment's own operational records.
-	const writableModels = new Set(['note', 'question', 'proposal', 'assignment_plan', 'assignment_status', 'assignment_summary']);
+	const writableModels = new Set(['note', 'question', 'proposal']);
 	const contextModels = [...new Set([
 		'discussion', 'discussion_message', 'discussion_event', 'discussion_topic', 'agent', 'note', 'question',
-		'proposal', 'decision', 'objective', 'knowledge', 'assignment_plan', 'assignment_status', 'assignment_summary',
+		'proposal', 'decision', 'objective', 'knowledge',
 		...(specialization.contextModels ?? []),
 	])];
 	const tools = [...new Set([
 		'treeseed.content.describe', 'treeseed.content.query', 'treeseed.content.read', 'treedx.build_context',
 		'treedx.read_repository_files', 'treedx.search_workspace', 'treedx.read_workspace_file',
+		'treeseed.repository.read_file', 'treeseed.repository.search',
 		'treeseed.content.create', 'treeseed.content.update', 'treeseed.content.link', 'treeseed.content.validate',
-		'treeseed.content.commit', 'treeseed.status', 'treeseed.assignment_activity', 'treeseed.assignment_plan',
-		'treeseed.assignment_status_update', 'treeseed.assignment_summary', 'treeseed.discussion.read',
+		'treeseed.content.commit', 'treeseed.status', 'treeseed.assignment_activity', 'treeseed.discussion.read',
 		'treeseed.discussion.follow', 'treeseed.discussion.respond', 'treeseed.discussion.request_handoff',
 		'treeseed.discussion.create_artifact', 'treeseed.operation.prepare_handoff', 'treeseed.client_session.request_action',
 		...(specialization.toolAdditions ?? []),
@@ -27,7 +27,7 @@ export function compileDefaultChatActivityProfile(
 		enabled: true,
 		handler: 'writer',
 		prompt: {
-			system: `Participate as ${agentSlug} in a TreeSeed Discussion. Answer from your configured identity and durable instructions, cite exact TreeDX content or repository refs, distinguish evidence from inference, and keep the response scoped to the current turn. You may create or update discussion messages, linked notes, questions, and proposals. Never change knowledge or code without an approved governed acting assignment.${specialization.responseStyle ? ` Response style: ${specialization.responseStyle}` : ''}`,
+			system: `Participate as ${agentSlug} in a TreeSeed Discussion. Use the mandatory context pack, agent-wide TreeDX context queries, and this activity profile's additive queries before making focused follow-up TreeDX reads or searches. Do not expect or request a wholesale code or knowledge repository snapshot for chat. Answer from your configured identity and durable instructions, cite exact TreeDX content, distinguish evidence from inference, and keep the response scoped to the current turn. If required TreeDX query or tool context is missing, report an execution-context defect instead of asking the user to supply files owned by the project. Return your final plain Markdown reply; the provider publishes it under the assignment lease. Do not search for or invoke a discussion-write tool in the guest. Linked notes, questions, and proposals require their own authorized operations. Questions must declare their owning project, requested audience, related objectives, and answer policy so they can enter the team inbox. Proposals must declare their owning project, proposal type, evidence, objective links, and complete plan; never describe a proposal as approved until an exact-version governed inbox action accepts it. When human input is required, create a durable question instead of burying the request in prose. Never change knowledge or code without an approved governed acting assignment.${specialization.responseStyle ? ` Response style: ${specialization.responseStyle}` : ''}`,
 			task: specialization.promptTask ?? 'Respond to the committed Discussion turn and produce durable, source-grounded output.',
 		},
 		branchPolicy: { kind: 'staging-content', base: 'staging' },
@@ -36,6 +36,8 @@ export function compileDefaultChatActivityProfile(
 				operations: writableModels.has(model) ? ['describe', 'query', 'read', 'create', 'update', 'link', 'validate', 'commit'] : ['describe', 'query', 'read'],
 			}])),
 			commit: { allowed: true },
+			repository: { readPaths: ['**'], writePaths: [], allowCodeMutation: false },
+			shell: { allowCommands: false, allowedCommands: [] },
 		},
 		tools: { allowed: tools },
 		outputs: {
@@ -50,12 +52,24 @@ export function compileDefaultChatActivityProfile(
 			subjectId: null,
 		},
 		questionPolicy: { blockExecutionWhenCreated: false, defaultAnswerPolicy: { kind: 'team-human' } },
+		capabilityRequirements: specialization.capabilityRequirements ?? [{
+			capabilityId: 'treeseed.coordination.conversation', versionRange: '^1.0.0', requirement: 'required',
+			configuration: {
+				'instructions.system': { value: 'profile', requirement: 'required' },
+				'instructions.task': { value: 'profile', requirement: 'required' },
+				'context.queries': { value: 'assignment', requirement: 'required' },
+				'tools.policy': { value: 'assignment', requirement: 'required' },
+			},
+		}],
 		execution: {
-			requiredCapabilities: specialization.requiredCapabilities ?? ['agent-execution'],
-			maxRuntimeSeconds: specialization.maxRuntimeSeconds ?? 900, maxRetries: 1, verificationRequired: false,
+			// Interactive chat favors latency by default, while each agent can raise or
+			// lower reasoning through its chat profile. Capability selection is owned
+			// exclusively by capabilityRequirements above.
+			reasoningEffort: specialization.reasoningEffort ?? 'low',
+			maxRuntimeSeconds: specialization.maxRuntimeSeconds ?? 60, maxRetries: 1, verificationRequired: false,
 			maxTotalTokens: specialization.maxTotalTokens ?? 136_000, warningTokens: specialization.warningTokens ?? 100_000,
 			maxCostAmount: specialization.maxCostAmount, costCurrency: specialization.costCurrency ?? 'USD',
-			pricingGeneration: 'provider-runtime', enforcementConfidence: 'bounded', closeoutWarningSeconds: 180,
+			pricingGeneration: 'provider-runtime', enforcementConfidence: 'bounded', closeoutWarningSeconds: 10,
 		},
 	};
 }

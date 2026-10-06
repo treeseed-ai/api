@@ -1,13 +1,13 @@
 import { createHash,randomUUID } from 'node:crypto';
-import { serializeFrontmatterDocument } from '../../content/frontmatter.ts';
+import { serializeProposalDocument } from '../../governance/proposal-document.ts';
 import { validateProposalTypeContract } from '@treeseed/sdk/agent-capacity';
 import { parse as parseYaml } from 'yaml';
 import { projectLibraryPath, resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
 import { projectTreeDxCommitSignals } from '../../capacity/services/treedx/repositories/treedx-change-projector.ts';
 import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
-import { assertGovernanceContent } from '../../governance/content-validation.ts';
 import { treeDxWorkspaceId } from '../../knowledge/workspaces/identity.ts';
+import { CapacityWorkdayRunRepository } from '../../capacity/repositories/capacity/workdays/workday-run.ts';
 
 type Row = Record<string, unknown>;
 function object(value: unknown): Row { if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row; if (typeof value === 'string') try { return object(JSON.parse(value)); } catch { return {}; } return {}; }
@@ -17,23 +17,53 @@ function slug(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/gu
 function repositorySource(value: unknown) {
 	const response = object(value);
 	const file = object(response.file ?? (Array.isArray(response.files) ? response.files[0] : null));
-	return text(file.content);
+	if (typeof file.content !== 'string') throw Object.assign(new Error('TreeDX did not return the existing proposal source bytes.'), { status: 502, code: 'proposal_source_content_missing' });
+	return file.content;
 }
 
-export async function commitProposalVersionContent(input: { store: any; proposal: Row; principal: Row; update: Row }) {
-	const projectId = text(input.proposal.projectId, input.proposal.project_id); const metadata = object(input.proposal.metadata); const provenance = object(metadata.contentProvenance); const version = Number(input.proposal.activeVersion ?? input.proposal.active_version) + 1;
-	const connection = await resolveKnowledgeGatewayConnection(input.store, { projectId, write: true, relationPaths: true, authoringPaths: true });
+export async function commitProposalVersionContent(input: { store: any; proposal: Row; principal: Row; update: Row; initial?: boolean }) {
+	const projectId = text(input.proposal.projectId, input.proposal.project_id); const metadata = object(input.proposal.metadata); const provenance = object(metadata.contentProvenance); const version = input.initial === true ? 1 : Number(input.proposal.activeVersion ?? input.proposal.active_version) + 1;
+	const workdayId = text(input.update.workdayId);
+	if (input.update.workdayId !== undefined && !workdayId) throw Object.assign(new Error('workdayId must be a nonempty string.'), { status: 422, code: 'proposal_workday_id_invalid' });
+	const run = workdayId ? await new CapacityWorkdayRunRepository(input.store).get(text(input.proposal.teamId, input.proposal.team_id), workdayId) : null;
+	if (workdayId && (!run || run.status !== 'running' || object(run.parameters.appliedPlan).state !== 'active'
+		|| !list(run.parameters.scheduledProjectIds).includes(projectId)
+		|| !list(run.parameters.proposalIds).includes(text(input.proposal.id))
+		|| Date.parse(text(object(run.parameters.appliedPlan).endsAt)) <= Date.now())) {
+		throw Object.assign(new Error('Proposal authoring requires an active workday bound to this project and proposal.'), { status: 409, code: 'proposal_workday_scope_invalid' });
+	}
+	const simulation = run?.executionMode === 'simulation';
+	// Keep proposal revisions on their exact source lineage. The workday's
+	// discussion branch can originate before this proposal existed.
+	const simulationRef = simulation ? `refs/heads/${run.id}-proposal-${createHash('sha256').update(text(input.proposal.id)).digest('hex').slice(0, 16)}` : undefined;
+	const sourceCommit = text(provenance.commitSha);
+	if (simulation && !/^[a-f0-9]{40}$/u.test(sourceCommit)) throw Object.assign(new Error('Simulation proposal authoring requires exact existing content provenance.'), { status: 409, code: 'proposal_simulation_source_required' });
+	const connection = await resolveKnowledgeGatewayConnection(input.store, { projectId, write: true, relationPaths: true, authoringPaths: true,
+		...(simulationRef ? { workspaceRefs: [simulationRef], readRefs: [sourceCommit] } : {}) });
 	if (!connection) throw Object.assign(new Error('The project TreeDX repository is unavailable for proposal authoring.'), { status: 503, code: 'proposal_treedx_unavailable' });
-	const title = text(input.update.title, input.proposal.title); const summary = text(input.update.summary, input.proposal.summary); const body = text(input.update.body, input.proposal.body); const types = list(input.update.proposalTypes).length ? list(input.update.proposalTypes) : list(input.proposal.proposalTypes ?? input.proposal.proposal_types_json);
-	const path = text(provenance.contentPath) || projectLibraryPath(connection.contentPath, 'proposals/governance', `${slug(title)}.mdx`); const branchName = `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
-	const workspace = await connection.client.createWorkspace({ workspaceId: treeDxWorkspaceId(randomUUID()), repoId: connection.repositoryId, baseRef: branchName, branchName, mode: 'writable', allowedPaths: connection.allowedPaths, ttlSeconds: 600 });
+	const title = text(input.update.title, input.proposal.title); const summary = text(input.update.summary, input.proposal.summary);
+	// Repository proposal documents call this field `request`; PostgreSQL calls
+	// it `body`. Accept the canonical document field on revision and bind the
+	// authored bytes back into the one governance body authority.
+	const body = text(input.update.request, input.update.body, input.proposal.body);
+	const types = list(input.update.proposalTypes).length ? list(input.update.proposalTypes) : list(input.proposal.proposalTypes ?? input.proposal.proposal_types_json);
+	const proposalSlug = text(input.proposal.contentProposalSlug, input.proposal.content_proposal_slug) || slug(title);
+	const path = text(provenance.contentPath) || projectLibraryPath(connection.contentPath, 'proposals/governance', `${slug(proposalSlug)}.mdx`); const branchName = simulationRef ?? `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
+	const baseRef = simulation ? sourceCommit : branchName;
+	const workspace = await connection.client.createWorkspace({ workspaceId: treeDxWorkspaceId(randomUUID()), repoId: connection.repositoryId, baseRef, branchName, mode: 'writable', allowedPaths: simulation ? [path] : connection.allowedPaths, ttlSeconds: 600 });
 	const expectedBase = text(input.update.expectedTreeDxBase);
 	if (expectedBase && expectedBase !== workspace.baseCommitSha) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw Object.assign(new Error('The proposal content branch changed. Compare and rebase before publishing.'), { status: 409, code: 'proposal_treedx_base_stale', currentBase: workspace.baseCommitSha }); }
 	if (!types.length) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw Object.assign(new Error('Select at least one repository proposal type before publishing.'), { status: 422, code: 'proposal_type_required' }); }
 	const contractPaths = types.map((id) => `.treeseed/governance/proposal-types/${id}.yaml`);
 	let contractRead: Row;
-	try { contractRead = object(await connection.client.readRepositoryFiles({ repoId: connection.repositoryId, ref: branchName, paths: contractPaths, encoding: 'utf8', parseFrontmatter: false, allowProtected: true })); }
-	catch (error) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw error; }
+	try { contractRead = object(await connection.client.readRepositoryFiles({ repoId: connection.repositoryId, ref: baseRef, paths: contractPaths, encoding: 'utf8', parseFrontmatter: false, allowProtected: true })); }
+	catch (error) {
+		await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined);
+		if (Number(object(error).status) === 404) throw Object.assign(new Error(`Proposal type contracts could not be read from the project library at ${workspace.baseCommitSha}. Reconcile these contracts before publishing: ${contractPaths.join(', ')}.`), {
+			status: 422, code: 'proposal_type_contract_missing', paths: contractPaths, commitSha: workspace.baseCommitSha,
+		});
+		throw error;
+	}
 	if (text(contractRead.resolvedRef) !== workspace.baseCommitSha) {
 		await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined);
 		throw Object.assign(new Error('The proposal contract branch changed while authoring began. Retry against the current branch.'), { status: 409, code: 'proposal_contract_base_stale', expectedBase: workspace.baseCommitSha, currentBase: text(contractRead.resolvedRef) });
@@ -41,21 +71,46 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 	const contracts = new Map((Array.isArray(contractRead.files) ? contractRead.files : []).map((file: unknown) => [text(object(file).path), text(object(file).content)]));
 	const invalid = contractPaths.filter((contractPath,index) => { try { const validation = validateProposalTypeContract(parseYaml(contracts.get(contractPath) ?? '')); return !validation.ok || validation.value?.id !== types[index]; } catch { return true; } });
 	if (invalid.length) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw Object.assign(new Error('One or more proposal types are missing or invalid at the authoring commit.'), { status: 422, code: 'proposal_type_contract_invalid', paths: invalid }); }
-	const nextMetadata = { ...metadata, ...(object(input.update.metadata)), proposalTypes: types, relatedObjectives: input.update.relatedObjectives ?? metadata.relatedObjectives ?? [], evidenceRefs: input.update.evidenceRefs ?? metadata.evidenceRefs ?? [], plan: input.update.plan ?? metadata.plan ?? {} };
-	const source = serializeFrontmatterDocument({ id: text(input.proposal.id), title, description: summary, summary, date: text(input.proposal.createdAt, input.proposal.created_at, new Date().toISOString()), status: 'in progress', draft: false,
-		proposalType: types[0], proposalTypes: types, motivation: text(input.update.motivation,nextMetadata.motivation,summary),
-		primaryContributor: text(input.update.primaryContributor,nextMetadata.primaryContributor,input.principal.contentContributorRef,input.principal.id),
-		relatedObjectives: nextMetadata.relatedObjectives, evidenceRefs: nextMetadata.evidenceRefs, plan: nextMetadata.plan }, `${body}\n`);
-	try { assertGovernanceContent('proposal',source); }
+	const nextMetadata = { ...metadata, ...(object(input.update.metadata)), proposalTypes: types };
+	delete nextMetadata.plan;
+	delete nextMetadata.executionPlan;
+	let source: string;
+	const currentStatus = text(input.proposal.status);
+	const status = text(input.update.status) || (input.initial === true ? 'draft'
+		: currentStatus === 'voting' ? 'ready' : currentStatus === 'accepted' ? 'decided' : currentStatus === 'open' ? 'discussing' : 'draft');
+	try { source = serializeProposalDocument({
+		id: text(input.proposal.id), projectId, title, request: body, ...(summary ? { summary } : {}),
+		status: status as 'draft' | 'discussing' | 'ready' | 'decided' | 'withdrawn',
+		objectiveRefs: input.update.objectiveRefs, evidenceRefs: input.update.evidenceRefs,
+		discussionRef: input.update.discussionRef, executionPlan: input.update.executionPlan,
+	}); }
 	catch (error) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw error; }
 	try {
-		const existing = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: branchName, path, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }).catch(() => null);
+		const existing = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: baseRef, path, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }).catch((error) => { if (Number(object(error).status) === 404) return null; throw error; });
+		if (input.initial === true && existing !== null) throw Object.assign(new Error('The proposal source path already exists; choose a distinct proposal slug.'), {
+			status: 409, code: 'proposal_source_path_occupied', path,
+		});
 		if (existing && text(object(existing).resolvedRef) !== workspace.baseCommitSha) throw Object.assign(new Error('The proposal content branch changed while its current version was read.'), { status: 409, code: 'proposal_content_base_stale' });
-		const before = repositorySource(existing) || null;
+		const before = existing === null ? null : repositorySource(existing);
+		const expectedDigest = createHash('sha256').update(source).digest('hex');
+		if (before === source) {
+			await connection.client.closeWorkspace(workspace.workspaceId);
+			return { receipt: { path, commitSha: workspace.baseCommitSha, branchName, changedPaths: [], digest: expectedDigest,
+				proposalVersion: version, changeset: { files: [], resultCommitSha: workspace.baseCommitSha } },
+				update: { ...input.update, title, summary, body, proposalTypes: types, metadata: nextMetadata,
+					contentProvenance: { repositoryId: connection.repositoryId, contentPath: path, commitSha: workspace.baseCommitSha, digest: expectedDigest } } };
+		}
 		const changeset = await applyTextChangeset({ client: connection.client, workspace, changes: [{ path, before, after: source }] });
+		const written = (Array.isArray(changeset.files) ? changeset.files : []).find((file: unknown) => text(object(file).path) === path);
+		if (text(object(written).afterSha256) !== expectedDigest) throw Object.assign(new Error('TreeDX changeset bytes do not match the proposal source. No proposal version was committed; repair changeset custody before retrying.'), {
+			status: 409, code: 'proposal_changeset_digest_mismatch',
+		});
 		const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `governance: proposal ${text(input.proposal.id)} version ${version} — ${text(input.update.changeReason)}`, author: { name: text(input.principal.name, input.principal.id, 'Team member'), email: text(input.principal.email, 'governance@users.treeseed.local') } });
-		await recordTreeDxAuthoringState(input.store,'unpublished',{ projectId,repositoryId:connection.repositoryId,commitSha:commit.commitSha,ref:commit.branchName,changedPaths:commit.changedPaths,actorType:'user',actorId:text(input.principal.id) });
-		await projectTreeDxCommitSignals(input.store, { projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: text(input.update.changeReason), actorType: 'user', actorId: text(input.principal.id) });
+		if (simulation) await connection.client.closeWorkspace(workspace.workspaceId);
+		else {
+			await recordTreeDxAuthoringState(input.store,'unpublished',{ projectId,repositoryId:connection.repositoryId,commitSha:commit.commitSha,ref:commit.branchName,changedPaths:commit.changedPaths,actorType:'user',actorId:text(input.principal.id) });
+			await projectTreeDxCommitSignals(input.store, { projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: text(input.update.changeReason), actorType: 'user', actorId: text(input.principal.id) });
+		}
 		return { receipt: { path, commitSha: commit.commitSha, branchName: commit.branchName, changedPaths: commit.changedPaths, digest: createHash('sha256').update(source).digest('hex'), proposalVersion: version, changeset: { ...changeset, resultCommitSha: commit.commitSha } }, update: { ...input.update, title, summary, body, proposalTypes: types, metadata: nextMetadata, contentProvenance: { repositoryId: connection.repositoryId, contentPath: path, commitSha: commit.commitSha, digest: createHash('sha256').update(source).digest('hex') } } };
 	} catch (error) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw error; }
 }

@@ -8,6 +8,7 @@ ApiPrincipal,
 AuthorizationCodeExchangeRequest,
 AuthorizationCodeStartRequest,
 DeviceCodeApproveRequest,
+DeviceCodeApprovalPresentationRequest,
 DeviceCodePollRequest,
 DeviceCodePollResponse,
 DeviceCodeStartRequest,
@@ -82,6 +83,10 @@ export class PostgresAuthProvider implements ApiAuthProvider {
 
 	approveDeviceFlow(request: DeviceCodeApproveRequest): Promise<{ ok: true }> {
 		return this.store.approveDeviceFlow(request);
+	}
+
+	describeDeviceFlow(request: DeviceCodeApprovalPresentationRequest) {
+		return this.store.describeDeviceFlow(request);
 	}
 
 	async authenticatePassword(identifier: string, password: string): Promise<{ principal: ApiPrincipal } | null> {

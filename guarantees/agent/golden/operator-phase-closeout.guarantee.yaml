@@ -1,0 +1,12 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.golden.operator-phase-closeout
+journey: Close returned planning attempts at their authoritative phase boundary
+ownerPackage: '@treeseed/api'
+type: agent
+subtype: execution
+status: planned
+gates: [core]
+summary: Retain provider closure and measured accounting, classify actual phase cancellation, reject spoofed phase reasons and never invent isolation teardown.
+scene:
+  required: true
+  manifest: guarantees/agent/golden/scenes/operator-phase-closeout.scene.yaml

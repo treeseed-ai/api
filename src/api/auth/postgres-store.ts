@@ -1,6 +1,7 @@
 import { createHash,timingSafeEqual } from 'node:crypto';
 import type { PostgresDatabaseLike } from '../types.ts';
-import type { ApiConfig,ApiCredential,ApiPrincipal,DeviceCodeApproveRequest,DeviceCodePollRequest,DeviceCodePollResponse,DeviceCodeStartRequest,DeviceCodeStartResponse,TokenRefreshRequest,TokenRefreshResponse,TrustedUserAssertionClaims,UserIdentityProfileInput,} from '../types.ts';
+import type { ApiConfig,ApiCredential,ApiPrincipal,DeviceCodeApproveRequest,DeviceCodeApprovalPresentationRequest,DeviceCodePollRequest,DeviceCodePollResponse,DeviceCodeStartRequest,DeviceCodeStartResponse,TokenRefreshRequest,TokenRefreshResponse,TrustedUserAssertionClaims,UserIdentityProfileInput,} from '../types.ts';
+import type { OAuthDeviceApprovalPresentation } from '@treeseed/sdk/operator-contracts';
 import * as extractedMethods from "./postgres-store/methods.ts";
 export function approvalUrl(baseUrl: string, userCode?: string | null) {
     const url = new URL('/auth/device/approve', `${baseUrl.replace(/\/+$/u, '')}/`);
@@ -276,6 +277,7 @@ export interface PostgresAuthStore {
     approveDeviceFlow(request: DeviceCodeApproveRequest): Promise<{
         ok: true;
     }>;
+    describeDeviceFlow(request: DeviceCodeApprovalPresentationRequest): Promise<OAuthDeviceApprovalPresentation>;
     pollDeviceFlow(request: DeviceCodePollRequest): Promise<DeviceCodePollResponse>;
     issueUserSession(userId: string, options?: {
         sessionType?: string;
@@ -345,6 +347,7 @@ PostgresAuthStore.prototype.createUser = extractedMethods.createUserMethod;
 PostgresAuthStore.prototype.setUserRoles = extractedMethods.setUserRolesMethod;
 PostgresAuthStore.prototype.startDeviceFlow = extractedMethods.startDeviceFlowMethod;
 PostgresAuthStore.prototype.approveDeviceFlow = extractedMethods.approveDeviceFlowMethod;
+PostgresAuthStore.prototype.describeDeviceFlow = extractedMethods.describeDeviceFlowMethod;
 PostgresAuthStore.prototype.pollDeviceFlow = extractedMethods.pollDeviceFlowMethod;
 PostgresAuthStore.prototype.issueUserSession = extractedMethods.issueUserSessionMethod;
 PostgresAuthStore.prototype.refreshAccessToken = extractedMethods.refreshAccessTokenMethod;

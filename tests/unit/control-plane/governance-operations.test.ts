@@ -8,6 +8,7 @@ describe('governance catalog read operations', () => {
 			approvals: vi.fn(async () => ({ items: [] })), approval: vi.fn(async () => ({ approval: { id: 'approval-1' } })),
 			decideApproval: vi.fn(async () => ({ id: 'approval-1', state: 'approved' })),
 			createProposal: vi.fn(async () => ({ id: 'proposal-1' })), updateProposal: vi.fn(async () => ({ proposal: { id: 'proposal-1' } })),
+			resolveProposalFeedback: vi.fn(async () => ({ proposalId: 'proposal-1', feedbackId: 'feedback-1' })),
 			openProposal: vi.fn(async () => ({ id: 'proposal-1', status: 'open' })), startVoting: vi.fn(async () => ({ id: 'proposal-1', status: 'voting' })),
 			vote: vi.fn(async () => ({ id: 'proposal-1' })), evaluate: vi.fn(async () => ({ id: 'proposal-1' })),
 			withdraw: vi.fn(async () => ({ id: 'proposal-1', status: 'withdrawn' })), supersede: vi.fn(async () => ({ id: 'proposal-1', status: 'superseded' })),
@@ -20,6 +21,7 @@ describe('governance catalog read operations', () => {
 			CONTROL_PLANE_OPERATIONS.governance.approvals, CONTROL_PLANE_OPERATIONS.governance.approval,
 			CONTROL_PLANE_OPERATIONS.governance.decideApproval,
 			CONTROL_PLANE_OPERATIONS.governance.createProposal, CONTROL_PLANE_OPERATIONS.governance.updateProposal,
+			CONTROL_PLANE_OPERATIONS.governance.resolveProposalFeedback,
 			CONTROL_PLANE_OPERATIONS.governance.openProposal, CONTROL_PLANE_OPERATIONS.governance.startVoting,
 			CONTROL_PLANE_OPERATIONS.governance.vote, CONTROL_PLANE_OPERATIONS.governance.evaluate,
 			CONTROL_PLANE_OPERATIONS.governance.withdraw, CONTROL_PLANE_OPERATIONS.governance.supersede,
@@ -28,7 +30,7 @@ describe('governance catalog read operations', () => {
 			CONTROL_PLANE_OPERATIONS.governance.decision, CONTROL_PLANE_OPERATIONS.governance.decisionEvents,
 		]);
 		const context = { interface: 'rest' as const, requestId: 'request-1', principal: { id: 'user-1' } };
-		await operations[12].handler({ path: { projectId: 'project-1', proposalId: 'proposal-1' }, query: {}, body: undefined }, context);
+		await operations[13].handler({ path: { projectId: 'project-1', proposalId: 'proposal-1' }, query: {}, body: undefined }, context);
 		expect(governance.proposal).toHaveBeenCalledWith(context.principal, 'project-1', 'proposal-1');
 		await operations[4].handler({ path: { projectId: 'project-1', proposalId: 'proposal-1' }, query: {}, body: { title: 'Updated' } },
 			{ ...context, ifMatch: '3' });

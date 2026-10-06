@@ -3,10 +3,10 @@ import { ControlPlaneStore } from '../../../api/persistence/store.js';
 import { createControlPlanePostgresDatabase } from '../../../api/support/control-plane-postgres.js';
 import { DirectControlPlaneRunnerClient } from '../../client/direct-control-plane-runner-client.js';
 
-export function createClient(config) {
-    const store = createControlPlaneStore(config);
+export function createClient(config, sharedStore?: ReturnType<typeof createControlPlaneStore>) {
+    const store = sharedStore ?? createControlPlaneStore(config);
     if (!store) throw new Error('API database URL is required for the operations runner.');
-    return new DirectControlPlaneRunnerClient(store);
+    return new DirectControlPlaneRunnerClient(store, !sharedStore);
 }
 
 export function createControlPlaneStore(config) {

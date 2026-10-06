@@ -1,6 +1,6 @@
 import { createPrivateKey, createSign } from 'node:crypto';
 
-const ENV_REFERENCE = /^TREESEED_GITHUB_TOKEN(?:_[A-Z0-9]+(?:_[A-Z0-9]+)*)?$/u;
+import { readServiceCredentials } from './managed-secrets.ts';
 
 function base64Url(value: string | Buffer) {
 	return Buffer.from(value).toString('base64url');
@@ -32,18 +32,21 @@ function connectorEnvironment(profileId: string) {
 	throw new Error('The GitHub App credential profile is not a managed Connector profile.');
 }
 
-function permissionScope(profileId: string) {
+export function permissionScope(profileId: string, configurationKind?: 'secrets'|'variables', configurationScope?: string) {
 	return profileId === 'github-repository-app'
-		? { contents: 'write', checks: 'read' }
-		: { actions: 'write', contents: 'read', secrets: 'write', variables: 'write' };
+		? { contents: 'write', checks: 'read', administration: 'write' }
+		: { actions: 'write', contents: 'read', ...(configurationKind ? {[configurationScope==='environment'?'environments':configurationKind]:'write'} : {}) };
 }
 
 async function mintInstallationToken(input: {
 	appId: string;
 	privateKey: string;
 	installationId: string;
-	repository: string;
+	repository?: string;
 	profileId: string;
+	configurationKind?: 'secrets'|'variables';
+	configurationScope?: string;
+	readOnly?: boolean;
 	fetchImpl: typeof fetch;
 }) {
 	const response = await input.fetchImpl(
@@ -54,7 +57,7 @@ async function mintInstallationToken(input: {
 				accept: 'application/vnd.github+json', authorization: `Bearer ${createGitHubAppJwt(input.appId, input.privateKey)}`,
 				'content-type': 'application/json', 'user-agent': 'treeseed-provider-authority', 'x-github-api-version': '2022-11-28',
 			},
-			body: JSON.stringify({ repositories: [input.repository], permissions: permissionScope(input.profileId) }),
+			body: JSON.stringify({ ...(input.repository ? { repositories: [input.repository] } : {}), permissions: input.readOnly ? { contents: 'read' } : permissionScope(input.profileId,input.configurationKind,input.configurationScope) }),
 		},
 	);
 	if (!response.ok) throw new Error(`GitHub rejected the scoped installation token request (HTTP ${response.status}).`);
@@ -63,19 +66,47 @@ async function mintInstallationToken(input: {
 	return { token: payload.token, expiresAt: payload.expires_at ?? null };
 }
 
+export async function resolveGitHubRepositoryCreationAuthority(input: {
+	store: any; teamId: string; owner: string; env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch;
+}) {
+	const rows: any[] = await input.store.all(`SELECT a.*, c.non_secret_config_json, c.id AS service_connection_id,
+		b.id AS capability_binding_id FROM provider_credential_authorities a
+		JOIN team_service_connections c ON c.id = a.connection_id AND c.team_id = ? AND c.provider_id = 'github' AND c.status = 'active'
+		JOIN team_service_capability_bindings b ON b.connection_id = c.id AND b.credential_profile_id = a.credential_profile_id
+			AND b.capability_type = 'repository-hosting' AND b.status = 'configured'
+		WHERE a.status = 'ready'`, [input.teamId]);
+	const owner = input.owner.toLowerCase();
+	const matches = rows.filter((row) => {
+		const config = json(row.non_secret_config_json);
+		const connector = json(json(config.githubConnectors).repository);
+		const configuredOwner = String(connector.accountLogin ?? config.organization ?? '').trim().toLowerCase();
+		if (configuredOwner !== owner) return false;
+		return row.scheme !== 'app-installation' || connector.repositorySelection === 'all';
+	});
+	if (!matches.length) throw new Error('A ready team GitHub repository-hosting authority with all-repository installation access is required.');
+	if (matches.length > 1) throw new Error('Multiple GitHub repository-hosting authorities match this team and owner; select one explicitly.');
+	const row = matches[0];
+	const credential = await credentialForRow(row, { store: input.store, capability: 'repository-hosting', env: input.env, fetchImpl: input.fetchImpl });
+	return { ...credential, authorityId: String(row.id), serviceConnectionId: String(row.service_connection_id),
+		capabilityBindingId: String(row.capability_binding_id) };
+}
+
 async function credentialForRow(row: any, input: {
-	capability: 'repository-hosting' | 'workflow-execution' | 'workflow-configuration' | 'secret-enclave';
+	store: any;
+	capability: 'repository-hosting' | 'workflow-execution';
+	configurationKind?: 'secrets'|'variables';
+	configurationScope?: string;
+	readOnly?: boolean;
 	env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch;
 }) {
 	const capabilities = JSON.parse(row.capabilities_json ?? '[]');
 	if (!capabilities.includes(input.capability)) throw new Error('The credential authority does not grant the requested capability.');
 	const env = input.env ?? process.env;
-	if (row.scheme === 'environment-reference') {
-		if (!ENV_REFERENCE.test(row.reference)) throw new Error('The environment credential reference is not an approved GitHub token name.');
-		const token = env[row.reference];
-		if (!token) throw new Error(`The explicit credential environment reference ${row.reference} is not configured.`);
-		return { token, username: 'x-access-token', expiresAt: null, authorityScheme: row.scheme as string };
-	}
+	if (row.scheme === 'openbao') {
+    const record = await readServiceCredentials(input.store,row.team_id,row.connection_id,row.credential_profile_id);
+    if (record.version !== Number(row.version) || !record.values.accessToken) throw new Error('GitHub credential metadata is stale.');
+    return {token:record.values.accessToken,username:'x-access-token',expiresAt:new Date(Date.now()+60_000).toISOString(),authorityScheme:'openbao'};
+  }
 	if (row.scheme === 'app-installation') {
 		const connector = connectorEnvironment(row.credential_profile_id);
 		const config = json(row.non_secret_config_json);
@@ -86,10 +117,38 @@ async function credentialForRow(row: any, input: {
 		const installationId = String(connectorConfig.installationId ?? '');
 		if (!appId || !privateKey || !installationId) throw new Error('The managed GitHub Connector authority is incomplete.');
 		const minted = await mintInstallationToken({ appId, privateKey, installationId, repository: row.name,
-			profileId: row.credential_profile_id, fetchImpl: input.fetchImpl ?? fetch });
+			profileId: row.credential_profile_id, configurationKind:input.configurationKind, configurationScope:input.configurationScope, readOnly: input.readOnly, fetchImpl: input.fetchImpl ?? fetch });
 		return { ...minted, username: 'x-access-token', authorityScheme: row.scheme as string };
 	}
 	throw new Error(`Credential authority scheme ${row.scheme} is not unattended-ready.`);
+}
+
+/** Assignment source reads only. No creation privilege or fallback after a selected authority fails. */
+export async function resolveGitHubSourceAuthority(input: {
+	store: any; teamId: string; owner: string; repository: string; bindingId?: string; required?: boolean; env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch;
+}) {
+	if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/u.test(input.owner) || !/^[A-Za-z0-9_.-]+$/u.test(input.repository)
+		|| ['.', '..'].includes(input.repository)) throw new Error('Source repository identity is invalid.');
+	const rows: any[] = await input.store.all(`SELECT a.*, c.non_secret_config_json, b.id AS source_binding_id
+		FROM provider_credential_authorities a
+		JOIN team_service_connections c ON c.id=a.connection_id AND c.team_id=? AND c.provider_id='github' AND c.status='active'
+		JOIN team_service_capability_bindings b ON b.connection_id=c.id AND b.team_id=c.team_id
+			AND b.credential_profile_id=a.credential_profile_id AND b.capability_type='repository-hosting' AND b.status='configured'
+		WHERE a.team_id=c.team_id AND a.status='ready'${input.bindingId ? ' AND b.id=?' : ''}`,
+		[input.teamId, ...(input.bindingId ? [input.bindingId] : [])]);
+	const matches = rows.filter(row => {
+		const config = json(row.non_secret_config_json);
+		const connector = json(json(config.githubConnectors).repository);
+		return String(connector.accountLogin ?? config.organization ?? '').trim().toLowerCase() === input.owner.toLowerCase();
+	});
+	// Public metadata can be resolved anonymously on sovereign installations
+	// without a connection. Ambiguous, pinned or failing managed custody cannot
+	// silently downgrade to anonymous access.
+	if (!matches.length && input.required === false && !input.bindingId) return null;
+	if (matches.length !== 1) throw new Error(input.bindingId ? 'The pinned source credential binding is unavailable.' : 'Source access requires one unambiguous team repository connection.');
+	const row = matches[0];
+	return { ...await credentialForRow({ ...row, name: input.repository }, { store: input.store, capability: 'repository-hosting',
+		readOnly: true, env: input.env, fetchImpl: input.fetchImpl }), bindingId: String(row.source_binding_id) };
 }
 
 export async function resolveGitHubRepositoryCandidateAuthority(input: {
@@ -104,7 +163,7 @@ export async function resolveGitHubRepositoryCandidateAuthority(input: {
 		WHERE a.id = ? AND a.connection_id = ? AND a.status = 'ready'`,
 		[input.owner, input.repository, input.teamId, input.capabilityBindingId, input.authorityId, input.serviceConnectionId]);
 	if (!row) throw new Error('The repository credential authority is unavailable.');
-	return credentialForRow(row, { capability: 'repository-hosting', env: input.env, fetchImpl: input.fetchImpl });
+	return credentialForRow(row, { store: input.store, capability: 'repository-hosting', env: input.env, fetchImpl: input.fetchImpl });
 }
 
 export async function resolveGitHubCredentialAuthority(input: {
@@ -112,7 +171,9 @@ export async function resolveGitHubCredentialAuthority(input: {
 	authorityId: string;
 	repositoryBindingId: string;
 	capabilityBindingId?: string | null;
-	capability: 'repository-hosting' | 'workflow-execution' | 'workflow-configuration' | 'secret-enclave';
+	capability: 'repository-hosting' | 'workflow-execution';
+	configurationKind?: 'secrets'|'variables';
+	configurationScope?: string;
 	env?: NodeJS.ProcessEnv;
 	fetchImpl?: typeof fetch;
 }) {
@@ -121,7 +182,7 @@ export async function resolveGitHubCredentialAuthority(input: {
 		 FROM provider_credential_authorities a
 		 JOIN team_service_connections c ON c.id = a.connection_id
 		 JOIN project_remote_repository_bindings r ON r.id = ? AND r.team_id = a.team_id
-		 WHERE a.id = ? AND a.status IN ('ready', 'interactive-only')`,
+		 WHERE a.id = ? AND a.status = 'ready'`,
 		[input.repositoryBindingId, input.authorityId],
 	);
 	if (!row || row.provider_id !== 'github') throw new Error('The repository credential authority is unavailable.');
@@ -132,5 +193,5 @@ export async function resolveGitHubCredentialAuthority(input: {
 			[input.capabilityBindingId, row.team_id, row.connection_id, row.credential_profile_id, input.capability]);
 		if (!binding) throw new Error('The capability binding does not select this credential authority.');
 	} else if (row.authority_id !== row.id) throw new Error('The repository credential authority is unavailable.');
-	return credentialForRow(row, { capability: input.capability, env: input.env, fetchImpl: input.fetchImpl });
+	return credentialForRow(row, { store: input.store, capability: input.capability, configurationKind:input.configurationKind, configurationScope:input.configurationScope, env: input.env, fetchImpl: input.fetchImpl });
 }

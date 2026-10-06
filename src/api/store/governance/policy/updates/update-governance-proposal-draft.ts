@@ -1,11 +1,9 @@
-import { createHash,randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { decisionDependencyReferencesAreComplete,normalizeDecisionDependencyReferences } from '../../../../governance/decision-authority.ts';
-import { normalizeGovernanceProposalPlan } from '../../../../governance/proposal-readiness.ts';
 import { governanceContentHash,isoNow,ControlPlaneStore,optionalStringValue } from "../../../../persistence/store.ts";
+function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 async function ensureVersionEvidence(store: ControlPlaneStore,input: { proposal:any;version:number;hash:string;metadata:Record<string,any>;proposalTypes:string[];changeReason:string;createdById:string|null;createdByType:string;priorState:string;nextState:string;priorHash:string }) {
-	const timestamp=isoNow();const proposalId=String(input.proposal.id);
-	if(input.proposal.projectId){const signalId=`signal:proposal-version:${createHash('sha256').update(`${proposalId}:${input.version}:${input.hash}`).digest('hex')}`;const provenance=input.metadata.contentProvenance&&typeof input.metadata.contentProvenance==='object'?input.metadata.contentProvenance:{};const commitSha=optionalStringValue(provenance.commitSha);const contentPath=optionalStringValue(provenance.contentPath);
-		await store.run(`INSERT INTO agent_signals (id,contract_id,subject_kind,subject_id,team_id,project_id,workday_run_id,assignment_id,agent_id,activity_type,capacity_provider_id,causation_id,correlation_id,origin,commit_sha,immutable_ref,digest,changed_paths_json,change_summary,evidence_ref,payload_json,metadata_json,created_at) VALUES (?,'proposal-version-published','proposal',?,?,?,?,NULL,NULL,NULL,NULL,?,?,'deterministic-handler',?,?,?, ?,?,?,?, '{}',?) ON CONFLICT(id) DO NOTHING`,[signalId,proposalId,input.proposal.teamId,input.proposal.projectId,optionalStringValue(input.metadata.workdayRunId),`proposal:${proposalId}:version:${input.version}`,`proposal:${proposalId}`,commitSha,commitSha,input.hash,JSON.stringify(contentPath?[contentPath]:[]),input.changeReason,`governance-proposal-version:${proposalId}:${input.version}`,JSON.stringify({proposalId,version:input.version,proposalTypes:input.proposalTypes,objectives:input.metadata.relatedObjectives??[],authorId:input.createdById}),timestamp]);}
+	const proposalId=String(input.proposal.id);
 	const eventType=input.priorState==='voting'?'proposal.version_reset_voting':'proposal.version_published';
 	const event=await store.first(`SELECT id FROM governance_events WHERE proposal_id = ? AND proposal_version = ? AND event_type = ? LIMIT 1`,[proposalId,input.version,eventType]);
 	if(!event)await store.recordGovernanceEvent({eventType,actorType:input.createdByType,actorId:input.createdById,teamId:input.proposal.teamId,projectId:input.proposal.projectId,proposalId,proposalVersion:input.version,priorState:input.priorState,nextState:input.nextState,evidence:{priorHash:input.priorHash,nextHash:input.hash}});
@@ -38,13 +36,23 @@ export async function updateGovernanceProposalDraftMethod(this: ControlPlaneStor
 	if (!decisionDependencyReferencesAreComplete(rawDecisionDependencies)) { const error: Error & Record<string, any> = new Error('Every decision dependency requires projectId and decisionId.'); error.status = 400; error.code = 'governance_decision_dependency_invalid'; throw error; }
 	metadata.decisionDependencies = normalizeDecisionDependencyReferences(rawDecisionDependencies);
     if (input.contentProvenance !== undefined) metadata.contentProvenance = input.contentProvenance;
-    if (input.plan !== undefined) metadata.plan = normalizeGovernanceProposalPlan(input.plan);
-    const nextHash = governanceContentHash({ title, summary, body, proposalType, ...metadata });
+	delete metadata.plan;
+	delete metadata.executionPlan;
+    const nextHash = optionalStringValue(record(metadata.contentProvenance).digest)
+		?? governanceContentHash({ title, summary, body, proposalType, ...metadata });
     const materialChange = nextHash !== existing.activeContentHash;
     const timestamp = isoNow();
 	const createdByType = optionalStringValue(input.createdByType,'user');
 	const createdById = optionalStringValue(input.createdById,principal?.id ?? null);
-	if (!materialChange && JSON.stringify(proposalTypes) === JSON.stringify(existing.proposalTypes ?? [existing.proposalType])) { await ensureVersionEvidence(this,{proposal:existing,version:existing.activeVersion,hash:existing.activeContentHash,metadata,proposalTypes,changeReason,createdById,createdByType,priorState:existing.status,nextState:existing.status,priorHash:existing.activeContentHash});return existing; }
+	if (!materialChange && JSON.stringify(proposalTypes) === JSON.stringify(existing.proposalTypes ?? [existing.proposalType])) {
+		const provenance = metadata.contentProvenance;
+		if (!provenance || !['contentPath','commitSha','digest'].every((key) => typeof provenance[key] === 'string' && provenance[key].trim())) {
+			throw Object.assign(new Error('The proposal has not been authored in TreeDX; publish its content before replaying publication.'), {
+				status: 409, code: input.repairExistingVersion === true ? 'governance_proposal_repair_material_change' : 'governance_proposal_provenance_required',
+			});
+		}
+		await ensureVersionEvidence(this,{proposal:existing,version:existing.activeVersion,hash:existing.activeContentHash,metadata,proposalTypes,changeReason,createdById,createdByType,priorState:existing.status,nextState:existing.status,priorHash:existing.activeContentHash});return existing;
+	}
 	if(input.repairExistingVersion===true){const error:Error&Record<string,any>=new Error('The requested proposal update is a material revision and requires TreeDX authoring.');error.status=409;error.code='governance_proposal_repair_material_change';throw error;}
 	const nextVersion = existing.activeVersion + 1;
 	const nextStatus = existing.status === 'voting' && materialChange ? 'open' : existing.status;

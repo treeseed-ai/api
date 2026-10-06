@@ -1,4 +1,5 @@
 import { PostgresAuthStore } from '../../postgres-store.ts';
+import { assignLocalFirstAdmin } from './local-first-admin.ts';
 
 type BootstrapAdminCandidate = {
 	user_id: string;
@@ -9,16 +10,14 @@ type BootstrapAdminCandidate = {
 
 export async function reconcileBootstrapAdminsMethod(this: PostgresAuthStore) {
 	const allowlist = this.config.bootstrapAdminAllowlist;
-	if (allowlist.length === 0) return;
-
-	const candidates = await this.all<BootstrapAdminCandidate>(
+	const candidates = allowlist.length > 0 ? await this.all<BootstrapAdminCandidate>(
 		`SELECT users.id AS user_id,
 			users.email,
 			user_identities.provider,
 			user_identities.provider_subject
 		 FROM users
 		 LEFT JOIN user_identities ON user_identities.user_id = users.id`,
-	);
+	) : [];
 	const matches = new Map<string, string>();
 	for (const candidate of candidates) {
 		const email = candidate.email?.trim().toLowerCase() ?? '';
@@ -41,5 +40,6 @@ export async function reconcileBootstrapAdminsMethod(this: PostgresAuthStore) {
 			data: { matched },
 		});
 	}
-}
 
+	await assignLocalFirstAdmin(this);
+}

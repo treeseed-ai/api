@@ -7,6 +7,17 @@ export async function evaluateGovernanceProposalMethod(this: ControlPlaneStore, 
     if (!proposal)
         return null;
     assertExpectedProposalVersion(input, proposal.activeVersion);
+    // A failed decision projection must be recoverable without reopening or
+    // re-voting an already accepted proposal. Decision creation is idempotent
+    // by proposal identity and revalidates exact current authority.
+    if (proposal.status === 'accepted' && !proposal.decisionId) {
+        const snapshot = await this.latestGovernanceElectorateSnapshot(proposal.id, proposal.activeVersion);
+        await this.createGovernanceDecisionFromProposal(proposal.id, {
+            electorateSnapshotId: snapshot?.id ?? null,
+            actorType: input.actorType ?? 'system', actorId: input.actorId ?? null,
+        });
+        return this.getGovernanceProposal(proposal.id);
+    }
     if (!['voting', 'open', 'draft'].includes(proposal.status))
         return proposal;
     const snapshot = await this.latestGovernanceElectorateSnapshot(proposal.id, proposal.activeVersion) ?? await this.snapshotGovernanceElectorate(proposal.id);

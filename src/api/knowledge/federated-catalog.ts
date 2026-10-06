@@ -77,7 +77,8 @@ async function loadLiveProjectCatalog(context: any, project: any) {
 		repositoryDocuments(connection, paths.resolvedRef, paths.paths.filter((path) => path.startsWith(pageRoot))),
 	]);
 	const source = { teamId: project.teamId, teamSlug: team?.slug ?? team?.name ?? project.teamId,
-		projectId: project.id, repositoryId: connection.repositoryId, commitSha: paths.resolvedRef };
+		projectId: project.id, repositoryId: connection.repositoryId, commitSha: paths.resolvedRef,
+		graphRef: observedConnection.baseRef };
 	const books = bookDocuments.flatMap((document): FederatedBook[] => {
 		const raw = String(document.content ?? '');
 		if (raw && !document.frontmatter) throw new Error(`TreeDX did not parse frontmatter for ${String(document.path)}.`);
@@ -107,7 +108,7 @@ export async function loadFederatedKnowledgeCatalog(context: any, c: any, projec
 	const localLiveSource = ['local', 'test'].includes(String(context.options?.environment
 		?? process.env.TREESEED_ENVIRONMENT ?? 'local'));
 	const storage = createKnowledgePublicationStorage({ adapter: context.options?.knowledgePublicationStorage,
-		environment: context.options?.environment });
+		environment: context.options?.environment, store: context.store });
 	const liveProjects: any[] = [];
 	for (const [teamId, teamProjects] of byTeam) {
 		const team = await context.store.getTeam(teamId);
@@ -156,7 +157,8 @@ export async function searchFederatedKnowledgeCatalog(context: any, catalog: any
 		});
 		const confirmed = await contentPaths(connection, graphRef);
 		if (confirmed.resolvedRef !== sourceCommit) throw new Error('The knowledge source changed while search was running.');
-		for (const result of results) {
+		if (!Array.isArray(results.results)) throw new Error('TreeDX returned an invalid knowledge search result.');
+		for (const result of results.results) {
 			const node = result.node;
 			const page = pages.find((candidate) => candidate.id === node.id || candidate.id === node.entityId
 				|| candidate.source.path === node.path || candidate.source.path === node.data?.path);
@@ -174,14 +176,18 @@ export async function relatedFederatedKnowledge(context: any, catalog: any, page
 		projectId: page.source.projectId, write: false, readRefs: [graphRef],
 	});
 	if (!connection) throw new Error(`TreeDX repository is unavailable for project ${page.source.projectId}.`);
-	const result = await connection.client.getRelated({ repoId: connection.repositoryId, ref: graphRef, nodeId: page.id,
+	if (!page.source.path) throw new Error('The knowledge page has no canonical library path.');
+	const result = await connection.client.queryGraph({ repoId: connection.repositoryId, ref: graphRef,
+		seeds: [{ id: 'page', kind: 'path', value: page.source.path }],
 		options: { direction: 'both', depth: 1, maxNodes: 40 } });
 	if (String(result.resolvedRef ?? '') !== page.source.commitSha) {
 		throw new Error('The knowledge source changed while relationships were loading.');
 	}
-	const graph = record(result.graph ?? result);
-	const identifiers = new Set((Array.isArray(graph.nodes) ? graph.nodes : []).flatMap((node: any) =>
-		[String(node.id ?? ''), String(node.entityId ?? ''), String(node.path ?? ''), String(node.data?.path ?? '')]).filter(Boolean));
+	if (!Array.isArray(result.nodes)) throw new Error('TreeDX returned an invalid knowledge graph result.');
+	const identifiers = new Set(result.nodes.flatMap((entry: any) => {
+		const node = record(entry.node);
+		return [String(node.id ?? ''), String(node.entityId ?? ''), String(node.path ?? ''), String(node.data?.path ?? '')];
+	}).filter(Boolean));
 	return (catalog.pages as FederatedKnowledgePage[]).filter((candidate) => candidate.id !== page.id
 		&& (identifiers.has(candidate.id) || Boolean(candidate.source.path && identifiers.has(candidate.source.path))));
 }

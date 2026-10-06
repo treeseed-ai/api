@@ -24,6 +24,16 @@ const text = (value: unknown) => typeof value === 'string' && value.trim() ? val
 const environments = (value: unknown) => Array.isArray(value)
 	? value.map((entry) => String(entry ?? '').trim()).filter(Boolean).join(',') || undefined
 	: text(value);
+const stringList = (value: unknown): string[] => {
+	if (Array.isArray(value)) return value.map((entry) => String(entry ?? '').trim()).filter(Boolean);
+	if (typeof value !== 'string' || !value.trim()) return [];
+	try {
+		const decoded = JSON.parse(value);
+		return Array.isArray(decoded) ? decoded.map((entry) => String(entry ?? '').trim()).filter(Boolean) : [];
+	} catch {
+		return [];
+	}
+};
 const existingTeams = (plan: any) => [...new Set<string>(plan.actions.filter((action: any) => action.kind === 'team' && action.existing?.id).map((action: any) => String(action.existing.id)))];
 const createsTeams = (plan: any) => plan.actions.some((action: any) => action.kind === 'team' && action.action === 'create');
 const seedAdmin = (principal: Principal) => principal.permissions?.includes('*:*:*') || principal.permissions?.includes('seeds:apply:global') || principal.roles?.includes('platform_admin');
@@ -72,14 +82,15 @@ export async function reconcileSeedProviderPrerequisites(store: Store, config: {
 			}
 			const session = await store.first(`SELECT * FROM capacity_provider_availability_sessions WHERE membership_id = ? AND status = 'open' AND expires_at > ? ORDER BY refreshed_at DESC LIMIT 1`, [membership.id, new Date().toISOString()]);
 			if (!session) { receipts.push({ key: prerequisite.key, status: 'waiting_provider', teamId: team.id, membershipId: membership.id, blockers: ['provider_health_required'] }); continue; }
-			const lanes = await store.all(`SELECT lane.* FROM capacity_provider_lanes lane
-				INNER JOIN capacity_execution_providers execution_provider ON execution_provider.id = lane.execution_provider_id
+			const lanes = await store.all(`SELECT lane.*, execution_provider.capabilities_json AS execution_provider_capabilities_json FROM capacity_provider_lanes lane
+				INNER JOIN capacity_execution_providers execution_provider ON execution_provider.capacity_provider_id = lane.capacity_provider_id AND execution_provider.id = lane.execution_provider_id
 				WHERE lane.capacity_provider_id = ? AND lane.status = 'active' AND execution_provider.status = 'active'
 				ORDER BY lane.purpose, lane.id`, [membership.capacity_provider_id]);
 			const purposes = new Set(lanes.map((lane) => String(lane.purpose)));
 			const missingLanes = prerequisite.requiredLanePurposes.filter((purpose: string) => !purposes.has(purpose));
 			if (!lanes.length) { receipts.push({ key: prerequisite.key, status: 'waiting_provider', blockers: missingLanes.map((purpose: string) => `lane_execution_unavailable:${purpose}`) }); continue; }
 			const executionProviderIds = [...new Set(lanes.map((lane) => String(lane.execution_provider_id)))];
+			const capabilities = [...new Set(lanes.flatMap((lane) => stringList(lane.execution_provider_capabilities_json)))];
 			const projectReceipts = [];
 			for (const projectKey of prerequisite.projects) {
 				const projectAction = plan.actions.find((action: any) => action.key === projectKey);
@@ -89,18 +100,23 @@ export async function reconcileSeedProviderPrerequisites(store: Store, config: {
 					const existing = await store.first(`SELECT * FROM capacity_grants WHERE membership_id = ? AND project_id = ? AND environment = ? AND status IN ('planned','active','paused') LIMIT 1`, [membership.id, project.id, environment]);
 					if (existing) {
 						if (!mutate) { projectReceipts.push({ projectKey, environment, status: existing.status, grantId: existing.id }); continue; }
-						await store.run(`UPDATE capacity_grants SET execution_provider_ids_json = ?, lane_ids_json = ?, capabilities_json = '[]', updated_at = ? WHERE id = ? AND membership_id = ?`,
-							[JSON.stringify(executionProviderIds), JSON.stringify(lanes.map((entry) => String(entry.id))), new Date().toISOString(), existing.id, membership.id]);
+						await store.run(`UPDATE capacity_grants SET execution_provider_ids_json = ?, lane_ids_json = ?, capabilities_json = ?, allowed_modes_json = ?, updated_at = ? WHERE id = ? AND membership_id = ?`,
+							[JSON.stringify(executionProviderIds), JSON.stringify(lanes.map((entry) => String(entry.id))), JSON.stringify(capabilities),
+								JSON.stringify(prerequisite.allowedModes), new Date().toISOString(), existing.id, membership.id]);
 						const active = existing.status === 'active' ? { ...existing, status: 'active' } : await grants.transition(team.id, String(existing.id), 'active', `seed:${plan.seed}:${prerequisite.key}:${project.id}:${environment}:activate`);
 						projectReceipts.push({ projectKey, environment, status: active.status, grantId: existing.id }); continue;
 					}
 					if (!mutate) { projectReceipts.push({ projectKey, environment, status: 'planned' }); continue; }
-					const grantId = `seed-grant:${createHash('sha256').update(`${plan.seed}\0${prerequisite.key}\0${project.id}\0${environment}`).digest('hex').slice(0, 32)}`;
+					// Provider enrollment is replaceable. Bind both the resource identity and
+					// operation receipts to the approved membership so a replacement local
+					// provider cannot collide with its predecessor's sealed create receipt.
+					const grantIdentity = `${plan.seed}\0${prerequisite.key}\0${membership.id}\0${project.id}\0${environment}`;
+					const grantId = `seed-grant:${createHash('sha256').update(grantIdentity).digest('hex').slice(0, 32)}`;
 					const candidate = await grants.create(team.id, { id: grantId, membershipId: membership.id, projectId: project.id, environment,
 						executionProviderIds, laneIds: lanes.map((entry) => String(entry.id)),
-						capabilities: [], allowedModes: prerequisite.allowedModes, unmetered: true,
-						metadata: { seedName: plan.seed, seedVersion: plan.version, prerequisiteKey: prerequisite.key, manifestDigest: prerequisite.manifestDigest } }, `seed:${plan.seed}:${prerequisite.key}:${project.id}:${environment}:create`);
-					const active = await grants.transition(team.id, candidate.id, 'active', `seed:${plan.seed}:${prerequisite.key}:${project.id}:${environment}:activate`);
+						capabilities, allowedModes: prerequisite.allowedModes, unmetered: true,
+						metadata: { seedName: plan.seed, seedVersion: plan.version, prerequisiteKey: prerequisite.key, manifestDigest: prerequisite.manifestDigest } }, `seed:${plan.seed}:${prerequisite.key}:${membership.id}:${project.id}:${environment}:create`);
+					const active = await grants.transition(team.id, candidate.id, 'active', `seed:${plan.seed}:${prerequisite.key}:${membership.id}:${project.id}:${environment}:activate`);
 					projectReceipts.push({ projectKey, environment, status: active.status, grantId: active.id });
 				}
 			}

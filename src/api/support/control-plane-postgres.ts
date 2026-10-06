@@ -3,6 +3,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname,join,resolve } from 'node:path';
 import pg,{ type Pool,type PoolClient,type QueryResultRow } from 'pg';
 import { splitPostgresSqlStatements } from '../persistence/postgres-sql-statements.ts';
+import { verifyDatabaseMigrations } from './verify-database-migrations.ts';
+import { migrationColumnTarget } from './migration-column-target.ts';
+import { API_POSTGRES_POOL_OPTIONS } from './postgres-pool-budget.ts';
 
 const { Pool: PgPool } = pg;
 const loggedPostgresPools = new WeakSet<Pool>();
@@ -19,6 +22,15 @@ function attachPostgresPoolErrorLogger(pool: Pool) {
 
 type PostgresQueryable = Pick<Pool | PoolClient, 'query'>;
 type PreparedResult = { success: true; results: QueryResultRow[]; meta: { changes: number } };
+
+export async function executePostgresBatch(client: PostgresQueryable, statements: Array<{ query: string; bindings?: unknown[]; params?: unknown[] }>): Promise<PreparedResult[]> {
+	const results: PreparedResult[] = [];
+	for (const statement of statements) {
+		const result = await client.query(translateControlPlaneSqlToPostgres(statement.query), statement.bindings ?? statement.params ?? []);
+		results.push({ success: true, results: result.rows ?? [], meta: { changes: result.rowCount ?? 0 } });
+	}
+	return results;
+}
 
 const replaceConflictTargets = new Map([
 	['permissions', ['key']],
@@ -96,7 +108,7 @@ function parseInsertOrIgnore(query: string) {
 	};
 }
 
-function translateControlPlaneSqlToPostgres(query: string): string {
+export function translateControlPlaneSqlToPostgres(query: string): string {
 	const normalizedQuery = String(query ?? '');
 	if (/^\s*INSERT\s+OR\s+IGNORE\s+INTO\s+team_role_bindings\s*\(\s*team_membership_id\s*,\s*role_id\s*,\s*created_at\s*\)\s+VALUES\s*\(\s*\?\s*,\s*\?\s*,\s*\?\s*\)\s*$/iu.test(normalizedQuery)) {
 		return `INSERT INTO team_role_bindings (id, team_membership_id, role_id, created_at)
@@ -169,14 +181,10 @@ async function columnExists(pool:PostgresQueryable,tableName:string,columnName:s
 
 async function hasAdoptableBaselineSchema(pool: PostgresQueryable): Promise<boolean> {
 	const baselineTables = [
-		'agent_capacity_plans',
 		'better_auth_user',
 		'capacity_ledger_entries',
 		'capacity_providers',
 		'capacity_reservations',
-		'capacity_workday_demands',
-		'capacity_workday_participation_cycles',
-		'capacity_workday_participation_entries',
 		'control_plane_operation_runners',
 		'platform_operations',
 		'capacity_provider_assignments',
@@ -271,23 +279,26 @@ export class ControlPlanePostgresDatabase {
 	pool: Pool;
 	private migrationRoot: string | null;
 	private migrationPromise: Promise<void> | null;
+	private migrationMode: 'validate' | 'apply';
 
-	constructor(databaseUrl: string, options: { migrationRoot?: string | null } = {}) {
+	constructor(databaseUrl: string, options: { migrationRoot?: string | null; migrationMode?: 'validate' | 'apply' } = {}) {
 		if (typeof databaseUrl !== 'string' || !databaseUrl.trim()) {
 			throw new Error('Postgres database URL is required.');
 		}
-		this.pool = new PgPool({ connectionString: databaseUrl.trim() });
+		this.pool = new PgPool({ connectionString: databaseUrl.trim(), ...API_POSTGRES_POOL_OPTIONS });
 		attachPostgresPoolErrorLogger(this.pool);
 		this.migrationRoot = options.migrationRoot ?? null;
 		this.migrationPromise = null;
+		this.migrationMode = options.migrationMode ?? 'validate';
 	}
 
-	static fromPool(pool: Pool, options: { migrationRoot?: string | null } = {}): ControlPlanePostgresDatabase {
+	static fromPool(pool: Pool, options: { migrationRoot?: string | null; migrationMode?: 'validate' | 'apply' } = {}): ControlPlanePostgresDatabase {
 		const database = Object.create(ControlPlanePostgresDatabase.prototype) as ControlPlanePostgresDatabase;
 		database.pool = pool;
 		attachPostgresPoolErrorLogger(database.pool);
 		database.migrationRoot = options.migrationRoot ?? null;
 		database.migrationPromise = null;
+		database.migrationMode = options.migrationMode ?? 'validate';
 		return database;
 	}
 
@@ -296,17 +307,30 @@ export class ControlPlanePostgresDatabase {
 	}
 
 	async batch(statements: Array<{ query: string; bindings?: unknown[]; params?: unknown[] }>): Promise<PreparedResult[]> {
+		// PostgreSQL aborts the whole transaction on 40P01. Replaying this SQL-only
+		// batch is safe; retrying arbitrary transaction callbacks is not. Full
+		// jitter keeps simultaneous provider usage reports from deadlocking again
+		// in lockstep under normal five-way workday concurrency.
+		for (let attempt = 0; ; attempt += 1) {
+			try {
+				return await this.transaction(client => executePostgresBatch(client, statements));
+			} catch (error) {
+				if ((error as { code?: unknown } | null)?.code !== '40P01' || attempt >= 6) throw error;
+				const ceilingMs = Math.min(800, 25 * 2 ** attempt);
+				await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * ceilingMs) + 1));
+			}
+		}
+	}
+
+	/** One connection and transaction for authority checks, locks, and writes. */
+	async transaction<T>(run: (client: PoolClient) => Promise<T>): Promise<T> {
 		await this.migrate();
 		const client = await this.pool.connect();
 		try {
 			await client.query('BEGIN');
-			const results = [];
-			for (const statement of statements) {
-				const result = await client.query(translateControlPlaneSqlToPostgres(statement.query), statement.bindings ?? statement.params ?? []);
-				results.push({ success: true, results: result.rows ?? [], meta: {} });
-			}
+			const result = await run(client);
 			await client.query('COMMIT');
-			return results;
+			return result;
 		} catch (error) {
 			await client.query('ROLLBACK');
 			throw error;
@@ -324,9 +348,33 @@ export class ControlPlanePostgresDatabase {
 
 	async migrate(): Promise<void> {
 		if (!this.migrationPromise) {
-			this.migrationPromise = this.applyDrizzleMigrations();
+			if (this.migrationMode === 'apply' && process.env.TREESEED_DEVELOPMENT_MODE === 'live') {
+				throw new Error('live_migration_apply_forbidden');
+			}
+			this.migrationPromise = this.migrationMode === 'apply'
+				? this.applyDrizzleMigrations()
+				: verifyDatabaseMigrations(this.pool, this.migrationRoot ?? resolveControlPlaneMigrationRoot());
 		}
 		return this.migrationPromise;
+	}
+
+	async migrationInventory() {
+		const migrationRoot = this.migrationRoot ?? resolveControlPlaneMigrationRoot();
+		const source = readdirSync(migrationRoot).filter((file) => file.endsWith('.sql')).sort();
+		const applied = (await this.pool.query('SELECT name FROM treeseed_control_plane_schema_migrations ORDER BY name'))
+			.rows.map((row) => String(row.name));
+		const inspectedTables = ['execution_edges', 'execution_graph_revisions', 'execution_nodes'];
+		const schemaRows = (await this.pool.query(`SELECT table_name,column_name FROM information_schema.columns
+			WHERE table_schema='public' AND table_name = ANY($1::text[]) ORDER BY table_name,ordinal_position`, [inspectedTables])).rows;
+		const schema = Object.fromEntries(inspectedTables.map((table) => [table,
+			schemaRows.filter((row) => row.table_name === table).map((row) => String(row.column_name))]));
+		return {
+			source,
+			applied,
+			pending: source.filter((name) => !applied.includes(name)),
+			unexpected: applied.filter((name) => !source.includes(name)),
+			schema,
+		};
 	}
 
 	private async applyDrizzleMigrations(): Promise<void> {
@@ -375,8 +423,8 @@ export class ControlPlanePostgresDatabase {
 					if (addConstraint && await constraintExists(client, addConstraint[1], addConstraint[2])) continue;
 					const addColumn=inspected.match(/^\s*ALTER\s+TABLE\s+["`]?([a-zA-Z0-9_]+)["`]?\s+ADD\s+COLUMN\s+["`]?([a-zA-Z0-9_]+)["`]?/iu);
 					if(addColumn&&await columnExists(client,addColumn[1],addColumn[2]))continue;
-					const existingColumnMutation=inspected.match(/^\s*ALTER\s+TABLE\s+["`]?([a-zA-Z0-9_]+)["`]?\s+(?:ALTER|DROP)\s+COLUMN\s+["`]?([a-zA-Z0-9_]+)["`]?/iu);
-					if(existingColumnMutation&&!await columnExists(client,existingColumnMutation[1],existingColumnMutation[2]))continue;
+					const existingColumnMutation=migrationColumnTarget(inspected);
+					if(existingColumnMutation&&!await columnExists(client,existingColumnMutation.table,existingColumnMutation.column))continue;
 					const createIndex = String(statement).match(/^\s*CREATE\s+(UNIQUE\s+)?INDEX\s+(?!IF\s+NOT\s+EXISTS\b)/iu);
 					const statementToApply = createIndex
 						? String(statement).replace(/^\s*CREATE\s+(UNIQUE\s+)?INDEX\s+/iu, (_match, unique = '') => `CREATE ${unique}INDEX IF NOT EXISTS `)
@@ -404,6 +452,6 @@ export class ControlPlanePostgresDatabase {
 	}
 }
 
-export function createControlPlanePostgresDatabase(databaseUrl: string, options: { migrationRoot?: string | null } = {}): ControlPlanePostgresDatabase {
+export function createControlPlanePostgresDatabase(databaseUrl: string, options: { migrationRoot?: string | null; migrationMode?: 'validate' | 'apply' } = {}): ControlPlanePostgresDatabase {
 	return new ControlPlanePostgresDatabase(databaseUrl, options);
 }

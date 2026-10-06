@@ -1,7 +1,9 @@
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { decodeDurableJsonArray } from '../../../durable-json.ts';
-import type { MinimumAssignmentDuration } from '@treeseed/sdk/capacity-provider/contracts';
+import type { CapabilityOffer } from '@treeseed/sdk/capacity-provider';
+import { capabilityAccountingLimitsSchema, type CapabilityAccountingLimits, type CapabilityAccountingObservation } from '@treeseed/sdk/agent-capacity';
+import { capacitySupplyCandidateStatus } from '../../../policy/supply-selection.ts';
 
 type Row = Record<string, unknown>;
 
@@ -38,14 +40,17 @@ export interface ProviderSynthesisContext {
 
 export interface ProviderSynthesisExecutionProvider {
 	id: string;
+	runtimeBuild: string;
 	status: string;
 	capabilities: string[];
+	offers: CapabilityOffer[];
+	accountingLimits?: CapabilityAccountingLimits;
+	accountingObservation?: { modelUsage: CapabilityAccountingObservation; capabilityUsage: Record<string, CapabilityAccountingObservation> };
 	reliability?: number;
 	pressure?: 'idle' | 'normal' | 'busy' | 'throttled' | 'exhausted';
 	availableConcurrency?: number;
 	maxConcurrentRunners: number;
 	estimatedCost?: number | null;
-	minimumAssignmentDuration?: MinimumAssignmentDuration;
 	lanes: Array<{
 		id: string;
 		purpose: 'communication' | 'platform' | 'workday';
@@ -56,7 +61,6 @@ export interface ProviderSynthesisExecutionProvider {
 		lendWhenIdle: boolean;
 		queueLimit: number;
 		capabilities: string[];
-		minimumAssignmentDuration?: MinimumAssignmentDuration;
 	}>;
 }
 
@@ -91,24 +95,27 @@ function executionProviders(row: Row): ProviderSynthesisExecutionProvider[] {
 		owner: 'provider availability session', ownerId: text(row.id), column: 'execution_providers_json',
 	}).map((provider) => ({
 		id: String(provider.id ?? '').trim(),
-		status: String(provider.status ?? 'unavailable'),
+		runtimeBuild: String(provider.runtimeBuild ?? '').trim(),
+		status: capacitySupplyCandidateStatus(provider.status),
 		capabilities: Array.isArray(provider.capabilities) ? provider.capabilities.map(String).filter(Boolean) : [],
+		offers: Array.isArray(provider.offers) ? provider.offers as CapabilityOffer[] : [],
+		...(capabilityAccountingLimitsSchema.safeParse(provider.nativeLimits).success
+			? { accountingLimits: capabilityAccountingLimitsSchema.parse(provider.nativeLimits) } : {}),
+		...(provider.accountingObservation ? { accountingObservation: provider.accountingObservation as ProviderSynthesisExecutionProvider['accountingObservation'] } : {}),
 		reliability: Number.isFinite(Number(provider.reliability)) ? Math.max(0, Math.min(1, Number(provider.reliability))) : 1,
 		pressure: ['idle', 'normal', 'busy', 'throttled', 'exhausted'].includes(String(provider.pressure)) ? provider.pressure as ProviderSynthesisExecutionProvider['pressure'] : 'normal',
 		availableConcurrency: Number.isInteger(Number(provider.availableConcurrency)) ? Math.max(0, Number(provider.availableConcurrency)) : 1,
 		maxConcurrentRunners: Math.max(1, Number(provider.maxConcurrentRunners ?? 1)),
 		estimatedCost: Number.isFinite(Number(provider.estimatedCost)) ? Number(provider.estimatedCost) : null,
-		...(provider.minimumAssignmentDuration ? { minimumAssignmentDuration: provider.minimumAssignmentDuration as unknown as MinimumAssignmentDuration } : {}),
 		lanes: Array.isArray(provider.lanes) ? provider.lanes.map((value) => value as Row).flatMap((lane) => {
 			const id = String(lane.id ?? '').trim();
 			const purpose = ['communication', 'platform', 'workday'].includes(String(lane.purpose)) ? lane.purpose as 'communication' | 'platform' | 'workday' : null;
 			return id && purpose ? [{ id, purpose, maxConcurrentRunners: Math.max(1, Number(lane.maxConcurrentRunners ?? 1)),
 				priority: Number(lane.priority ?? 0), reservedConcurrentWorkers: Math.max(0, Number(lane.reservedConcurrentWorkers ?? 0)),
 				borrowWhenIdle: Boolean(lane.borrowWhenIdle), lendWhenIdle: Boolean(lane.lendWhenIdle), queueLimit: Math.max(0, Number(lane.queueLimit ?? 0)),
-				capabilities: Array.isArray(lane.capabilities) ? lane.capabilities.map(String).filter(Boolean) : [],
-				...(lane.minimumAssignmentDuration ? { minimumAssignmentDuration: lane.minimumAssignmentDuration as unknown as MinimumAssignmentDuration } : {}) }] : [];
+				capabilities: Array.isArray(lane.capabilities) ? lane.capabilities.map(String).filter(Boolean) : [] }] : [];
 		}) : [],
-	})).filter((provider) => provider.id);
+	})).filter((provider) => provider.id && /^sha256:[a-f0-9]{64}$/u.test(provider.runtimeBuild));
 }
 
 export async function resolveProviderSynthesisContext(
@@ -176,10 +183,13 @@ export async function resolveProviderSynthesisContext(
 			sessionEnvironment: session.environment,
 		});
 	}
+	const unavailableOffers=await database.all(`SELECT execution_provider_id,offer_id,status FROM execution_capability_offers WHERE capacity_provider_id=? AND status<>'active'`,[principal.capacityProviderId]);
+	const blocked=new Set(unavailableOffers.map((offer)=>`${String(offer.execution_provider_id)}:${String(offer.offer_id)}`));
+	const eligibleProviders=executionProviders(row).map((provider)=>({...provider,offers:provider.offers.filter((offer)=>!blocked.has(`${provider.id}:${offer.offerId}`))}));
 	return {
 		provider: { id: String(authority.provider_id), status: String(authority.provider_status) },
 		session,
-		executionProviders: executionProviders(row),
+		executionProviders: eligibleProviders,
 		now,
 		environment: input.environment ?? session.environment,
 	};

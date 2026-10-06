@@ -2,6 +2,11 @@ import { decodeCapacityPageCursor, normalizeCapacityPageLimit } from '@treeseed/
 import { WorkdayPreflightService, parsePublicWorkdayIntent } from '../../../capacity/services/capacity/workdays/scheduling/workday-preflight-service.ts';
 import { authorizeCapacityTeam, type CapacityPrincipal } from './capacity-authorization.ts';
 import { CapacityOperationError } from './capacity-operation-error.ts';
+import { createWorkdayProfileService } from './workdays/profile-service.ts';
+import { communicationSchedulingDiagnostics } from './communication/scheduling-diagnostics.ts';
+import { advanceLivingWorkday } from '../../../capacity/services/capacity/workdays/lifecycle/living-workday-lifecycle.ts';
+import { reconcileExecutionGraph } from './execution/execution-graph-service.ts';
+import { workdayTerminalizationPreserveUntil } from '../../../capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 
 function page(query: Record<string, unknown>) {
 	try { return { limit: normalizeCapacityPageLimit(query.limit), cursor: decodeCapacityPageCursor(query.cursor) }; }
@@ -19,6 +24,7 @@ function translate(error: unknown): never {
 
 export function createWorkdayService(store: any) {
 	return {
+		...createWorkdayProfileService(store),
 		async list(principal: CapacityPrincipal, teamId: string, query: Record<string, unknown>) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
 			try { return await store.listCapacityWorkdayRunsPage(teamId, { status: query.status ?? null,
@@ -41,7 +47,39 @@ export function createWorkdayService(store: any) {
 			const run = await store.getCapacityWorkdayRun(teamId, runId);
 			if (!run) throw new CapacityOperationError(404, 'workday_not_found', 'Workday not found.');
 			const events = await store.listCapacityWorkdayEventsPage(teamId, runId, { limit: 50, cursor: null });
-			return { run, events: events.items, eventPage: events.page };
+			return { run, events: events.items, eventPage: events.page, scheduling: await communicationSchedulingDiagnostics(store, teamId, runId) };
+		},
+		async stop(principal: CapacityPrincipal, teamId: string, runId: string, body: Record<string, unknown>) {
+			const actor = await authorizeCapacityTeam(store, principal, teamId, 'teams:manage:team');
+			try {
+				const run = await store.getCapacityWorkdayRun(teamId, runId);
+				if (!run) throw new CapacityOperationError(404, 'workday_not_found', 'Workday not found.');
+				if (run.status !== 'running') throw new CapacityOperationError(409, 'workday_not_active', 'Only an active workday can enter closeout.');
+				const now = new Date().toISOString();
+				const lifecycle = await advanceLivingWorkday(store, run, now, true);
+				const reason = String(body.reason ?? 'Workday stopped by an authorized operator.');
+				const terminalization = await store.terminalizeCapacityWorkdayAssignments(teamId, runId, {
+					now, settlementKeyPrefix: 'workday-operator-stop', source: 'capacity_workday_operator_stop',
+					code: 'workday_operator_stopped', reason, metadata: { requestedById: actor.id },
+					preserveActiveLeasesUntil: workdayTerminalizationPreserveUntil('cancelled', run.parameters, now),
+				});
+				const closing = await store.getCapacityWorkdayRun(teamId, runId);
+				if (!closing) throw new CapacityOperationError(404, 'workday_not_found', 'Workday not found after terminalization.');
+				await store.updateCapacityWorkdayRun(teamId, runId, {
+					status: 'cancelled', completedAt: now,
+					parameters: { ...closing.parameters, appliedPlan: { ...closing.parameters.appliedPlan, state: 'ended', endedAt: now } },
+					summary: { outcome: 'operator_stopped', reason, terminalization },
+				});
+				// Stopping must remain available when the current proposal graph is invalid.
+				// The workday is already terminal, so a failed refresh cannot admit new work.
+				let reconciliation: { status: 'current' | 'deferred'; code?: string } = { status: 'current' };
+				try { await reconcileExecutionGraph(store, teamId); }
+				catch (error) {
+					const code = String((error as { code?: unknown }).code ?? 'graph_reconciliation_failed');
+					reconciliation = { status: 'deferred', code };
+				}
+				return { run: await store.getCapacityWorkdayRun(teamId, runId), lifecycle, terminalization, reconciliation, reason };
+			} catch (error) { translate(error); }
 		},
 		async events(principal: CapacityPrincipal, teamId: string, runId: string, query: Record<string, unknown>) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');

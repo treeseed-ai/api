@@ -27,7 +27,7 @@ interface ProjectRepositoryTopology {
 	projectRepository: ProjectFilesystemRepositoryTopology | null;
 }
 
-const TREEDX_CONTENT_PATH = 'src/content';
+const TREEDX_LIBRARY_ROOT = '.';
 function cleanString(value: unknown) { return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null; }
 function objectValue(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 
@@ -48,5 +48,5 @@ export function normalizeProjectRepositoryTopology(value: unknown): ProjectRepos
 	const record = objectValue(value); const content = objectValue(record.contentRepository); const treeDx = objectValue(content.treeDx); const remote = content.remote ? objectValue(content.remote) : null;
 	const site = normalizeFilesystemRepository(record.siteRepository, 'site'); const project = record.projectRepository ? normalizeFilesystemRepository(record.projectRepository, 'project') : null;
 	const instanceId = cleanString(treeDx.instanceId); const libraryId = cleanString(treeDx.libraryId); if (!instanceId || !libraryId) throw new Error('Project repository topology contentRepository.treeDx.instanceId and libraryId are required.');
-	return { contentRepository: { accessMode: 'treedx', githubUrl: cleanString(content.githubUrl), defaultBranch: cleanString(content.defaultBranch), ref: cleanString(content.ref), contentPath: cleanString(content.contentPath) ?? TREEDX_CONTENT_PATH, treeDx: { instanceId, libraryId, repositoryId: cleanString(treeDx.repositoryId), baseUrl: cleanString(treeDx.baseUrl) }, remote: remote ? normalizeRemoteRepository(remote) : null, r2: objectValue(content.r2) } as ProjectContentRepositoryTopology, siteRepository: site, projectRepository: project };
+	return { contentRepository: { accessMode: 'treedx', githubUrl: cleanString(content.githubUrl), defaultBranch: cleanString(content.defaultBranch), ref: cleanString(content.ref), contentPath: cleanString(content.contentPath) ?? TREEDX_LIBRARY_ROOT, treeDx: { instanceId, libraryId, repositoryId: cleanString(treeDx.repositoryId), baseUrl: cleanString(treeDx.baseUrl) }, remote: remote ? normalizeRemoteRepository(remote) : null, r2: objectValue(content.r2) } as ProjectContentRepositoryTopology, siteRepository: site, projectRepository: project };
 }

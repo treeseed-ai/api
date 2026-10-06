@@ -9,13 +9,15 @@ const safeSlug = /^[a-z0-9]+(?:[/-][a-z0-9]+)*$/u;
 
 function pageFrontmatter(input: Omit<KnowledgePageDefinition, 'schemaVersion' | 'bodyHtml' | 'revision' | 'sourcePackage'>) {
 	return {
-		schemaVersion: KNOWLEDGE_PAGE_SCHEMA_VERSION, id: input.id, bookId: input.bookId, slug: input.slug,
+		schemaVersion: KNOWLEDGE_PAGE_SCHEMA_VERSION, id: input.id, projectId: input.projectId,
+		bookRef: input.bookRef, slug: input.slug,
 		title: input.title, summary: input.summary, status: input.status, visibility: input.visibility,
 		order: input.order, ...(input.parentId ? { parentId: input.parentId } : {}), groupIds: input.groupIds,
 		contributors: input.contributors, relatedBookIds: input.relatedBookIds,
 		relatedKnowledgeIds: input.relatedKnowledgeIds, relatedNoteIds: input.relatedNoteIds,
 		relatedQuestionIds: input.relatedQuestionIds, relatedObjectiveIds: input.relatedObjectiveIds,
 		relatedProposalIds: input.relatedProposalIds, relatedDecisionIds: input.relatedDecisionIds,
+		...(input.relatedRefs?.length ? { relatedRefs: input.relatedRefs } : {}),
 		guaranteeIds: input.guaranteeIds,
 		audiences: input.audiences,
 		capabilityIds: input.context.capabilityIds, routePatterns: input.context.routePatterns,
@@ -38,7 +40,8 @@ export function serializeBookDraft(input: Omit<BookDefinition, 'schemaVersion'>)
 	if (coverImage && (!coverImage.startsWith('/') || coverImage.includes('..') || /[?#]/u.test(coverImage))) {
 		throw new Error('Book covers must use a safe root-relative project asset path.');
 	}
-	const raw = serializeFrontmatterDocument({ schemaVersion: BOOK_SCHEMA_VERSION, ...input }, '\n');
+	const { sourceDigest: _derivedDigest, sourcePath: _derivedPath, ...content } = input;
+	const raw = serializeFrontmatterDocument({ schemaVersion: BOOK_SCHEMA_VERSION, ...content }, '\n');
 	parseBook({ path: `${input.slug}.md`, raw });
 	return raw;
 }

@@ -7,7 +7,7 @@ import { createWorkflowService } from '../../../src/api/control-plane/repositori
 
 const principal = { id: 'user-1', roles: ['team_manager'] };
 const topology = {
-	contentRepository: { accessMode: 'treedx', githubUrl: null, defaultBranch: null, ref: null, contentPath: 'src/content',
+	contentRepository: { accessMode: 'treedx', githubUrl: null, defaultBranch: null, ref: null, contentPath: '.',
 		treeDx: { instanceId: 'treedx-1', libraryId: 'library-1', repositoryId: 'repository-1', baseUrl: null }, remote: null, r2: {} },
 	siteRepository: { accessMode: 'filesystem', provider: 'github', owner: null, name: 'site', url: null,
 		defaultBranch: 'staging', ref: null, checkoutPath: null, volumePath: null, submoduleMountPath: null, siteSubmodulePath: null },

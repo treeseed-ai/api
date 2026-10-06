@@ -44,6 +44,7 @@ export function resolveAssignmentContentBaseRef(payload: JsonRecord): string {
 		? intent.relatedArtifacts.map(record)
 		: [];
 	const versions = [
+		immutableCommit(payload.contentBaseRef),
 		proposalVersion(relatedArtifact),
 		...relatedArtifacts.map(proposalVersion),
 		...signalProposalVersions(intent),

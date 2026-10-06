@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { KnowledgeNavigationEntry, KnowledgePageDefinition, KnowledgeVisibility } from '@treeseed/sdk/knowledge';
 import { loadFederatedKnowledgeCatalog, relatedFederatedKnowledge, searchFederatedKnowledgeCatalog, type FederatedKnowledgePage } from '../../knowledge/federated-catalog.ts';
 import { knowledgePageSummary, resolveKnowledgePage } from '../../knowledge/runtime/catalog.ts';
-import { KnowledgeOperationError } from './knowledge-operation-error.ts';
+import { KnowledgeOperationError, knowledgeReadFailure } from './knowledge-operation-error.ts';
 import { createKnowledgeAuthorization, type KnowledgePrincipal } from './knowledge-authorization.ts';
 
 export function createKnowledgeReaderService(context: any) {
@@ -50,7 +50,7 @@ export function createKnowledgeReaderService(context: any) {
 			const search = text(query.q).slice(0, 120);
 			if (search.length >= 2) {
 				const ranked = await searchFederatedKnowledgeCatalog(context, { ...loaded, pages }, search)
-					.catch(() => { throw new KnowledgeOperationError(503, 'knowledge_search_unavailable', 'Knowledge search is unavailable.'); });
+					.catch((error) => { throw knowledgeReadFailure('knowledge_search_unavailable', 'Knowledge search is unavailable.', error); });
 				const matching = new Set(ranked.map(({ page }) => page.bookId));
 				books = books.filter((book) => matching.has(book.id));
 			}
@@ -97,7 +97,7 @@ export function createKnowledgeReaderService(context: any) {
 			if (value.length < 2) return { results: [], revision };
 			const scope = text(query.scope, 'global') as KnowledgeVisibility | 'global';
 			const ranked = await searchFederatedKnowledgeCatalog(context, { ...loaded, pages }, value)
-				.catch(() => { throw new KnowledgeOperationError(503, 'knowledge_search_unavailable', 'Knowledge search is unavailable.'); });
+				.catch((error) => { throw knowledgeReadFailure('knowledge_search_unavailable', 'Knowledge search is unavailable.', error); });
 			return { results: ranked.map(({ page }) => page).filter((page) => scope === 'global' || page.visibility === scope)
 				.slice(0, 10).map(knowledgePageSummary), revision };
 		},
@@ -135,7 +135,7 @@ function canonicalPath(page: FederatedKnowledgePage) {
 
 async function relatedResponse(context: any, catalog: any, readable: FederatedKnowledgePage[], page: FederatedKnowledgePage) {
 	const graph = await relatedFederatedKnowledge(context, catalog, page)
-		.catch(() => { throw new KnowledgeOperationError(503, 'knowledge_graph_unavailable', 'Knowledge relationships are unavailable.'); });
+		.catch((error) => { throw knowledgeReadFailure('knowledge_graph_unavailable', 'Knowledge relationships are unavailable.', error); });
 	const explicit = readable.filter((candidate) => page.relatedKnowledgeIds.includes(candidate.id) || candidate.relatedKnowledgeIds.includes(page.id));
 	const related = [...new Map([...explicit, ...graph.filter((candidate) => readable.some((item) => item.id === candidate.id))]
 		.map((candidate) => [candidate.id, candidate])).values()];

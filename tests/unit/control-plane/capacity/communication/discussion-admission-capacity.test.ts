@@ -1,0 +1,140 @@
+import { describe, expect, it, vi } from 'vitest';
+import { admitDiscussionInvocations, conversationRunDurationSeconds } from '../../../../../src/api/capacity/services/capacity/invocations/discussion-invocation-service.ts';
+import { compileWorkdayAgentProfileSnapshot } from '../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-profile-policy.ts';
+
+const permissions = { content: { read: ['knowledge', 'discussion'], write: ['discussion'] }, tools: ['discussion', 'source.read'] };
+const agent = (slug: string) => ({
+	schemaVersion: 'treeseed.agent/v1', id: `sdk/${slug}`, name: slug, agentClass: slug,
+	purpose: `Perform ${slug} work.`, responsibilities: [`Perform ${slug} work.`], capabilities: ['repository-analysis'],
+	context: { include: ['project-objectives'] },
+	activityProfiles: { chat: { handler: 'writer', permissions, prompt: { system: 'Answer with exact evidence.' } } },
+});
+
+describe('discussion invocation capacity admission', () => {
+	it('reserves infrastructure preparation outside the productive conversation budget', () => {
+		expect(conversationRunDurationSeconds(180)).toBe(240);
+	});
+
+	it.each(['selected', 'unknown', 'unselected-chat', 'corrupt'])('authorizes parent communication from the existing frozen profiles: %s', async (scenario) => {
+		const definition = agent('architect');
+		const snapshot = compileWorkdayAgentProfileSnapshot([{ id: 'class', slug: 'architect', handler_refs_json: { agents: [{ ...definition,
+			activityProfiles: { ...definition.activityProfiles, planning: definition.activityProfiles.chat } }] } }],
+			scenario === 'unselected-chat' ? { activityTypes: ['planning'] } : undefined);
+		if (scenario === 'corrupt') snapshot.revision = 'invalid';
+		const store = {
+			first: vi.fn(async (query: string) => query.includes('SELECT * FROM capacity_workday_runs')
+				? { id: 'parent', execution_kind: 'workday', parameters_json: { agentProfilesByProjectId: { project: snapshot } } } : null),
+			all: vi.fn(async (query: string) => query.includes('FROM project_agent_classes')
+				? [{ id: 'class', handler_refs_json: { agents: [agent('architect')] } }] : []),
+			run: vi.fn(async () => ({ meta: { changes: 1 } })),
+			createCapacityWorkdayRun: vi.fn(), tickCapacityWorkdayRun: vi.fn(), updateCapacityWorkdayRun: vi.fn(),
+		};
+		const result = admitDiscussionInvocations(store, { teamId: 'team', projectId: 'project', projectSlug: 'sdk',
+			discussionId: 'discussion', messageId: 'message', messagePath: 'discussion-messages/message.mdx', messageCommit: 'c'.repeat(40),
+			contextRefs: [], agentSlugs: [scenario === 'unknown' ? 'engineer' : 'architect'], idempotencyKey: scenario, parentWorkdayId: 'parent' });
+		if (scenario === 'selected') await expect(result).resolves.toMatchObject([{ status: 'blocked', blocker: 'communication_supply_unavailable' }]);
+		else await expect(result).rejects.toMatchObject({ code: scenario === 'corrupt' ? 'capacity_workday_agent_profile_snapshot_invalid' : 'discussion_parent_agent_not_frozen' });
+		expect(store.createCapacityWorkdayRun).not.toHaveBeenCalled();
+	});
+	it('starts only one conversation execution when the communication lane has one worker', async () => {
+		const claimed = new Map<string, { status: string; execution_id: string; blocking_state_json: string }>();
+		const createdRuns: string[] = [];
+		const store = {
+			all: vi.fn(async (query: string) => {
+				if (query.includes("status IN ('admitted','running')") && query.includes('agent_invocation_requests')) return [];
+				if (query.includes('FROM capacity_provider_team_memberships')) return [{ membership_id: 'membership', capacity_provider_id: 'provider', execution_provider_id: 'codex' }];
+				if (query.includes('FROM project_agent_classes')) return [{ id: 'class', handler_refs_json: { agents: [agent('architect'), agent('researcher')] }, metadata_json: { immutableRef: 'a'.repeat(40) } }];
+				if (query.includes('FROM capacity_workday_runs')) return [];
+				return [];
+			}),
+			first: vi.fn(async (query: string, params: unknown[] = []) => {
+				if (query.includes('capacity_provider_availability_sessions')) return {
+					execution_providers_json: [{ id: 'codex', status: 'active', maxConcurrentWorkers: 1, lanes: [{ purpose: 'communication', maxConcurrentWorkers: 1 }] }],
+					metadata_json: { runtimeBuild: `sha256:${'b'.repeat(64)}` },
+				};
+				if (query.includes('COUNT(*) AS count FROM capacity_provider_assignments')) return { count: 0 };
+				if (query.includes('SELECT status,execution_id,blocking_state_json FROM agent_invocation_requests')) return claimed.get(String(params[0])) ?? null;
+				return null;
+			}),
+			run: vi.fn(async (query: string, params: unknown[] = []) => {
+				if (query.includes('INSERT INTO agent_invocation_requests')) return { meta: { changes: 1 } };
+				if (query.includes("SET status='admitted',execution_id=?")) claimed.set(String(params[3]), {
+					status: 'admitted', execution_id: String(params[0]), blocking_state_json: String(params[1]),
+				});
+				return { meta: { changes: 1 } };
+			}),
+			createCapacityWorkdayRun: vi.fn(async (_teamId: string, input: Record<string, unknown>) => {
+				createdRuns.push(String(input.id)); return { id: input.id };
+			}),
+			tickCapacityWorkdayRun: vi.fn(async () => ({})),
+			updateCapacityWorkdayRun: vi.fn(async () => null),
+		};
+
+		const result = await admitDiscussionInvocations(store, {
+			teamId: 'team', projectId: 'project', projectSlug: 'sdk', discussionId: 'acceptance', messageId: 'message',
+			messagePath: 'discussion-messages/acceptance/message.mdx', messageCommit: 'c'.repeat(40), contextRefs: [],
+			agentSlugs: ['architect', 'researcher'], idempotencyKey: 'send', durationSeconds: 180,
+		});
+
+		expect(createdRuns).toHaveLength(1);
+		expect(store.createCapacityWorkdayRun).toHaveBeenCalledWith('team', expect.objectContaining({
+			parameters: expect.objectContaining({ durationSeconds: 240, scheduledProjectIds: ['project'] }),
+		}));
+		// Root lanes are shared by capability-specific adapters. Their legacy
+		// materialized owner must not veto the current canonical availability report.
+		const supplyQuery = store.all.mock.calls.find(([query]) => query.includes('FROM capacity_provider_team_memberships'))?.[0];
+		expect(supplyQuery).not.toContain('capacity_provider_lanes');
+		expect(result.map((item) => ({ status: item.status, blocker: item.blocker ?? null }))).toEqual([
+			{ status: 'admitted', blocker: null },
+			{ status: 'queued', blocker: 'communication_capacity_queued' },
+		]);
+	});
+
+	it('reconciles a parent workday immediately after admitting an addressed message', async () => {
+		const snapshot = compileWorkdayAgentProfileSnapshot([{ id: 'class', slug: 'architect',
+			handler_refs_json: { agents: [agent('architect')] } }]);
+		let admitted = false;
+		let blockingState = '{}';
+		const events: string[] = [];
+		const store = {
+			all: vi.fn(async (query: string) => {
+				if (query.includes('FROM capacity_provider_team_memberships')) return [{ membership_id: 'membership', capacity_provider_id: 'provider', execution_provider_id: 'codex' }];
+				if (query.includes('FROM project_agent_classes')) return [{ id: 'class', handler_refs_json: { agents: [agent('architect')] }, metadata_json: { immutableRef: 'a'.repeat(40) } }];
+				return [];
+			}),
+			first: vi.fn(async (query: string) => {
+				if (query.includes('SELECT * FROM capacity_workday_runs')) return { id: 'parent', execution_kind: 'workday',
+					parameters_json: { agentProfilesByProjectId: { project: snapshot } } };
+				if (query.includes('capacity_provider_availability_sessions')) return {
+					execution_providers_json: [{ id: 'codex', status: 'active', maxConcurrentWorkers: 1,
+						lanes: [{ purpose: 'communication', maxConcurrentWorkers: 1 }] }],
+					metadata_json: { runtimeBuild: `sha256:${'b'.repeat(64)}` },
+				};
+				if (query.includes('COUNT(*) AS count FROM capacity_provider_assignments')) return { count: 0 };
+				if (query.includes('SELECT status,execution_id,blocking_state_json FROM agent_invocation_requests')) {
+					return admitted ? { status: 'admitted', execution_id: 'parent', blocking_state_json: blockingState } : null;
+				}
+				return null;
+			}),
+			run: vi.fn(async (query: string, values: unknown[] = []) => {
+				if (query.includes('INSERT INTO agent_invocation_requests')) return { meta: { changes: 1 } };
+				if (query.includes("SET status='admitted'") || query.includes("SET status = 'admitted'")) {
+					admitted = true;
+					if (query.includes('communication_admission_claimed') || query.includes('blocking_state_json=?')) blockingState = String(values[1] ?? '{}');
+					events.push('claim');
+				}
+				return { meta: { changes: 1 } };
+			}),
+			createCapacityWorkdayRun: vi.fn(),
+			tickCapacityWorkdayRun: vi.fn(async () => { events.push('tick'); return {}; }),
+			updateCapacityWorkdayRun: vi.fn(),
+		};
+		await expect(admitDiscussionInvocations(store, { teamId: 'team', projectId: 'project', projectSlug: 'sdk',
+			discussionId: 'discussion', messageId: 'message', messagePath: 'discussion-messages/discussion/message.mdx',
+			messageCommit: 'c'.repeat(40), contextRefs: [], agentSlugs: ['architect'], idempotencyKey: 'parent-send',
+			parentWorkdayId: 'parent', durationSeconds: 180 })).resolves.toMatchObject([{ status: 'admitted', executionId: 'parent' }]);
+		expect(store.createCapacityWorkdayRun).not.toHaveBeenCalled();
+		expect(store.tickCapacityWorkdayRun).toHaveBeenCalledWith('team', 'parent', expect.any(String), expect.stringContaining('discussion-invocation:'));
+		expect(events.slice(0, 2)).toEqual(['claim', 'tick']);
+	});
+});

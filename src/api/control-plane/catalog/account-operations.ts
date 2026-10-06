@@ -1,12 +1,17 @@
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
+import { accountDeletionConfirmationMatches } from '../../../auth/account.ts';
 import { ControlPlaneOperationError, type BoundOperation } from './operation-registry.ts';
+import { affected, claimAccountRevision, requireRevision, touchAccountRevision } from './accounts/concurrency.ts';
 
 export interface AccountOperationDependencies {
 	store: {
 		listTeamsForPrincipal(principal: Record<string, unknown>): Promise<Array<Record<string, unknown>>>;
 		listProjectsForPrincipal(principal: Record<string, unknown>): Promise<Array<Record<string, any>>>;
+		loadUserProfileByUsername(username: string, principal?: Record<string, unknown> | null): Promise<Record<string, unknown> | null>;
+		teamPublicNameExists(name: string, excludeTeamId?: string | null): Promise<boolean>;
 		first(query: string, parameters?: unknown[]): Promise<Record<string, any> | null>;
 		all(query: string, parameters?: unknown[]): Promise<Array<Record<string, any>>>;
+		batch?(operations: Array<{ query: string; params?: unknown[] }>): Promise<unknown>;
 		run(query: string, parameters?: unknown[]): Promise<unknown>;
 		recordAuditEvent(event: Record<string, unknown>): Promise<unknown>;
 	};
@@ -73,6 +78,10 @@ export function createAccountDeletionBlockersOperation(dependencies: AccountOper
 
 export function createAccountDeleteOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.remove> {
 	return { binding: CONTROL_PLANE_OPERATIONS.accounts.remove, async handler(input, context) {
+		if (!accountDeletionConfirmationMatches(String((input.body as Record<string, unknown>).confirmation ?? ''))) {
+			throw new ControlPlaneOperationError(409, 'confirmation_required', 'Type "DELETE MY ACCOUNT" to delete this account.');
+		}
+		await claimAccountRevision(dependencies.store, principal(context).id, context.ifMatch);
 		return serviceResult(await dependencies.accountSecurity.removeAccount(principal(context), input.body as Record<string, unknown>), 'Account deletion failed.');
 	} };
 }
@@ -105,13 +114,26 @@ export function createCurrentAccountOperation(
 	};
 }
 
+export function createAccountPublicProfileOperation(
+	dependencies: AccountOperationDependencies,
+): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.publicProfile> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.accounts.publicProfile,
+		async handler(input, context) {
+			const profile = await dependencies.store.loadUserProfileByUsername(input.path.username, context.principal ?? null);
+			if (!profile) throw new ControlPlaneOperationError(404, 'user_profile_missing', 'The public user profile was not found.');
+			return profile;
+		},
+	};
+}
+
 export function createAccountIdentityOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.identity> {
 	return {
 		binding: CONTROL_PLANE_OPERATIONS.accounts.identity,
 		async handler(_input, context) {
 			const actor = principal(context);
 			const [user, credential, identities, emails] = await Promise.all([
-				dependencies.store.first('SELECT id, username, display_name, metadata_json FROM users WHERE id = ? LIMIT 1', [actor.id]),
+				dependencies.store.first('SELECT id, username, display_name, metadata_json, updated_at FROM users WHERE id = ? LIMIT 1', [actor.id]),
 				dependencies.store.first("SELECT user_id FROM control_plane_auth_credentials WHERE user_id = ? AND status = 'active' LIMIT 1", [actor.id]),
 				dependencies.store.all("SELECT id, provider, email, created_at FROM user_identities WHERE user_id = ? AND provider <> 'credential' ORDER BY created_at", [actor.id]),
 				dependencies.listUserEmailAddresses(actor.id),
@@ -123,6 +145,7 @@ export function createAccountIdentityOperation(dependencies: AccountOperationDep
 				lastName: metadata.lastName ?? null, image: metadata.image ?? null, headline: metadata.headline ?? null,
 				profileSummary: metadata.profileSummary ?? null, location: metadata.location ?? null, website: metadata.website ?? null,
 				expertise: Array.isArray(metadata.expertise) ? metadata.expertise : [], hasCredential: Boolean(credential), emails,
+				updatedAt: String(user?.updated_at ?? '0'),
 				providers: identities.map((identity) => ({ id: identity.id, provider: identity.provider, email: identity.email,
 					linkedAt: identity.created_at, canUnlink: methods > 1 })) };
 		},
@@ -166,7 +189,9 @@ export function createAccountEmailVerifyOperation(dependencies: AccountOperation
 
 export function createAccountEmailPrimaryOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.makePrimaryEmail> {
 	return { binding: CONTROL_PLANE_OPERATIONS.accounts.makePrimaryEmail, async handler(input, context) {
-		const result = await dependencies.accountEmails.makePrimary(principal(context), input.path.emailId);
+		const actor = principal(context);
+		await claimAccountRevision(dependencies.store, actor.id, context.ifMatch);
+		const result = await dependencies.accountEmails.makePrimary(actor, input.path.emailId);
 		if (!result.ok) emailFailure(result, 'The primary email could not be changed.');
 		return { emailAddress: result.emailAddress };
 	} };
@@ -174,8 +199,11 @@ export function createAccountEmailPrimaryOperation(dependencies: AccountOperatio
 
 export function createAccountEmailRemoveOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.removeEmail> {
 	return { binding: CONTROL_PLANE_OPERATIONS.accounts.removeEmail, async handler(input, context) {
-		const result = await dependencies.accountEmails.remove(principal(context), input.path.emailId);
+		const actor = principal(context);
+		await claimAccountRevision(dependencies.store, actor.id, context.ifMatch);
+		const result = await dependencies.accountEmails.remove(actor, input.path.emailId);
 		if (!result.ok) emailFailure(result, 'The email address could not be removed.');
+		await touchAccountRevision(dependencies.store, actor.id);
 		return { items: result.items };
 	} };
 }
@@ -224,6 +252,7 @@ export function createAccountProfileUpdateOperation(dependencies: AccountOperati
 		binding: CONTROL_PLANE_OPERATIONS.accounts.updateProfile,
 		async handler(input, context) {
 			const actor = principal(context);
+			const updatedAt = await claimAccountRevision(dependencies.store, actor.id, context.ifMatch);
 			const body = input.body as Record<string, unknown>;
 			const firstName = optionalString(body.firstName), lastName = optionalString(body.lastName);
 			const displayName = String(body.displayName ?? body.name ?? [firstName, lastName].filter(Boolean).join(' ')).trim();
@@ -237,29 +266,35 @@ export function createAccountProfileUpdateOperation(dependencies: AccountOperati
 			const metadata = { ...(actor.metadata ?? {}), firstName, lastName, image: optionalString(body.image), headline,
 				profileSummary, location: optionalString(body.location), website, expertise };
 			await dependencies.store.run('UPDATE users SET display_name = ?, metadata_json = ?, updated_at = ? WHERE id = ?',
-				[displayName, JSON.stringify(metadata), new Date().toISOString(), actor.id]);
-			return { changed: true };
+				[displayName, JSON.stringify(metadata), updatedAt, actor.id]);
+			return { changed: true, updatedAt };
 		},
 	};
 }
 
 function preferenceView(row: Record<string, any> | null) {
 	const interval = Number(row?.real_time_polling_interval_seconds);
-	return { timeZone: row?.time_zone ?? 'UTC', realTimeUpdates: row ? Number(row.real_time_updates) !== 0 : true,
-		realTimePollingIntervalSeconds: [2, 5, 15, 30].includes(interval) ? interval : 5 };
+	return { colorScheme: row?.color_scheme ?? 'fern', themeMode: row?.theme_mode ?? 'system',
+		timeZone: row?.time_zone ?? 'UTC', realTimeUpdates: row ? Number(row.real_time_updates) !== 0 : true,
+		realTimePollingIntervalSeconds: [2, 5, 15, 30].includes(interval) ? interval : 5, updatedAt: String(row?.updated_at ?? '0') };
 }
 
 export function createAccountPreferencesOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.preferences> {
 	return { binding: CONTROL_PLANE_OPERATIONS.accounts.preferences, async handler(_input, context) {
 		const actor = principal(context);
-		return preferenceView(await dependencies.store.first('SELECT time_zone, real_time_updates, real_time_polling_interval_seconds FROM user_preferences WHERE user_id = ? LIMIT 1', [actor.id]));
+		return preferenceView(await dependencies.store.first('SELECT color_scheme, theme_mode, time_zone, real_time_updates, real_time_polling_interval_seconds, updated_at FROM user_preferences WHERE user_id = ? LIMIT 1', [actor.id]));
 	} };
 }
 
 export function createAccountPreferencesUpdateOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.updatePreferences> {
 	return { binding: CONTROL_PLANE_OPERATIONS.accounts.updatePreferences, async handler(input, context) {
 		const actor = principal(context), body = input.body as Record<string, unknown>;
-		const existing = await dependencies.store.first('SELECT time_zone, real_time_updates, real_time_polling_interval_seconds FROM user_preferences WHERE user_id = ? LIMIT 1', [actor.id]);
+		const existing = await dependencies.store.first('SELECT color_scheme, theme_mode, time_zone, real_time_updates, real_time_polling_interval_seconds, updated_at FROM user_preferences WHERE user_id = ? LIMIT 1', [actor.id]);
+		requireRevision(existing?.updated_at, context.ifMatch, 'account_preferences');
+		const colorScheme = optionalString(body.colorScheme) ?? String(existing?.color_scheme ?? 'fern');
+		const themeMode = optionalString(body.themeMode) ?? String(existing?.theme_mode ?? 'system');
+		if (!/^[a-z0-9][a-z0-9-]{0,63}$/u.test(colorScheme)) throw new ControlPlaneOperationError(400, 'invalid_color_scheme', 'Select a valid color scheme.');
+		if (!['light', 'dark', 'system'].includes(themeMode)) throw new ControlPlaneOperationError(400, 'invalid_theme_mode', 'Select a supported theme mode.');
 		const timeZone = optionalString(body.timeZone) ?? String(existing?.time_zone ?? 'UTC');
 		try { new Intl.DateTimeFormat('en', { timeZone }).format(); } catch { throw new ControlPlaneOperationError(400, 'invalid_time_zone', 'Select a valid IANA time zone.'); }
 		const realTimeUpdates = body.realTimeUpdates === undefined ? preferenceView(existing).realTimeUpdates
@@ -267,13 +302,15 @@ export function createAccountPreferencesUpdateOperation(dependencies: AccountOpe
 		const interval = body.realTimePollingIntervalSeconds === undefined ? preferenceView(existing).realTimePollingIntervalSeconds : Number(body.realTimePollingIntervalSeconds);
 		if (![2, 5, 15, 30].includes(interval)) throw new ControlPlaneOperationError(400, 'invalid_realtime_polling_interval', 'Select a supported real-time polling interval.');
 		const now = new Date().toISOString();
-		await dependencies.store.run(`INSERT INTO user_preferences (user_id, color_scheme, theme_mode, time_zone, real_time_updates, real_time_polling_interval_seconds, created_at, updated_at)
-			VALUES (?, 'fern', 'system', ?, ?, ?, ?, ?) ON CONFLICT (user_id) DO UPDATE SET time_zone = EXCLUDED.time_zone,
-			real_time_updates = EXCLUDED.real_time_updates, real_time_polling_interval_seconds = EXCLUDED.real_time_polling_interval_seconds, updated_at = EXCLUDED.updated_at`,
-			[actor.id, timeZone, realTimeUpdates ? 1 : 0, interval, now, now]);
+		const result = existing
+			? await dependencies.store.run(`UPDATE user_preferences SET color_scheme = ?, theme_mode = ?, time_zone = ?, real_time_updates = ?, real_time_polling_interval_seconds = ?, updated_at = ?
+				WHERE user_id = ? AND updated_at = ?`, [colorScheme, themeMode, timeZone, realTimeUpdates ? 1 : 0, interval, now, actor.id, context.ifMatch])
+			: await dependencies.store.run(`INSERT INTO user_preferences (user_id, color_scheme, theme_mode, time_zone, real_time_updates, real_time_polling_interval_seconds, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user_id) DO NOTHING`, [actor.id, colorScheme, themeMode, timeZone, realTimeUpdates ? 1 : 0, interval, now, now]);
+		if (affected(result) !== 1) throw new ControlPlaneOperationError(412, 'account_preferences_precondition_failed', 'The account preferences changed after they were inspected.');
 		await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: actor.id, eventType: 'account.preferences.updated', targetType: 'user', targetId: actor.id,
-			data: { timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval } });
-		return { timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval };
+			data: { colorScheme, themeMode, timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval } });
+		return { colorScheme, themeMode, timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval, updatedAt: now };
 	} };
 }
 

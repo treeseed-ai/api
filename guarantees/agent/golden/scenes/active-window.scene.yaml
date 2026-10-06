@@ -1,0 +1,17 @@
+schemaVersion: treeseed.scene/v1
+id: api.golden.active-window
+title: Active allocation and separately bounded infrastructure
+scope: local-component-tests
+workflow:
+  - id: production
+    action: { verifier: api.golden.active-window-production }
+    expect: { status: passed }
+  - id: simulation
+    action: { verifier: api.golden.active-window-simulation }
+    expect: { status: passed }
+  - id: utc-rollover
+    action: { verifier: api.golden.active-window-rollover }
+    expect: { status: passed }
+  - id: exhausted-authority
+    action: { verifier: api.golden.active-window-exhaustion }
+    expect: { status: passed }

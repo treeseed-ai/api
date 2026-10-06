@@ -1,4 +1,5 @@
 import type { CapacityWorkdayRunRecord,CapacityWorkdayRunStatus } from '@treeseed/sdk/agent-capacity';
+import { appliedWorkdaySchema } from '@treeseed/sdk/agent-capacity';
 import {
 encodeCapacityPageCursor,
 MAX_CAPACITY_PAGE_LIMIT,
@@ -23,9 +24,7 @@ export function parseCapacityWorkdayRunStatus(value: unknown, errorStatus = 400)
 	return candidate;
 }
 
-function executionMode(parameters:JsonRecord) {
-	const value=parameters.executionMode;
-	if(value===undefined||value===null||value==='') return 'simulation' as const;
+function executionMode(value:unknown) {
 	if(value==='production'||value==='simulation') return value;
 	throw new CapacityGovernanceError('capacity_workday_run_corrupt','Capacity workday run has invalid executionMode.',500,{ executionMode:value??null });
 }
@@ -85,7 +84,7 @@ export function serializeCapacityWorkdayRunRow(row: Record<string, unknown> | nu
 		executionKind: requiredText(row, 'execution_kind') as DurableCapacityWorkdayRun['executionKind'],
 		triggerKind: requiredText(row, 'trigger_kind') as DurableCapacityWorkdayRun['triggerKind'],
 		hidden: Number(row.hidden) === 1,
-		executionMode: executionMode(parameters),
+		executionMode: executionMode(row.execution_mode),
 		requestedById: nullableText(row.requested_by_id),
 		parameters,
 		summary: jsonObject(row, 'summary_json'),
@@ -106,10 +105,26 @@ export class CapacityWorkdayRunRepository {
 
 	async get(teamId: string, runId: string): Promise<DurableCapacityWorkdayRun | null> {
 		await this.database.ensureInitialized();
-		return serializeCapacityWorkdayRunRow(await this.database.first(
+		const run = serializeCapacityWorkdayRunRow(await this.database.first(
 			`SELECT * FROM capacity_workday_runs WHERE id = ? AND team_id = ? LIMIT 1`,
 			[runId, teamId],
 		));
+		if (!run?.parameters.appliedPlan) return run;
+		const plan = appliedWorkdaySchema.parse(run.parameters.appliedPlan);
+		const shares = await this.database.all(`SELECT reservation.project_id,node.agent_class,
+			SUM(reservation.requested_seconds) AS admitted_seconds FROM capacity_reservations reservation
+			JOIN capacity_provider_assignments assignment ON assignment.id=reservation.assignment_id AND assignment.team_id=reservation.team_id
+			JOIN execution_nodes node ON node.id=assignment.execution_node_id AND node.team_id=assignment.team_id
+			WHERE reservation.team_id=? AND reservation.work_day_id=? GROUP BY reservation.project_id,node.agent_class`, [teamId, runId]);
+		const admittedSecondsByProject: Record<string, number> = {}, admittedSecondsByAgentClass: Record<string, number> = {};
+		for (const share of shares) {
+			const project = String(share.project_id), agentClass = `${project}:${String(share.agent_class)}`;
+			const seconds = Number(share.admitted_seconds);
+			admittedSecondsByProject[project] = (admittedSecondsByProject[project] ?? 0) + seconds;
+			admittedSecondsByAgentClass[agentClass] = (admittedSecondsByAgentClass[agentClass] ?? 0) + seconds;
+		}
+		// Reservations remain the authority; these existing receipt fields are derived, not another persisted counter.
+		return { ...run, parameters: { ...run.parameters, appliedPlan: { ...plan, admittedSecondsByProject, admittedSecondsByAgentClass } } };
 	}
 
 	async listActiveForSupply(
@@ -124,7 +139,7 @@ export class CapacityWorkdayRunRepository {
 		const rows = await this.database.all(
 			`SELECT * FROM capacity_workday_runs
 			 WHERE team_id = ? AND status = 'running'
-			 ORDER BY started_at ASC, created_at ASC LIMIT ?`,
+			 ORDER BY CASE WHEN execution_kind = 'conversation' THEN 0 ELSE 1 END, started_at ASC, created_at ASC LIMIT ?`,
 			[teamId, boundedLimit + 1],
 		);
 		const selected = rows.filter((row) => row.capacity_provider_id === providerId || policy.allowPlanningFailover || policy.allowActingFailover);

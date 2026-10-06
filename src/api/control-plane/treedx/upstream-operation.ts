@@ -1,10 +1,17 @@
 import { FetchTransport, TreeDxClient } from '@treeseed/treedx/treedx/client';
 import { TREEDX_OPENAPI_OPERATIONS, type TreeDxOpenApiOperation } from '@treeseed/treedx';
+import { treeDxScopedPathAllows } from '../../capacity/policy/treedx-proxy-access.ts';
+export { treeDxScopedPathAllows } from '../../capacity/policy/treedx-proxy-access.ts';
 
 type InputRecord = Record<string, unknown>;
 
 const operations = new Map(TREEDX_OPENAPI_OPERATIONS.map((operation) => [operation.operationId, operation]));
 const reservedQueryKeys = new Set(['assignmentId', 'treeDxProxyHandleId', 'treeDxProxyToken']);
+const contentExtensions = ['.mdx', '.md', '.markdown', '.json', '.yaml', '.yml', '.toml'];
+
+export function treeDxBoundedScopedPaths(allowed: string[], requested: string[]) {
+	return requested.filter((path) => allowed.some((pattern) => treeDxScopedPathAllows(pattern, path)));
+}
 
 function record(value: unknown): InputRecord {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as InputRecord : {};
@@ -45,11 +52,15 @@ export function treeDxOperationScope(operation: TreeDxOpenApiOperation, input: {
 		const value = source[name];
 		return Array.isArray(value) ? value.map(String) : value === undefined || value === null ? [] : [String(value)];
 	}));
+	const requestedPaths = [...new Set(strings(['path', 'paths', 'scopePaths']))];
+	const scopedPaths = operation.operationId === 'readRepositoryFile'
+		? requestedPaths.flatMap((value) => /\.[^/]+$/u.test(value) ? [value] : [value, ...contentExtensions.map((extension) => `${value}${extension}`)])
+		: requestedPaths;
 	return {
 		repoIds: [...new Set([...strings(['repoId', 'repo_id', 'repositoryId', 'repository_id']), ...fallbackRepositoryIds])],
 		capabilities: [...operation.requiredCapabilities],
 		refs: [...new Set(strings(['ref', 'refs', 'baseRef', 'targetRef', 'sourceRef']))],
-		paths: [...new Set(strings(['path', 'paths', 'scopePaths']))],
+		paths: [...new Set(scopedPaths)],
 	};
 }
 

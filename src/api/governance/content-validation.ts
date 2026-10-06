@@ -4,7 +4,8 @@ export class GovernanceContentValidationError extends Error {
 	readonly status = 422;
 	readonly code = 'governance_content_model_invalid';
 	constructor(readonly model: ContentModel,readonly details: ReturnType<typeof validateContentRecord>['diagnostics']) {
-		super(`Governance ${model} content failed model validation.`);
+		const explanation = details.map((diagnostic) => `${diagnostic.field}: ${diagnostic.message}`).join('; ');
+		super(`Governance ${model} content failed model validation${explanation ? `: ${explanation}` : '.'}`);
 		this.name = 'GovernanceContentValidationError';
 	}
 }

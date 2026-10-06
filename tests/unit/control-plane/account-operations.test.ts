@@ -1,20 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
-import { createAccountDeleteOperation, createAccountDeletionBlockersOperation, createAccountEmailAddOperation, createAccountEmailConfirmOperation, createAccountEmailPrimaryOperation, createAccountEmailRemoveOperation, createAccountEmailsOperation, createAccountEmailVerifyOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPasswordResetCompleteOperation, createAccountPasswordResetRequestOperation, createAccountPasswordUpdateOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountRegisterOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation } from '../../../src/api/control-plane/catalog/account-operations.ts';
+import { createAccountDeleteOperation, createAccountDeletionBlockersOperation, createAccountEmailAddOperation, createAccountEmailConfirmOperation, createAccountEmailPrimaryOperation, createAccountEmailRemoveOperation, createAccountEmailsOperation, createAccountEmailVerifyOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPasswordResetCompleteOperation, createAccountPasswordResetRequestOperation, createAccountPasswordUpdateOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountPublicProfileOperation, createAccountRegisterOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation } from '../../../src/api/control-plane/catalog/account-operations.ts';
 import { createAccountSecurityService } from '../../../src/api/control-plane/accounts/account-security-service.ts';
 
 const context = { principal: { id: 'user-1', displayName: 'Adrian', metadata: { sessionId: 'current-session' } },
-	interface: 'rest' as const, requestId: 'request-1' };
+	interface: 'rest' as const, requestId: 'request-1', ifMatch: 'account-v1' };
 
 function dependencies() {
-	const run = vi.fn(async () => undefined);
+	const run = vi.fn(async (query: string, parameters?: unknown[]) => ({ meta: { changes: query.includes('COALESCE(updated_at') && parameters?.at(-1) !== 'account-v1' ? 0 : 1 } }));
 	const recordAuditEvent = vi.fn(async () => undefined);
 	return { run, recordAuditEvent, value: {
 		store: {
+			async loadUserProfileByUsername(username: string) { return username === 'adrian' ? { user: { username: 'adrian', displayName: 'Adrian' }, knowledge: [] } : null; },
 			async listTeamsForPrincipal() { return []; },
 			async listProjectsForPrincipal() { return [{ id: 'project-1' }]; },
 			async first(query: string) {
-				if (query.includes('FROM users')) return { username: 'adrian', display_name: 'Adrian', metadata_json: '{"expertise":["systems"]}' };
+				if (query.includes('FROM users')) return { username: 'adrian', display_name: 'Adrian', metadata_json: '{"expertise":["systems"]}', updated_at: 'account-v1' };
+				if (query.includes('FROM user_preferences')) return null;
 				if (query.includes('control_plane_auth_credentials')) return { user_id: 'user-1' };
 				return { revoked_at: null };
 			},
@@ -43,6 +45,14 @@ function dependencies() {
 }
 
 describe('account catalog operations', () => {
+	it('serves public user profiles without requiring a principal', async () => {
+		const operation = createAccountPublicProfileOperation(dependencies().value);
+		await expect(operation.handler({ path: { username: 'adrian' }, query: {}, body: undefined }, { interface: 'rest', requestId: 'public-1' }))
+			.resolves.toMatchObject({ user: { username: 'adrian' } });
+		await expect(operation.handler({ path: { username: 'missing' }, query: {}, body: undefined }, { interface: 'rest', requestId: 'public-2' }))
+			.rejects.toMatchObject({ status: 404, code: 'user_profile_missing' });
+		expect(operation.binding).toBe(CONTROL_PLANE_OPERATIONS.accounts.publicProfile);
+	});
 	it('projects identity, emails, and sessions without transport-owned behavior', async () => {
 		const fixture = dependencies();
 		const input = { path: {}, query: {}, body: undefined };
@@ -72,10 +82,20 @@ describe('account catalog operations', () => {
 		} }, context);
 		const preferences = await createAccountPreferencesUpdateOperation(fixture.value).handler({ path: {}, query: {}, body: {
 			timeZone: 'America/New_York', realTimeUpdates: true, realTimePollingIntervalSeconds: 5,
-		} }, context);
-		expect(profile).toEqual({ changed: true });
-		expect(preferences).toEqual({ timeZone: 'America/New_York', realTimeUpdates: true, realTimePollingIntervalSeconds: 5 });
+		} }, { ...context, ifMatch: '0' });
+		expect(profile).toMatchObject({ changed: true, updatedAt: expect.any(String) });
+		expect(preferences).toMatchObject({ colorScheme: 'fern', themeMode: 'system', timeZone: 'America/New_York', realTimeUpdates: true, realTimePollingIntervalSeconds: 5, updatedAt: expect.any(String) });
 		expect(createAccountPreferencesOperation(fixture.value).binding).toBe(CONTROL_PLANE_OPERATIONS.accounts.preferences);
+	});
+
+	it('rejects stale account and preference revisions without mutation', async () => {
+		const fixture = dependencies();
+		await expect(createAccountProfileUpdateOperation(fixture.value).handler({ path: {}, query: {}, body: { displayName: 'Changed' } }, { ...context, ifMatch: 'stale' }))
+			.rejects.toMatchObject({ status: 412, code: 'account_precondition_failed' });
+		await expect(createAccountPreferencesUpdateOperation(fixture.value).handler({ path: {}, query: {}, body: { timeZone: 'UTC' } }, { ...context, ifMatch: 'stale' }))
+			.rejects.toMatchObject({ status: 412, code: 'account_preferences_precondition_failed' });
+		expect(fixture.run).toHaveBeenCalledTimes(1);
+		expect(fixture.run.mock.calls[0]?.[0]).toContain('COALESCE(updated_at');
 	});
 
 	it('filters notifications by accessible projects and marks one read', async () => {
@@ -125,6 +145,13 @@ describe('account catalog operations', () => {
 		expect(await createAccountPasswordResetCompleteOperation(fixture.value).handler({ path: {}, query: {}, body: { token: 'redacted', password: 'redacted-new-password' } }, context)).toMatchObject({ changed: true });
 		expect(await createAccountDeletionBlockersOperation(fixture.value).handler({ path: {}, query: {}, body: undefined }, context)).toEqual({ blockers: [], canDelete: true });
 		expect(await createAccountDeleteOperation(fixture.value).handler({ path: {}, query: {}, body: { confirmation: 'DELETE MY ACCOUNT' } }, context)).toMatchObject({ deleted: true });
+	});
+
+	it('rejects an invalid account deletion confirmation before claiming the account revision', async () => {
+		const fixture = dependencies();
+		await expect(createAccountDeleteOperation(fixture.value).handler({ path: {}, query: {}, body: { confirmation: 'DELETE' } }, context))
+			.rejects.toMatchObject({ status: 409, code: 'confirmation_required' });
+		expect(fixture.run).not.toHaveBeenCalled();
 	});
 
 	it('claims a password reset token atomically before changing the credential', async () => {

@@ -16,8 +16,8 @@ export async function listProjectDeletionBlockers(store: DeletionBlockerStore, p
 			[projectId],
 		),
 		store.all(
-			`SELECT id, status, started_at FROM workday_capacity_envelopes
-			 WHERE project_id = ? AND status IN ('draft', 'queued', 'active', 'paused')
+			`SELECT id, status, started_at FROM capacity_workday_runs
+			 WHERE status = 'running' AND jsonb_exists(parameters_json::jsonb -> 'scheduledProjectIds', ?)
 			 ORDER BY updated_at DESC LIMIT 20`,
 			[projectId],
 		),

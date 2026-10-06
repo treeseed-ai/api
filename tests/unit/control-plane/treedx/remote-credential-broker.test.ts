@@ -9,6 +9,7 @@ const digest = 'a'.repeat(64);
 function delivery(overrides: Record<string, unknown> = {}) {
 	return { id: 'delivery-1', grant_id: 'grant-1', node_id: 'node_local', treedx_node_id: 'node_local', status: 'ready',
 		grant_status: 'delivered', operation_kind: 'push', allowed_host: 'github.com', refspec_digest: digest,
+		operation_id: 'operation-1',
 		expires_at: new Date(Date.now() + 60_000).toISOString(), credential_authority_id: 'authority-1',
 		repository_binding_id: 'repository-1', ...overrides };
 }
@@ -18,6 +19,7 @@ function fixture(overrides: { row?: Record<string, unknown> | null; consumed?: b
 	const store = {
 		first: vi.fn(async (query: string) => query.startsWith('SELECT') ? row : (overrides.consumed === false ? null : { id: 'delivery-1' })),
 		run: vi.fn(async () => ({ changes: 1 })),
+		appendPlatformOperationEvent: vi.fn(async () => ({})),
 	};
 	const resolveCredential = vi.fn(async () => ({ token: 'github-token', username: 'x-access-token', expiresAt: null, authorityScheme: 'environment-reference' }));
 	const app = new Hono();
@@ -66,6 +68,13 @@ describe('TreeDX remote credential broker', () => {
 		expect((await request(app, { operation: 'fetch' }).response).status).toBe(403);
 		expect((await request(app, { allowedHost: 'example.com' }).response).status).toBe(403);
 		expect(resolveCredential).not.toHaveBeenCalled();
+	});
+	it('records fixed mismatch categories without supplied values or secret material', async () => {
+		const { app, store } = fixture({row:{refspec_digest:'b'.repeat(64)}});
+		expect((await request(app,{nodeId:'private-node',operation:'fetch',allowedHost:'private.example'}).response).status).toBe(403);
+		expect(store.appendPlatformOperationEvent).toHaveBeenCalledWith('operation-1','credential-context-rejected',
+			{mismatches:['node','operation','host','refspec']});
+		expect(JSON.stringify(store.appendPlatformOperationEvent.mock.calls)).not.toMatch(/private|github-token|assertion/);
 	});
 
 	it('rejects expired deliveries before resolving credentials', async () => {

@@ -1,0 +1,12 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.golden.active-window
+journey: Allocate active time without precharging infrastructure watchdog ceilings
+ownerPackage: "@treeseed/api"
+type: agent
+subtype: allocation
+status: planned
+gates: [core]
+summary: Production and simulation share active admission; real setup clamps execution to the original phase and UTC deadlines while retaining the preparation watchdog.
+scene:
+  required: true
+  manifest: guarantees/agent/golden/scenes/active-window.scene.yaml

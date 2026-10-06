@@ -50,11 +50,6 @@ function object(row: Row, column: string): Record<string, unknown> {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : corrupt(row, column);
 }
 
-function strings(row: Row, column: string): string[] {
-	const value = json(row, column);
-	return Array.isArray(value) && value.every((entry) => typeof entry === 'string' && entry) ? value : corrupt(row, column);
-}
-
 function json(row: Row, column: string): unknown {
 	const encoded = row[column];
 	if (typeof encoded !== 'string') return encoded;
@@ -70,13 +65,10 @@ export function serializeCapacityReservationRow(row: Row | null): CapacityReserv
 	if (!row) return null;
 	const mode = requiredText(row, 'mode');
 	if (mode !== 'planning' && mode !== 'acting') corrupt(row, 'mode');
-	const allocationVersion = number(row, 'allocation_version');
-	if (!Number.isInteger(allocationVersion) || allocationVersion! < 1) corrupt(row, 'allocation_version');
 	return {
 		id: requiredText(row, 'id'), idempotencyKey: requiredText(row, 'idempotency_key'), membershipId: requiredText(row, 'membership_id'),
-		grantId: requiredText(row, 'grant_id'), capacityProviderId: requiredText(row, 'capacity_provider_id'),
+		grantId: nullableText(row, 'grant_id'), capacityProviderId: requiredText(row, 'capacity_provider_id'),
 		executionProviderId: nullableText(row, 'execution_provider_id'), laneId: nullableText(row, 'lane_id'),
-		allocationSetId: requiredText(row, 'allocation_set_id'), allocationVersion: allocationVersion!, allocationSliceIds: strings(row, 'allocation_slice_ids_json'),
 		policySnapshot: object(row, 'policy_snapshot_json'), projectAgentClassId: requiredText(row, 'project_agent_class_id'),
 		assignmentId: nullableText(row, 'assignment_id'), mode, teamId: requiredText(row, 'team_id'), projectId: requiredText(row, 'project_id'),
 		workDayId: nullableText(row, 'work_day_id'), taskId: nullableText(row, 'task_id'), state: state(row),

@@ -6,12 +6,14 @@ import { createWorkdayService } from '../../../../src/api/control-plane/reposito
 const principal = { id: 'user-1' };
 
 describe('workday catalog operations', () => {
-	it('binds only the eight team-portfolio workday operations', () => {
-		const workdays = Object.fromEntries(['list', 'preflight', 'start', 'show', 'events', 'schedules', 'createSchedule', 'updateSchedule']
+	it('binds workday operations and separately authorized profile discovery/reconciliation', () => {
+		const workdays = Object.fromEntries(['list', 'preflight', 'start', 'show', 'stop', 'events', 'schedules', 'createSchedule', 'updateSchedule']
 			.map((name) => [name, vi.fn()])) as any;
 		expect(createWorkdayOperations({ workdays }).map((operation) => operation.binding)).toEqual([
+			CONTROL_PLANE_OPERATIONS.workdays.profilesList, CONTROL_PLANE_OPERATIONS.workdays.profilesShow, CONTROL_PLANE_OPERATIONS.workdays.profilesUpdate,
 			CONTROL_PLANE_OPERATIONS.workdays.list, CONTROL_PLANE_OPERATIONS.workdays.preflight,
 			CONTROL_PLANE_OPERATIONS.workdays.start, CONTROL_PLANE_OPERATIONS.workdays.show,
+			CONTROL_PLANE_OPERATIONS.workdays.stop,
 			CONTROL_PLANE_OPERATIONS.workdays.events, CONTROL_PLANE_OPERATIONS.workdays.schedules,
 			CONTROL_PLANE_OPERATIONS.workdays.createSchedule, CONTROL_PLANE_OPERATIONS.workdays.updateSchedule,
 		]);

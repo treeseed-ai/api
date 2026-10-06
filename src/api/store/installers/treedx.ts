@@ -10,6 +10,9 @@ import { getTeamTreeDxMethod } from '../treedx/repositories/queries/get-team-tre
 import { listTreeDxDeploymentsMethod } from '../treedx/repositories/queries/list-tree-dx-deployments.ts';
 import { listTreeDxMirrorsMethod } from '../treedx/repositories/queries/list-tree-dx-mirrors.ts';
 import { listTreeDxSharesMethod } from '../treedx/repositories/queries/list-tree-dx-shares.ts';
+import { getTreeDxShareMethod } from '../treedx/repositories/queries/get-tree-dx-share.ts';
+import { listTreeDxSharesForRecipientMethod } from '../treedx/repositories/queries/list-tree-dx-shares-for-recipient.ts';
+import { revokeTreeDxShareMethod } from '../treedx/repositories/updates/revoke-tree-dx-share.ts';
 import { syncTreeDxMirrorMethod } from '../treedx/repositories/updates/sync-tree-dx-mirror.ts';
 import { updateTreeDxDeploymentMethod } from '../treedx/repositories/updates/update-tree-dx-deployment.ts';
 
@@ -24,6 +27,9 @@ export function installTreedxStoreMethods(prototype: ControlPlaneStore) {
 	prototype.syncTreeDxMirror = syncTreeDxMirrorMethod;
 	prototype.listTreeDxShares = listTreeDxSharesMethod;
 	prototype.createTreeDxShare = createTreeDxShareMethod;
+	prototype.getTreeDxShare = getTreeDxShareMethod;
+	prototype.listTreeDxSharesForRecipient = listTreeDxSharesForRecipientMethod;
+	prototype.revokeTreeDxShare = revokeTreeDxShareMethod;
 	prototype.upsertProjectTreeDxLibrary = upsertProjectTreeDxLibraryMethod;
 	prototype.getProjectTreeDxLibrary = getProjectTreeDxLibraryMethod;
 	prototype.ensureHubContentSourceTreeDx = ensureHubContentSourceTreeDxMethod;

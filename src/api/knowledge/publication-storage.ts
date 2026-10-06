@@ -139,9 +139,9 @@ export function createLocalKnowledgePublicationStorage(): KnowledgePublicationSt
 	};
 }
 
-export function createKnowledgePublicationStorage(options: { adapter?: KnowledgePublicationStorage; environment?: string } = {}) {
+export function createKnowledgePublicationStorage(options: { adapter?: KnowledgePublicationStorage; environment?: string; store?: any } = {}) {
 	if (options.adapter) return options.adapter;
 	const environment = options.environment ?? process.env.TREESEED_ENVIRONMENT ?? 'local';
 	if (['local', 'test'].includes(environment)) return createLocalKnowledgePublicationStorage();
-	return createR2KnowledgePublicationStorage();
+	return createR2KnowledgePublicationStorage({ store: options.store, env: { ...process.env, TREESEED_ENVIRONMENT: environment } });
 }

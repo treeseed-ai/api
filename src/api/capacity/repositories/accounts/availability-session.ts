@@ -44,11 +44,13 @@ export function serializeAvailabilitySessionRow(row: Row | null): ProviderAvaila
 			reservedWorkers: Number(pressure.reservedWorkers ?? 0), borrowedWorkers: Number(pressure.borrowedWorkers ?? 0),
 			availableWorkers: Number(pressure.availableWorkers ?? nativeLimits.maxConcurrentWorkers ?? nativeLimits.maxConcurrentRunners ?? 0),
 			adapters: executionProviders.map((provider) => ({ id: String(provider.id), adapter: String(provider.adapter),
-				isolation: provider.isolation === 'process' ? 'process' : 'worker', status: provider.status === 'active' ? 'available' : provider.status,
+				isolation: provider.isolation === 'microvm' ? 'microvm' : provider.isolation === 'process' ? 'process' : 'worker',
+				status: provider.status === 'active' ? 'available' : provider.status,
 				capabilities: Array.isArray(provider.capabilities) ? provider.capabilities.map(String) : [],
 				laneIds: Array.isArray(provider.lanes) ? provider.lanes.map((lane) => String((lane as JsonRecord).id)) : [],
 				maxConcurrentWorkers: Number(provider.maxConcurrentRunners ?? 0), activeWorkers: Number(provider.activeWorkers ?? 0),
-				nativeLimits: object(provider.nativeLimits), observations: object(provider.observations) })) as ProviderAvailabilitySession['snapshot']['adapters'],
+				nativeLimits: object(provider.nativeLimits), observations: object(provider.observations),
+				...(provider.accountingObservation ? { accountingObservation: provider.accountingObservation } : {}) })) as ProviderAvailabilitySession['snapshot']['adapters'],
 			lanes: executionProviders.flatMap((provider) => Array.isArray(provider.lanes) ? provider.lanes.map((entry) => entry as JsonRecord) : []).filter((lane, index, all) => all.findIndex((entry) => entry.id === lane.id) === index).map((lane) => ({
 				id: String(lane.id), purpose: lane.purpose as any, status: 'active', priority: Number(lane.priority ?? 0),
 				reservedConcurrentWorkers: Number(lane.reservedConcurrentWorkers ?? 0), borrowedWorkers: Number(lane.borrowedWorkers ?? 0), lentWorkers: Number(lane.lentWorkers ?? 0), queuedAssignments: Number(lane.queuedAssignments ?? 0),
@@ -70,8 +72,10 @@ export class AvailabilitySessionRepository {
 
 	async open(input: AvailabilitySessionWrite, providerOperations: CapacityDatabaseOperation[]) {
 		await this.database.ensureInitialized();
+		// These rows serialize publication without changing their referenced keys.
+		// KEY SHARE from in-flight assignment/reservation FKs must remain compatible.
 		await this.database.batch([
-			{ query: `SELECT id FROM capacity_provider_team_memberships WHERE id = ? AND team_id = ? AND capacity_provider_id = ? FOR UPDATE`, params: [input.membershipId, input.teamId, input.providerId] },
+			{ query: `SELECT id FROM capacity_provider_team_memberships WHERE id = ? AND team_id = ? AND capacity_provider_id = ? FOR NO KEY UPDATE`, params: [input.membershipId, input.teamId, input.providerId] },
 			...providerOperations,
 			{ query: `UPDATE capacity_provider_availability_sessions SET status = 'closed', closed_at = COALESCE(closed_at, ?), updated_at = ? WHERE membership_id = ? AND status IN ('open','draining')`, params: [input.openedAt, input.openedAt, input.membershipId] },
 			{ query: `INSERT INTO capacity_provider_availability_sessions (id, membership_id, team_id, capacity_provider_id, environment, status, sequence, opened_at, refreshed_at, expires_at, available_from, available_until, execution_providers_json, capabilities_json, native_limits_json, runner_pressure_json, constraints_json, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, params: [input.id, input.membershipId, input.teamId, input.providerId, input.environment, input.sequence, input.openedAt, input.refreshedAt, input.expiresAt, input.availableFrom, input.availableUntil, JSON.stringify(input.executionProviders), JSON.stringify(input.capabilities), JSON.stringify(input.nativeLimits), JSON.stringify(input.runnerPressure), JSON.stringify(input.constraints), JSON.stringify(input.metadata), input.openedAt, input.openedAt] },
@@ -82,7 +86,7 @@ export class AvailabilitySessionRepository {
 	async refresh(input: AvailabilitySessionWrite, expectedSequence: number, providerOperations: CapacityDatabaseOperation[]) {
 		await this.database.ensureInitialized();
 		const results = await this.database.batch([
-			{ query: `SELECT id FROM capacity_provider_availability_sessions WHERE id = ? AND membership_id = ? AND team_id = ? FOR UPDATE`, params: [input.id, input.membershipId, input.teamId] },
+			{ query: `SELECT id FROM capacity_provider_availability_sessions WHERE id = ? AND membership_id = ? AND team_id = ? FOR NO KEY UPDATE`, params: [input.id, input.membershipId, input.teamId] },
 			...providerOperations,
 			{ query: `UPDATE capacity_provider_availability_sessions SET sequence = sequence + 1, refreshed_at = ?, expires_at = ?, available_from = ?, available_until = ?, execution_providers_json = ?, capabilities_json = ?, native_limits_json = ?, runner_pressure_json = ?, constraints_json = ?, metadata_json = ?, updated_at = ? WHERE id = ? AND membership_id = ? AND team_id = ? AND capacity_provider_id = ? AND status = 'open' AND sequence = ? RETURNING id, sequence`, params: [input.refreshedAt, input.expiresAt, input.availableFrom, input.availableUntil, JSON.stringify(input.executionProviders), JSON.stringify(input.capabilities), JSON.stringify(input.nativeLimits), JSON.stringify(input.runnerPressure), JSON.stringify(input.constraints), JSON.stringify(input.metadata), input.refreshedAt, input.id, input.membershipId, input.teamId, input.providerId, expectedSequence] },
 		]);

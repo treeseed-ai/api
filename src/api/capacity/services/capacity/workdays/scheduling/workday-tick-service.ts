@@ -1,22 +1,17 @@
-import type { CapacityPage } from '@treeseed/sdk/capacity-pagination';
 import { createHash } from 'node:crypto';
-import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { decodeDurableJsonObject } from '../../../../durable-json.ts';
 import { CapacityWorkdayRunRepository } from '../../../../repositories/capacity/workdays/workday-run.ts';
-import { compileProviderWorkdayDemand } from '../../../build/demand-compiler.ts';
-import {
-promoteEngineeringWorkflows,
-type EngineeringWorkflowPromotionStore,
-} from '../../../operations/engineering-workflow-promotion-service.ts';
+import { reconcileCommunicationExecutionGraph, reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { CapacityWorkdayEventService } from '../content/workday-event-service.ts';
-import { evaluateDurableWorkdayContinuation } from '../lifecycle/workday-continuation-service.ts';
-import type { WorkdayProject } from '../policy/workday-project-policy.ts';
+import { advanceLivingWorkday } from '../lifecycle/living-workday-lifecycle.ts';
+import { appliedWorkdaySchema } from '@treeseed/sdk/agent-capacity';
+import { runtimeWorkdayPhase } from '../../../build/ready-execution-node.ts';
+import { OperatorAssignmentService } from '../../assignments/observability/operator-assignment-service.ts';
+import { closeTerminalAssignmentWorkspace } from '../../assignments/observability/assignment-terminal-workspace.ts';
+import type { WorkdayTreeDxConnectionStore } from '../treedx/workday-treedx-connection.ts';
 
-interface WorkdayTickStore extends CapacityGovernanceDatabase, EngineeringWorkflowPromotionStore {
-	listTeamProjects(teamId: string): Promise<WorkdayProject[]>;
-	listProjectAgentClassesPage(projectId: string, filters: { limit: number }): Promise<CapacityPage<unknown>>;
-}
+type WorkdayTickStore = Parameters<typeof advanceLivingWorkday>[0] & WorkdayTreeDxConnectionStore;
 
 export async function tickCapacityWorkdayRun(
 	store: WorkdayTickStore,
@@ -44,22 +39,26 @@ export async function tickCapacityWorkdayRun(
 		'capacity_workday_membership_not_approved', 'Workday tick requires one approved provider membership.', 409,
 		{ runId, providerId: run.capacityProviderId, matchCount: memberships.length },
 	);
-	const engineeringWorkflowPromotions = await promoteEngineeringWorkflows(store, run);
-	const compilation = await compileProviderWorkdayDemand(store, {
-		teamId, capacityProviderId: run.capacityProviderId, membershipId: String(memberships[0]!.id),
-	}, now);
-	const envelopes = await store.all(`SELECT id FROM workday_capacity_envelopes WHERE team_id = ? AND workday_run_id = ? ORDER BY id ASC`, [teamId, runId]);
-	const continuation = [];
-	for (const row of envelopes) {
-		const workdayId = String(row.id);
-		const useful = await store.first(`SELECT id FROM capacity_workday_demands WHERE workday_id = ? AND status IN ('pending','claimed') LIMIT 1`, [workdayId]);
-		continuation.push({ workdayId, ...await evaluateDurableWorkdayContinuation(store, {
-			teamId, workdayRunId: runId, workdayId, usefulEligibleWork: Boolean(useful), now,
-		}) });
+	const plan = appliedWorkdaySchema.parse(run.parameters.appliedPlan);
+	if (plan.state === 'closing' || await runtimeWorkdayPhase(store, run, now) !== 'planning') {
+		const turns = await store.all(`SELECT assignment.id FROM capacity_provider_assignments assignment
+			JOIN execution_nodes node ON node.team_id=assignment.team_id AND node.id=assignment.execution_node_id
+			WHERE node.team_id=? AND node.workday_id=? AND node.kind IN ('planning','estimating')
+			AND assignment.status IN ('pending','returned','leased') ORDER BY assignment.id`, [teamId, runId]);
+		const cancellation = new OperatorAssignmentService(store, assignment => closeTerminalAssignmentWorkspace(store, assignment));
+		for (const turn of turns) await cancellation.cancel(teamId, String(turn.id), {
+			idempotencyKey: `planning-boundary:${runId}:${turn.id}`, reason: 'Planning window ended; unused capacity returns to acting and review.',
+		});
+		await store.run(`UPDATE execution_nodes SET status='cancelled',updated_at=?
+			WHERE team_id=? AND workday_id=? AND kind IN ('planning','estimating') AND status IN ('ready','blocked')`, [now, teamId, runId]);
 	}
-	const result = { runId, tickedAt: now, engineeringWorkflowPromotions, compilation, continuation };
+	const lifecycle = await advanceLivingWorkday(store, run, now);
+	const executionGraph = run.executionKind === 'conversation'
+		? await reconcileCommunicationExecutionGraph(store, teamId)
+		: await reconcileExecutionGraph(store, teamId, {}, `workday-tick:${runId}:${eventId ?? now}`);
+	const result = { runId, tickedAt: now, lifecycle, executionGraph };
 	if (eventId) await new CapacityWorkdayEventService(store).create(teamId, runId, {
-		id: eventId, eventType: 'workday.tick', status: 'recorded', title: 'Workday demand compilation tick',
+		id: eventId, eventType: 'workday.tick', status: 'recorded', title: 'Workday execution-graph tick',
 		context: { result }, metadata: { idempotencyKey: operationKey }, createdAt: now,
 	});
 	return result;

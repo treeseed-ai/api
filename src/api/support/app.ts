@@ -1,44 +1,55 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { PostgresAuthProvider } from '../auth/postgres-provider.ts';
+import { installApiIdentityRoutes } from '../auth/browser/api-routes.ts';
+import { identityResourceCatalog } from '../auth/browser/resource-catalog.ts';
+import type { createApiIdentityRuntime } from '../auth/browser/runtime.ts';
 import { createCapacityControlPlane } from '../capacity/control-plane.ts';
 import { createApiControlPlaneOperations } from '../control-plane/catalog/index.ts';
 import { installControlPlaneProtocolRoutes } from '../control-plane/http/protocol-routes.ts';
 import { ConfirmationService } from '../control-plane/confirmation/confirmation-service.ts';
 import { createAccountEmailService } from '../control-plane/accounts/account-email-service.ts';
 import { createAccountRegistrationService } from '../control-plane/accounts/account-registration-service.ts';
-import { installAccountConfirmationRoutes } from '../control-plane/accounts/account-confirmation-routes.ts';
 import { createAccountSecurityService } from '../control-plane/accounts/account-security-service.ts';
 import { createKnowledgeReaderService } from '../control-plane/knowledge/knowledge-reader-service.ts';
 import { createKnowledgeWorkspaceService } from '../control-plane/knowledge/knowledge-workspace-service.ts';
 import { createKnowledgeReviewService } from '../control-plane/knowledge/knowledge-review-service.ts';
 import { createDiscussionService } from '../discussions/discussion-service.ts';
 import { createGovernanceService } from '../control-plane/governance/governance-service.ts';
+import { createInboxService } from '../control-plane/inbox/inbox-service.ts';
 import { createProjectRepositoryService } from '../control-plane/repositories/project-repository-service.ts';
+import { createPlatformProjectCreationService } from '../control-plane/projects/platform-project-creation-service.ts';
 import { createWorkflowService } from '../control-plane/repositories/workflow-service.ts';
 import { createWorkflowConfigurationService } from '../control-plane/repositories/workflow-configuration-service.ts';
 import { createGitHubConnectorService } from '../control-plane/repositories/github-connector-service.ts';
 import { createGitHubWebhookService } from '../control-plane/repositories/github-webhook-service.ts';
 import { createServiceConnectionService } from '../control-plane/repositories/service-connection-service.ts';
-import { createCapacityPlanService } from '../control-plane/repositories/capacity/capacity-plan-service.ts';
-import { createPlanningAndEstimateService } from '../control-plane/repositories/capacity/planning-and-estimate-service.ts';
+import { createServiceCredentials } from '../control-plane/repositories/services/service-credentials.ts';
+import { createHostedTopologyService } from '../control-plane/repositories/infrastructure/hosted-topology-service.ts';
+import {createAiInstanceService} from '../control-plane/repositories/infrastructure/ai-instance-service.ts';
 import { createAgentGovernanceService } from '../control-plane/repositories/capacity/agent-governance-service.ts';
 import { createCommunicationService } from '../control-plane/repositories/capacity/communication-service.ts';
+import { createDiagnosticEnvelopeService } from '../../security/diagnostic-envelope.ts';
 import { createWorkdayService } from '../control-plane/repositories/capacity/workday-service.ts';
 import { createAgentQueryService } from '../control-plane/repositories/capacity/agent-query-service.ts';
 import { createCapacityQueryService } from '../control-plane/repositories/capacity/capacity-query-service.ts';
 import { createAssignmentService } from '../control-plane/repositories/capacity/assignment-service.ts';
+import { createExecutionGraphService } from '../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { createOperationService } from '../control-plane/repositories/operations/operation-service.ts';
 import { createProviderRuntimeService } from '../control-plane/repositories/providers/provider-runtime-service.ts';
 import { createProviderAssignmentService } from '../control-plane/repositories/providers/provider-assignment-service.ts';
 import { createProviderSignalService } from '../control-plane/repositories/providers/provider-signal-service.ts';
 import { createProviderWorkflowService } from '../control-plane/repositories/providers/provider-workflow-service.ts';
 import { createTreeDxProxyOperationService } from '../control-plane/repositories/treedx/proxy-operation-service.ts';
+import { TreeAiProxyService } from '../control-plane/treeai/proxy-service.ts';
+import { createRegisteredAiNodes } from '../control-plane/treeai/registered-nodes.ts';
+import { createAiStorageBroker, installAiStorageBrokerRoute } from '../control-plane/treeai/storage-broker.ts';
 import { treeDxDelegationAuthority } from '../control-plane/treedx/delegation-authority.ts';
 import { installRemoteCredentialBrokerRoute } from '../control-plane/treedx/remote-credential-broker.ts';
 import { createRealtimeOperationService } from '../control-plane/realtime/realtime-operation-service.ts';
 import { createSeedOperationService } from '../control-plane/seeds/seed-operation-service.ts';
 import { createFeedbackOperationService } from '../control-plane/feedback/feedback-operation-service.ts';
+import { createCapabilityOntologyService } from '../control-plane/repositories/capabilities/capability-ontology-service.ts';
 import { createCapacityProviderAccessMiddleware } from '../capacity/provider-access-middleware.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
@@ -52,6 +63,7 @@ import {
 } from '../app/support/index.ts';
 import { createControlPlanePostgresDatabase } from './control-plane-postgres.js';
 import { listUserEmailAddresses, sendTeamInviteEmail } from '../app/support/accounts/authentication-email.ts';
+import { deleteManagedTeamLibraryResources,reconcileManagedTeamLibrary } from '../teams/managed-team-library-service.ts';
 
 export * from '../app/support/index.ts';
 
@@ -104,7 +116,10 @@ export function createPlatformApiApp(options: any = {}) {
 		serviceSecret: config.webServiceSecret,
 		fetchImpl: options.fetchImpl ?? fetch,
 	}, db);
-	const authProvider = authProviderFor(options, config, db);
+	const identityRuntime = options.identityRuntime as Awaited<ReturnType<typeof createApiIdentityRuntime>> | undefined;
+	const authProvider = identityRuntime
+		? { id: 'identity', authenticateBearerToken: identityRuntime.authenticate }
+		: authProviderFor(options, config, db);
 	const delegationAuthority = options.treeDxDelegationAuthority ?? treeDxDelegationAuthority();
 	const capacity = createCapacityControlPlane(store);
 	const sessionEvents = options.sessionEvents ?? new SessionEventService(store, db.pool);
@@ -148,6 +163,7 @@ export function createPlatformApiApp(options: any = {}) {
 	});
 
 	app.use('*', async (context, next) => {
+		if (identityRuntime) return next();
 		const serviceId = context.req.header('x-treeseed-service-id');
 		const serviceSecret = context.req.header('x-treeseed-service-secret');
 		if (serviceId && serviceSecret && typeof authProvider.authenticateServiceCredential === 'function') {
@@ -161,7 +177,10 @@ export function createPlatformApiApp(options: any = {}) {
 	app.use('*', async (context, next) => {
 		const token = bearerToken(context.req.raw);
 		if (token) {
-			if (sameSecret(token, config.projectApiKey)) {
+			if (identityRuntime) {
+				try { setAuthentication(context, await identityRuntime.authenticate(token)); }
+				catch { /* Resource routes return the standard redacted denial. */ }
+			} else if (sameSecret(token, config.projectApiKey)) {
 				setAuthentication(context, { principal: projectPrincipal(config), credential: { type: 'project_api_key', id: config.projectId, label: config.projectApiLabel } }, 'project');
 			} else if (typeof authProvider.authenticateBearerToken === 'function') {
 				const authenticated = await authProvider.authenticateBearerToken(token);
@@ -172,6 +191,7 @@ export function createPlatformApiApp(options: any = {}) {
 	});
 
 	app.use('*', async (context, next) => {
+		if (identityRuntime) return next();
 		const assertion = context.req.header('x-treeseed-user-assertion');
 		if (assertion && context.get('actorType') === 'service' && typeof authProvider.verifyTrustedUserAssertion === 'function') {
 			const claims = authProvider.verifyTrustedUserAssertion(assertion);
@@ -186,6 +206,7 @@ export function createPlatformApiApp(options: any = {}) {
 	if (shouldLogApiRequests(config, options)) installApiRequestLogger(app);
 	store.setArtifactBucket(resolveAgentArtifactBucket(runtime));
 	app.use('/v1/*', async (context, next) => {
+		if (identityRuntime) return next();
 		const token = bearerToken(context.req.raw);
 		if (!context.get('principal') && token) {
 			const match = await store.authenticateTeamApiKey(token);
@@ -197,44 +218,57 @@ export function createPlatformApiApp(options: any = {}) {
 		await next();
 	});
 	const providers = createProviderRuntimeService(capacity, { ...config, ...runtime.resolved.config }, store);
-	const providerAssignments = createProviderAssignmentService(capacity, sessionEvents, store);
+	const capabilityOntology = createCapabilityOntologyService(capacity);
+	const diagnosticEnvelopes = createDiagnosticEnvelopeService({ ...config, ...runtime.resolved.config });
+	const providerAssignments = createProviderAssignmentService(capacity, sessionEvents, store, diagnosticEnvelopes, { controlPlaneId: config.baseUrl });
 	const providerSignals = createProviderSignalService(capacity);
 	const providerWorkflows = createProviderWorkflowService(capacity);
 	const treeDxProxy = createTreeDxProxyOperationService(capacity, runtime);
+	const registeredAiNodes = createRegisteredAiNodes(store, delegationAuthority, process.env, options.fetchImpl ?? fetch);
+	const treeAiProxy = new TreeAiProxyService(registeredAiNodes, options.fetchImpl ?? fetch);
 	const providerAccess = createCapacityProviderAccessMiddleware(providers.authenticator);
 	app.use('/v1/provider/*', providerAccess);
 	app.use('/v1/dx/*', providerAccess);
 	installRemoteCredentialBrokerRoute(app, { store, env: process.env, fetchImpl: options.fetchImpl ?? fetch });
+	installAiStorageBrokerRoute(app, createAiStorageBroker(store, { env: process.env, fetchImpl: options.fetchImpl ?? fetch }));
 	const invitationContext = { locals: { runtime: { env: { ...process.env,
 		TREESEED_SITE_URL: String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config)) } } },
 		url: new URL(String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config))) };
 	const accountRegistration = createAccountRegistrationService(store, authProvider, invitationContext);
-	installAccountConfirmationRoutes(app, accountRegistration);
 	const knowledgeReader = createKnowledgeReaderService({ store, options });
 	const discussions = createDiscussionService({ store, capacity, sessionEvents });
-	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
-		createApiControlPlaneOperations({ store, capacity,
-			plans: createCapacityPlanService(capacity),
-			planningAndEstimates: createPlanningAndEstimateService(capacity),
+	const communications = createCommunicationService(capacity, discussions, store, diagnosticEnvelopes);
+	const governance = createGovernanceService(store, discussions);
+	const services = { ...createServiceConnectionService(store), ...createServiceCredentials(store) };
+	const inbox = createInboxService({ store, discussions, communications, governance });
+	const operations = createApiControlPlaneOperations({ store, capacity, services,
+			hostedTopology: createHostedTopologyService(store),
+			aiInstances: createAiInstanceService(store, registeredAiNodes),
+			platformProjectCreation: createPlatformProjectCreationService(store, { env: process.env, fetchImpl: options.fetchImpl ?? fetch }),
+			capabilityOntology,
 			agentGovernance: createAgentGovernanceService(capacity),
-			communications: createCommunicationService(capacity, discussions, store),
+			communications,
+			inbox,
 			workdays: createWorkdayService(capacity),
 			agents: createAgentQueryService(capacity),
 			capacityQueries: createCapacityQueryService(capacity),
 			assignments: createAssignmentService(capacity),
+			execution: createExecutionGraphService(capacity),
 			platformOperations: createOperationService(store),
 			providers,
 			providerAssignments,
 			providerSignals,
 			providerWorkflows,
 			treeDxProxy,
+			treeAiProxy,
 			realtime: createRealtimeOperationService(store, sessionEvents),
 			seeds: createSeedOperationService(store, { providers }),
 			feedback: createFeedbackOperationService(store, options),
 			githubConnector: createGitHubConnectorService(store),
 			githubWebhook: createGitHubWebhookService(store),
-			services: createServiceConnectionService(store),
 			deliverTeamInvite: (input) => sendTeamInviteEmail(invitationContext, input),
+			reconcileManagedTeamLibrary: (teamId) => reconcileManagedTeamLibrary(store,teamId,process.env),
+			deleteManagedTeamLibraryResources: (input) => deleteManagedTeamLibraryResources({...input,env:process.env,fetchImpl:options.fetchImpl??fetch}),
 			listUserEmailAddresses: (userId) => listUserEmailAddresses(store, userId),
 			accountEmails: createAccountEmailService(store, invitationContext),
 			accountRegistration,
@@ -243,14 +277,20 @@ export function createPlatformApiApp(options: any = {}) {
 			knowledgeWorkspaces: createKnowledgeWorkspaceService(store, knowledgeReader),
 			knowledgeReviews: createKnowledgeReviewService(store),
 			discussions,
-			governance: createGovernanceService(store),
+			governance,
 			repositories: createProjectRepositoryService(store),
 			workflows: createWorkflowService(store),
 			workflowConfiguration: createWorkflowConfigurationService(store),
-		}), confirmations, async (principal) => {
+		});
+	const mcpBusForPrincipal = async (principal: { id: string }) => {
 			const teams = await store.listTeamsForPrincipal(principal);
 			return new SessionEventMcpBus(sessionEvents, teams.map((team) => String(team.id)).filter(Boolean));
-		}, config.baseUrl);
+	};
+	if (identityRuntime) installApiIdentityRoutes(app, identityRuntime, {
+		registry: identityResourceCatalog(operations), confirmations, mcpBusForPrincipal,
+	});
+	else installControlPlaneProtocolRoutes(app, token => authProvider.authenticateBearerToken(token), authProvider,
+		operations, confirmations, mcpBusForPrincipal, config.baseUrl, String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config)));
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);
 	app.notFound((context) => context.json({ ok: false, error: 'Not found.', requestId: context.get('requestId') }, 404));

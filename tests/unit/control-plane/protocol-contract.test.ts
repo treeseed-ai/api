@@ -40,7 +40,7 @@ describe('control-plane protocol contract', () => {
 		async listTeamProjects() { return []; },
 		async listTeamsForPrincipal() { return []; },
 		async loadTeamProfileByName() { return null; },
-		async getTeam(teamId: string) { return { id: teamId, name: 'TreeSeed', status: 'active', lifecycleVersion: 1, updatedAt: 'revision-1' }; },
+		async getTeam(teamId: string) { return teamId==='team-new'?{id:teamId,name:'treeseed-labs',displayName:'treeseed-labs',ownerUserId:'user_1',status:'active'}:{ id: teamId, name: 'TreeSeed', status: 'active', lifecycleVersion: 1, updatedAt: 'revision-1' }; },
 		async principalCanAccessTeam() { return true; },
 		async getTeamAccessSummary(teamId: string) { return { teamId, roles: ['project_lead'] }; },
 		async resolvePrincipalTeamContext() { return { roles: ['project_lead'] }; },
@@ -71,7 +71,8 @@ describe('control-plane protocol contract', () => {
 		async recordAuditEvent() {},
 		...overrides,
 	});
-	const apiDependencies = (overrides: Record<string, unknown> = {}) => ({ store: operationStore(overrides), treeDxProxy: { async invoke() { throw new Error('Unexpected TreeDX proxy invocation.'); } }, capacity: { async evaluateProjectDeletionBlockers() { return []; } }, async deliverTeamInvite() {}, async listUserEmailAddresses() { return []; },
+	const apiDependencies = (overrides: Record<string, unknown> = {}) => ({ custodyReady: async()=>true, store: operationStore(overrides), treeDxProxy: { async invoke() { throw new Error('Unexpected TreeDX proxy invocation.'); } }, capacity: { async evaluateProjectDeletionBlockers() { return []; } }, async deliverTeamInvite() {}, async listUserEmailAddresses() { return []; },
+		async reconcileManagedTeamLibrary(teamId:string) { return {teamId,state:'known-good'}; },
 		accountEmails: { async add() { return { ok: true }; }, async verify() { return { ok: true }; }, async makePrimary() { return { ok: true }; }, async remove() { return { ok: true, items: [] }; } } });
 	const confirmationService = () => {
 		const consumed = new Set<string>();
@@ -117,7 +118,7 @@ describe('control-plane protocol contract', () => {
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
 		const response = await app.request('/v1/health/deep');
 		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({ data: { status: 'ok', checks: { database: true } } });
+		expect(await response.json()).toEqual({ data: { status: 'ok', checks: { database: true, openbao: true } } });
 		const specification = await app.request('/openapi.json');
 		expect((await specification.json() as any).paths['/v1/health/deep'].get.operationId).toBe('health.deep');
 		const unavailableApp = new Hono();
@@ -137,7 +138,7 @@ describe('control-plane protocol contract', () => {
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
 		const response = await app.request('/v1/health/ready');
 		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({ data: { status: 'ok', checks: { database: true } } });
+		expect(await response.json()).toEqual({ data: { status: 'ok', checks: { database: true, openbao: true } } });
 		const specification = await app.request('/openapi.json');
 		expect((await specification.json() as any).paths['/v1/health/ready'].get.operationId).toBe('health.ready');
 	});
@@ -163,8 +164,8 @@ describe('control-plane protocol contract', () => {
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
 		const headers = { authorization: 'Bearer test-token' };
 		expect(await (await app.request('/v1/teams', { headers })).json()).toEqual({ data: { teams: [{ id: 'team-a', name: 'TreeSeed' }] } });
-		expect(await (await app.request('/v1/teams/by-name/treeseed/profile', { headers })).json()).toEqual({ data: { id: 'team-a', name: 'TreeSeed' } });
-		expect((await app.request('/v1/teams/by-name/missing/profile', { headers })).status).toBe(404);
+		expect(await (await app.request('/v1/teams/by-name/treeseed/profile')).json()).toEqual({ data: { id: 'team-a', name: 'TreeSeed' } });
+		expect((await app.request('/v1/teams/by-name/missing/profile')).status).toBe(404);
 		expect(registry.require('teams.list').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.list);
 		expect(registry.require('teams.profile.show').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.profile);
 	});
@@ -441,7 +442,7 @@ describe('control-plane protocol contract', () => {
 			const expectedTemplates = createMcpCatalog(registry).resources.filter((resource) => resource.uriTemplate.includes('{'));
 			expect(templates.resourceTemplates).toHaveLength(expectedTemplates.length);
 			expect(templates.resourceTemplates.map((resource) => resource.uriTemplate)).toEqual(expect.arrayContaining([
-				'treeseed://projects/{projectId}', 'treeseed://plans/{capacityPlanId}', 'treeseed://operations/{operationId}',
+			'treeseed://projects/{projectId}', 'treeseed://operations/{operationId}',
 			]));
 			const statusResource = await client.readResource({ uri: 'treeseed://status' });
 			expect(statusResource.contents[0]).toMatchObject({ uri: 'treeseed://status', mimeType: 'application/json' });

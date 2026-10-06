@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+vi.mock('../../../../src/api/teams/managed-team-library-service.ts', () => ({ reconcileManagedTeamLibrary: vi.fn(async () => ({ state: 'replicating' })) }));
+vi.mock('../../../../src/security/provider-credential-authority.ts', () => ({ resolveGitHubRepositoryCreationAuthority: vi.fn(async () => ({ token: 'synthetic-pat', authorityId: 'authority-1', serviceConnectionId: 'connection-1', capabilityBindingId: 'binding-1' })) }));
 import { ensureProjectSeedDependencies } from '../../../../src/control-plane/seeds/apply-support/projects/projects-core/project-dependencies.ts';
 
 describe('project library reconciliation', () => {
@@ -13,6 +15,7 @@ describe('project library reconciliation', () => {
 		};
 		const store = {
 			config: { fetchImpl },
+			async run() {},
 			async listHubRepositories() {
 				return [{ role: 'content' }, { role: 'primary' }];
 			},
@@ -26,7 +29,7 @@ describe('project library reconciliation', () => {
 			store,
 			ids: { projects: new Map([['project:fixture/knowledge', 'project-1']]), teams: new Map([['team:fixture', 'team-1']]) },
 			manifestHash: 'sha256:fixture', appliedAt: '2026-08-23T00:00:00.000Z', env: {}, localOnly: false,
-			dependencyState: {}, plan: { actions: [] },
+			dependencyState: {}, plan: { actions: [{ kind: 'project', payload: { teamKey: 'team:fixture', slug: 'team', kind: 'content', library: { name: 'team-library' } } }] },
 		});
 		expect(upserts).toHaveLength(1);
 		expect(upserts[0]).toMatchObject({ role: 'library', name: 'knowledge-library', url: 'https://github.com/fixture/knowledge-library.git' });

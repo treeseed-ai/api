@@ -43,6 +43,12 @@ function isZodValidationError(error: unknown): boolean {
 		|| (error instanceof Error && error.name === 'ZodError' && Array.isArray((error as { issues?: unknown }).issues));
 }
 
+function zodIssueSummary(error: unknown): string {
+	const issues = error && typeof error === 'object' && Array.isArray((error as { issues?: unknown }).issues)
+		? (error as { issues: Array<{ path?: PropertyKey[]; message?: string }> }).issues : [];
+	return issues.map((issue) => `${(issue.path ?? []).map(String).join('.') || '<root>'}: ${issue.message ?? 'Invalid value.'}`).join('; ');
+}
+
 async function operationInput(context: Context, operation: BoundOperation) {
 	const query = operation.binding.schema.query.parse(Object.fromEntries(new URL(context.req.url).searchParams.entries()));
 	const path = operation.binding.schema.path.parse(context.req.param());
@@ -67,8 +73,8 @@ export function createOperationHttpHandler(
 ) {
 	return async (context: Context) => {
 		const requestId = context.req.header('x-request-id')?.trim() || randomUUID();
+		const descriptor = operation.binding.descriptor;
 		try {
-			const descriptor = operation.binding.descriptor;
 			const idempotencyKey = context.req.header(descriptor.idempotency.header)
 				?? (descriptor.operationId === 'repositories.github.webhook' ? context.req.header('x-github-delivery') : undefined);
 			const providerAuth = context.get('capacityProviderAccessAuth') as { principal?: { membershipId?: string; capacityProviderId?: string; teamId?: string; scopes?: string[] } } | undefined;
@@ -103,7 +109,7 @@ export function createOperationHttpHandler(
 				}
 			}
 			const providerIdentity = providerAuth?.principal;
-			const output = operation.binding.schema.output.parse(await operation.handler(input, {
+			const handled = await operation.handler(input, {
 				interface: 'rest',
 				requestId,
 				requestUrl: context.req.url,
@@ -121,7 +127,17 @@ export function createOperationHttpHandler(
 				principal: authInfo?.extra?.principal as { id: string; roles?: string[]; permissions?: string[] } | undefined
 					?? (providerIdentity ? { id: `capacity-provider:${providerIdentity.capacityProviderId ?? providerIdentity.membershipId}`,
 						roles: ['capacity_provider'], permissions: providerIdentity.scopes ?? [], metadata: { membershipId: providerIdentity.membershipId, teamId: providerIdentity.teamId } } : undefined),
-			}));
+			});
+			if (handled instanceof Response) return handled;
+			let output: unknown;
+			try { output = operation.binding.schema.output.parse(handled); }
+			catch (error) {
+				if (!isZodValidationError(error)) throw error;
+				const issues = (error as { issues?: Array<{ path?: PropertyKey[]; message?: string }> }).issues ?? [];
+				console.error(JSON.stringify({ level: 'error', event: 'operation.output-contract-invalid', operationId: descriptor.operationId,
+					requestId, issues: issues.map((issue) => ({ path: (issue.path ?? []).map(String).join('.'), message: issue.message ?? 'Invalid output.' })) }));
+				throw new ControlPlaneOperationError(500, 'operation_output_contract_invalid', 'The operation produced an invalid contract response.');
+			}
 			if (descriptor.operationId === 'repositories.github.callback' && typeof (output as any).redirect === 'string') {
 				return context.redirect((output as any).redirect, 302);
 			}
@@ -131,9 +147,22 @@ export function createOperationHttpHandler(
 				...(descriptor.concurrency.required || descriptor.kind === 'read' ? { etag: etag(output) } : {}),
 			});
 		} catch (error) {
+			if (!(error instanceof ControlPlaneOperationError) && !isZodValidationError(error)) {
+				const internal = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+				console.error(JSON.stringify({ level: 'error', event: 'operation.internal-error', operationId: descriptor.operationId, requestId,
+					name: error instanceof Error ? error.name : 'UnknownError', message: error instanceof Error ? error.message.slice(0, 1_024) : String(error).slice(0, 1_024),
+					code: typeof internal.code === 'string' ? internal.code : null, constraint: typeof internal.constraint === 'string' ? internal.constraint : null }));
+			}
 			const failure = error instanceof ControlPlaneOperationError ? error
-				: isZodValidationError(error) ? new ControlPlaneOperationError(400, 'operation_input_invalid', 'The operation input is invalid.')
-					: new ControlPlaneOperationError(500, 'operation_failed', 'The operation failed.');
+				: isZodValidationError(error) ? new ControlPlaneOperationError(400, 'operation_input_invalid', process.env.TREESEED_ENVIRONMENT === 'local'
+					? `The input for ${descriptor.operationId} is invalid: ${zodIssueSummary(error)}` : 'The operation input is invalid.')
+					: error && typeof error === 'object' && 'code' in error && error.code === '53300'
+						? new ControlPlaneOperationError(503, 'database_capacity_unavailable', 'The control-plane database connection budget is exhausted. Check API and operations-runner pool usage.')
+					: new ControlPlaneOperationError(500, 'operation_failed', process.env.TREESEED_ENVIRONMENT === 'local' && error instanceof Error
+						? `The operation failed: ${error.message.slice(0, 1_024)}`
+						: 'The operation failed.');
+			if (failure.status >= 500) console.error(JSON.stringify({ level: 'error', event: 'operation.failed', operationId: descriptor.operationId,
+				requestId, status: failure.status, code: failure.code, message: failure.message }));
 			return problem(context, failure, requestId);
 		}
 	};

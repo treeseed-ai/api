@@ -13,12 +13,12 @@ githubEnvironments:
   - staging
   - production
 requiredSecrets:
-  - TREESEED_DOCKERHUB_TOKEN
+  - DOCKERHUB_TOKEN
   - TREESEED_TREEDX_ADMIN_TOKEN
   - TREESEED_TREEDX_SECRET_KEY_BASE
   - TREESEED_TREEDX_JWT_HS256_SECRET
 requiredVariables:
-  - TREESEED_DOCKERHUB_USERNAME
+  - DOCKERHUB_USERNAME
 verify:
   fast: npm run verify
   local: npm run verify:local
@@ -49,16 +49,85 @@ dockerImages:
     release:
       - "<version>"
       - latest
-projectArchitecture:
-  topology: split_site_content
-  rootPath: .
-  sitePath: docs
-  contentPath: src/content
-  contentRuntimeSource: r2_preview_overlay
-  localContentMaterialization: none
-  contentPublishTarget:
-    kind: cloudflare_r2
-    prefix: packages/api
+development:
+  schemaVersion: treeseed.development-runtime/v1
+  project: { id: api, repository: treeseed-ai/api }
+  defaults: { leaseSeconds: 14400, restoreOnFailure: true }
+  targets:
+    - id: service
+      kind: live-api
+      platforms: [linux-amd64, linux-arm64, darwin-arm64, darwin-amd64]
+      runtimeRequirements: [node>=22, postgresql]
+      sourceRoots: [src, drizzle, compose.development.yml]
+      ignoredPaths: [dist, node_modules]
+      operations:
+        start: { command: docker, args: [compose, --file, compose.development.yml, --project-name, treeseed-api-development, up, --no-deps, api-live], environment: { TREESEED_DEVELOPMENT_EDGE_HOST: api-live }, timeoutSeconds: 86400 }
+        cleanup: { command: bash, args: [scripts/development/api-runtime.sh, cleanup], environment: {}, timeoutSeconds: 120 }
+        build: { command: npm, args: [run, build:dist], environment: {}, timeoutSeconds: 1800 }
+        verify: { command: npm, args: [run, test:control-plane], environment: {}, timeoutSeconds: 1800 }
+      ready: { kind: http, path: /v1/health/ready, expectedStatus: 200, timeoutSeconds: 120 }
+      outputs: [{ path: docs/api/openapi.json, mediaType: application/vnd.oai.openapi+json, digestAlgorithm: sha256 }]
+      endpoints: [{ id: http, protocol: http, port: 3000, canonicalAlias: api.treeseed.localhost, visibility: host, authentication: application }]
+      dependencies:
+        - { id: sdk, target: package, locality: local, reaction: restart }
+        - { id: deployment, target: package, locality: local, reaction: restart }
+      statePolicy: shared-compatible
+      migrationPolicy: explicit-review
+      secretRefs:
+        SESSION_SECRET: api-session-secret
+        TREESEED_TREEDX_DELEGATION_PRIVATE_KEY: api-treedx-delegation-private-key
+        TREESEED_TREEDX_CREDENTIAL_BROKER_ASSERTION: treedx-credential-broker-assertion
+      shutdown: { graceSeconds: 30, activeWorkPolicy: drain }
+      resources: {}
+      logs: [.treeseed/development/api.log]
+      forbiddenOperations: [automatic-shared-migration, credential-log, host-network, public-database-port]
+      freeze:
+        kind: archive
+        operation: { command: npm, args: [pack, --json], environment: {}, timeoutSeconds: 1800 }
+        artifacts: [treeseed-api-*.tgz]
+        contractOperations: []
+      promotion: { liveAdmissible: false, candidateRequiresVerification: true }
+    - id: operations-runner
+      kind: rebuild-restart
+      platforms: [linux-amd64, linux-arm64]
+      runtimeRequirements: [node>=22]
+      sourceRoots: [src/operations-runner, src/api, src/security, src/providers, drizzle]
+      ignoredPaths: [dist, node_modules]
+      operations:
+        build: { command: npm, args: [run, build:dist], environment: {}, timeoutSeconds: 1800 }
+        start: { command: docker, args: [compose, --file, compose.development.yml, --project-name, treeseed-api-development, up, --no-deps, operations-runner-live], environment: { TREESEED_DEVELOPMENT_EDGE_HOST: operations-runner-live }, timeoutSeconds: 86400 }
+        cleanup: { command: bash, args: [scripts/development/operations-runner-runtime.sh, cleanup], environment: {}, timeoutSeconds: 120 }
+        verify: { command: npm, args: [run, test:control-plane], environment: {}, timeoutSeconds: 1800 }
+      ready: { kind: process, graceSeconds: 5 }
+      outputs: [{ path: dist/operations-runner, mediaType: application/vnd.treeseed.node-runtime, digestAlgorithm: sha256 }]
+      endpoints: []
+      dependencies:
+        - { id: sdk, target: package, locality: local, reaction: rebuild }
+        - { id: deployment, target: package, locality: local, reaction: rebuild }
+        - { id: api, target: service, locality: local, reaction: rebuild }
+      statePolicy: shared-compatible
+      migrationPolicy: explicit-review
+      secretRefs:
+        TREESEED_TREEDX_DELEGATION_PRIVATE_KEY: api-treedx-delegation-private-key
+        TREESEED_TREEDX_CREDENTIAL_BROKER_ASSERTION: treedx-credential-broker-assertion
+      shutdown: { graceSeconds: 60, activeWorkPolicy: drain }
+      resources: {}
+      logs: [.treeseed/development/operations-runner.log]
+      forbiddenOperations: [hot-reload, automatic-assignment-cancel]
+      promotion: { liveAdmissible: false, candidateRequiresVerification: true }
+standards:
+  schemaVersion: 1
+  workflow: { enabled: true }
+  acceptedBaseline: { packageName: "@treeseed/api", packageVersion: "0.8.0-rc.41" }
+  produced:
+    - { id: "@treeseed/api/control-plane", family: http-api, version: "1.0.0", semanticRange: "^1.0.0", source: src/api/control-plane, artifact: docs/api/openapi.json, verifier: scripts/packages/release-verify.ts }
+    - { id: "@treeseed/api/identity-team-verifier", family: behavioral, version: "1.0.0", semanticRange: "^1.0.0", source: src/standards/verifiers, artifact: dist/standards/verifiers/identity-team-live.js, verifier: dist/standards/verifiers/identity-team-live.js }
+  consumed:
+    - { id: "@treeseed/sdk/control-plane-catalog", family: json-schema, version: "1.0.0", semanticRange: "^1.0.0", source: node_modules/@treeseed/sdk, verifier: scripts/packages/release-verify.ts }
+  guarantees: [authentication-lifecycle, account-custody, team-authority, immutable-live-verifier]
+  deprecations: []
+  runtimes: [node>=22, cloudflare-workers]
+  rollbackOperations: [restore-prior-component-release, restore-prior-database-backup]
 localDev:
   services:
     api:

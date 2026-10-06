@@ -22,20 +22,21 @@ export function createProviderAssignmentOperations(dependencies: ProviderAssignm
 	const { providerAssignments: assignments, providerSignals: signals, providerWorkflows: workflows } = dependencies;
 	const operations = CONTROL_PLANE_OPERATIONS.providers;
 	return [
+		{ binding: operations.sourceWorkspace, handler: (input, context) => result(() => assignments.sourceWorkspace(context.providerAuth, input.path.assignmentId, input.body)) },
 		{ binding: operations.nextAssignment, handler: (input, context) => result(() => assignments.next(context.providerAuth, input.body as Record<string, unknown>, context.signal)) },
 		{ binding: operations.assignment, handler: (input, context) => result(() => assignments.show(context.providerAuth, input.path.assignmentId)) },
 		{ binding: operations.assignmentExplanation, handler: (input, context) => result(() => assignments.explain(context.providerAuth, input.path.assignmentId)) },
 		{ binding: operations.renewAssignment, handler: (input, context) => result(() => assignments.renew(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
 		{ binding: operations.startExecution, handler: (input, context) => result(() => assignments.startExecution(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
 		{ binding: operations.startCloseout, handler: (input, context) => result(() => assignments.startCloseout(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
-		{ binding: operations.completionPreflight, handler: (input, context) => result(() => assignments.preflight(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
 		{ binding: operations.discussionResponse, handler: (input, context) => result(() => assignments.respondToDiscussion(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>, context.idempotencyKey)) },
+		{ binding: operations.notificationAcknowledge, handler: (input, context) => result(() => assignments.acknowledgeCommunication(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
+		{ binding: operations.traceEvent, handler: (input, context) => result(() => assignments.traceCommunication(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
 		{ binding: operations.returnAssignment, handler: (input, context) => result(() => assignments.returnAssignment(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
 		{ binding: operations.completeAssignment, handler: (input, context) => result(() => assignments.complete(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
 		{ binding: operations.failAssignment, handler: (input, context) => result(() => assignments.fail(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
 		{ binding: operations.reportUsage, handler: (input, context) => result(() => assignments.reportUsage(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>, context.idempotencyKey)) },
 		{ binding: operations.settleAssignment, handler: (input, context) => result(() => assignments.settle(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>, context.idempotencyKey)) },
-		{ binding: operations.createModeRun, handler: (input, context) => result(() => assignments.createModeRun(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
 		{ binding: operations.createEvent, handler: (input, context) => result(() => assignments.createEvent(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
 		{ binding: operations.publishSignal, handler: (input, context) => result(() => signals(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
 		{ binding: operations.dispatchWorkflow, handler: (input, context) => result(() => workflows.dispatch(context.providerAuth, input.path.assignmentId, input.path.operationId, input.body as Record<string, unknown>)) },

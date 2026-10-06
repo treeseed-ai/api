@@ -7,8 +7,13 @@ import type { CapacityGovernanceDatabase } from '../../../capacity/database.ts';
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
 import { CapacityGovernanceRepository } from '../../../capacity/repositories/governance/policy/governance.ts';
 import { CapacitySecretCodec } from '../../../capacity/security.ts';
+import { createHash } from 'node:crypto';
+import { readOsCredentialFile } from '@treeseed/deployment/security/custody';
+const keyText=(file:string)=>{const key=readOsCredentialFile(file);try{return key.toString('utf8').trim();}finally{key.fill(0);}};
 import { AvailabilitySessionService } from '../../../capacity/services/accounts/availability-session-service.ts';
+import { capabilityAccountingLimitsSchema, type CapabilityAccountingLimits } from '@treeseed/sdk/agent-capacity';
 import { CapacityRegistrationService } from '../../../capacity/services/support/registration-service.ts';
+import { createProviderEnvironmentService } from './provider-environment-service.ts';
 
 export interface ProviderPrincipal {
 	membershipId: string;
@@ -27,6 +32,57 @@ type OwnerStore = CapacityGovernanceDatabase & {
 function credential(headers: Readonly<Record<string, string>> | undefined, scheme: string) {
 	const value = headers?.authorization?.trim() ?? '';
 	return value.startsWith(`${scheme} `) ? value.slice(scheme.length + 1).trim() : '';
+}
+
+function etag(value: unknown) {
+	return `sha256:${createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
+}
+
+function jsonObject(value: unknown): Record<string, unknown> {
+	if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
+	if (typeof value === 'string') {
+		try {
+			const parsed = JSON.parse(value);
+			return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+		} catch { return {}; }
+	}
+	return {};
+}
+
+/** Expose the existing provider report, not credentials or arbitrary adapter metadata. */
+export function providerAccountingStatus(value: unknown): Array<{
+	id: unknown; status: unknown; runtimeBuild: unknown;
+	nativeLimits: CapabilityAccountingLimits | null;
+	accountingObservation: { modelUsage: Record<string, unknown>; capabilityUsage: Record<string, Record<string, unknown>> };
+}> {
+	const observation = (input: unknown) => {
+		const row = jsonObject(input);
+		return { day: row.day, observedAt: row.observedAt, healthy: row.healthy,
+			activeSeconds: row.activeSeconds, reservedSeconds: row.reservedSeconds };
+	};
+	const adapters: unknown = typeof value === 'string' ? JSON.parse(value) : value;
+	if (!Array.isArray(adapters)) return [];
+	return adapters.map(input => {
+		const row = jsonObject(input), report = jsonObject(row.accountingObservation);
+		const limits = capabilityAccountingLimitsSchema.safeParse(row.nativeLimits);
+		return { id: row.id, status: row.status, runtimeBuild: row.runtimeBuild,
+			nativeLimits: limits.success ? { modelConfigurationId: limits.data.modelConfigurationId,
+				dailyActiveSecondsLimit: limits.data.dailyActiveSecondsLimit, capabilityLimits: limits.data.capabilityLimits } : null,
+			accountingObservation: { modelUsage: observation(report.modelUsage),
+				capabilityUsage: Object.fromEntries(Object.entries(jsonObject(report.capabilityUsage))
+					.map(([id, entry]) => [id, observation(entry)])) } };
+	});
+}
+
+export function registrationCodeStatus(metadata: { teamId: string; generation: number; keyPrefix: string; createdAt: string; rotatedAt: string | null }) {
+	return { schemaVersion: 'treeseed.provider-registration-code-status/v1' as const, teamId: metadata.teamId,
+		generation: metadata.generation, codePrefix: metadata.keyPrefix, rotatedAt: metadata.rotatedAt ?? metadata.createdAt };
+}
+
+export function registrationCodeReceipt(metadata: { teamId: string; generation: number; keyPrefix: string; registrationKey: string; createdAt: string; rotatedAt: string | null }) {
+	return { schemaVersion: 'treeseed.provider-registration-code-receipt/v1' as const, teamId: metadata.teamId,
+		generation: metadata.generation, codePrefix: metadata.keyPrefix, registrationCode: metadata.registrationKey,
+		rotatedAt: metadata.rotatedAt ?? metadata.createdAt };
 }
 
 function proofHeader(headers: Readonly<Record<string, string>> | undefined): CapacityProviderSignedProof {
@@ -56,18 +112,26 @@ export function providerAvailabilityIsRunnable(sessions: Record<string, unknown>
 	return activeExecutionProviderCount > 0 && sessions.some((entry) => entry.status === 'open' && Date.parse(String(entry.expires_at)) > now);
 }
 
+export async function revealReusableRegistrationCode(registration: Pick<CapacityRegistrationService, 'revealRegistrationKey'>, teamId: string, actorId: string) {
+	const issued = await registration.revealRegistrationKey(teamId, actorId);
+	return { teamId, connectionState: 'registration_ready', expiresAfterUse: false,
+		registrationCode: issued.registrationKey, codePrefix: issued.keyPrefix, generation: issued.generation };
+}
+
 export function createProviderRuntimeService(store: CapacityGovernanceDatabase, config: Record<string, unknown>, ownerStore: OwnerStore = store as OwnerStore) {
-	const environment = String(config.environment ?? process.env.TREESEED_ENVIRONMENT ?? 'local');
-	const secretSource = config.capacityGovernanceSecret ?? config.TREESEED_CAPACITY_GOVERNANCE_SECRET
-		?? process.env.TREESEED_CAPACITY_GOVERNANCE_SECRET
-		?? (['local', 'test'].includes(environment) ? 'treeseed-local-capacity-governance-secret' : config.authSecret ?? process.env.TREESEED_AUTH_SECRET);
-	if (!secretSource && !['local', 'test'].includes(environment)) throw new Error('TREESEED_CAPACITY_GOVERNANCE_SECRET is required outside local/test environments.');
-	const rawSecret = String(secretSource ?? 'treeseed-local-capacity-governance-secret');
-	if (rawSecret.trim().length < 24 && !['local', 'test'].includes(environment)) throw new Error('TREESEED_CAPACITY_GOVERNANCE_SECRET must contain at least 24 characters.');
-	const configuredSecret = rawSecret.trim().length >= 24 ? rawSecret : `treeseed-local:${rawSecret}:capacity-governance`;
+	const encryptionFile = String(config.capacityEncryptionKeyFile ?? process.env.TREESEED_CAPACITY_ENCRYPTION_KEY_FILE ?? '');
+	if (!encryptionFile) throw new Error('An OS-custodied capacity key file is required.');
+	const encryptionSource = keyText(encryptionFile);
+	if (encryptionSource.length < 24) throw new Error('Capacity encryption key is invalid.');
+	const configuredSecret = createHash('sha256').update('capacity-governance:').update(encryptionSource).digest('hex');
 	const audience = String(config.baseUrl ?? process.env.TREESEED_API_BASE_URL ?? 'http://127.0.0.1:3000').replace(/\/$/u, '');
-	const registration = new CapacityRegistrationService(new CapacityGovernanceRepository(store), new CapacitySecretCodec(configuredSecret), audience);
+	const keyVersion = Math.max(1, Number(config.TREESEED_CAPACITY_ENCRYPTION_KEY_VERSION ?? process.env.TREESEED_CAPACITY_ENCRYPTION_KEY_VERSION ?? 1));
+	const historical = String(config.TREESEED_CAPACITY_HISTORICAL_KEY_FILES ?? process.env.TREESEED_CAPACITY_HISTORICAL_KEY_FILES ?? '').split(',').map((entry) => entry.trim()).filter(Boolean).map((entry) => {
+		const match = /^(\d+):(.+)$/u.exec(entry); if (!match) throw new Error('Historical capacity keys must use VERSION:/absolute/path entries.'); return { version: Number(match[1]), secret: keyText(match[2]!) };
+	});
+	const registration = new CapacityRegistrationService(new CapacityGovernanceRepository(store), new CapacitySecretCodec(configuredSecret, String(encryptionSource), keyVersion, historical), audience);
 	const availability = new AvailabilitySessionService(store);
+	const environmentProfiles = createProviderEnvironmentService(ownerStore);
 	const requireUser = (principal: UserPrincipal | null | undefined) => {
 		if (!principal) throw new CapacityGovernanceError('authentication_required', 'An authenticated team principal is required.', 401);
 		return principal;
@@ -85,6 +149,21 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 	const membership = async (teamId: string, connectionId: string) => registration.membership(teamId, connectionId);
 	return {
 		authenticator: registration,
+		async registrationCodeStatus(principal: UserPrincipal | null | undefined, teamId: string) {
+			const actor = await requireRead(principal, teamId);
+			return registrationCodeStatus(await registration.registrationKey(teamId, actor.id));
+		},
+		async revealRegistrationCode(principal: UserPrincipal | null | undefined, teamId: string) {
+			const actor = await requireManage(principal, teamId);
+			return registrationCodeReceipt(await registration.revealRegistrationKey(teamId, actor.id));
+		},
+		async rotateRegistrationCode(principal: UserPrincipal | null | undefined, teamId: string, idempotencyKey: string, ifMatch?: string) {
+			const actor = await requireManage(principal, teamId);
+			const current = registrationCodeStatus(await registration.registrationKey(teamId, actor.id));
+			if (ifMatch !== etag(current)) throw new CapacityGovernanceError('provider_registration_code_precondition_failed', 'The registration code changed after it was loaded.', 412);
+			return registrationCodeReceipt(await registration.rotateRegistrationKey(teamId, actor.id, idempotencyKey));
+		},
+		environmentProfiles,
 		async list(principal: UserPrincipal | null | undefined, teamId: string, query: Record<string, unknown>) {
 			await requireRead(principal, teamId);
 			return registration.listMembershipsPage(teamId, query);
@@ -98,20 +177,50 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 		},
 		async status(principal: UserPrincipal | null | undefined, teamId: string, providerId: string) {
 			const item = await this.show(principal, teamId, providerId);
-			const sessions = await store.all(`SELECT id, status, expires_at, refreshed_at, metadata_json FROM capacity_provider_availability_sessions WHERE team_id = ? AND capacity_provider_id = ? ORDER BY created_at DESC LIMIT 5`, [teamId, providerId]);
-			const activeExecutionProvider = await store.first(`SELECT COUNT(*) AS count FROM capacity_execution_providers WHERE capacity_provider_id = ? AND status = 'active'`, [providerId]);
+			const [sessions, activeExecutionProvider, unavailableOffers] = await Promise.all([
+				store.all(`SELECT id, status, expires_at, refreshed_at, metadata_json, execution_providers_json FROM capacity_provider_availability_sessions WHERE team_id = ? AND capacity_provider_id = ? ORDER BY created_at DESC LIMIT 5`, [teamId, providerId]),
+				store.first(`SELECT COUNT(*) AS count FROM capacity_execution_providers WHERE capacity_provider_id = ? AND status = 'active'`, [providerId]),
+				store.all(`SELECT offer_id, execution_provider_id, status, last_seen_at FROM execution_capability_offers
+					WHERE capacity_provider_id = ? AND status <> 'active' ORDER BY last_seen_at DESC, offer_id ASC`, [providerId]),
+			]);
 			const activeExecutionProviderCount = Number(activeExecutionProvider?.count ?? 0);
-			return { provider: item, healthy: providerAvailabilityIsRunnable(sessions, activeExecutionProviderCount), activeExecutionProviderCount, availability: sessions };
+			return { provider: item, healthy: providerAvailabilityIsRunnable(sessions, activeExecutionProviderCount), activeExecutionProviderCount,
+				availability: sessions.map(({ execution_providers_json, ...session }) => ({ ...session,
+					executionProviders: providerAccountingStatus(execution_providers_json) })), unavailableOffers, alerts: unavailableOffers.map((offer) => ({
+					code: offer.status === 'context_overflow' ? 'provider_context_capacity_overflow' : 'provider_offer_unavailable',
+					offerId: offer.offer_id, executionProviderId: offer.execution_provider_id, status: offer.status,
+					observedAt: offer.last_seen_at,
+				})) };
 		},
 		async diagnose(principal: UserPrincipal | null | undefined, teamId: string, providerId: string) {
 			const status = await this.status(principal, teamId, providerId);
-			return { ...status, blockers: status.healthy ? [] : ['provider_availability_unhealthy'], nextActions: status.healthy ? [] : ['Start or reconcile the local provider manager.'] };
+			const synthesisEvent = await store.first(`SELECT action, metadata_json, created_at FROM capacity_audit_events
+				WHERE team_id = ? AND capacity_provider_id = ? AND action IN ('provider-assignment.synthesis-failed', 'provider-assignment.synthesis-completed')
+				ORDER BY created_at DESC, id DESC LIMIT 1`, [teamId, providerId]);
+			const synthesisFailure = synthesisEvent?.action === 'provider-assignment.synthesis-failed' ? {
+				...jsonObject(synthesisEvent.metadata_json),
+				observedAt: String(synthesisEvent.created_at ?? ''),
+			} : null;
+			const offerBlockers = status.unavailableOffers.map((offer) => `${offer.status}:${offer.offer_id}`);
+			return { ...status, synthesisFailure,
+				blockers: [...(status.healthy ? [] : ['provider_availability_unhealthy']), ...offerBlockers,
+					...(synthesisFailure ? [String(synthesisFailure.code ?? 'provider_assignment_synthesis_failed')] : [])],
+				nextActions: [...(status.healthy ? [] : ['Start or reconcile the local provider manager.']),
+					...(synthesisFailure ? ['Inspect the latest provider assignment synthesis failure and repair the rejected execution node or assignment input.'] : []),
+					...(status.unavailableOffers.some((offer) => offer.status === 'context_overflow')
+						? ['Publish an updated context-capacity offer and pass conformance before re-enabling it.'] : [])] };
 		},
-		async connect(principal: UserPrincipal | null | undefined, teamId: string, idempotencyKey: string) {
+		async offers(principal: UserPrincipal | null | undefined, teamId: string, providerId: string) {
+			await this.show(principal, teamId, providerId);
+			const rows = await store.all(`SELECT execution_provider_id, offer_id, offer_digest, offer_json, status, last_seen_at
+				FROM execution_capability_offers WHERE capacity_provider_id = ? ORDER BY execution_provider_id ASC, offer_id ASC`, [providerId]);
+			return { schemaVersion: 'treeseed.provider-offer-inventory/v1', providerId, revision: 1,
+				offers: rows.map((row) => ({ executionProviderId: row.execution_provider_id, offerId: row.offer_id,
+					offerDigest: row.offer_digest, offer: jsonObject(row.offer_json), status: row.status, observedAt: row.last_seen_at })) };
+		},
+		async connect(principal: UserPrincipal | null | undefined, teamId: string, _idempotencyKey: string) {
 			const actor = await requireManage(principal, teamId);
-			const issued = await registration.rotateRegistrationKey(teamId, actor.id, idempotencyKey);
-			return { teamId, connectionState: 'enrollment_required', expiresAfterUse: true,
-				enrollmentToken: issued.registrationKey, keyPrefix: issued.keyPrefix, generation: issued.generation };
+			return revealReusableRegistrationCode(registration, teamId, actor.id);
 		},
 		async disconnect(principal: UserPrincipal | null | undefined, teamId: string, connectionId: string, idempotencyKey: string) {
 			const actor = await requireManage(principal, teamId);

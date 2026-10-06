@@ -7,7 +7,7 @@ export const TREESEED_OAUTH_SCOPES = [
 	'treeseed:admin',
 ] as const;
 
-export const TREESEED_FIRST_PARTY_OAUTH_CLIENTS = ['trsd'] as const;
+export const TREESEED_FIRST_PARTY_OAUTH_CLIENTS = ['trsd', 'treeseed-admin'] as const;
 
 export function isFirstPartyOAuthClient(value: string) {
 	return TREESEED_FIRST_PARTY_OAUTH_CLIENTS.includes(value as typeof TREESEED_FIRST_PARTY_OAUTH_CLIENTS[number]);
@@ -29,11 +29,12 @@ export function protectedResourceMetadata(requestUrl: string) {
 	};
 }
 
-export function authorizationServerMetadata(requestUrl: string) {
+export function authorizationServerMetadata(requestUrl: string, presentationBaseUrl?: string) {
 	const issuer = oauthIssuer(requestUrl);
+	const presentationOrigin = new URL(presentationBaseUrl ?? issuer);
 	return {
 		issuer,
-		authorization_endpoint: `${issuer}/oauth/authorize`,
+		authorization_endpoint: new URL('/auth/authorize', presentationOrigin).toString(),
 		device_authorization_endpoint: `${issuer}/oauth/device_authorization`,
 		token_endpoint: `${issuer}/oauth/token`,
 		revocation_endpoint: `${issuer}/oauth/revoke`,

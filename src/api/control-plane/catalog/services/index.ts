@@ -12,8 +12,10 @@ export interface ServiceOperationDependencies {
 			body: Record<string, unknown>, ifMatch?: string): Promise<Record<string, any>>;
 		disconnect(principal: OperationInvocationContext['principal'], teamId: string, connectionId: string, ifMatch?: string): Promise<Record<string, any>>;
 		authorities(principal: OperationInvocationContext['principal'], teamId: string, connectionId: string): Promise<Record<string, any>>;
-		putAuthority(principal: OperationInvocationContext['principal'], teamId: string, connectionId: string, profileId: string,
-			body: Record<string, unknown>, ifMatch?: string): Promise<Record<string, any>>;
+		credentialStatus(principal: OperationInvocationContext['principal'], teamId: string, connectionId: string, profileId: string, body?: any): Promise<Record<string, any>>;
+		putCredentials(principal: OperationInvocationContext['principal'], teamId: string, connectionId: string, profileId: string, body?: any): Promise<Record<string, any>>;
+		deleteCredentials(principal: OperationInvocationContext['principal'], teamId: string, connectionId: string, profileId: string, body?: any): Promise<Record<string, any>>;
+		validateCredentials(principal: OperationInvocationContext['principal'], teamId: string, connectionId: string, profileId: string, body?: any): Promise<Record<string, any>>;
 	};
 }
 
@@ -28,6 +30,10 @@ export function createServiceOperations(dependencies: ServiceOperationDependenci
 	const services = dependencies.services;
 	return [
 		{ binding: CONTROL_PLANE_OPERATIONS.services.providers, handler: () => result(() => services.providers()) },
+		{ binding: CONTROL_PLANE_OPERATIONS.services.credentialStatus, handler: (input,context) => result(() => services.credentialStatus(context.principal,input.path.teamId,input.path.connectionId,input.path.profileId,input.body)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.services.putCredentials, handler: (input,context) => result(() => services.putCredentials(context.principal,input.path.teamId,input.path.connectionId,input.path.profileId,input.body)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.services.deleteCredentials, handler: (input,context) => result(() => services.deleteCredentials(context.principal,input.path.teamId,input.path.connectionId,input.path.profileId,input.body)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.services.validateCredentials, handler: (input,context) => result(() => services.validateCredentials(context.principal,input.path.teamId,input.path.connectionId,input.path.profileId,input.body)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.services.connections,
 			handler: (input, context) => result(() => services.connections(context.principal, input.path.teamId)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.services.connection,
@@ -41,8 +47,6 @@ export function createServiceOperations(dependencies: ServiceOperationDependenci
 			handler: (input, context) => result(() => services.disconnect(context.principal, input.path.teamId, input.path.connectionId, context.ifMatch)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.services.authorities,
 			handler: (input, context) => result(() => services.authorities(context.principal, input.path.teamId, input.path.connectionId)) },
-		{ binding: CONTROL_PLANE_OPERATIONS.services.putAuthority,
-			handler: (input, context) => result(() => services.putAuthority(context.principal, input.path.teamId, input.path.connectionId,
-				input.path.profileId, input.body as Record<string, unknown>, context.ifMatch)) },
+
 	];
 }

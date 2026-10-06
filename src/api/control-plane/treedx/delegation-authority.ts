@@ -90,6 +90,15 @@ export class TreeDxDelegationAuthority {
 		return { keys: [this.currentJwk, ...this.previousJwks] };
 	}
 
+	/** The API signing identity also issues independently audience-bound service delegations. */
+	mintAi(input: { actorId: string; teamId: string; nodeId: string; service: string; scopes: readonly string[] }, now = Math.floor(Date.now() / 1000)) {
+		const header = base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: this.currentJwk.kid }));
+		const payload = base64Url(JSON.stringify({ iss: new URL('/ai', this.issuer).href, aud: `treeai:${input.nodeId}:${input.service}`,
+			sub: input.actorId, teamId: input.teamId, nodeId: input.nodeId, scopes: [...input.scopes], iat: now, exp: now + 60, jti: randomUUID() }));
+		const unsigned = `${header}.${payload}`, signer = createSign('RSA-SHA256'); signer.update(unsigned); signer.end();
+		return `${unsigned}.${signer.sign(this.privateKey, 'base64url')}`;
+	}
+
 	mint(input: TreeDxDelegationInput, nowEpochSeconds = Math.floor(Date.now() / 1000)) {
 		const scope = canonicalScope(input.scope);
 		const cacheKey = JSON.stringify({ ...input, scope, issuer: this.issuer, audience: this.audience, kid: this.currentJwk.kid });

@@ -3,6 +3,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createGitHubConnectorService } from '../../../src/api/control-plane/repositories/github-connector-service.ts';
 import { createGitHubWebhookService } from '../../../src/api/control-plane/repositories/github-webhook-service.ts';
 import { connectorStateHash, createConnectorState, readConnectorState } from '../../../src/security/github-connector-config.ts';
+import { githubConnectorRequiredPermissions } from '../../../src/security/github-connector-config.ts';
+import { resolveGitHubRepositoryCreationAuthority } from '../../../src/security/provider-credential-authority.ts';
+
+vi.mock('../../../src/security/managed-secrets.ts', async importOriginal => ({...await importOriginal<any>(),
+  readServiceCredentials:vi.fn(async()=>({version:1,values:{accessToken:'runtime-secret'}})),
+}));
 
 const environment = {
 	TREESEED_GITHUB_REPOSITORY_APP_ID: '1234', TREESEED_GITHUB_REPOSITORY_APP_CLIENT_ID: 'client-id',
@@ -15,6 +21,29 @@ function configure() { for (const [name, value] of Object.entries(environment)) 
 afterEach(() => vi.unstubAllEnvs());
 
 describe('GitHub provider catalog services', () => {
+	it('requires administration write and resolves creation authority only for the configured organization', async () => {
+		expect(githubConnectorRequiredPermissions('repository')).toEqual({ contents: 'write', checks: 'read', administration: 'write' });
+		const row = { id: 'authority-1', service_connection_id: 'connection-1', capability_binding_id: 'capability-1',
+			scheme: 'openbao', team_id:'team-1', connection_id:'connection-1',version:1, reference: 'managed-scope', capabilities_json: '["repository-hosting"]',
+			credential_profile_id: 'github-repository-token', non_secret_config_json: '{"organization":"example"}' };
+		const store = { all: vi.fn(async () => [row]) };
+		await expect(resolveGitHubRepositoryCreationAuthority({ store, teamId: 'team-1', owner: 'example',
+			env: {} })).resolves.toMatchObject({ token: 'runtime-secret',
+			authorityId: 'authority-1', serviceConnectionId: 'connection-1', capabilityBindingId: 'capability-1' });
+		await expect(resolveGitHubRepositoryCreationAuthority({ store, teamId: 'team-1', owner: 'another',
+			env: {} })).rejects.toThrow('all-repository installation access');
+	});
+
+	it('rejects selected-repository installations for new project creation', async () => {
+		const store = { all: vi.fn(async () => [{ id: 'authority-1', service_connection_id: 'connection-1', capability_binding_id: 'capability-1',
+			scheme: 'app-installation', reference: 'installation:7', capabilities_json: '["repository-hosting"]',
+			credential_profile_id: 'github-repository-app', non_secret_config_json: JSON.stringify({ githubConnectors: {
+				repository: { accountLogin: 'example', repositorySelection: 'selected' },
+			} }) }]) };
+		await expect(resolveGitHubRepositoryCreationAuthority({ store, teamId: 'team-1', owner: 'example' }))
+			.rejects.toThrow('all-repository installation access');
+	});
+
 	it('starts setup without persisting connector secrets', async () => {
 		configure(); const statements: Array<{ sql: string; parameters: unknown[] }> = [];
 		const store = { principalCanAccessTeam: vi.fn(async () => true),

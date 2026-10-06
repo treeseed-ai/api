@@ -1,6 +1,7 @@
 import type { TreeDxProxyAccessRequest,TreeDxProxyAccessResult } from '@treeseed/sdk/agent-capacity';
 function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
-function globLikePathMatches(pattern: string, candidate: string): boolean {
+const contentExtensions = ['.mdx', '.md', '.markdown', '.json', '.yaml', '.yml', '.toml'];
+export function treeDxScopedPathAllows(pattern: string, candidate: string): boolean {
 	const normalizedPattern = pattern.replace(/^\/+/, '');
 	const normalizedCandidate = candidate.replace(/^\/+/, '');
 	if (!normalizedPattern || normalizedPattern === '**' || normalizedPattern === '*') return true;
@@ -11,7 +12,20 @@ function globLikePathMatches(pattern: string, candidate: string): boolean {
 	if (normalizedPattern.endsWith('*')) {
 		return normalizedCandidate.startsWith(normalizedPattern.slice(0, -1));
 	}
-	return normalizedCandidate === normalizedPattern || normalizedCandidate.startsWith(`${normalizedPattern}/`);
+	return normalizedCandidate === normalizedPattern || normalizedCandidate.startsWith(`${normalizedPattern}/`)
+		|| contentExtensions.some((extension) => normalizedCandidate === `${normalizedPattern}${extension}`);
+}
+
+export function treeDxProxyAuthorizedPathPatterns(handle: TreeDxProxyHandle | Record<string, unknown> | null | undefined, operation?: string | null) {
+	const candidate = record(handle); const writeOperation = operation === 'files:write' || operation === 'git:commit';
+	const readPaths = Array.isArray(candidate.allowedReadPaths) ? candidate.allowedReadPaths.map(String).filter(Boolean) : [];
+	const writePaths = Array.isArray(candidate.allowedWritePaths) ? candidate.allowedWritePaths.map(String).filter(Boolean) : [];
+	const fallbackPaths = Array.isArray(candidate.allowedPaths) ? candidate.allowedPaths.map(String).filter(Boolean) : [];
+	// Exact write authority includes read-back of those same paths so the runtime
+	// can verify committed bytes. It does not grant reads outside the write scope.
+	const paths = writeOperation ? (writePaths.length ? writePaths : fallbackPaths)
+		: (readPaths.length || writePaths.length ? [...readPaths, ...writePaths] : fallbackPaths);
+	return paths.some((path) => path === '**' || path === '*') ? ['**'] : [...new Set(paths)];
 }
 
 export function evaluateTreeDxProxyHandleAccess(handle: TreeDxProxyHandle | Record<string, unknown> | null | undefined, request: TreeDxProxyAccessRequest): TreeDxProxyAccessResult {
@@ -43,14 +57,8 @@ export function evaluateTreeDxProxyHandleAccess(handle: TreeDxProxyHandle | Reco
 		return { ok: false, code: 'treedx_proxy_operation_denied', reason: 'TreeDX proxy handle does not allow this operation.', metadata: { operation, allowedOperations } };
 	}
 	const path = request.path ? String(request.path).replace(/^\/+/, '') : null;
-	const writeOperation = operation === 'files:write' || operation === 'git:commit';
-	const readPaths = Array.isArray(candidate.allowedReadPaths) ? candidate.allowedReadPaths.map(String).filter(Boolean) : [];
-	const writePaths = Array.isArray(candidate.allowedWritePaths) ? candidate.allowedWritePaths.map(String).filter(Boolean) : [];
-	const fallbackPaths = Array.isArray(candidate.allowedPaths) ? candidate.allowedPaths.map(String).filter(Boolean) : [];
-	const allowedPaths = writeOperation
-		? (writePaths.length ? writePaths : fallbackPaths)
-		: (readPaths.length ? readPaths : fallbackPaths);
-	if (path && allowedPaths.length && !allowedPaths.some((pattern) => globLikePathMatches(pattern, path))) {
+	const allowedPaths = treeDxProxyAuthorizedPathPatterns(candidate, operation);
+	if (path && allowedPaths.length && !allowedPaths.some((pattern) => treeDxScopedPathAllows(pattern, path))) {
 		return { ok: false, code: 'treedx_proxy_path_denied', reason: 'TreeDX proxy handle does not allow this path.', metadata: { path, allowedPaths } };
 	}
 	return { ok: true };

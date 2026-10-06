@@ -1,0 +1,372 @@
+import { createHash } from 'node:crypto';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const gateway = vi.hoisted(() => ({ readRepositoryFile: vi.fn() }));
+vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({
+	resolveKnowledgeGatewayConnection: vi.fn(async () => ({ repositoryId: 'repository', client: gateway })),
+}));
+
+import { executionNodeRunScope, linearPredecessorSourceCommit, listReadyExecutionNodes, workItemContext } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
+import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
+
+const projectId = 'project';
+const sourceRef = {
+	store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
+	digest: `sha256:${'a'.repeat(64)}`, repository: 'repository', commit: 'b'.repeat(40), path: 'proposals/one.mdx',
+};
+const decisionRef = { store: 'postgresql', model: 'decision', id: 'decision', revision: 1, digest: `sha256:${'c'.repeat(64)}` };
+const permissions = { content: { read: ['proposal', 'decision'], write: [] }, tools: ['source.read'] };
+
+function nodeRow(id = 'node', decisionId = 'decision') {
+	return {
+		id, team_id: 'team', project_id: projectId, work_item_id: 'implementation',
+		kind: 'acting', pair_role: 'actor', source_ref_json: sourceRef,
+		authority_refs_json: [{ ...decisionRef, id: decisionId }],
+		rule_revision: 1, node_revision: 1, agent_class: 'engineer', status: 'ready',
+		estimate_json: { expectedSeconds: 120, maximumSeconds: 180 },
+		required_capabilities_json: ['code-change'], requested_permissions_json: permissions,
+		workspace: 'git', acceptance_criteria_json: ['Tests pass.'], maximum_review_cycles: 2,
+		graph_revision_created: 1, graph_revision_updated: 4, current_graph_revision: 4,
+	};
+}
+
+const definition = {
+	schemaVersion: 'treeseed.agent/v1', id: 'agent:engineer', name: 'Engineer', agentClass: 'engineer',
+	purpose: 'Implement accepted source changes.', responsibilities: ['Return one verified result.'],
+	capabilities: ['code-change'], context: { include: ['project'] },
+	activityProfiles: {
+		planning: {
+			handler: 'writer', permissions,
+			prompt: { system: 'Research exact sources and return a governed planning contribution.' },
+		},
+		acting: {
+			handler: 'actor', permissions,
+			prompt: { system: 'Implement the accepted work and verify the resulting source.' },
+		},
+	},
+};
+const agentCommit = 'a'.repeat(40);
+const agentPath = 'agents/engineer.yaml';
+const classRow = (agent: unknown, id = 'class-engineer') => ({
+	id, handler_refs_json: { agents: [agent] },
+	metadata_json: { source: 'project-library', immutableRef: agentCommit, definitionPaths: [agentPath] },
+});
+
+const result = {
+	schemaVersion: 'treeseed.assignment-result/v1', id: 'result-one', assignmentId: 'assignment-one',
+	status: 'completed', summary: 'Architecture completed.',
+	references: [{ kind: 'git', repository: 'treeseed-ai/sdk', commit: 'd'.repeat(40) }],
+	verification: [], usage: { elapsedSeconds: 30 }, diagnostics: [], completedAt: '2026-09-13T12:00:00.000Z',
+};
+
+const run = { id: 'run', teamId: 'team', parameters: { decisionIds: ['decision'] } };
+
+it('selects one verified linear predecessor and rejects divergent candidates', () => {
+	const tester = { resultId: 'tester', commit: 'a'.repeat(40), predecessorResultIds: [] };
+	const engineer = { resultId: 'engineer', commit: 'b'.repeat(40), predecessorResultIds: ['tester'] };
+	const independent = { resultId: 'independent', commit: 'c'.repeat(40), predecessorResultIds: [] };
+	expect(linearPredecessorSourceCommit([tester, engineer])).toBe(engineer.commit);
+	expect(linearPredecessorSourceCommit([engineer, tester])).toBe(engineer.commit);
+	expect(linearPredecessorSourceCommit([tester, independent])).toBeUndefined();
+});
+
+it('keeps explicit proposal workdays away from unrelated historical decisions', () => {
+	const scope = executionNodeRunScope({ id: 'run', executionKind: 'workday', parameters: { proposalIds: ['golden-sdk'] } });
+	expect(scope.parameters).toEqual(['run', 'golden-sdk']);
+	expect(scope.sql).toContain("node.source_ref_json::jsonb->>'id' IN (?)");
+	expect(scope.sql).toContain('node.workday_id IS NULL');
+});
+
+it('admits unbound decision work without a separate proposal Reviewer', () => {
+	const scope = executionNodeRunScope({ id: 'run', executionKind: 'workday', parameters: { decisionIds: ['decision'] } });
+	expect(scope.parameters).toEqual(['run']);
+	expect(scope.sql).toContain("node.kind<>'communication'");
+	expect(scope.sql).not.toContain("node.pair_role IS NULL");
+});
+const project = { id: projectId, slug: 'sdk' };
+const contextRefs = [{ store: 'git' as const, model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40) }];
+const teamContextStore = {
+	getProjectByTeamAndSlug: vi.fn(async () => ({ id: 'team-project', slug: 'team' })),
+	getProjectTreeDxLibrary: vi.fn(async () => ({ repositoryId: 'team-repository',
+		contentRepositoryRef: '1'.repeat(40), metadata: { resolvedRef: 'f'.repeat(40) } })),
+	listHubRepositories: vi.fn(async () => [{ id: 'repository-sdk', role: 'software', provider: 'github', owner: 'treeseed-ai', name: 'sdk', currentBranch: 'staging' }]),
+};
+
+describe('direct ready-node admission input', () => {
+	beforeEach(() => {
+		vi.mocked(resolveKnowledgeGatewayConnection).mockClear();
+		gateway.readRepositoryFile.mockResolvedValue({
+			resolvedRef: agentCommit, file: { path: agentPath, frontmatter: definition },
+		});
+	});
+	it('keeps a leased communication node occupied without a special returned checkpoint', async () => {
+		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([]) };
+		await listReadyExecutionNodes(store, run as never, project as never, async () => []);
+		const query = store.all.mock.calls[0]![0];
+		expect(query).toContain("assignment.status<>'returned'");
+		expect(query).not.toContain('discussion_response_required');
+	});
+
+	it.each(['planning', 'estimating'])('loads exact proposal and source context for proposal-level %s nodes', async (kind) => {
+		const gitRef = { store: 'git', model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40) };
+		const objectiveRef = { store: 'treedx', model: 'objective', id: 'objective', repository: 'treeseed-ai/sdk-library',
+			commit: 'b'.repeat(40), path: 'objectives/core' };
+		gateway.readRepositoryFile.mockResolvedValueOnce({ resolvedRef: 'b'.repeat(40), file: { frontmatter: {
+			schemaVersion: 'treeseed.proposal/v1', id: 'proposal', projectId, title: 'Governed planning',
+			request: 'Plan the exact accepted work.', summary: 'Use exact governed context.', status: 'draft',
+			objectiveRefs: [objectiveRef], executionPlan: { workItems: [{
+				id: 'implementation', activity: 'acting', agentClass: 'engineer', workspace: 'read-only', review: 'none',
+				objective: 'Implement the governed change.', estimate: { expectedSeconds: 120, maximumSeconds: 240 },
+				dependsOn: [], contextRefs: [gitRef], requestedPermissions: permissions, requiredCapabilities: ['source.read'],
+				acceptanceCriteria: ['Focused tests pass.'],
+			}] },
+		} } });
+		const refs = await workItemContext({ getProjectTreeDxLibrary: vi.fn(async () => ({
+			repositoryId: 'repository', contentRepositoryUrl: 'https://github.com/treeseed-ai/sdk-library.git',
+		})) } as never, {
+			teamId: 'team', projectId, id: kind, kind, pairRole: null, workItemId: null, sourceRef,
+		} as never);
+		expect(refs).toEqual([sourceRef, { ...objectiveRef, repository: 'repository' }, gitRef]);
+	});
+
+	it('attaches a proposal work item exact Git source to proposal-bound communication', async () => {
+		const source = 'exact proposal bytes';
+		const digest = createHash('sha256').update(source).digest('hex');
+		const gitRef = { store: 'git', model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40) };
+		gateway.readRepositoryFile.mockResolvedValueOnce({ resolvedRef: 'b'.repeat(40), file: {
+			content: source,
+			frontmatter: {
+				schemaVersion: 'treeseed.proposal/v1', id: 'proposal', projectId, title: 'Governed planning',
+				request: 'Plan the exact accepted work.', summary: 'Use exact governed context.', status: 'draft',
+				executionPlan: { workItems: [{
+					id: 'implementation', activity: 'acting', agentClass: 'engineer', workspace: 'read-only', review: 'none',
+					objective: 'Implement the governed change.', estimate: { expectedSeconds: 120, maximumSeconds: 240 },
+					dependsOn: [], contextRefs: [gitRef], requestedPermissions: permissions, requiredCapabilities: ['source.read'],
+					acceptanceCriteria: ['Focused tests pass.'],
+				}] },
+			},
+		} });
+		const store = {
+			first: vi.fn(async (query: string) => query.includes('governance_proposal_versions')
+				? { version: 1 }
+				: { requested_at: '2026-09-22T07:00:00.000Z', content_refs_json: [{
+					kind: 'proposal', id: 'proposal', projectId, immutableRef: 'b'.repeat(40),
+					path: 'proposals/one.mdx', digest: `sha256:${digest}`,
+				}] }),
+			getGovernanceProposal: vi.fn(async () => ({
+				id: 'proposal', teamId: 'team', projectId, activeVersion: 2, activeContentHash: 'f'.repeat(64),
+				metadata: { contentProvenance: {
+					repositoryId: 'repository', contentPath: 'proposals/one.mdx', commitSha: 'c'.repeat(40), digest: 'f'.repeat(64),
+				} },
+			})),
+			getProjectTreeDxLibrary: vi.fn(async () => ({ repositoryId: 'repository' })),
+		};
+		const refs = await workItemContext(store as never, {
+			teamId: 'team', projectId, id: 'invocation', kind: 'communication', sourceRef: {
+				store: 'treedx', model: 'discussion', id: 'invocation', repository: 'repository',
+				commit: 'b'.repeat(40), path: 'discussions/channel/message',
+			},
+		} as never);
+		expect(refs).toEqual([expect.objectContaining({ store: 'treedx', model: 'proposal' }), gitRef]);
+		expect(store.first).toHaveBeenCalledWith(expect.stringContaining('governance_proposal_versions'),
+			['proposal', digest, '2026-09-22T07:00:00.000Z']);
+	});
+
+	it('loads the exact profile and predecessor results without creating a demand record', async () => {
+		const store = { ...teamContextStore, all: vi.fn()
+			.mockResolvedValueOnce([nodeRow()])
+			.mockResolvedValueOnce([classRow(definition)])
+			.mockResolvedValueOnce([{ assignment_result_json: result }]) };
+		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
+		expect(candidate).toMatchObject({
+			graphRevision: 4, projectAgentClassId: 'class-engineer', projectContentRepositoryId: 'team-repository',
+			node: { id: 'node', estimate: { expectedSeconds: 120, maximumSeconds: 180 } },
+			effectiveProfile: { handler: 'actor', activity: 'acting', handlerOrigin: 'agent-package', permissionCeiling: permissions },
+			predecessorResults: [result],
+		});
+		expect(candidate.contextRefs).toEqual(expect.arrayContaining([
+			expect.objectContaining({ id: 'team-project:team-readme', path: 'README.md', commit: '1'.repeat(40) }),
+			expect.objectContaining({ id: 'team-project:team-objective', path: 'objectives/core', commit: '1'.repeat(40) }),
+			expect.objectContaining({ id: 'project:project-objective', path: 'objectives/core', commit: '1'.repeat(40) }),
+		]));
+		expect(candidate.sourceRepositories).toEqual(['repository-sdk']);
+		expect(candidate.effectiveProfile.profileRef).toMatchObject({
+			store: 'treedx', repository: 'repository', commit: agentCommit, path: agentPath,
+		});
+		expect(resolveKnowledgeGatewayConnection).toHaveBeenCalledWith(store, expect.objectContaining({
+			projectId, write: false, readRefs: [agentCommit], workspacePaths: [agentPath],
+		}));
+		expect(JSON.stringify(candidate)).not.toMatch(/capacityPlan|demand|sourceCandidate|artifactManifest/u);
+	});
+	it('keeps the assignment project library binding distinct from Team Library context', async () => {
+		const store = { ...teamContextStore,
+			getProjectTreeDxLibrary: vi.fn(async (id: string) => ({ repositoryId: id === projectId ? 'sdk-library' : 'team-library',
+				contentRepositoryRef: '1'.repeat(40) })),
+			all: vi.fn().mockResolvedValueOnce([nodeRow()]).mockResolvedValueOnce([classRow(definition)])
+				.mockResolvedValueOnce([]) };
+		const [selected] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
+		expect(selected.projectContentRepositoryId).toBe('sdk-library');
+		expect(selected.contextRefs).toEqual(expect.arrayContaining([
+			expect.objectContaining({ repository: 'team-library', model: 'objective' }),
+			expect.objectContaining({ repository: 'sdk-library', model: 'objective' }),
+		]));
+	});
+	it('loads every canonical workday attempt for Reporter instead of stopping at condition nodes', async () => {
+		const reporter = { ...definition, id: 'agent:reporter', name: 'Reporter', agentClass: 'reporter',
+			activityProfiles: { reporting: { handler: 'reporter', permissions,
+				prompt: { system: 'Record exact workday evidence without a model.' } } } };
+		gateway.readRepositoryFile.mockResolvedValue({ resolvedRef: agentCommit,
+			file: { path: agentPath, frontmatter: reporter } });
+		const failed = { ...result, id: 'failed-result', assignmentId: 'failed-assignment', status: 'failed' };
+		const store = { ...teamContextStore, all: vi.fn()
+			.mockResolvedValueOnce([{ ...nodeRow(), kind: 'reporting', pair_role: null,
+				workday_id: 'run', agent_class: 'reporter', authority_refs_json: [], workspace: 'treedx' }])
+			.mockResolvedValueOnce([classRow(reporter, 'class-reporter')])
+			.mockResolvedValueOnce([{ assignment_result_json: failed }, { assignment_result_json: result }]) };
+		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
+		expect(candidate.predecessorResults).toEqual([failed, result]);
+		expect(store.all.mock.calls[2]).toEqual([expect.stringContaining('FROM capacity_provider_assignments WHERE team_id=? AND work_day_id=?'), ['team', 'run']]);
+		expect(store.all.mock.calls[2]![0]).not.toContain('JOIN execution_edges');
+	});
+
+	it('carries an approved Reviewer result and its exact Actor Git candidate to dependent work', async () => {
+		const reviewResult = { ...result, id: 'review-result', assignmentId: 'review-assignment',
+			references: [{ kind: 'treedx', projectId, repository: 'repository',
+				commit: 'f'.repeat(40), path: 'decisions/approval.mdx' }] };
+		const store = { ...teamContextStore, all: vi.fn()
+			.mockResolvedValueOnce([nodeRow()])
+			.mockResolvedValueOnce([classRow(definition)])
+			.mockResolvedValueOnce([{ assignment_result_json: reviewResult }, { assignment_result_json: result }]) };
+		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
+		expect(candidate.predecessorResults).toEqual([reviewResult, result]);
+		const [sql, bindings] = store.all.mock.calls[2]!;
+		expect(sql).toContain("pair.provenance='review-pair'");
+		expect(sql).toContain("reviewer.status='completed'");
+		expect(sql.match(/candidate\.decision_id=\?/gu)).toHaveLength(2);
+		expect(bindings).toEqual(['decision', 'team', 'node', 'decision', 'team', 'node']);
+	});
+
+	it('does not carry an older decision review into an initial Actor revision', async () => {
+		const revised = nodeRow();
+		revised.node_revision = 2;
+		const store = { ...teamContextStore, all: vi.fn()
+			.mockResolvedValueOnce([revised])
+			.mockResolvedValueOnce([classRow(definition)])
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([]) };
+		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
+		expect(candidate.predecessorResults).toEqual([]);
+		const [priorActorSql, priorActorBindings] = store.all.mock.calls[3]!;
+		const [priorReviewerSql, priorReviewerBindings] = store.all.mock.calls[4]!;
+		expect(priorActorSql).toContain('result.decision_id=?');
+		expect(priorActorBindings).toEqual(['team', 'node', 2, 'decision']);
+		expect(priorReviewerSql).toContain('result.decision_id=?');
+		expect(priorReviewerBindings).toEqual(['team', projectId, 'implementation', 'decision']);
+	});
+
+	it('rejects a projected agent definition that differs from its exact TreeDX source', async () => {
+		gateway.readRepositoryFile.mockResolvedValue({ resolvedRef: agentCommit,
+			file: { path: agentPath, frontmatter: { ...definition, purpose: 'Changed at source.' } } });
+		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([nodeRow()])
+			.mockResolvedValueOnce([classRow(definition)]) };
+		await expect(listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs))
+			.rejects.toMatchObject({ code: 'execution_node_agent_profile_moved' });
+	});
+
+	it('rejects an unpinned agent definition instead of using cached profile data', async () => {
+		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([nodeRow()])
+			.mockResolvedValueOnce([{ ...classRow(definition), metadata_json: {} }]) };
+		await expect(listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs))
+			.rejects.toMatchObject({ code: 'execution_node_agent_profile_unpinned' });
+	});
+
+	it.each(['book', 'knowledge'])('loads the exact %s candidate using its producing assignment grant', async (model) => {
+		const target = { store: 'treedx', model, id: 'actor-output', repository: 'repository',
+			commit: 'e'.repeat(40), path: `${model}s/actor-output.mdx` };
+		const actorResult = { ...result, references: [{ kind: 'treedx', projectId,
+			repository: target.repository, commit: 'd'.repeat(40), path: target.path }] };
+		const reviewPermissions = { content: { read: ['proposal', 'decision', model], write: ['decision'] }, tools: ['source.read'] };
+		const reviewer = { ...definition, id: 'agent:reviewer', agentClass: 'reviewer',
+			activityProfiles: { reviewing: { handler: 'reviewer', permissions: reviewPermissions,
+				prompt: { system: 'Review the exact immutable actor output.' } } } };
+		gateway.readRepositoryFile.mockResolvedValue({
+			resolvedRef: agentCommit, file: { path: agentPath, frontmatter: reviewer },
+		});
+		const node = { ...nodeRow(), kind: 'reviewing', pair_role: 'reviewer', agent_class: 'reviewer',
+			workspace: 'treedx', requested_permissions_json: reviewPermissions };
+		const createStore = (grants: unknown[]) => ({ ...teamContextStore, all: vi.fn()
+			.mockResolvedValueOnce([node])
+			.mockResolvedValueOnce([classRow(reviewer, 'class-reviewer')])
+			.mockResolvedValueOnce([{ assignment_result_json: actorResult, assignment_attempt_json: { grant: { contentWrite: grants } } }]) });
+		const [candidate] = await listReadyExecutionNodes(createStore([target]), run as never, project as never, async () => contextRefs);
+		expect(candidate.contextRefs).toContainEqual({ ...target, commit: 'd'.repeat(40) });
+		const [denied] = await listReadyExecutionNodes(createStore([{ ...target, path: 'other.mdx' }]), run as never, project as never, async () => contextRefs);
+		expect(denied.contextRefs).not.toContainEqual(expect.objectContaining({ model, commit: 'd'.repeat(40) }));
+	});
+
+	it('uses an exact resolved commit when the configured content ref is a branch', async () => {
+		const store = { ...teamContextStore,
+			getProjectTreeDxLibrary: vi.fn(async () => ({ repositoryId: 'team-repository',
+				contentRepositoryRef: 'refs/remotes/origin/staging', metadata: { resolvedRef: 'f'.repeat(40) } })),
+			all: vi.fn().mockResolvedValueOnce([nodeRow()])
+				.mockResolvedValueOnce([classRow(definition)])
+				.mockResolvedValueOnce([]),
+		};
+		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
+		expect(candidate.contextRefs).toEqual(expect.arrayContaining([
+			expect.objectContaining({ id: 'team-project:team-objective', commit: 'f'.repeat(40) }),
+			expect.objectContaining({ id: 'project:project-objective', commit: 'f'.repeat(40) }),
+		]));
+	});
+
+	it('limits admission to decision IDs frozen into the workday', async () => {
+		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([nodeRow('selected'), nodeRow('other', 'other-decision')])
+			.mockResolvedValueOnce([classRow(definition)])
+			.mockResolvedValueOnce([]) };
+		const candidates = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
+		expect(candidates.map((candidate) => candidate.node.id)).toEqual(['selected']);
+	});
+
+	it('keeps workday-authorized cooperative planning eligible when acting is decision-selected', async () => {
+		const planning = {
+			...nodeRow('planning:run:1:project/agent:planning'),
+			workday_id: 'run', work_item_id: null, kind: 'planning', pair_role: null,
+			source_ref_json: { store: 'postgresql', model: 'workday', id: 'run', revision: 1, digest: `sha256:${'f'.repeat(64)}` },
+			authority_refs_json: [{ store: 'postgresql', model: 'workday', id: 'run', revision: 1, digest: `sha256:${'f'.repeat(64)}` }],
+			agent_class: 'engineer', workspace: 'treedx',
+		};
+		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([planning])
+			.mockResolvedValueOnce([classRow(definition)])
+			.mockResolvedValueOnce([]) };
+		const candidates = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
+		expect(candidates.map((candidate) => candidate.node.id)).toEqual([planning.id]);
+		expect(candidates[0]?.effectiveProfile.activity).toBe('planning');
+	});
+
+	it('fails closed when the exact activity profile is unavailable', async () => {
+		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([nodeRow()]).mockResolvedValueOnce([]) };
+		await expect(listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs))
+			.rejects.toMatchObject({ code: 'execution_node_agent_profile_missing' });
+	});
+
+	it('passes the prior exact Reviewer result to a revised Actor node', async () => {
+		const revised = nodeRow(); revised.node_revision = 18;
+		const reviewResult = { ...result, id: 'review-result', assignmentId: 'review-assignment',
+			summary: 'Request changes using the exact review decision.', references: [{ kind: 'treedx', projectId,
+				repository: 'repository', commit: 'f'.repeat(40), path: 'decisions/review.mdx' }] };
+		const store = { ...teamContextStore, all: vi.fn()
+			.mockResolvedValueOnce([revised])
+			.mockResolvedValueOnce([classRow(definition)])
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([{ assignment_result_json: result }])
+			.mockResolvedValueOnce([{ assignment_result_json: reviewResult }]) };
+		const [candidate] = await listReadyExecutionNodes(store, { ...run, parameters: {} } as never, project as never, async () => contextRefs);
+		expect(candidate.predecessorResults).toEqual([result, reviewResult]);
+		expect(candidate.contextRefs).toEqual(expect.arrayContaining([
+			expect.objectContaining({ store: 'git', commit: 'd'.repeat(40) }),
+		]));
+		expect(store.all.mock.calls[3]![1]).toEqual(['team', 'node', 18, 'decision']);
+		expect(store.all.mock.calls[4]![1]).toEqual(['team', projectId, 'implementation', 'decision']);
+	});
+});

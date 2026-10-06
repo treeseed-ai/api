@@ -14,6 +14,7 @@ import { getSeedServicePrincipalMembershipMethod,reconcileSeedServicePrincipalMe
 import { teamPublicNameExistsMethod } from '../teams/contracts/team-public-name-exists.ts';
 import { createTeamInviteMethod } from '../teams/creation/create-team-invite.ts';
 import { createTeamMethod } from '../teams/creation/create-team.ts';
+import { backfillManagedTeamLibraryProjectsMethod,ensureManagedTeamLibraryProjectMethod } from '../teams/contracts/managed-library/ensure-managed-team-library-project.ts';
 import { prepareTeamDeletionMethod } from '../teams/creation/prepare-team-deletion.ts';
 import { upsertTeamInboxItemMethod } from '../teams/creation/upsert-team-inbox-item.ts';
 import { upsertTeamMemberMethod } from '../teams/creation/upsert-team-member.ts';
@@ -74,6 +75,8 @@ export function installTeamsStoreMethods(prototype: ControlPlaneStore) {
 	prototype.principalCanManageServices = principalCanManageServicesMethod;
 	prototype.authenticateTeamApiKey = authenticateTeamApiKeyMethod;
 	prototype.createTeam = createTeamMethod;
+	prototype.ensureManagedTeamLibraryProject = ensureManagedTeamLibraryProjectMethod;
+	prototype.backfillManagedTeamLibraryProjects = backfillManagedTeamLibraryProjectsMethod;
 	prototype.getTeam = getTeamMethod;
 	prototype.getTeamBySlug = getTeamBySlugMethod;
 	prototype.getTeamByName = getTeamByNameMethod;

@@ -1,5 +1,5 @@
 import { type KnowledgePublicationManifest } from '@treeseed/sdk/knowledge';
-import { createR2PublicationClient,type R2PublicationConfig } from '../providers/cloudflare/r2-publication-client.ts';
+import { createLibraryStorageClient } from '../../security/library-storage.ts';
 import type { KnowledgePublicationStorage } from './publication-storage.ts';
 import { parseKnowledgePublicationManifest } from './runtime/publication-manifest.ts';
 
@@ -9,24 +9,10 @@ const safeSegment = (value: string) => {
 	return result;
 };
 
-function configFromEnvironment(env: NodeJS.ProcessEnv = process.env): R2PublicationConfig {
-	const common = {
-		accountId: String(env.TREESEED_CLOUDFLARE_ACCOUNT_ID ?? ''),
-		bucket: String(env.TREESEED_CONTENT_BUCKET_NAME ?? ''),
-	};
-	const apiToken = String(env.TREESEED_CLOUDFLARE_API_TOKEN ?? '');
-	const config: R2PublicationConfig = apiToken
-		? { ...common, authMode: 'api-token', apiToken }
-		: { ...common, authMode: 's3', accessKeyId: String(env.TREESEED_R2_ACCESS_KEY_ID ?? ''), secretAccessKey: String(env.TREESEED_R2_SECRET_ACCESS_KEY ?? '') };
-	const missing = Object.entries(config).filter(([, value]) => !value).map(([key]) => key);
-	if (missing.length) throw new Error(`R2 knowledge publication storage is missing: ${missing.join(', ')}.`);
-	return config;
-}
-
 const manifestObjects = (manifest: KnowledgePublicationManifest) => new Set(manifest.entries.map((entry) => entry.content.objectKey));
 
-export function createR2KnowledgePublicationStorage(options: { env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch } = {}): KnowledgePublicationStorage {
-	const client = createR2PublicationClient(configFromEnvironment(options.env), options.fetchImpl ?? fetch);
+export function createR2KnowledgePublicationStorage(options: { store?: any; env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch } = {}): KnowledgePublicationStorage {
+	const client = createLibraryStorageClient(options.store, options.env ?? process.env, options.fetchImpl);
 	const currentKey = (teamId: string) => `teams/${safeSegment(teamId)}/published/common.json`;
 	const revisionKey = (teamId: string, revision: string) => `teams/${safeSegment(teamId)}/published/manifests/${safeSegment(revision)}.json`;
 	const readManifest = async (objectKey: string) => {

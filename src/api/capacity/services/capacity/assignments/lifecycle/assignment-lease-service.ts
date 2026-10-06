@@ -1,5 +1,5 @@
 import type { ProviderAssignmentExplanation,ProviderNextAssignmentRequest } from '@treeseed/sdk/agent-capacity';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { ProviderAssignmentRepository,serializeProviderAssignmentRow,type DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
@@ -15,6 +15,7 @@ type ProviderAssignmentExplanationWrite,
 import { recoverExpiredProviderAssignments } from './assignment-recovery-service.ts';
 import { beginAssignmentPreparationTimeBudget } from '../planning/assignment-time-budget.ts';
 import { markOperationHandoffRunning } from '../handoffs/operation-handoff-lifecycle-service.ts';
+import { redactSensitiveValue } from '../../../../../../security/redact-sensitive-value.ts';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -62,7 +63,38 @@ function synthesisFailure(error: unknown): JsonRecord {
 		status: 'failed',
 		code: typeof candidate.code === 'string' && candidate.code ? candidate.code : 'provider_assignment_synthesis_failed',
 		message: error instanceof Error ? error.message : String(error),
+		...(Object.keys(record(candidate.details)).length ? { details: record(candidate.details) } : {}),
 	};
+}
+
+async function recordSynthesisDiagnostic(
+	store: ProviderAssignmentLeaseStore,
+	principal: ProviderLeasePrincipal,
+	sessionId: string,
+	diagnostic: JsonRecord,
+	now: string,
+): Promise<void> {
+	const sanitized = redactSensitiveValue(diagnostic);
+	const digest = createHash('sha256').update(JSON.stringify(sanitized)).digest('hex').slice(0, 32);
+	const failed = diagnostic.status === 'failed';
+	const action = failed ? 'provider-assignment.synthesis-failed' : 'provider-assignment.synthesis-completed';
+	await store.run(
+		`INSERT INTO capacity_audit_events
+		 (id, team_id, capacity_provider_id, membership_id, actor_type, actor_id, action, resource_type, resource_id, request_id, idempotency_key, metadata_json, created_at)
+		 VALUES (?, ?, ?, ?, 'service', 'provider-assignment-synthesis', ?, 'capacity-provider-availability-session', ?, NULL, ?, ?, ?)
+		 ON CONFLICT DO NOTHING`,
+		[
+			`audit:provider-synthesis:${sessionId}:${digest}`,
+			principal.teamId,
+			principal.capacityProviderId,
+			principal.membershipId,
+			action,
+			sessionId,
+			`provider-synthesis:${sessionId}:${digest}`,
+			JSON.stringify(sanitized),
+			now,
+		],
+	);
 }
 
 function assignmentWorkdayId(assignment: DurableProviderAssignment): string | null {
@@ -86,7 +118,9 @@ function compareAssignmentsForLease(left: DurableProviderAssignment, right: Dura
 
 function leaseGate(assignment: DurableProviderAssignment): { leasable: boolean; reasons: string[] } {
 	if (assignment.status === 'pending' && assignment.leaseState === 'unleased') return { leasable: true, reasons: [] };
-	if (assignment.status === 'returned' && assignment.leaseState === 'released') return { leasable: true, reasons: [] };
+	if (assignment.status === 'returned' && assignment.leaseState === 'released') {
+		return { leasable: true, reasons: [] };
+	}
 	const reasons: string[] = [];
 	if (!['pending', 'returned'].includes(assignment.status)) reasons.push('status_not_leasable');
 	if (!['unleased', 'released'].includes(assignment.leaseState)) reasons.push('lease_state_not_leasable');
@@ -152,12 +186,12 @@ export function providerAssignmentQueuePriority(assignment: Pick<DurableProvider
 }
 
 async function eligibleLeaseCandidates(input:{store:ProviderAssignmentLeaseStore;principal:ProviderLeasePrincipal;request:ProviderAssignmentLeaseRequest;
-	assignments:DurableProviderAssignment[];workdayStatuses:Map<string,string>;now:string}) {
+	assignments:DurableProviderAssignment[];workdayStatuses:Map<string,string>;now:string;availabilitySessionId:string}) {
 	const {store,principal,request,assignments,workdayStatuses,now}=input;
 	const workdayWeight = (assignment: DurableProviderAssignment): number => {
 		const workdayId = assignmentWorkdayId(assignment); if (!workdayId) return 1;
-		const status = workdayStatuses.get(workdayId); if (status === 'active') return 0;
-		if (status === 'draft' || status === 'paused') return 2; return status ? 3 : 1;
+		const status = workdayStatuses.get(workdayId); if (status === 'running') return 0;
+		if (status === 'queued') return 2; return status ? 3 : 1;
 	};
 	const retryWeight = (assignment: DurableProviderAssignment): number => {
 		if (assignment.status === 'pending' && assignment.leaseState === 'unleased') return 0;
@@ -193,7 +227,7 @@ async function eligibleLeaseCandidates(input:{store:ProviderAssignmentLeaseStore
 				gates: { assignmentDeadline: deadline }, selected: false });
 			continue;
 		}
-		const authority = await evaluateProviderAssignmentLeaseAuthority(store, principal, candidate.id, now);
+		const authority = await evaluateProviderAssignmentLeaseAuthority(store, principal, candidate.id, now, input.availabilitySessionId);
 		diagnostics.push({ assignmentId: candidate.id, projectId: candidate.projectId, status: candidate.status, leaseState: candidate.leaseState,
 			sessionId: authority.sessionId ?? candidate.providerSessionId ?? null, reasons: authority.eligible ? [] : authority.reasons,
 			eligible: authority.eligible, gates: authority.gates, selected: authority.eligible && eligible.length === 0 });
@@ -217,29 +251,39 @@ export async function leaseNextProviderAssignment(
 	// work must never prevent that exact assignment from being leased.
 	let synthesis: JsonRecord = { status: 'completed' };
 	try {
-		await store.synthesizeProviderAssignments(principal, {
+		const synthesized = record(await store.synthesizeProviderAssignments(principal, {
 			...input,
 			sessionId: context.session.id,
 			source: input.source ?? 'provider_lease_poll',
-		});
+		}));
+		synthesis = { status: 'completed', ...record(synthesized.diagnostics) };
 	} catch (error) {
 		synthesis = synthesisFailure(error);
 	}
+	await recordSynthesisDiagnostic(store, principal, context.session.id, synthesis, now);
 	const recovery = await recoverExpiredProviderAssignments(store, { teamId: principal.teamId, providerId: principal.capacityProviderId, now, limit: 100 });
+	const executionProviderIds = context.executionProviders.filter(provider => provider.status === 'available').map(provider => provider.id);
 	const rows = await store.all(
 		`SELECT * FROM capacity_provider_assignments
 		 WHERE team_id = ? AND capacity_provider_id = ?
 		   AND status IN ('pending', 'returned')
-		 ORDER BY assigned_at ASC, created_at ASC, id ASC
-		 LIMIT 1000`,
-		[principal.teamId, principal.capacityProviderId],
+		   AND execution_provider_id IN (${executionProviderIds.map(() => '?').join(', ') || 'NULL'})
+		   AND NOT EXISTS (SELECT 1 FROM capacity_workday_runs workday
+			WHERE workday.id=capacity_provider_assignments.work_day_id
+			AND workday.status IN ('completed','cancelled','failed','degraded'))
+		 ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END,
+		          CASE WHEN status = 'pending' THEN created_at END ASC,
+		          CASE WHEN status = 'returned' THEN returned_at END DESC,
+		          id ASC
+		 LIMIT 100`,
+		[principal.teamId, principal.capacityProviderId, ...executionProviderIds],
 	);
 	const assignments = rows.map((row) => serializeProviderAssignmentRow(row) as DurableProviderAssignment);
 	const workdayIds = [...new Set(assignments.map(assignmentWorkdayId).filter((id): id is string => Boolean(id)))];
 	const workdayStatuses = new Map<string, string>();
 	if (workdayIds.length) {
 		const workdayRows = await store.all(
-			`SELECT id, status FROM workday_capacity_envelopes WHERE id IN (${workdayIds.map(() => '?').join(', ')})`,
+			`SELECT id, status FROM capacity_workday_runs WHERE id IN (${workdayIds.map(() => '?').join(', ')})`,
 			workdayIds,
 		);
 		for (const row of workdayRows) {
@@ -247,7 +291,7 @@ export async function leaseNextProviderAssignment(
 		}
 	}
 	const nowMs = Date.parse(now);
-	const {leasable,diagnostics,assignment}=await eligibleLeaseCandidates({store,principal,request:input,assignments,workdayStatuses,now});
+	const {leasable,diagnostics,assignment}=await eligibleLeaseCandidates({store,principal,request:input,assignments,workdayStatuses,now,availabilitySessionId:context.session.id});
 	const leaseDiagnostics: JsonRecord = {
 		source: 'lease_next_assignment',
 		evaluatedAt: now,
@@ -305,22 +349,48 @@ export async function leaseNextProviderAssignment(
 		gates: { ...record(record(assignment.explanation).gates), leaseState: 'leased', runnerId: input.runnerId ?? null },
 		metadata: { evaluatedAt: now, diagnosticsSource: 'provider_assignment_lease_selected' },
 	}, now);
-	await store.run(
-		`UPDATE capacity_provider_assignments
+	const leaseOperation = {
+		query: `UPDATE capacity_provider_assignments
 		 SET status = 'leased', lease_state = 'leased', lease_token = ?, lease_expires_at = ?,
 		     lease_renewed_at = ?, runner_id = ?, provider_session_id = COALESCE(?, provider_session_id),
 		     state_version = state_version + 1, claimed_at = COALESCE(claimed_at, ?), metadata_json = ?, capacity_envelope_json = ?,
 		     explanation_json = ?, updated_at = ?
 		 WHERE id = ? AND team_id = ? AND capacity_provider_id = ? AND membership_id = ? AND state_version = ?
 		   AND ((status = 'pending' AND lease_state = 'unleased')
-		     OR (status = 'returned' AND lease_state = 'released'))`,
-		[
+		     OR (status = 'returned' AND lease_state = 'released'))
+		   AND (CAST(? AS TEXT) IS NULL OR status <> 'returned' OR EXISTS (
+		     SELECT 1 FROM execution_nodes node
+		      WHERE node.team_id = capacity_provider_assignments.team_id
+		        AND node.id = ? AND node.node_revision = ?
+		        AND node.status = 'ready'
+		        AND NOT EXISTS (SELECT 1 FROM capacity_provider_assignments active
+		          WHERE active.team_id=node.team_id AND active.execution_node_id=node.id
+		          AND active.execution_node_revision=node.node_revision
+		          AND active.id<>capacity_provider_assignments.id
+		          AND active.status IN ('pending','leased','running'))
+		   ))`,
+		params: [
 			leaseToken, leaseExpiresAt, now, input.runnerId ?? null, context.session.id, now,
 			JSON.stringify(assignment.metadata ?? {}), JSON.stringify(leasedCapacityEnvelope), JSON.stringify(selectedExplanation), now,
 			assignment.id, principal.teamId, principal.capacityProviderId, principal.membershipId,
-			assignment.stateVersion,
+			assignment.stateVersion, assignment.executionNodeId, assignment.executionNodeId,
+			assignment.executionNodeRevision,
 		],
-	);
+	};
+	if (assignment.status === 'returned' && assignment.executionNodeId) {
+		const nodeRow = await store.first(
+			`SELECT id FROM execution_nodes WHERE team_id=? AND id=? AND node_revision=? AND status='ready' LIMIT 1`,
+			[assignment.teamId, assignment.executionNodeId, assignment.executionNodeRevision],
+		);
+		if (!nodeRow) return { assignment: null, leaseToken: null, leaseSeconds, diagnostics: leaseDiagnostics };
+		await store.batch([leaseOperation, {
+			query: `UPDATE execution_nodes SET status='assigned',updated_at=?
+			 WHERE team_id=? AND id=? AND node_revision=? AND status='ready'
+			 AND EXISTS (SELECT 1 FROM capacity_provider_assignments assignment WHERE assignment.id=? AND assignment.team_id=? AND assignment.status='leased' AND assignment.lease_token=?)`,
+			params: [now, assignment.teamId, assignment.executionNodeId,
+				assignment.executionNodeRevision, assignment.id, assignment.teamId, leaseToken],
+		}]);
+	} else await store.run(leaseOperation.query, leaseOperation.params);
 	const leased = await new ProviderAssignmentRepository(store).get(principal.teamId, assignment.id);
 	if (!leased || leased.leaseToken !== leaseToken || (input.runnerId && leased.runnerId !== input.runnerId)) {
 		return {

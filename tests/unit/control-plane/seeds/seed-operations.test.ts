@@ -3,7 +3,8 @@ import { CONTROL_PLANE_OPERATIONS, digestSeedBundle } from '@treeseed/sdk/operat
 import { createSeedOperations } from '../../../../src/api/control-plane/catalog/seeds/index.ts';
 import { createSeedOperationService, reconcileSeedProviderPrerequisites } from '../../../../src/api/control-plane/seeds/seed-operation-service.ts';
 import { validateSeedSource } from '../../../../src/control-plane/seeds/contracts/index.ts';
-import { actionIsUnchanged } from '../../../../src/control-plane/seeds/apply-support/index.ts';
+import { actionIsUnchanged, ensureLocalSeedTeamMemberships } from '../../../../src/control-plane/seeds/apply-support/index.ts';
+import { applyPlannedSeedActions } from '../../../../src/control-plane/seeds/apply-support/support/apply.ts';
 
 describe('seed catalog operations', () => {
 	it('binds the complete SDK-owned portable seed lifecycle', () => {
@@ -39,21 +40,147 @@ describe('seed catalog operations', () => {
 	});
 
 	it('turns a trusted local seed prerequisite into a bounded enrollment handoff', async () => {
-		const providers = { connect: vi.fn().mockResolvedValue({ enrollmentToken: 'one-time', connectionState: 'enrollment_required' }) };
+		const providers = { connect: vi.fn().mockResolvedValue({ registrationCode: 'team-code', connectionState: 'registration_ready', expiresAfterUse: false }) };
 		const plan = { seed: 'treeseed', version: 4, actions: [{ key: 'team:treeseed', existing: { id: 'team-1' } }], runtime: { capacityProviders: [{
 			key: 'capacity-provider:treeseed/local', team: 'team:treeseed', approval: 'trusted-local-owner', requiredLanePurposes: ['communication', 'platform', 'workday'], projects: [], environments: ['local'],
 		}] } };
 		const closure = await reconcileSeedProviderPrerequisites({ first: vi.fn().mockResolvedValue(null) } as any, { providers }, plan, true, { id: 'owner-1' });
 		expect(providers.connect).toHaveBeenCalledWith({ id: 'owner-1' }, 'team-1', 'seed:treeseed:4:capacity-provider:treeseed/local:enroll');
 		expect(closure).toEqual({ status: 'waiting_provider', receipts: [expect.objectContaining({
-			key: 'capacity-provider:treeseed/local', status: 'enrollment_required', teamId: 'team-1', connectionId: 'local-team-1', approval: 'trusted-local-owner', enrollmentToken: 'one-time',
+			key: 'capacity-provider:treeseed/local', status: 'enrollment_required', teamId: 'team-1', connectionId: 'local-team-1', approval: 'trusted-local-owner', registrationCode: 'team-code', expiresAfterUse: false,
 		})] });
+	});
+
+	it('verifies authorized provider readiness without a retired allocation set', async () => {
+		const store = {
+			ensureInitialized: vi.fn(), all: vi.fn().mockResolvedValue([{ id: 'lane-1', purpose: 'communication', execution_provider_id: 'execution-1' }]),
+			first: vi.fn(async (query: string) => {
+				if (query.includes('capacity_provider_team_memberships membership')) return { id: 'membership-1', capacity_provider_id: 'provider-1' };
+				if (query.includes('capacity_provider_availability_sessions')) return { id: 'session-1' };
+				if (query.includes('capacity_grants')) return { id: 'grant-1', status: 'active' };
+				if (query.includes('capacity_allocation_sets')) throw new Error('Retired allocation lookup');
+				return null;
+			}), run: vi.fn(),
+		};
+		const plan = { seed: 'treeseed', version: 4, actions: [
+			{ key: 'team:treeseed', existing: { id: 'team-1' } },
+			{ key: 'project:treeseed/sdk', existing: { id: 'project-1' } },
+		], runtime: { capacityProviders: [{ key: 'capacity-provider:treeseed/local', team: 'team:treeseed', approval: 'trusted-local-owner',
+			requiredLanePurposes: ['communication'], projects: ['project:treeseed/sdk'], environments: ['local'] }] } };
+		await expect(reconcileSeedProviderPrerequisites(store as any, {}, plan, false)).resolves.toEqual({ status: 'verified', receipts: [expect.objectContaining({
+			status: 'verified', projects: [{ projectKey: 'project:treeseed/sdk', environment: 'local', status: 'active', grantId: 'grant-1' }],
+		})] });
+	});
+
+	it('reconciles seeded grants with the execution provider capabilities required by agent work', async () => {
+		const store = {
+			ensureInitialized: vi.fn(),
+			all: vi.fn().mockResolvedValue([
+				{ id: 'communication', purpose: 'communication', execution_provider_id: 'execution-1', execution_provider_capabilities_json: JSON.stringify(['treeseed.coordination.conversation']) },
+				{ id: 'workday', purpose: 'workday', execution_provider_id: 'execution-1', execution_provider_capabilities_json: JSON.stringify(['treeseed.engineering.code-change']) },
+			]),
+			first: vi.fn(async (query: string) => {
+				if (query.includes('capacity_provider_team_memberships membership')) return { id: 'membership-1', capacity_provider_id: 'provider-1' };
+				if (query.includes('capacity_provider_availability_sessions')) return { id: 'session-1' };
+				if (query.includes('capacity_grants')) return { id: 'grant-1', status: 'active' };
+				if (query.includes('capacity_allocation_sets')) throw new Error('Retired allocation lookup');
+				return null;
+			}),
+			run: vi.fn(),
+		};
+		const plan = { seed: 'treeseed', version: 4, actions: [
+			{ key: 'team:treeseed', existing: { id: 'team-1' } },
+			{ key: 'project:treeseed/sdk', existing: { id: 'project-1' } },
+		], runtime: { capacityProviders: [{ key: 'capacity-provider:treeseed/local', team: 'team:treeseed', approval: 'trusted-local-owner',
+			requiredLanePurposes: ['communication', 'workday'], projects: ['project:treeseed/sdk'], environments: ['local'], allowedModes: ['planning', 'acting'] }] } };
+
+		await reconcileSeedProviderPrerequisites(store as any, {}, plan, true, { id: 'owner-1' });
+
+		expect(store.all).toHaveBeenCalledWith(expect.stringContaining('execution_provider.capacity_provider_id = lane.capacity_provider_id'), ['provider-1']);
+		expect(store.run).toHaveBeenCalledWith(expect.stringContaining('allowed_modes_json = ?'), [
+			JSON.stringify(['execution-1']), JSON.stringify(['communication', 'workday']),
+			JSON.stringify(['treeseed.coordination.conversation', 'treeseed.engineering.code-change']), JSON.stringify(['planning', 'acting']),
+			expect.any(String), 'grant-1', 'membership-1',
+		]);
 	});
 
 	it('requires platform seed authority for resource resolution', async () => {
 		const service = createSeedOperationService({} as any, { repoRoot: '/tmp/unused' });
 		await expect(service.resolveResources({ id: 'user-1', roles: [], permissions: [] }, { keys: ['team:treeseed'] }))
 			.rejects.toMatchObject({ status: 403, code: 'seed_global_access_denied' });
+	});
+
+	it('makes the authenticated seed user an owner of every locally seeded team', async () => {
+		const store = {
+			resolvePrincipalTeamContext: vi.fn().mockResolvedValue(null),
+			upsertTeamMember: vi.fn(async (teamId: string, userId: string, role: string) => ({ teamId, userId, role })),
+		};
+		const plan = {
+			environments: ['local'],
+			actions: [
+				{ kind: 'team', key: 'team:treeseed', action: 'create', environments: ['local'] },
+				{ kind: 'team', key: 'team:custom', action: 'create', environments: ['local'] },
+			],
+		};
+		const memberships = await ensureLocalSeedTeamMemberships({
+			store,
+			plan,
+			ids: { teams: new Map([['team:treeseed', 'team-1'], ['team:custom', 'team-2']]) },
+			actor: { principal: { id: 'user-1', roles: ['member'], metadata: { email: 'user@example.test' } } },
+			env: {},
+		});
+
+		expect(store.upsertTeamMember).toHaveBeenCalledTimes(2);
+		expect(store.upsertTeamMember).toHaveBeenNthCalledWith(1, 'team-1', 'user-1', 'team_owner');
+		expect(store.upsertTeamMember).toHaveBeenNthCalledWith(2, 'team-2', 'user-1', 'team_owner');
+		expect(memberships).toEqual([
+			expect.objectContaining({ teamId: 'team-1', userId: 'user-1', role: 'team_owner' }),
+			expect.objectContaining({ teamId: 'team-2', userId: 'user-1', role: 'team_owner' }),
+		]);
+	});
+
+	it('grants local team ownership before applying dependent project actions', async () => {
+		const events: string[] = [];
+		let ownsTeam = false;
+		const ids = { teams: new Map(), projects: new Map(), projectTeams: new Map() };
+		const plan = {
+			environments: ['local'],
+			actions: [
+				{ kind: 'team', key: 'team:treeseed', action: 'create', environments: ['local'], payload: {} },
+				{ kind: 'project', key: 'project:treeseed/platform', action: 'create', environments: ['local'], payload: { teamKey: 'team:treeseed' } },
+			],
+		};
+
+		const result = await applyPlannedSeedActions({
+			plan, store: {}, ids, manifestHash: 'sha256:test', appliedAt: '2026-09-01T00:00:00.000Z',
+			localOnly: true, actor: { principal: { id: 'user-1', roles: ['member'] } }, dependencyState: {},
+		}, {
+			async applyAction({ action }: any) {
+				events.push(`apply:${action.kind}`);
+				if (action.kind === 'team') ids.teams.set(action.key, 'team-1');
+				if (action.kind === 'project') {
+					if (!ownsTeam) throw Object.assign(new Error('Permission denied.'), { code: 'permission_denied' });
+					ids.projects.set(action.key, 'project-1');
+				}
+			},
+			async ensureLocalSeedTeamMemberships() {
+				events.push('grant:team_owner');
+				ownsTeam = true;
+				return [{ teamId: 'team-1', userId: 'user-1', role: 'team_owner' }];
+			},
+			async ensureProjectSeedDependencies({ action }: any) {
+				events.push(`dependencies:${action.kind}`);
+				return [];
+			},
+		});
+
+		expect(events).toEqual([
+			'apply:team', 'grant:team_owner', 'dependencies:team',
+			'apply:project', 'dependencies:project',
+		]);
+		expect(result.localTeamMemberships).toEqual([
+			expect.objectContaining({ teamId: 'team-1', userId: 'user-1', role: 'team_owner' }),
+		]);
 	});
 
 	it('rejects removed resource families instead of retaining dormant schemas', () => {

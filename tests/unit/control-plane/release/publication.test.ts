@@ -7,6 +7,20 @@ const hash = (marker: string) => `sha256:${marker.repeat(64)}`;
 afterEach(() => rmSync('release-assets', { recursive: true, force: true }));
 
 describe('managed API release publication', () => {
+	it('declares exact recursive source custody and real PostgreSQL for the complete prerequisite suite before capacity scenes',()=>{
+		const workflow=parse(readFileSync('.github/workflows/verify.yml','utf8')) as {jobs:{verify:{services:Record<string,unknown>;steps:Array<{
+			name?:string;uses?:string;run?:string;with?:Record<string,unknown>;env?:Record<string,string>}>}}};
+		const steps=workflow.jobs.verify.steps, checkout=steps.find(step=>step.uses==='actions/checkout@v4');
+		expect(checkout?.with?.submodules).toBe('recursive');
+		const verify=steps.find(step=>step.run==='npm run verify:direct'), scene=steps.find(step=>step.name==='Execute coded golden component scenes');
+		expect(verify?.env?.TREESEED_TEST_POSTGRES_URL).toBe('postgres://postgres:migration-test-only@127.0.0.1:5432/postgres');
+		expect(scene?.env?.TREESEED_TEST_POSTGRES_URL).toBe(verify?.env?.TREESEED_TEST_POSTGRES_URL);
+		expect(workflow.jobs.verify.services.postgres).toBeDefined();expect(scene?.uses).toMatch(/^treeseed-ai\/reviewer\/\.github\/actions\/run-scenes@[a-f0-9]{40}$/u);
+		expect(steps.indexOf(verify!)).toBeLessThan(steps.indexOf(scene!));
+		const manifest=JSON.parse(readFileSync('package.json','utf8')) as {scripts:Record<string,string>};
+		expect(manifest.scripts.test).toBe('npm run test:control-plane');
+		expect(manifest.scripts['test:control-plane']).toBe('vitest run --config ./vitest.control-plane.config.ts');
+	});
 	it('accepts the exact package RC tag and rejects aliases or build metadata', () => {
 		const version = (JSON.parse(readFileSync('package.json', 'utf8')) as { version: string }).version;
 		execFileSync(process.execPath, ['--import', 'tsx', 'scripts/packages/assert-release-tag-version.ts'], { env: { ...process.env, GITHUB_REF_NAME: version } });
@@ -16,28 +30,51 @@ describe('managed API release publication', () => {
 		}
 	});
 
-	it('publishes API, runner, and database RC architecture manifests', () => {
-		const workflow = parse(readFileSync('.github/workflows/publish.yml', 'utf8')) as { on?: { push?: { tags?: string[] } }; jobs: Record<string, { needs?: string | string[]; strategy?: { matrix?: { include?: Array<{ image: string }> } } }> };
+	it('builds only API and runner staging candidates once and promotes without rebuilding', () => {
+		const workflowSource = readFileSync('.github/workflows/publish.yml', 'utf8');
+		const workflow = parse(workflowSource) as { on?: { push?: { branches?: string[]; tags?: string[] } }; jobs: Record<string, { needs?: string | string[]; strategy?: { matrix?: { include?: Array<{ image: string }> } }; steps?: Array<{ uses?: string; name?: string }> }> };
 		expect(workflow.on?.push?.tags).toContain('!*-runtime.*');
-		const images = workflow.jobs.build?.strategy?.matrix?.include?.map((entry) => entry.image) ?? [];
+		expect(workflow.on?.push?.branches).toContain('staging');
+		expect(workflow.on?.push?.branches).toContain('main');
+		const images = workflow.jobs['candidate-build']?.strategy?.matrix?.include?.map((entry) => entry.image) ?? [];
 		expect(images.filter((image) => image === 'treeseed/api')).toHaveLength(2);
 		expect(images.filter((image) => image === 'treeseed/op-runner')).toHaveLength(2);
-		expect(images.filter((image) => image === 'treeseed/api-postgres')).toHaveLength(2);
-		expect(workflow.jobs['component-release']?.needs).toBe('manifest');
-		expect(workflow.jobs.prerelease?.needs).toEqual(['verify', 'manifest', 'component-release']);
+		expect(images).toHaveLength(4);
+		expect(images).not.toContain('treeseed/api-postgres');
+		expect(workflow.jobs['candidate-seal']?.needs).toBe('candidate-build');
+		expect(workflow.jobs.promote?.steps?.some(({ uses }) => uses?.includes('docker/build-push-action'))).toBe(false);
+		expect(workflowSource).toContain('release-evidence-v1.json');
+		expect(workflowSource).toContain('imagetools create -t');
+		expect(workflowSource).toContain('sourcePackages');
+		expect(workflowSource).toContain('install -m 0644 "${sourcePackages[0]}" release-assets/');
+		expect(workflowSource).toContain('install -m 0644 release-assets/source-assets/sbom.cdx.json release-assets/');
+		expect(workflowSource).toContain("environment: ${{ contains(github.ref_name, '-') && 'staging' || 'production' }}");
+		expect(workflowSource).toContain('candidate_branch=staging; else candidate_branch=main');
 	});
 
 	it('materializes exact production images without a source build or host port', () => {
 		execFileSync(process.execPath, ['--import', 'tsx', 'scripts/release/create-component-release.ts'], { env: { ...process.env, TREESEED_RELEASE: '0.8.0-rc.8', TREESEED_SOURCE_COMMIT: 'a'.repeat(40), TREESEED_API_DIGEST: hash('b'), TREESEED_RUNNER_DIGEST: hash('c'), TREESEED_DATABASE_DIGEST: hash('d') } });
 		const compose = readFileSync('release-assets/compose.yml', 'utf8');
-		const bundle = JSON.parse(readFileSync('release-assets/component-release.json', 'utf8')) as { release: string; revision: number; runtime: { compose: { files: Array<{ path: string; digest: string }> } }; track: string; stableBase: { catalogDigest: unknown }; images: unknown[] };
+		const bundle = JSON.parse(readFileSync('release-assets/component-release.json', 'utf8')) as { release: string; revision: number; runtime: { compose: { files: Array<{ path: string; digest: string }> }; configuration: { environment: Array<{ name: string }>; secretEnvironment: Array<{ name: string }> } }; track: string; stableBase: { catalogDigest: unknown }; images: unknown[] };
 		expect(compose).not.toMatch(/\bbuild\s*:/u);
 		expect(compose).not.toMatch(/^\s+ports:/mu);
 		expect(compose).toContain(`treeseed/api@${hash('b')}`);
 		expect(compose).toContain(`treeseed/op-runner@${hash('c')}`);
-		expect(compose).toContain(`treeseed/api-postgres@${hash('d')}`);
+		expect(compose).not.toContain('treeseed/api-postgres');
 		expect(compose).toContain("fetch('http://127.0.0.1:3000/v1/health/ready')");
-		expect(compose).toContain('test: ["CMD-SHELL", "kill -0 1"]');
+		const definition = parse(compose);
+		expect(definition.services.database).toBeUndefined();
+		expect(definition.networks.database).toEqual({ name: 'treeseed-postgres-private', external: true });
+		for (const [service, phase] of [['migration', 'migration'], ['api', 'runtime']]) {
+			expect(definition.services[service!].environment.TREESEED_DATABASE_URL_FILE).toBe('/run/treeseed/postgres/api/url');
+			expect(definition.services[service!].volumes).toContainEqual({ type: 'bind', source: `/run/treeseed/postgres-clients/api/api/${phase}`, target: '/run/treeseed/postgres/api', read_only: true });
+		}
+		expect(bundle.runtime).toMatchObject({ postgresRequirements: [{ id: 'api', supportedMajors: [17] }], postgresLifecycle: [{ requirementId: 'api', migration: { composeService: 'migration', completion: 'exit-zero' }, runtimeServices: ['api'] }] });
+		expect(definition.services['operations-runner'].healthcheck.test).toEqual(['CMD-SHELL','kill -0 1']);
+		expect(definition.services.openbao).not.toHaveProperty('ports');
+		expect(definition.services.api.depends_on['openbao-initialize']).toEqual({condition:'service_completed_successfully'});
+		expect(definition.services.api.environment.TREESEED_OPENBAO_ADDRESS).toBe('https://openbao:8200');
+		expect(definition.services.api.volumes.find((v:any)=>v.target==='/run/openbao-client')).toMatchObject({read_only:true});
 		expect(compose).not.toContain('/healthz');
 		expect(bundle.images).toHaveLength(3);
 		expect(bundle.track).toBe('development');
@@ -45,12 +82,40 @@ describe('managed API release publication', () => {
 		expect(bundle.release).toBe('0.8.0~rc8-1');
 		expect(bundle.revision).toBe(1);
 		expect(bundle.runtime.compose.files).toEqual([{ path: 'compose.yml', digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u) }]);
+		expect(bundle.runtime.configuration.environment.map(({ name }) => name)).toEqual(expect.arrayContaining(['NODE_ENV', 'TREESEED_API_BASE_URL', 'TREESEED_LIBRARY_BRANCH', 'TREESEED_TREEDX_URL', 'TREESEED_TREEDX_NODE_ID']));
+		expect(bundle.runtime.configuration.secretEnvironment.map(({ name }) => name)).toEqual(expect.arrayContaining(['TREESEED_GITHUB_TOKEN', 'TREESEED_R2_SECRET_ACCESS_KEY', 'TREESEED_TREEDX_DELEGATION_PRIVATE_KEY']));
+		expect(bundle.runtime.configuration.secretEnvironment.map(({ name }) => name)).not.toContain('TREESEED_DATABASE_URL');
+	});
+
+	it('keeps live source inside private managed networks with loopback-only ingress', () => {
+		const compose = readFileSync('compose.development.yml', 'utf8');
+		const cleanup = readFileSync('scripts/development/api-runtime.sh', 'utf8');
+		const manifest = parse(readFileSync('treeseed.package.yaml', 'utf8')) as { development: { targets: Array<{ id: string; operations: { start?: { command: string; args: string[]; environment: Record<string, string> }; cleanup?: { command: string; args: string[] } }; secretRefs: Record<string, string> }> } };
+		const service = manifest.development.targets.find((target) => target.id === 'service');
+		expect(compose).toContain('127.0.0.1:3000:3000');
+		expect(compose).toContain('working_dir: ${TREESEED_DEVELOPMENT_WORKTREE:');
+		expect(compose).toContain('${TREESEED_DEVELOPMENT_WORKSPACE_ROOT:');
+		expect(compose).toContain('name: treeseed-api_private');
+		expect(compose).toContain('name: treeseed-edge');
+		expect(compose).toContain('name: treeseed-platform');
+		expect(compose).not.toMatch(/network_mode:\s*host/u);
+		expect(compose).not.toMatch(/5432:5432/u);
+		expect(service?.operations.start).toMatchObject({ command: 'docker', args: expect.arrayContaining(['compose', 'compose.development.yml', 'treeseed-api-development']) });
+		expect(service?.operations.start?.environment).toEqual({ TREESEED_DEVELOPMENT_EDGE_HOST: 'api-live' });
+		expect(service?.operations.cleanup).toMatchObject({ command: 'bash', args: ['scripts/development/api-runtime.sh', 'cleanup'] });
+		expect(cleanup).toContain('TREESEED_DEVELOPMENT_CLEANUP_SCOPE:-runtime');
+		expect(cleanup).toContain('down --remove-orphans');
+		expect(cleanup).toContain('rm --force api-live');
+		expect(service?.secretRefs).toMatchObject({ SESSION_SECRET: 'api-session-secret' });
+		expect(service?.secretRefs).not.toHaveProperty('TREESEED_DATABASE_URL');
+		expect(compose).toContain('/run/treeseed/postgres-clients/api/api/runtime:/run/treeseed/postgres/api:ro');
+		expect(compose).not.toContain('/api/migration');
 	});
 
 	it('publishes Compose-only runtime revisions without rebuilding images', () => {
 		const workflow = parse(readFileSync('.github/workflows/publish-runtime.yml', 'utf8')) as { on?: { workflow_dispatch?: unknown }; jobs: Record<string, { environment?: string; permissions?: Record<string, string> }> };
 		expect(workflow.on?.workflow_dispatch).toBeDefined();
-		expect(workflow.jobs.publish?.environment).toBe('development');
+		expect(workflow.jobs.publish?.environment).toBe('staging');
 		expect(workflow.jobs.publish?.permissions).toMatchObject({ contents: 'write', 'id-token': 'write', attestations: 'write' });
 		execFileSync(process.execPath, ['--import', 'tsx', 'scripts/release/create-component-release.ts'], { env: { ...process.env, TREESEED_RELEASE: '0.8.0-rc.12', TREESEED_COMPONENT_REVISION: '2', TREESEED_SOURCE_COMMIT: 'e'.repeat(40), TREESEED_API_DIGEST: hash('b'), TREESEED_RUNNER_DIGEST: hash('c'), TREESEED_DATABASE_DIGEST: hash('d') } });
 		const bundle = JSON.parse(readFileSync('release-assets/component-release.json', 'utf8')) as { applicationVersion: string; release: string; revision: number };

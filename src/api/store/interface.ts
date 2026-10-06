@@ -32,6 +32,8 @@ declare module '../persistence/store.ts' {
 		principalCanManageTeam: OmitThisParameter<typeof import('./teams/contracts/principal-can-manage-team.ts').principalCanManageTeamMethod>;
 		authenticateTeamApiKey: OmitThisParameter<typeof import('./teams/contracts/authenticate-team-api-key.ts').authenticateTeamApiKeyMethod>;
 		createTeam: OmitThisParameter<typeof import('./teams/creation/create-team.ts').createTeamMethod>;
+		ensureManagedTeamLibraryProject: OmitThisParameter<typeof import('./teams/contracts/managed-library/ensure-managed-team-library-project.ts').ensureManagedTeamLibraryProjectMethod>;
+		backfillManagedTeamLibraryProjects: OmitThisParameter<typeof import('./teams/contracts/managed-library/ensure-managed-team-library-project.ts').backfillManagedTeamLibraryProjectsMethod>;
 		getTeam: OmitThisParameter<typeof import('./teams/queries/identity/get-team.ts').getTeamMethod>;
 		getTeamBySlug: OmitThisParameter<typeof import('./teams/queries/identity/get-team-by-slug.ts').getTeamBySlugMethod>;
 		getTeamByName: OmitThisParameter<typeof import('./teams/queries/identity/get-team-by-name.ts').getTeamByNameMethod>;
@@ -52,6 +54,9 @@ declare module '../persistence/store.ts' {
 		syncTreeDxMirror: OmitThisParameter<typeof import('./treedx/repositories/updates/sync-tree-dx-mirror.ts').syncTreeDxMirrorMethod>;
 		listTreeDxShares: OmitThisParameter<typeof import('./treedx/repositories/queries/list-tree-dx-shares.ts').listTreeDxSharesMethod>;
 		createTreeDxShare: OmitThisParameter<typeof import('./treedx/repositories/creation/create-tree-dx-share.ts').createTreeDxShareMethod>;
+		getTreeDxShare: OmitThisParameter<typeof import('./treedx/repositories/queries/get-tree-dx-share.ts').getTreeDxShareMethod>;
+		listTreeDxSharesForRecipient: OmitThisParameter<typeof import('./treedx/repositories/queries/list-tree-dx-shares-for-recipient.ts').listTreeDxSharesForRecipientMethod>;
+		revokeTreeDxShare: OmitThisParameter<typeof import('./treedx/repositories/updates/revoke-tree-dx-share.ts').revokeTreeDxShareMethod>;
 		upsertProjectTreeDxLibrary: OmitThisParameter<typeof import('./projects/knowledge/creation/upsert-project-tree-dx-library.ts').upsertProjectTreeDxLibraryMethod>;
 		getProjectTreeDxLibrary: OmitThisParameter<typeof import('./projects/knowledge/queries/get-project-tree-dx-library.ts').getProjectTreeDxLibraryMethod>;
 		getProjectRepositoryTopology: OmitThisParameter<typeof import('./projects/repositories/queries/get-project-repository-topology.ts').getProjectRepositoryTopologyMethod>;

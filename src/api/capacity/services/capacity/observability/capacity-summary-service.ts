@@ -1,4 +1,3 @@
-import type { CapacityAllocationSetV2 } from '@treeseed/sdk/agent-capacity';
 import type { ProjectCapacityDiagnostics } from '../../../contracts.ts';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityProviderIdentityRepository } from '../../../repositories/capacity/providers/provider-identity.ts';
@@ -8,7 +7,6 @@ import type { ProjectCapacityEnvironment } from './project-capacity-diagnostics-
 
 interface CapacitySummaryStore extends CapacityGovernanceDatabase {
 	getProjectCapacityDiagnostics(projectId: string, environment: ProjectCapacityEnvironment): Promise<ProjectCapacityDiagnostics | null>;
-	getActiveCapacityAllocationSet(teamId: string): Promise<CapacityAllocationSetV2 | null>;
 }
 
 export interface TeamCapacitySummary {
@@ -31,9 +29,8 @@ export interface TeamCapacitySummary {
 export interface ProjectCapacitySummary extends TeamCapacitySummary {
 	projectId: string;
 	environment: ProjectCapacityEnvironment;
-	readiness: 'ready' | 'waiting_for_allocation' | 'waiting_for_provider' | 'waiting_for_budget';
+	readiness: 'ready' | 'waiting_for_provider' | 'waiting_for_budget';
 	reasons: string[];
-	allocationSet: CapacityAllocationSetV2 | null;
 }
 
 function total(values: Array<number | null | undefined>): number {
@@ -85,18 +82,16 @@ export class CapacitySummaryService {
 		await this.store.ensureInitialized();
 		const diagnostics = await this.store.getProjectCapacityDiagnostics(projectId, environment);
 		if (!diagnostics) return null;
-		const [teamSummary, reservations, allocationSet] = await Promise.all([
+		const [teamSummary, reservations] = await Promise.all([
 			this.team(diagnostics.teamId),
 			aggregateCapacityTimeReservations(this.store, { teamId: diagnostics.teamId, projectId }),
-			this.store.getActiveCapacityAllocationSet(diagnostics.teamId),
 		]);
 		const dailyAgentSeconds = total(diagnostics.grants.filter((grant) => grant.status === 'active').map((grant) => grant.dailyAgentSecondsLimit));
 		const hasUnmeteredGrant = diagnostics.grants.some((grant) => grant.status === 'active' && grant.unmetered === true);
 		const eligibleProviders = diagnostics.providers.filter((provider) => provider.identityStatus === 'active' && provider.membershipStatus === 'approved');
 		let readiness: ProjectCapacitySummary['readiness'] = 'ready';
 		const reasons: string[] = [];
-		if (!allocationSet) { readiness = 'waiting_for_allocation'; reasons.push('no_active_allocation_set'); }
-		else if (eligibleProviders.length === 0) { readiness = 'waiting_for_provider'; reasons.push('no_active_provider'); }
+		if (eligibleProviders.length === 0) { readiness = 'waiting_for_provider'; reasons.push('no_active_provider'); }
 		else if (!hasUnmeteredGrant && dailyAgentSeconds > 0 && Math.max(0, dailyAgentSeconds - reservations.dailyCommittedSeconds) <= 0) {
 			readiness = 'waiting_for_budget'; reasons.push('daily_budget_exhausted');
 		}
@@ -107,7 +102,7 @@ export class CapacitySummaryService {
 			dailyReservedSeconds: reservations.dailyCommittedSeconds,
 			dailyRemainingSeconds: hasUnmeteredGrant || dailyAgentSeconds === 0 ? null : Math.max(0, dailyAgentSeconds - reservations.dailyCommittedSeconds),
 			nativeCapacity: await this.native.team(diagnostics.teamId, { providers: diagnostics.providers, projectId }),
-			readiness, reasons, allocationSet,
+			readiness, reasons,
 		};
 	}
 }

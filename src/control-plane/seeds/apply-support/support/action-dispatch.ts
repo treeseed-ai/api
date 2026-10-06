@@ -1,8 +1,10 @@
 import { mergeSeedMetadata,projectSeedMetadata } from '../index.js';
+import { applyTeamLibrarySeed, isTeamLibrarySeed } from '../projects/projects-core/managed-team-seed.js';
 
 export async function applyAction({ action, store, ids, manifestHash, appliedAt, plan }) {
     if (action.action === 'skip' || action.action === 'unchanged')
         return null;
+    if (isTeamLibrarySeed(action)) return applyTeamLibrarySeed({ action, store, ids, manifestHash, appliedAt });
     const metadata = mergeSeedMetadata(action.existing?.metadata, action.payload.metadata, action, manifestHash, appliedAt);
     if (action.kind === 'team') {
         const existing = action.existing;

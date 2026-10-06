@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { admitDiscussionInvocations, resolveDiscussionInvocationAgents } from '../capacity/services/capacity/invocations/discussion-invocation-service.ts';
 import { changeDiscussionStatus, commitDiscussionMessage, loadDiscussions, validateDiscussionContextRefs } from './content.ts';
+import { discussionHistorySnapshot } from './history-snapshot.ts';
 
 type Principal = { id: string; roles?: string[]; permissions?: string[]; metadata?: Record<string, unknown> } | undefined;
 
@@ -22,6 +23,11 @@ function administrator(principal: Principal) { return principal?.roles?.some((ro
 function failure(error: unknown, status: 409 | 503, code: string): never {
 	if (error instanceof DiscussionServiceError) throw error;
 	const value = record(error);
+	const cause = record(value.cause);
+	console.error('discussion.operation.failed', {
+		code: text(value.code, code), kind: text(value.name, 'Error'), status: Number(value.status) || status,
+		causeCode: text(cause.code), causeKind: text(cause.name), causeStatus: Number(cause.status) || null,
+	});
 	throw new DiscussionServiceError(Number.isInteger(value.status) ? value.status : status, text(value.code, code),
 		'TreeDX Discussion operation failed.');
 }
@@ -137,9 +143,9 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 					'The explicit parent assignment does not exist in this team and project.');
 				const waitingMessageId = text(record(parentAssignment?.metadata_json).waitingMessageId);
 				const continuationHistory = parentAssignment ? await loadDiscussions({ store, projectId, discussionId,
-					query: waitingMessageId || undefined, collection: 'messages', limit: 10 }) : { messages: [] };
+					exactMessageIds: waitingMessageId ? [waitingMessageId] : [], collection: 'messages', limit: 10 }) : { messages: [] };
 				const continuation = continuationEvidence(parentAssignment, discussionId, continuationHistory.messages);
-				const history = await loadDiscussions({ store, projectId, discussionId, query: messageId, collection: 'messages' }).catch(() => ({ messages: [] }));
+				const history = await loadDiscussions({ store, projectId, discussionId, exactMessageIds: [messageId], collection: 'messages' }).catch(() => ({ messages: [] }));
 				const replay = history.messages.find((entry: any) => text(entry.id) === messageId);
 				if (replay) {
 					if (text(replay.body) !== messageBody) throw new DiscussionServiceError(409, 'discussion_idempotency_conflict',
@@ -156,21 +162,26 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 							projectSlug: text(project.slug, project.id), discussionId, messageId, messagePath: text(replay.path),
 							messageCommit: text(record(invocations[0]?.metadata_json).sourceCommit, text((history as any).ref)), contextRefs, agentSlugs: replayAgents,
 							idempotencyKey, parentWorkdayId, parentAssignmentId,
+							communication: record(body.communication), addressRequirements: record(body.addressRequirements),
 							durationSeconds: Math.max(60, Math.min(3600, Number(body.durationSeconds ?? 900))), requestedById: principal.id });
 					}
-					return { discussion: { id: discussionId }, message: replay, invocations, replayed: true };
+					return { discussion: { id: discussionId }, message: replay, commitSha: text(replay.immutableRef), invocations, replayed: true };
 				}
 				contextRefs = await validateDiscussionContextRefs({ store, projectId, teamId, values: body.contextRefs });
 				const existing = text(body.discussionId) ? await loadDiscussions({ store, projectId, discussionId,
-					collection: 'discussions', limit: 1 }).catch(() => ({ discussions: [] })) : { discussions: [] };
+					includeDiscussion: true, collection: 'discussions', limit: 1 }).catch(() => ({ discussions: [] })) : { discussions: [] };
 				authored = await commitDiscussionMessage({ store, projectId, teamId, principal, body: messageBody,
 					intent: body.intent === 'propose' ? 'propose' : 'discuss', discussionId, messageId,
-					createDiscussion: !text(body.discussionId), topic: text(record(existing.discussions[0]?.frontmatter).topic) || text(body.topic) || undefined,
+					parentWorkdayId,
+					lookupWorkday: (teamId, workdayId) => invocationStore.getCapacityWorkdayRun(teamId, workdayId),
+					createDiscussion: !text(body.discussionId) || (body.createDiscussion === true && existing.discussions.length === 0), topic: text(record(existing.discussions[0]?.frontmatter).topic) || text(body.topic) || undefined,
 					fileRefs: Array.isArray(body.fileRefs) ? body.fileRefs : [], contextRefs,
-					recipients: Array.isArray(body.recipients) ? body.recipients.map(String) : [], ...(continuation ?? {}) });
+					recipients: Array.isArray(body.recipients) ? body.recipients.map(String) : [],
+					inboxIntent: ['comment', 'answer', 'reply'].includes(text(body.inboxIntent)) ? body.inboxIntent as 'comment'|'answer'|'reply' : undefined,
+					replyTo: text(body.replyTo) || undefined, ...(continuation ?? {}) });
 			} catch (error) { failure(error, 503, 'discussion_content_unavailable'); }
 			const observed = await loadDiscussions({ store, projectId, discussionId: authored.discussion.id,
-				query: authored.message.id, collection: 'messages' });
+				exactPaths: [authored.message.path], collection: 'messages' });
 			const observedMessage = observed.messages.find((entry: any) => text(entry.path) === authored.message.path);
 			if (!observedMessage || text(observedMessage.body) !== messageBody) throw new DiscussionServiceError(503,
 				'discussion_readback_failed', 'TreeDX did not authoritatively return the committed Discussion message.');
@@ -182,10 +193,13 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 						...authored.mentions, ...(Array.isArray(body.recipients) ? body.recipients.map(String) : []),
 					])] });
 				if (!agents.length) return { ...authored, invocations: [], replayed: false };
+				const prior = await loadDiscussions({ store, projectId, discussionId: authored.discussion.id, collection: 'messages', limit: 100 });
+				const historySnapshot = discussionHistorySnapshot(prior.messages, authored.discussion.id, authored.message.path);
 				const invocations = await admitDiscussionInvocations(invocationStore, { teamId, projectId,
 					projectSlug: text(project.slug, project.id), discussionId: authored.discussion.id, messageId: authored.message.id,
 					messagePath: authored.message.path, messageCommit: authored.commitSha, contextRefs, agentSlugs: agents,
 					idempotencyKey, parentWorkdayId, parentAssignmentId, durationSeconds: Math.max(60, Math.min(3600, Number(body.durationSeconds ?? 900))),
+					communication: { ...record(body.communication), historySnapshot }, addressRequirements: record(body.addressRequirements),
 					requestedById: principal.id });
 				return { ...authored, invocations, replayed: false };
 			} catch (error) { failure(error, 409, 'discussion_invocation_failed'); }
@@ -193,13 +207,13 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 
 		async updateStatus(principal: Principal, discussionId: string, body: Record<string, unknown>, idempotencyKey?: string) {
 			const projectId = text(body.projectId);
-			const status = body.status === 'active' ? 'active' : body.status === 'archived' ? 'archived' : null;
+			const status = body.status === 'open' || body.status === 'resolved' || body.status === 'closed' ? body.status : null;
 			if (!projectId || !status) throw new DiscussionServiceError(422, 'discussion_status_invalid',
-				'Discussion lifecycle requires a project and active or archived status.');
+				'Discussion lifecycle requires a project and open, resolved, or closed status.');
 			const project = await projectFor(store, principal, projectId);
 			try {
 				const result = await changeDiscussionStatus({ store, projectId, teamId: project.teamId, discussionId, status, principal });
-				if (status === 'archived') await cancelArchivedDiscussionCapacity(store, projectId, discussionId,
+				if (status === 'closed') await cancelArchivedDiscussionCapacity(store, projectId, discussionId,
 					(teamId, assignmentId, key) => invocationStore.cancelCapacityAssignment(teamId, assignmentId,
 						{ idempotencyKey: key, reason: 'The source Discussion was archived.' }));
 				await sessionEvents.publish({ eventType: 'discussion.lifecycle', teamId: project.teamId, projectId, resourceId: discussionId,

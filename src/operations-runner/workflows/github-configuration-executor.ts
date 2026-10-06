@@ -1,6 +1,7 @@
 import { githubActionsHeaders, githubActionsRequest, repositoryPath } from '../../providers/github/actions-client.ts';
 import { resolveGitHubCredentialAuthority } from '../../security/provider-credential-authority.ts';
 import { consumeWorkflowConfigurationDelivery } from './configuration-deliveries.ts';
+import { requireWorkflowConfigurationName } from '../../security/workflow-configuration-policy.ts';
 
 function targetPath(repository: any, record: any) {
 	const kind = record.kind === 'secret' ? 'secrets' : 'variables';
@@ -31,7 +32,7 @@ export function createGitHubConfigurationExecutor(options: { controlPlaneStore: 
 				[record.repository_binding_id, record.project_id]);
 			const capability = record && await store.first(`SELECT * FROM team_service_capability_bindings WHERE id = ?
 				AND connection_id = ? AND status = 'configured'`, [record.workflow_binding_id, repository?.service_connection_id]);
-			const expectedCapability = record?.kind === 'secret' ? 'secret-enclave' : 'workflow-configuration';
+			const expectedCapability = 'workflow-execution';
 			const authority = capability && await store.first(`SELECT * FROM provider_credential_authorities WHERE connection_id = ?
 				AND credential_profile_id = ? AND status = 'ready'`, [capability.connection_id, capability.credential_profile_id]);
 			if (!record || !repository || repository.provider_id !== 'github' || !capability || capability.capability_type !== expectedCapability || !authority) {
@@ -39,9 +40,10 @@ export function createGitHubConfigurationExecutor(options: { controlPlaneStore: 
 			}
 			const fetchImpl = options.fetchImpl ?? fetch;
 			try {
+				requireWorkflowConfigurationName(capability.configuration_json,{repositoryBindingId:repository.id,kind:record.kind==='secret'?'secrets':'variables',scope:record.scope,environment:record.environment},record.name);
 				const credential = await resolveGitHubCredentialAuthority({ store, authorityId: authority.id,
 					repositoryBindingId: repository.id, capabilityBindingId: capability.id,
-					capability: expectedCapability, fetchImpl });
+					capability: expectedCapability, configurationKind:record.kind==='secret'?'secrets':'variables', configurationScope:record.scope, fetchImpl });
 				const path = targetPath(repository, record);
 				if (delivery.action === 'delete') {
 					await githubActionsRequest(fetchImpl, credential.token, path, { method: 'DELETE' });

@@ -93,7 +93,7 @@ async function loadPublishedTeamCatalogUncached(input: { storage: KnowledgePubli
 		}
 		const item = { ...payload.definition, source: { teamId: input.manifest.teamId, teamSlug: input.teamSlug,
 			projectId: entry.projectId, repositoryId: project.repositoryId, commitSha: project.commitSha,
-			graphRef: project.ref, path: entry.sourcePath } };
+			graphRef: project.commitSha, path: entry.sourcePath } };
 		if (entry.kind === 'book') books.push(item);
 		else pages.push(item);
 	}

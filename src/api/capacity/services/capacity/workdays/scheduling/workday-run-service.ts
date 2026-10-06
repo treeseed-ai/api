@@ -5,7 +5,6 @@ import { randomUUID } from 'node:crypto';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { CapacityWorkdayRunWriteRepository } from '../../../../repositories/capacity/workdays/workday-run-write.ts';
 import { CapacityWorkdayRunRepository,parseCapacityWorkdayRunStatus } from '../../../../repositories/capacity/workdays/workday-run.ts';
-import { engineeringWorkflowPromotionConfigs } from '../../../operations/engineering-workflow-promotion-service.ts';
 import { assertCapacityWorkdayParametersSafe,assertRunningCapacityWorkdayBounded } from '../lifecycle/workday-lifecycle-service.ts';
 import { recordCapacityWorkdayScheduleFailure,type WorkdayScheduleStore } from './workday-scheduling-service.ts';
 
@@ -14,8 +13,6 @@ interface WorkdayRunServiceStore extends WorkdayScheduleStore {
 	preflightCapacityWorkdayRun(run: CapacityWorkdayRunRecord): Promise<unknown>;
 	scheduleCapacityWorkdayRun(run: CapacityWorkdayRunRecord): Promise<unknown>;
 	terminalizeCapacityWorkdayAssignments(teamId: string, runId: string, input: JsonRecord): Promise<unknown>;
-	terminalizeCapacityWorkdayEnvelopes(teamId: string, runId: string, status: string): Promise<{ terminalized: number }>;
-	closeCapacityWorkdayAdmission(teamId: string, runId: string): Promise<unknown>;
 	createCapacityWorkdayEvent(teamId: string, runId: string, input: JsonRecord): Promise<unknown>;
 	updateCapacityWorkdayRun(teamId: string, runId: string, input: JsonRecord): Promise<CapacityWorkdayRunRecord | null>;
 }
@@ -40,16 +37,24 @@ function settlementGraceUntil(parameters: JsonRecord, from: string) {
 	const seconds = Math.max(300, Number(parameters.settlementGraceSeconds ?? parameters.waitSeconds ?? 0) || 0);
 	return new Date(Date.parse(from) + seconds * 1000).toISOString();
 }
+function assertExecutionModeOwnedByWorkday(parameters: JsonRecord) {
+	if ('executionMode' in parameters) throw new CapacityGovernanceError(
+		'capacity_workday_execution_mode_duplicated',
+		'Workday executionMode is a top-level immutable property and cannot be duplicated in parameters.',
+		400,
+	);
+}
 export function workdayTerminalizationPreserveUntil(status: CapacityWorkdayRunStatus, parameters: JsonRecord, now: string) {
-	return status === 'completed' ? settlementGraceUntil(parameters, now) : now;
+	// Closing admission must not steal a live provider lease before it can report
+	// actual usage and verified teardown. Recovery terminalizes it after grace.
+	return status === 'completed' || status === 'cancelled' ? settlementGraceUntil(parameters, now) : now;
 }
 
 export function compileCapacityWorkdayRunRecord(teamId: string, input: JsonRecord, options: { now?: string; id?: string } = {}): CapacityWorkdayRunRecord {
 	const now = options.now ?? new Date().toISOString(); const id = options.id ?? text(input.id, randomUUID());
 	const status = parseCapacityWorkdayRunStatus(input.status ?? (input.startedAt ? 'running' : 'queued'));
-	const parameters = object(input.parameters); assertCapacityWorkdayParametersSafe(parameters); engineeringWorkflowPromotionConfigs(parameters);
-	const executionMode=parseAgentWorkExecutionMode(input.executionMode??parameters.executionMode);
-	parameters.executionMode=executionMode;
+	const parameters = object(input.parameters); assertCapacityWorkdayParametersSafe(parameters); assertExecutionModeOwnedByWorkday(parameters);
+	const executionMode=parseAgentWorkExecutionMode(input.executionMode??(input.executionKind==='conversation'?'production':undefined));
 	parameters.agentSelection = normalizeWorkdayAgentSelection(parameters.agentSelection);
 	const durationSeconds = Math.max(0, Number(parameters.durationSeconds ?? input.durationSeconds ?? 0));
 	const startedAt = nullable(input.startedAt) ?? (status === 'running' ? now : null);
@@ -79,16 +84,7 @@ export class CapacityWorkdayRunService {
 
 	async create(teamId: string, input: JsonRecord): Promise<CapacityWorkdayRunRecord> {
 		const now = new Date().toISOString(); const candidate = compileCapacityWorkdayRunRecord(teamId, input, { now }); const { id,status } = candidate;
-		const replacement = status === 'running' && candidate.environment === 'local'
-			? await this.writes.replaceLocal(candidate)
-			: { run: await this.writes.create(candidate), supersededRunIds: [] };
-		for (const runId of replacement.supersededRunIds) {
-			await this.store.closeCapacityWorkdayAdmission(teamId, runId);
-			const staleRun = await this.runs.get(teamId, runId);
-			await this.store.terminalizeCapacityWorkdayAssignments(teamId, runId, { now, preserveActiveLeasesUntil: settlementGraceUntil(staleRun?.parameters ?? {}, now), settlementKeyPrefix: 'workday-supersede', source: 'workday_supersede_assignment_close', code: 'superseded_by_new_local_workday', reason: 'Closed stale workday assignment because a newer local workday superseded the run.', demandStatus:'superseded', metadata: { supersededByRunId: id } });
-			await this.store.terminalizeCapacityWorkdayEnvelopes(teamId, runId, 'failed');
-		}
-		const run = replacement.run;
+		const run = await this.writes.create(candidate);
 		if (status === 'running') {
 			try { await this.store.scheduleCapacityWorkdayRun(run); }
 			catch (error) { await recordCapacityWorkdayScheduleFailure(this.store, run, error, new Date().toISOString()); throw error; }
@@ -100,10 +96,9 @@ export class CapacityWorkdayRunService {
 		const existing = await this.runs.get(teamId, runId); if (!existing) return null;
 		const now = new Date().toISOString(); const status = parseCapacityWorkdayRunStatus(input.status ?? existing.status);
 		if (status !== existing.status && !TRANSITIONS[existing.status].includes(status)) throw new CapacityGovernanceError('capacity_workday_run_transition_invalid', `Cannot transition workday run from ${existing.status} to ${status}.`, 409, { runId, from: existing.status, to: status });
-		const parameters = object(input.parameters ?? existing.parameters); assertCapacityWorkdayParametersSafe(parameters); engineeringWorkflowPromotionConfigs(parameters);
-		const executionMode=parseAgentWorkExecutionMode(input.executionMode??parameters.executionMode??existing.executionMode);
+		const parameters = object(input.parameters ?? existing.parameters); assertCapacityWorkdayParametersSafe(parameters); assertExecutionModeOwnedByWorkday(parameters);
+		const executionMode=parseAgentWorkExecutionMode(input.executionMode??existing.executionMode);
 		if(existing.executionMode&&executionMode!==existing.executionMode) throw new CapacityGovernanceError('capacity_workday_execution_mode_immutable','Workday executionMode cannot change after creation.',409,{runId,existing:existing.executionMode,requested:executionMode});
-		parameters.executionMode=executionMode;
 		parameters.agentSelection = normalizeWorkdayAgentSelection(parameters.agentSelection);
 		if (input.parameters && JSON.stringify(parameters.agentSelection) !== JSON.stringify(normalizeWorkdayAgentSelection(existing.parameters.agentSelection))) {
 			throw new CapacityGovernanceError('capacity_workday_agent_selection_immutable', 'Workday agent selection cannot change after the run is created.', 409, { runId });
@@ -120,12 +115,10 @@ export class CapacityWorkdayRunService {
 			reportRefs: object(input.reportRefs ?? input.report_refs ?? existing.reportRefs), error: object(input.error ?? existing.error), startedAt,
 			completedAt: nullable(input.completedAt) ?? existing.completedAt ?? (TERMINAL.has(status) ? now : null), updatedAt: now,
 		};
-		if (TERMINAL.has(status) && !TERMINAL.has(existing.status)) await this.store.closeCapacityWorkdayAdmission(teamId, runId);
 		const updated = await this.writes.update(next, existing.status);
 		if (!updated) throw new CapacityGovernanceError('capacity_workday_run_transition_conflict', 'Workday run changed concurrently.', 409, { runId, expectedStatus: existing.status });
 		if (TERMINAL.has(status) && !TERMINAL.has(existing.status)) {
-			await this.store.terminalizeCapacityWorkdayAssignments(teamId, runId, { now, preserveActiveLeasesUntil: workdayTerminalizationPreserveUntil(status, parameters, now), settlementKeyPrefix: 'workday-explicit-terminal', source: 'capacity_workday_explicit_terminalization', code: `workday_${status}`, reason: `Workday was explicitly terminalized with status ${status}.`, demandStatus:'cancelled', metadata: { status } });
-			await this.store.terminalizeCapacityWorkdayEnvelopes(teamId, runId, status);
+			await this.store.terminalizeCapacityWorkdayAssignments(teamId, runId, { now, preserveActiveLeasesUntil: workdayTerminalizationPreserveUntil(status, parameters, now), settlementKeyPrefix: 'workday-explicit-terminal', source: 'capacity_workday_explicit_terminalization', code: `workday_${status}`, reason: `Workday was explicitly terminalized with status ${status}.`, metadata: { status } });
 		}
 		return this.runs.get(teamId, runId);
 	}

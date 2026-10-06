@@ -2,30 +2,22 @@ import { describe,expect,it } from 'vitest';
 import { REPOSITORY_DEFINITION_EXTENSIONS,repositoryDefinitionSource,validateAgentDefinitionSource } from '../../../../src/api/control-plane/repositories/agents/agent-definition-source.ts';
 
 const validSource = `---
-id: agent:architect
-slug: architect
-title: Architect
+schemaVersion: treeseed.agent/v1
+id: sdk/architect
 name: Architect
-description: Plans governed work.
-summary: Plans governed work.
-agentClass: architecture
-projectAgentClassId: architecture
-projectAgentClassSlug: architecture
-enabled: true
-groupIds: [architecture]
-identity:
-  purpose: Plan governed work.
-  responsibilities: [Inspect evidence]
-  durableInstructions: Preserve human decision authority.
+agentClass: architect
+purpose: Plan governed work.
+responsibilities: [Inspect exact evidence.]
+capabilities: [architecture-analysis]
+context:
+  include: [project-objectives]
 activityProfiles:
   planning:
-    activityType: planning
-    enabled: true
     handler: writer
-    prompt: { system: Inspect evidence. }
-    branchPolicy: { kind: staging-content, base: staging }
-    tools: { allowed: [treeseed.content.create] }
-    outputs: { messageTypes: [], modelMutations: [proposal:create] }
+    permissions:
+      content: { read: [knowledge, objective], write: [proposal] }
+      tools: [source.read]
+    prompt: { system: Inspect exact evidence and propose bounded work. }
 ---
 `;
 
@@ -39,7 +31,7 @@ describe('agent definition source validation', () => {
 	});
 
 	it('returns exact nested paths for CLI and chat correction feedback', () => {
-		const invalid = validSource.replace('prompt: { system: Inspect evidence. }', 'prompt: { system: 42 }');
+		const invalid = validSource.replace('prompt: { system: Inspect exact evidence and propose bounded work. }', 'prompt: { system: 42 }');
 		const validation = validateAgentDefinitionSource(invalid);
 		expect(validation.ok).toBe(false);
 		expect(validation.diagnostics).toEqual(expect.arrayContaining([
@@ -59,5 +51,12 @@ describe('agent definition source validation', () => {
 			content: '---\noutputs:\n  messageTypes: []\n---\nBody.\n',
 		});
 		expect(source).toBe('---\noutputs:\n  messageTypes: []\n---\nBody.\n');
+	});
+
+	it('rejects the legacy agent-execution marker rather than migrating repository content', () => {
+		const legacy = validSource.replace('    permissions:\n', '    execution:\n      requiredCapabilities: [agent-execution]\n    permissions:\n');
+		const source = repositoryDefinitionSource({ content: legacy });
+		expect(source).toContain('requiredCapabilities');
+		expect(validateAgentDefinitionSource(source).ok).toBe(false);
 	});
 });

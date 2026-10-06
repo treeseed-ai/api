@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
-import { createTeamInviteOperation } from '../../../src/api/control-plane/catalog/team-operations.ts';
+import { createTeamInviteOperation, createTeamInviteResendOperation } from '../../../src/api/control-plane/catalog/team-operations.ts';
 
 function dependencies(deliverTeamInvite = vi.fn(async () => undefined)) {
 	const revokeTeamInvite = vi.fn(async () => ({ ok: true }));
@@ -42,6 +42,24 @@ describe('team invitation operation', () => {
 		} }, { principal: { id: 'user-1' }, interface: 'rest', requestId: 'request-1' })).rejects.toMatchObject({
 			status: 503, code: 'team_invite_delivery_failed',
 		});
+		expect(fixture.revokeTeamInvite).toHaveBeenCalledWith('team-a', 'invite-1');
+	});
+
+	it('rotates the invitation token on resend without returning either token', async () => {
+		const fixture = dependencies();
+		fixture.value.store.listTeamInvites = async () => [{ id: 'invite-old', email: 'member@example.test', roleKey: 'contributor', status: 'pending' }];
+		const createTeamInvite = vi.spyOn(fixture.value.store, 'createTeamInvite');
+		const output = await createTeamInviteResendOperation(fixture.value).handler({ path: { teamId: 'team-a', inviteId: 'invite-old' }, query: {}, body: {} }, { principal: { id: 'user-1' }, interface: 'rest', requestId: 'request-1' });
+		expect(output).toEqual({ ok: true, invite: expect.objectContaining({ id: 'invite-1' }) });
+		expect(JSON.stringify(output)).not.toContain('secret-token');
+		expect(createTeamInvite).toHaveBeenCalledWith('team-a', expect.objectContaining({ replaceInviteId: 'invite-old' }));
+		expect(fixture.revokeTeamInvite).not.toHaveBeenCalled();
+	});
+
+	it('revokes a rotated resend token when delivery fails', async () => {
+		const fixture = dependencies(vi.fn(async () => { throw new Error('smtp unavailable'); }));
+		fixture.value.store.listTeamInvites = async () => [{ id: 'invite-old', email: 'member@example.test', roleKey: 'contributor', status: 'pending' }];
+		await expect(createTeamInviteResendOperation(fixture.value).handler({ path: { teamId: 'team-a', inviteId: 'invite-old' }, query: {}, body: {} }, { principal: { id: 'user-1' }, interface: 'rest', requestId: 'request-1' })).rejects.toMatchObject({ status: 503, code: 'team_invite_delivery_failed' });
 		expect(fixture.revokeTeamInvite).toHaveBeenCalledWith('team-a', 'invite-1');
 	});
 });

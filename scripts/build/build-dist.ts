@@ -13,11 +13,13 @@ const COPY_EXTENSIONS = new Set(['.d.ts', '.json', '.jsonc', '.md', '.yaml', '.y
 const EXECUTABLE_OUTPUTS = new Set([
 	'api/support/server.js',
 	'operations-runner/entrypoint.js',
+	'standards/verifiers/identity-team-live.js',
 	'scripts/support/migrate-db.js',
 ]);
 const REQUIRED_OUTPUTS = [
 	'api/support/server.js',
 	'operations-runner/entrypoint.js',
+	'standards/verifiers/identity-team-live.js',
 	'scripts/support/migrate-db.js',
 ];
 

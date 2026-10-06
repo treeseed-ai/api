@@ -23,7 +23,10 @@ export function createTreeDxOperations({ treeDxProxy: service }: TreeDxOperation
 		binding,
 		handler: (input, context) => result(() => {
 			switch (binding.descriptor.operationId) {
-				case 'treedx.library.show': return service.library(context.principal, String(input.path.projectId));
+				case 'treedx.library.show': return service.library(context.principal, String(input.path.projectId)).then(library=>{
+					if(!library)throw new CapacityGovernanceError('library_binding_unavailable','This project has no TreeDX library binding. Reconcile its seeded library before publishing help.',404);
+					return library;
+				});
 				case 'treedx.library.bind': return service.bindLibrary(context.principal, String(input.path.projectId), input.body as Record<string, unknown>);
 				case 'treedx.service.contract': return service.serviceContract(context.principal, String(input.path.projectId));
 				case 'treedx.workspaces.list': return service.listWorkspaces(String(input.path.projectId), input.query, context);

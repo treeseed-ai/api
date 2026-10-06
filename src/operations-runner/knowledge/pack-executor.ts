@@ -23,7 +23,7 @@ export function createKnowledgePackExecutor(options: any) {
 					throw new Error('The requesting user no longer has permission to build knowledge packs for this team.');
 				}
 				const publicationStorage = createKnowledgePublicationStorage({ adapter: options.knowledgePublicationStorage,
-					environment });
+					environment, store });
 				const manifest = await publicationStorage.readRevision(build.teamId, build.publicationRevision);
 				if (!manifest) throw new Error('The source knowledge publication is no longer available.');
 				const projects = await loadPublishedKnowledgeSnapshots(publicationStorage, manifest);

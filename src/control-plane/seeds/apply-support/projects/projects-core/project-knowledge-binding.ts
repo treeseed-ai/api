@@ -1,9 +1,10 @@
 import { FetchTransport, TreeDxClient } from '@treeseed/treedx/treedx/client';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { CapacityGovernanceError } from '../../../../../api/capacity/database.ts';
 import { treeDxDelegationAuthority } from '../../../../../api/control-plane/treedx/delegation-authority.ts';
-import { parseFrontmatterDocument } from '../../../../../api/content/frontmatter.ts';
 import { repositoryDefinitionSource, validateAgentDefinitionSource } from '../../../../../api/control-plane/repositories/agents/agent-definition-source.ts';
 import { resolveTreeDxServiceUrl } from '../../../../../api/control-plane/treedx/connection-url.ts';
+import { ContextQueryCheckService } from '../../../../../api/capacity/services/capacity/agents/context-query-check-service.ts';
 
 function text(...values: unknown[]): string {
 	for (const value of values) if (typeof value === 'string' && value.trim()) return value.trim();
@@ -73,37 +74,39 @@ async function waitForGraphRefresh(client: TreeDxClient, repositoryId: string, r
 	throw new Error('TreeDX graph refresh did not complete before the seed reconciliation deadline.');
 }
 
-function strings(value: unknown): string[] {
-	return Array.isArray(value) ? [...new Set(value.map(String).map((item) => item.trim()).filter(Boolean))] : [];
-}
-
-async function reconcileProjectAgentClasses(input: {
+export async function reconcileProjectAgentClasses(input: {
 	store: any; client: TreeDxClient; repositoryId: string; projectId: string; teamId: string; projectSlug: string; ref: string;
+	paths?:string[];discoveredRef?:string;
 }) {
-	const listed = queryResult(await input.client.query.listPaths(input.repositoryId, {
-		ref: input.ref, paths: ['agents/**'], extensions: ['.md', '.mdx', '.yaml', '.yml'], kinds: ['blob'], limit: 500, allowProtected: true,
-	}));
-	const paths = resultItems(listed).map((entry) => text(object(entry).path, entry)).filter(Boolean).sort();
+	const paths=input.paths??[];
 	if (input.projectSlug === 'sdk' && paths.length !== 8) {
 		throw new Error(`SDK library reconciliation requires exactly eight agent definitions; TreeDX returned ${paths.length}.`);
 	}
-	if (!paths.length) return { count: 0, immutableRef: text(listed.resolvedRef) };
+	if (!paths.length) return { count: 0, immutableRef: text(input.discoveredRef,input.ref) };
 	const read = queryResult(await input.client.query.readFile(input.repositoryId, {
-		ref: text(listed.resolvedRef, input.ref), paths, encoding: 'utf8', parseFrontmatter: true, allowProtected: true,
+		ref: text(input.discoveredRef, input.ref), paths, encoding: 'utf8', parseFrontmatter: true, allowProtected: true,
 	}));
 	const files = resultItems(read);
 	if (files.length !== paths.length) throw new Error('TreeDX did not read back every discovered agent definition.');
-	const immutableRef = text(read.resolvedRef, listed.resolvedRef);
+	const immutableRef = text(read.resolvedRef,input.discoveredRef);
 	if (!/^[a-f0-9]{40}$/u.test(immutableRef)) throw new Error('TreeDX agent definitions did not resolve to an immutable commit.');
+	if (/^[a-f0-9]{40}$/u.test(text(input.discoveredRef)) && immutableRef !== input.discoveredRef) {
+		throw new Error('TreeDX agent definitions moved after discovery.');
+	}
+	const discovered = new Set(paths);
+	const returned = files.map((file) => text(object(file).path));
+	if (returned.some((path) => !discovered.has(path)) || new Set(returned).size !== discovered.size) {
+		throw new Error('TreeDX returned agent definitions outside the discovered paths.');
+	}
 	const definitions = files.map((file) => {
 		const row = object(file); const path = text(row.path); const source = repositoryDefinitionSource(row);
 		const validation = validateAgentDefinitionSource(source);
 		if (!validation.ok) throw new Error(`Agent definition ${path || '(unknown)'} is invalid: ${validation.diagnostics.map((item) => `${item.path}: ${item.message}`).join('; ')}`);
-		return { path, source, definition: parseFrontmatterDocument(source).frontmatter };
+		return { path, source, definition: validation.data! };
 	});
 	const groups = new Map<string, typeof definitions>();
 	for (const definition of definitions) {
-		const key = text(definition.definition.projectAgentClassSlug, definition.definition.projectAgentClassId, definition.definition.agentClass);
+		const key = text(definition.definition.agentClass);
 		if (!key) throw new Error(`Agent definition ${definition.path} does not select a project agent class.`);
 		groups.set(key, [...(groups.get(key) ?? []), definition]);
 	}
@@ -111,31 +114,50 @@ async function reconcileProjectAgentClasses(input: {
 	for (const [classSlug, members] of groups) {
 		const existing = await input.store.first('SELECT id, created_at FROM project_agent_classes WHERE project_id = ? AND slug = ? LIMIT 1', [input.projectId, classSlug]);
 		const classId = text(existing?.id, `${input.projectId}:${classSlug}`);
-		const agents = members.map(({ path, definition }) => {
-			const profiles = object(definition.activityProfiles);
-			return { agentId: text(definition.id), slug: text(definition.slug), name: text(definition.name, definition.title),
-				title: text(definition.title, definition.name), enabled: definition.enabled !== false,
-				groupIds: strings(definition.groupIds), contentPath: path,
-				contextQueryRefs: definition.contextQueryRefs ?? [], contextQuerySetRefs: definition.contextQuerySetRefs ?? [],
-				instructionTemplateRefs: definition.instructionTemplateRefs ?? [], activities: profiles };
-		});
-		const profiles = members.flatMap(({ definition }) => Object.entries(object(definition.activityProfiles)));
-		const allowedModes = [...new Set(profiles.flatMap(([activity, value]) => object(value).enabled === false ? [] : [activity === 'acting' ? 'acting' : 'planning']))];
-		const requiredCapabilities = [...new Set(profiles.flatMap(([, value]) => strings(object(object(value).execution).requiredCapabilities)))];
+		const agents = members.map(({ definition }) => definition);
 		const metadata = { source: 'project-library', immutableRef, libraryRef: input.ref,
 			definitionPaths: members.map(({ path }) => path), definitionDigest: createHash('sha256').update(members.map(({ source }) => source).join('\n')).digest('hex') };
 		await input.store.run(`INSERT INTO project_agent_classes
-			(id,team_id,project_id,slug,name,status,allowed_modes_json,required_capabilities_json,kernel_profile_json,kernel_policy_json,handler_refs_json,output_contracts_json,metadata_json,created_at,updated_at)
-			VALUES (?,?,?,?,?,'active',?,?,?,?,?,?,?, ?, ?)
-			ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,name=excluded.name,status='active',allowed_modes_json=excluded.allowed_modes_json,
-			required_capabilities_json=excluded.required_capabilities_json,handler_refs_json=excluded.handler_refs_json,
+			(id,team_id,project_id,slug,name,status,handler_refs_json,metadata_json,created_at,updated_at)
+			VALUES (?,?,?,?,?,'active',?,?,?,?)
+			ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,name=excluded.name,status='active',handler_refs_json=excluded.handler_refs_json,
 			metadata_json=excluded.metadata_json,updated_at=excluded.updated_at`, [
-			classId,input.teamId,input.projectId,classSlug,text(members[0]?.definition.projectAgentClassName, classSlug),
-			JSON.stringify(allowedModes.length ? allowedModes : ['planning']),JSON.stringify(requiredCapabilities),JSON.stringify({}),JSON.stringify({}),
-			JSON.stringify({ agents }),JSON.stringify({}),JSON.stringify(metadata),text(existing?.created_at, now),now,
+			classId,input.teamId,input.projectId,classSlug,text(members[0]?.definition.name, classSlug),
+			JSON.stringify({ agents }),JSON.stringify(metadata),text(existing?.created_at, now),now,
 		]);
 	}
+	const activeSlugs = [...groups.keys()];
+	await input.store.run(`UPDATE project_agent_classes SET status='archived',updated_at=?
+		WHERE project_id=? AND status='active' AND metadata_json LIKE '%"source":"project-library"%'
+		${activeSlugs.length ? `AND slug NOT IN (${activeSlugs.map(() => '?').join(',')})` : ''}`,
+		[now,input.projectId,...activeSlugs]);
 	return { count: definitions.length, classes: groups.size, immutableRef };
+}
+
+export async function verifyContextQueryCatalog(input:{store:any;projectId:string;teamId:string;ref:string}) {
+	const checks=new ContextQueryCheckService(input.store),catalog=await checks.catalog(input.projectId,input.ref);
+	const referenced=new Map(catalog.agentReferences.map((entry:any)=>[`${entry.kind}:${entry.id}@${entry.revision}`,{kind:entry.kind,id:entry.id,revision:entry.revision}]));
+	const relevantTests=catalog.tests.filter((test:any)=>referenced.has(`${test.definitionKind}:${test.definitionId}@${test.definitionRevision}`));
+	const tested=new Set(relevantTests.map((test:any)=>`${test.definitionKind}:${test.definitionId}@${test.definitionRevision}`));
+	const missing=[...referenced.entries()].filter(([key])=>!tested.has(key)).map(([,reference])=>reference);
+	if(missing.length)throw new Error(`Agent context references have no isolated tests: ${missing.map((item:any)=>`${item.kind}:${item.id}@${item.revision}`).join(', ')}.`);
+	if(referenced.size) {
+		try {
+			await checks.requirePassing(input.teamId,input.projectId,input.ref,[...referenced.values()] as any);
+			return {references:referenced.size,tests:relevantTests.length};
+		} catch(error) {
+			if(!(error instanceof CapacityGovernanceError) || error.code!=='agent_context_query_not_ready') throw error;
+		}
+	}
+	const attempt=randomUUID();
+	for(const test of relevantTests) {
+		let result;
+		try { result=await checks.check(input.teamId,input.projectId,{testId:test.id,testPath:test.path,definitionRef:input.ref,idempotencyKey:`library-reconcile:${attempt}:${input.projectId}:${input.ref}:${test.id}`}); }
+		catch(error){throw new Error(`Context-query test ${test.id} could not run: ${error instanceof Error?error.message:'unknown error'}`);}
+		if(result.status!=='passing')throw new Error(`Context-query test ${test.id} did not pass for ${input.ref}.`);
+	}
+	if(referenced.size)await checks.requirePassing(input.teamId,input.projectId,input.ref,[...referenced.values()] as any);
+	return {references:referenced.size,tests:relevantTests.length};
 }
 
 function repositoryCatalog(response: unknown): TreeDxRepositorySummary[] {
@@ -250,7 +272,22 @@ export async function ensureProjectKnowledgeBinding(input: {
 		metadata: { repositoryName, libraryRoot: input.libraryRoot ?? '.', upstreamBacked: true,
 			upstreamHeads, resolvedRef: text(listing.resolvedRef), searchIndex: { ready: true, segmentCount: index.segmentCount }, reconciledLocalRuntime: true },
 	});
-	const agents = await reconcileProjectAgentClasses({ store: input.store, client, repositoryId: repository.repoId,
-		projectId: input.projectId, teamId: input.teamId, projectSlug: input.projectSlug, ref: requestedRef });
-	return { kind: 'projectKnowledgeBinding', projectId: input.projectId, repositoryId: repository.repoId, agents };
+	const discoveredAgents=queryResult(await client.query.listPaths(repository.repoId,{ref:requestedRef,paths:['agents/**'],extensions:['.md','.mdx','.yaml','.yml'],kinds:['blob'],limit:500,allowProtected:true}));
+	const agentPaths=resultItems(discoveredAgents).map((entry)=>text(object(entry).path,entry)).filter(Boolean).sort();
+	let contextQueries;
+	try {
+		contextQueries=agentPaths.length?await verifyContextQueryCatalog({store:input.store,projectId:input.projectId,teamId:input.teamId,ref:text(listing.resolvedRef)}):{references:0,tests:0};
+	} catch (error) {
+		throw new Error(`context-query verification failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+	}
+	let agents;
+	try {
+		agents = await reconcileProjectAgentClasses({ store: input.store, client, repositoryId: repository.repoId,
+			projectId: input.projectId, teamId: input.teamId, projectSlug: input.projectSlug, ref: requestedRef,
+			paths:agentPaths,discoveredRef:text(discoveredAgents.resolvedRef,listing.resolvedRef) });
+	} catch (error) {
+		throw new Error(`agent reconciliation failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+	}
+	return { kind: 'projectKnowledgeBinding', projectId: input.projectId, repositoryId: repository.repoId,
+		resolvedRef: text(listing.resolvedRef), sourceRef: requestedRef, contextQueries, agents };
 }

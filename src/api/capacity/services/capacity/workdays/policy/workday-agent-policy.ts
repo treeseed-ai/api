@@ -1,4 +1,4 @@
-import { ENGINEERING_HANDLER_KINDS,type AgentActivityProfile,type EngineeringHandlerKind } from '@treeseed/sdk/types/agents';
+import { ENGINEERING_HANDLER_KINDS,type AgentActivityProfile,type AgentChatProfileConfiguration,type EngineeringHandlerKind } from '@treeseed/sdk/types/agents';
 import { type AgentAuthorityPresetId } from '@treeseed/sdk/agent-capacity';
 import { compileAgentAuthoritySnapshot } from '../../../../policy/authority/agent-authority-presets.ts';
 import { compileDefaultChatActivityProfile } from '../../../../policy/workdays/chat-activity-profile.ts';
@@ -15,12 +15,16 @@ export type CapacityWorkdayAgent = {
 	contentPath: string | null;
 	contextQueryRefs:Array<{id:string;revision:number}>;
 	contextQuerySetRefs:Array<{id:string;revision:number}>;
+	contextQueryLayers:ProjectAgentActivityRef['contextQueryLayers'];
 	instructionTemplateRefs:Array<{id:string;revision:number}>;
 	sourceImmutableRef: string | null;
 	handler: EngineeringHandlerKind;
 	projectAgentClassId: string;
 	projectAgentClassSlug: string;
 	purpose: string;
+	identity: UnknownRecord;
+	summary: string | null;
+	promptSystem: string;
 	promptTask: string;
 	outputContract: UnknownRecord;
 	signalPolicy: UnknownRecord;
@@ -30,9 +34,10 @@ export type CapacityWorkdayAgent = {
 	toolPolicy: UnknownRecord;
 	authorityPresetIds: AgentAuthorityPresetId[];
 	execution: UnknownRecord;
+	capabilityRequirements: UnknownRecord[];
 	planningPriority: number | null;
 	planningAllocationPercent: number | null;
-	activityType: 'planning' | 'estimating' | 'reviewing' | 'reporting' | 'chat';
+	activityType: 'planning' | 'estimating' | 'acting' | 'reviewing' | 'reporting' | 'chat';
 };
 
 export type CapacityWorkdayAssignmentIntent = {
@@ -67,6 +72,26 @@ function handler(value: unknown): EngineeringHandlerKind | null {
 	return ENGINEERING_HANDLER_KINDS.includes(candidate as EngineeringHandlerKind)
 		? candidate as EngineeringHandlerKind
 		: null;
+}
+
+function chatSpecialization(profile: UnknownRecord): AgentChatProfileConfiguration {
+	const parameters = record(profile.parameters);
+	const execution = record(parameters.execution);
+	const specialization: AgentChatProfileConfiguration = { foundation: 'discussion-v1' };
+	const reasoningEffort = text(execution.reasoningEffort);
+	if (['minimal', 'low', 'medium', 'high', 'xhigh'].includes(reasoningEffort)) specialization.reasoningEffort = reasoningEffort as AgentChatProfileConfiguration['reasoningEffort'];
+	for (const key of ['maxRuntimeSeconds', 'maxTotalTokens', 'warningTokens'] as const) {
+		const value = Number(execution[key]);
+		if (Number.isInteger(value) && value > 0) specialization[key] = value;
+	}
+	const maxCostAmount = Number(execution.maxCostAmount);
+	if (Number.isFinite(maxCostAmount) && maxCostAmount >= 0) specialization.maxCostAmount = maxCostAmount;
+	const costCurrency = text(execution.costCurrency);
+	if (costCurrency) specialization.costCurrency = costCurrency;
+	const promptTask = text(parameters.task, text(record(profile.prompt).system));
+	if (promptTask) specialization.promptTask = promptTask;
+	if (Array.isArray(parameters.capabilityRequirements)) specialization.capabilityRequirements = parameters.capabilityRequirements as NonNullable<AgentChatProfileConfiguration['capabilityRequirements']>;
+	return specialization;
 }
 
 export function capacityWorkdayRuntimeHandler(agent: Pick<CapacityWorkdayAgent, 'handler'> | UnknownRecord) {
@@ -128,12 +153,12 @@ export function compileCapacityWorkdayAssignmentIntent(agent: CapacityWorkdayAge
 	};
 }
 
-export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], selection?: unknown): CapacityWorkdayAgent[] {
+function agentsFromClasses(agentClasses: unknown[], activityTypes: readonly CapacityWorkdayAgent['activityType'][], selection?: unknown, planningOnly = false): CapacityWorkdayAgent[] {
 	const agents: CapacityWorkdayAgent[] = [];
 	for (const value of agentClasses) {
 		const agentClass = record(value);
 		const allowedModes = array(agentClass.allowedModes ?? agentClass.allowed_modes).map((mode) => text(mode));
-		if (text(agentClass.status, 'active') !== 'active' || (allowedModes.length > 0 && !allowedModes.includes('planning'))) continue;
+		if (text(agentClass.status, 'active') !== 'active' || planningOnly && allowedModes.length > 0 && !allowedModes.includes('planning')) continue;
 		const metadata = record(agentClass.metadata ?? agentClass.metadata_json);
 		const allocation = Number(
 			metadata.planningAllocationPercent
@@ -144,12 +169,15 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 		);
 		const handlerRefs = agentClass.handlerRefs ?? agentClass.handler_refs ?? record(agentClass.handler_refs_json);
 		const selectedProfiles = new Map<string, ProjectAgentActivityRef>();
-		for (const activityType of ['planning', 'reporting', 'reviewing', 'estimating', 'chat'] as const) {
+		for (const activityType of activityTypes) {
 			for (const ref of projectAgentActivityRefs(handlerRefs, activityType)) selectedProfiles.set(`${ref.agentId}:${ref.activityType}`, ref);
 		}
 		for (const selectedActivity of selectedProfiles.values()) {
 			const slug = selectedActivity.agentId;
-			const profile = selectedActivity.profile;
+			const configuredProfile = selectedActivity.profile;
+			const profile = selectedActivity.activityType === 'chat'
+				? compileDefaultChatActivityProfile(slug, chatSpecialization(configuredProfile))
+				: configuredProfile;
 			const configuredHandler = handler(selectedActivity.handlerId);
 			if (!configuredHandler) continue;
 			const authority = compileAgentAuthoritySnapshot(
@@ -166,12 +194,16 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 				contentPath: selectedActivity.contentPath,
 				contextQueryRefs:selectedActivity.contextQueryRefs,
 				contextQuerySetRefs:selectedActivity.contextQuerySetRefs,
+				contextQueryLayers:selectedActivity.contextQueryLayers,
 				instructionTemplateRefs:selectedActivity.instructionTemplateRefs,
 				sourceImmutableRef: text(metadata.immutableRef) || null,
 				handler: configuredHandler,
 				projectAgentClassId: text(agentClass.id),
 				projectAgentClassSlug: text(agentClass.slug, 'planning'),
 				purpose: text(profile.purpose, `Perform configured planning work as ${slug}.`),
+				identity: selectedActivity.identity,
+				summary: selectedActivity.summary,
+				promptSystem: text(record(profile.prompt).system),
 				promptTask: text(stage.promptTask, text(record(profile.prompt).task)),
 				outputContract: record(profile.outputs),
 				signalPolicy: Object.keys(record(stage.signals)).length ? record(stage.signals) : record(profile.signals),
@@ -181,6 +213,7 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 				toolPolicy: record(authority.tools),
 				authorityPresetIds: authority.presetIds,
 				execution: record(profile.execution),
+				capabilityRequirements: array(profile.capabilityRequirements).map(record),
 				planningPriority: Number.isFinite(priority) ? priority : null,
 				planningAllocationPercent: Number.isFinite(allocation) && allocation > 0 ? allocation : null,
 				activityType: selectedActivity.activityType as CapacityWorkdayAgent['activityType'],
@@ -200,4 +233,24 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 		return true;
 	});
 	return selectWorkdayAgents(unique, selection);
+}
+
+export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], selection?: unknown): CapacityWorkdayAgent[] {
+	return agentsFromClasses(agentClasses, ['planning', 'reporting', 'reviewing', 'estimating', 'chat'], selection, true);
+}
+
+export function capacityWorkdayExecutionAgentsFromClasses(agentClasses: unknown[], selection?: unknown): CapacityWorkdayAgent[] {
+	return agentsFromClasses(agentClasses, ['acting', 'reviewing'], selection);
+}
+
+/** Immutable activity-profile authority used by living execution nodes. This is
+ * deliberately a flat profile set, not a second scheduling graph. */
+export function capacityWorkdayAgentProfilesFromClasses(agentClasses: unknown[], selection?: unknown): CapacityWorkdayAgent[] {
+	const selected = [
+		...agentsFromClasses(agentClasses, ['planning', 'estimating', 'reporting', 'chat'], selection, true),
+		...agentsFromClasses(agentClasses, ['acting', 'reviewing'], selection),
+	];
+	return [...new Map(selected.map((agent) => [`${agent.slug}:${agent.activityType}:${agent.projectAgentClassId}`, agent])).values()]
+		.sort((left, right) => left.projectAgentClassSlug.localeCompare(right.projectAgentClassSlug)
+			|| left.slug.localeCompare(right.slug) || left.activityType.localeCompare(right.activityType));
 }
