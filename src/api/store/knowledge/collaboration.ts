@@ -82,7 +82,7 @@ export async function submitKnowledgeWorkspaceMethod(this: ControlPlaneStore, in
 	await this.ensureInitialized();
 	const id = input.id ?? randomUUID();
 	const timestamp = isoNow();
-	const inserted = await this.first(`WITH candidate AS (
+	const inserted = await this.first<{ id: string }>(`WITH candidate AS (
 		SELECT id FROM knowledge_authoring_workspaces
 		WHERE id = ? AND status IN ('draft', 'changes-requested') AND version = ?
 		FOR UPDATE

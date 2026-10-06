@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { createAccountDeleteOperation, createAccountDeletionBlockersOperation, createAccountEmailAddOperation, createAccountEmailConfirmOperation, createAccountEmailPrimaryOperation, createAccountEmailRemoveOperation, createAccountEmailsOperation, createAccountEmailVerifyOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPasswordResetCompleteOperation, createAccountPasswordResetRequestOperation, createAccountPasswordUpdateOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountPublicProfileOperation, createAccountRegisterOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation } from '../../../src/api/control-plane/catalog/account-operations.ts';
 import { createAccountSecurityService } from '../../../src/api/control-plane/accounts/account-security-service.ts';
+import { Hono } from 'hono';
+import { createOperationHttpHandler } from '../../../src/api/control-plane/http/operation-http-handler.ts';
+import { controlPlaneErrorStatus } from '../../../src/api/control-plane/catalog/operation-registry.ts';
+import { createOrResendUserEmailAddress } from '../../../src/api/app/support/accounts/authentication-email.ts';
+import { ControlPlaneStore } from '../../../src/api/persistence/store.ts';
+import { postgresGraph } from './capacity/execution/graph/architecture/living/living-postgres-fixture.ts';
 
 const context = { principal: { id: 'user-1', displayName: 'Adrian', metadata: { sessionId: 'current-session' } },
 	interface: 'rest' as const, requestId: 'request-1', ifMatch: 'account-v1' };
@@ -45,6 +51,70 @@ function dependencies() {
 }
 
 describe('account catalog operations', () => {
+	it('identity prerequisites retain supported failure status and deny coercion before publishing success', async () => {
+		for(const status of [400,401,403,404,409,412,413,422,429,500,502,503,undefined,null,'','502',200,501,504,NaN,Infinity,{},[]]){
+			const fixture=dependencies(),result={ok:false,status,code:'original_identity_failure',message:'Retained original failure.'},before=structuredClone(result);
+			fixture.value.accountSecurity.requestPasswordReset=async()=>result;fixture.value.accountEmails.add=async()=>result;
+			const expected={status:controlPlaneErrorStatus(status??400),code:result.code,message:result.message};
+			await expect(createAccountPasswordResetRequestOperation(fixture.value).handler({path:{},query:{},body:{email:'identity@example.test'}},context)).rejects.toMatchObject(expected);
+			await expect(createAccountEmailAddOperation(fixture.value).handler({path:{},query:{},body:{email:'identity@example.test'}},context)).rejects.toMatchObject(expected);
+			expect(result).toEqual(before);expect(fixture.recordAuditEvent).not.toHaveBeenCalled();
+		}
+	});
+	it('public identity HTTP boundary preserves failed observations and exact successful retry without coercing status', async () => {
+		const fixture=dependencies(),failure={ok:false,status:'502',code:'original_identity_failure',message:'Retained original failure.'},held=structuredClone(failure);
+		const inputs:unknown[]=[];
+		fixture.value.accountSecurity.requestPasswordReset=async(email:unknown)=>{inputs.push(email);return inputs.length===1?failure:{ok:true,sent:true};};
+		const app=new Hono();app.post('/reset',createOperationHttpHandler(createAccountPasswordResetRequestOperation(fixture.value),async()=>{throw new Error('Public operation must not require authentication');},'identity-contract'));
+		const request=()=>app.request('/reset',{method:'POST',headers:{'content-type':'application/json','idempotency-key':'same-identity-request'},body:'{"email":"identity@example.test"}'});
+		const denied=await request(),body=await denied.json(),accepted=await request(),success=await accepted.json();
+		expect(accepted.status).toBe(200);expect(success).toEqual({data:{ok:true,sent:true}});
+		expect(inputs).toEqual(['identity@example.test','identity@example.test']);expect(failure).toEqual(held);
+		expect(denied.status).toBe(500);
+		expect(body).toMatchObject({status:500,code:failure.code,detail:failure.message,instance:'/reset'});
+		expect(body).toMatchObject({status:500,code:failure.code,detail:failure.message});
+	});
+	it('identity email preparation denies missing read-back before or after confirmation without false successful receipts', async () => {
+		const observed:unknown[]=[];
+		for(const stage of ['insert','confirmation']){
+			const store=new ControlPlaneStore({}, {prepare(){throw new Error('Unexpected unit SQL');}}),input={email:'identity@example.test',skipDelivery:true},before=structuredClone(input);
+			const pending={id:'email',user_id:'user',email:input.email,normalized_email:input.email,status:'pending',is_primary:0,verification_requested_at:null,verified_at:null,created_at:'held',updated_at:'held'};
+			const first=vi.spyOn(store,'first');
+			if(stage==='insert')first.mockResolvedValueOnce(null).mockResolvedValueOnce({count:0}).mockResolvedValueOnce(null);
+			else first.mockResolvedValueOnce(pending).mockResolvedValueOnce(null);
+			const run=vi.spyOn(store,'run').mockResolvedValue({});let cause:unknown;
+			try{await createOrResendUserEmailAddress(store,{locals:{}},'user',input);}catch(error){cause=error;}
+			observed.push(cause);expect(input).toEqual(before);
+			if(stage==='insert')expect(run.mock.calls.some(([sql])=>sql.includes('INSERT INTO better_auth_verification'))).toBe(false);
+		}
+		for(const cause of observed)expect(cause).toMatchObject({message:'Email address could not be read back.'});
+	});
+	it('native identity email preparation retains missing-readback failures and confirmation rows before current-authority retry', async () => {
+		const f=await postgresGraph();
+		try{
+			const store=new ControlPlaneStore({TREESEED_ENVIRONMENT:'test'},f.left);store.initializationPromise=Promise.resolve();
+			const observed:unknown[]=[];
+			for(const stage of ['insert','confirmation']){
+				const input={email:`${stage}@identity.example.test`,skipDelivery:true},before=structuredClone(input);
+				await f.left.pool.query(`CREATE FUNCTION moved_identity_email() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.id := 'interrupted-' || NEW.id; RETURN NEW; END $$;
+					CREATE TRIGGER moved_identity_email BEFORE ${stage==='insert'?'INSERT':'UPDATE'} ON user_email_addresses FOR EACH ROW ${stage==='confirmation'?'WHEN (NEW.verification_requested_at IS NOT NULL)':''} EXECUTE FUNCTION moved_identity_email()`);
+				let cause:unknown;try{await createOrResendUserEmailAddress(store,{locals:{}},'user',input);}catch(error){cause=error;}observed.push(cause);
+				const rows=(await f.right.pool.query('SELECT * FROM user_email_addresses WHERE normalized_email=$1',[input.email])).rows;
+				expect(rows).toHaveLength(1);expect(rows[0].id).toMatch(/^interrupted-/);
+				const verification=(await f.right.pool.query('SELECT * FROM better_auth_verification ORDER BY id')).rows;
+				if(stage==='insert')expect(verification).toEqual([]);else expect(verification).toHaveLength(2);
+				await f.left.pool.query('DROP TRIGGER moved_identity_email ON user_email_addresses; DROP FUNCTION moved_identity_email()');
+				const retry=await createOrResendUserEmailAddress(store,{locals:{}},'user',input);
+				expect(retry).toMatchObject({ok:true,verificationSent:true,emailAddress:{id:rows[0].id,status:'pending',email:input.email}});
+				const current=(await f.right.pool.query('SELECT * FROM user_email_addresses WHERE normalized_email=$1',[input.email])).rows;
+				expect(current[0]).toMatchObject({id:rows[0].id,user_id:rows[0].user_id,status:rows[0].status,created_at:rows[0].created_at});
+				const retained=(await f.right.pool.query('SELECT * FROM better_auth_verification ORDER BY id')).rows;
+				for(const row of verification)expect(retained).toContainEqual(row);
+				expect(input).toEqual(before);
+			}
+			for(const cause of observed)expect(cause).toMatchObject({message:'Email address could not be read back.'});
+		}finally{await f.close();}
+	});
 	it('serves public user profiles without requiring a principal', async () => {
 		const operation = createAccountPublicProfileOperation(dependencies().value);
 		await expect(operation.handler({ path: { username: 'adrian' }, query: {}, body: undefined }, { interface: 'rest', requestId: 'public-1' }))

@@ -1,12 +1,135 @@
 import { describe, expect, it, vi } from 'vitest';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { stringify } from 'yaml';
 import { CONTROL_PLANE_OPERATIONS, digestSeedBundle } from '@treeseed/sdk/operator-contracts';
 import { createSeedOperations } from '../../../../src/api/control-plane/catalog/seeds/index.ts';
 import { createSeedOperationService, reconcileSeedProviderPrerequisites } from '../../../../src/api/control-plane/seeds/seed-operation-service.ts';
 import { validateSeedSource } from '../../../../src/control-plane/seeds/contracts/index.ts';
 import { actionIsUnchanged, ensureLocalSeedTeamMemberships } from '../../../../src/control-plane/seeds/apply-support/index.ts';
 import { applyPlannedSeedActions } from '../../../../src/control-plane/seeds/apply-support/support/apply.ts';
+import { parseRecipeCommand } from '../../../../src/control-plane/seeds/contracts/schema/parse-project.ts';
+import { loadAndPlanCoreSeed } from '../../../../src/control-plane/seeds/planning/load-core-seed-plan.ts';
+import { createProductionApproval } from '../../../../src/control-plane/seeds/apply-support/governance/production-approval.ts';
+import { ControlPlaneStore, serializeApprovalRequest } from '../../../../src/api/persistence/store.ts';
+import { postgresGraph } from '../capacity/execution/graph/architecture/living/living-postgres-fixture.ts';
+import type { SeedDiagnostic } from '../../../../src/control-plane/seeds/contracts/types.ts';
 
 describe('seed catalog operations', () => {
+	it('execution seed approval denies missing owning read-back before inbox publication and preserves exact successful inputs', async () => {
+		const plan = { seed: 'execution', version: 1, environments: ['prod'],
+			summary: { create: 1, update: 2, unchanged: 3, skip: 0, delete: 0, error: 0 }, actions: [
+				{ kind: 'team', key: 'team:execution', payload: { slug: 'execution' }, existing: { id: 'team', slug: 'execution' } },
+				{ kind: 'project', key: 'project:execution/agent', payload: { teamKey: 'team:execution', slug: 'agent' }, existing: { id: 'project', slug: 'agent' } },
+			] };
+		const input = { plan, manifestHash: 'held-manifest', actor: { actorType: 'user', id: 'operator' } }, before = structuredClone(input);
+		const request = serializeApprovalRequest({ id: 'approval', title: 'Exact approval', summary: 'Exact summary', kind: 'seed_production_apply' });
+		const store = { createApprovalRequest: vi.fn(async () => request), upsertTeamInboxItem: vi.fn(async () => null) };
+		store.createApprovalRequest.mockResolvedValueOnce(null);
+		await expect(createProductionApproval({ ...input, store })).resolves.toEqual({ ok: false, message: 'Production seed approval request could not be read back.' });
+		expect(store.upsertTeamInboxItem).not.toHaveBeenCalled();
+		expect(input).toEqual(before);
+		await expect(createProductionApproval({ ...input, store })).resolves.toEqual({ ok: true, approvalRequest: request });
+		expect(store.createApprovalRequest.mock.calls).toHaveLength(2);
+		expect(store.upsertTeamInboxItem).toHaveBeenCalledExactlyOnceWith('team', {
+			id: 'seed-approval:approval', projectId: 'project', kind: 'approval', state: 'waiting_for_approval',
+			title: 'Exact approval', summary: 'Exact summary', href: '/app/work/decisions#approval-approval', itemKey: 'approval',
+			metadata: { approvalId: 'approval', approvalRequestId: 'approval', approvalKind: 'seed_production_apply',
+				seed: { name: 'execution', version: 1, environments: ['prod'], manifestHash: 'held-manifest', planSummary: plan.summary } },
+		});
+		expect(input).toEqual(before);
+	});
+	it('native execution seed approval retains interrupted PostgreSQL rows without a false inbox and independently reads a fresh exact retry', async () => {
+		const f = await postgresGraph();
+		try {
+			const store = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, f.left);
+			store.initializationPromise = Promise.resolve();
+			const plan = { seed: 'execution', version: 1, environments: ['prod'],
+				summary: { create: 1, update: 2, unchanged: 3, skip: 0, delete: 0, error: 0 }, actions: [
+					{ kind: 'team', key: 'team:execution', payload: { slug: 'execution' }, existing: { id: 'team', slug: 'execution' } },
+					{ kind: 'project', key: 'project:execution/agent', payload: { teamKey: 'team:execution', slug: 'agent' }, existing: { id: 'project', slug: 'agent' } },
+				] };
+			const input = { plan, manifestHash: 'held-manifest', actor: { actorType: 'user', id: 'operator' } }, before = structuredClone(input);
+			// Native fault input moves only the newly inserted identifier. The real
+			// owning read cannot find it; its original failed row remains retained.
+			await f.left.pool.query(`CREATE FUNCTION interrupted_seed_approval() RETURNS trigger LANGUAGE plpgsql AS $$
+				BEGIN NEW.id := 'interrupted-' || NEW.id; RETURN NEW; END $$;
+				CREATE TRIGGER interrupted_seed_approval BEFORE INSERT ON approval_requests FOR EACH ROW EXECUTE FUNCTION interrupted_seed_approval()`);
+			await expect(createProductionApproval({ ...input, store })).resolves.toEqual({ ok: false, message: 'Production seed approval request could not be read back.' });
+			const failed = (await f.right.pool.query('SELECT * FROM approval_requests ORDER BY id')).rows;
+			expect(failed).toHaveLength(1);
+			expect(failed[0].id).toMatch(/^interrupted-/u);
+			expect(failed[0]).toMatchObject({ team_id: 'team', project_id: 'project', state: 'pending', kind: 'seed_production_apply', requested_by_id: 'operator' });
+			expect((await f.right.pool.query('SELECT * FROM team_inbox_items')).rows).toEqual([]);
+			expect(await f.snapshot()).toEqual({ nodes: [], edges: [], revisions: [], assignments: [], reservations: [] });
+			await f.left.pool.query('DROP TRIGGER interrupted_seed_approval ON approval_requests; DROP FUNCTION interrupted_seed_approval()');
+			const result = await createProductionApproval({ ...input, store });
+			expect(result.ok).toBe(true);
+			if (!('approvalRequest' in result) || !result.approvalRequest) throw new Error('Exact owning approval read-back missing');
+			const rows = (await f.right.pool.query('SELECT * FROM approval_requests ORDER BY id')).rows;
+			expect(rows).toHaveLength(2);
+			expect(rows).toContainEqual(failed[0]);
+			const approved = rows.find(row => row.id === result.approvalRequest.id);
+			expect(approved).toBeDefined();
+			expect(serializeApprovalRequest(approved)).toEqual(result.approvalRequest);
+			const inbox = (await f.right.pool.query('SELECT * FROM team_inbox_items')).rows;
+			expect(inbox).toHaveLength(1);
+			expect(inbox[0]).toMatchObject({ id: `seed-approval:${result.approvalRequest.id}`, team_id: 'team', project_id: 'project', state: 'waiting_for_approval', item_key: result.approvalRequest.id });
+			expect(JSON.parse(inbox[0].metadata_json)).toEqual({ approvalId: result.approvalRequest.id, approvalRequestId: result.approvalRequest.id,
+				approvalKind: 'seed_production_apply', seed: { name: 'execution', version: 1, environments: ['prod'], manifestHash: 'held-manifest', planSummary: plan.summary } });
+			expect(input).toEqual(before);
+			expect(await f.snapshot()).toEqual({ nodes: [], edges: [], revisions: [], assignments: [], reservations: [] });
+		} finally { await f.close(); }
+	});
+	it('returns exact execution recipe command diagnostics for missing malformed and empty argv without changing supplied inputs', () => {
+		const path = 'operationRecipes[0].steps[0].command';
+		const missing = { severity: 'error', code: 'seed.recipe_command_missing_argv', message: 'Recipe command must include argv.', path: `${path}.argv` };
+		for (const value of [{}, { argv: undefined }, { argv: null }, { argv: 1 }, { argv: 'node' }, { argv: {} }, { argv: [] }, { argv: [' ', ''] }]) {
+			const before = structuredClone(value), diagnostics: SeedDiagnostic[] = [];
+			expect(parseRecipeCommand(value, path, diagnostics)).toEqual({ argv: [] });
+			expect(diagnostics).toEqual(value.argv !== undefined && !Array.isArray(value.argv)
+				? [{ severity: 'error', code: 'seed.invalid_array', message: 'Expected argv to be an array.', path: `${path}.argv` }, missing] : [missing]);
+			expect(value).toEqual(before);
+		}
+		const diagnostics: SeedDiagnostic[] = [], value = { argv: [' node ', '--check', 'tests/execution.ts'] };
+		expect(parseRecipeCommand(value, path, diagnostics)).toEqual({ argv: ['node', '--check', 'tests/execution.ts'] });
+		expect(parseRecipeCommand(undefined, path, diagnostics)).toBeUndefined();
+		expect(diagnostics).toEqual([]);
+		expect(value.argv).toEqual([' node ', '--check', 'tests/execution.ts']);
+		expect(parseRecipeCommand(null, path, diagnostics)).toBeUndefined();
+		expect(diagnostics).toEqual([{ severity: 'error', code: 'seed.invalid_object', message: 'Expected command to be an object.', path }]);
+	});
+	it('native seed file planning denies invalid execution command bytes without repairing inputs and admits only the explicit valid retry', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'api494-execution-recipe-'));
+		try {
+			await mkdir(join(root, 'seeds'));
+			const path = join(root, 'seeds', 'execution.yaml');
+			const manifest = (command: unknown) => stringify({ name: 'execution', version: 1, environments: ['local'], resources: {},
+				operationRecipes: [{ id: 'execution', title: 'Configured execution', environments: ['local'], entrypoints: ['verify'],
+					steps: [{ id: 'verify', title: 'Verify execution', channel: 'provider-runtime', operation: 'system.health', command }] }] });
+			for (const command of [{}, { argv: null }, { argv: 1 }, { argv: 'node' }, { argv: {} }, { argv: [] }, { argv: [' ', ''] }]) {
+				const bytes = manifest(command);
+				await writeFile(path, bytes);
+				const result = loadAndPlanCoreSeed({ projectRoot: root, seedName: 'execution', environments: 'local', mode: 'plan' });
+				expect(result.ok).toBe(false);
+				expect(result.plan).toBeNull();
+				expect(result.diagnostics.filter(entry => entry.severity === 'error')).toEqual(command.argv !== undefined && !Array.isArray(command.argv)
+					? [{ severity: 'error', code: 'seed.invalid_array', message: 'Expected argv to be an array.', path: 'operationRecipes[0].steps[0].command.argv' },
+						{ severity: 'error', code: 'seed.recipe_command_missing_argv', message: 'Recipe command must include argv.', path: 'operationRecipes[0].steps[0].command.argv' }]
+					: [{ severity: 'error', code: 'seed.recipe_command_missing_argv', message: 'Recipe command must include argv.', path: 'operationRecipes[0].steps[0].command.argv' }]);
+				expect(await readFile(path, 'utf8')).toBe(bytes);
+			}
+			const bytes = manifest({ argv: ['node', '--check', 'tests/execution.ts'] });
+			await writeFile(path, bytes);
+			const result = loadAndPlanCoreSeed({ projectRoot: root, seedName: 'execution', environments: 'local', mode: 'plan' });
+			expect(result.ok).toBe(true);
+			expect(result.plan?.recipes[0]?.orderedSteps[0]?.command).toEqual({ argv: ['node', '--check', 'tests/execution.ts'] });
+			expect(result.diagnostics.filter(entry => entry.severity === 'error')).toEqual([]);
+			expect(await readFile(path, 'utf8')).toBe(bytes);
+		} finally { await rm(root, { recursive: true, force: true }); }
+		await expect(readFile(join(root, 'seeds', 'execution.yaml'))).rejects.toMatchObject({ code: 'ENOENT' });
+	});
 	it('binds the complete SDK-owned portable seed lifecycle', () => {
 		const operations = createSeedOperations({ seeds: {} as any });
 		expect(operations.map((operation) => operation.binding)).toEqual([

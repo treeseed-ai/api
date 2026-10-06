@@ -1,4 +1,4 @@
-import { type ControlPlaneStore, serializeProject } from '../../../../persistence/store.ts';
+import { type ControlPlaneStore, serializeProject, type ProjectRow } from '../../../../persistence/store.ts';
 
 function isPublic(project: any) {
 	const metadata = project?.metadata ?? {};
@@ -8,6 +8,6 @@ function isPublic(project: any) {
 
 export async function listPublicProjectsMethod(this: ControlPlaneStore) {
 	await this.ensureInitialized();
-	const rows = await this.all('SELECT * FROM projects ORDER BY created_at ASC');
+	const rows = await this.all<ProjectRow>('SELECT * FROM projects ORDER BY created_at ASC');
 	return rows.map(serializeProject).filter((project) => project?.metadata?.deletion?.status !== 'succeeded' && isPublic(project));
 }

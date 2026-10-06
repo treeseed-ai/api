@@ -1,4 +1,4 @@
-import type { Hono } from 'hono';
+import type { Env, Hono } from 'hono';
 import type { OAuthDeviceApprovalPresentation } from '@treeseed/sdk/operator-contracts';
 import { authorizationServerMetadata, isFirstPartyOAuthClient, normalizeRequestedScopes, protectedResourceMetadata } from './oauth-metadata.ts';
 import { clientAllowsRedirect, resolveOAuthClient } from './oauth-clients.ts';
@@ -66,7 +66,7 @@ function authorizedScopes(requested: string[], permitted: string[] | undefined) 
 	return requested.length > 0 && requested.every((scope) => allowed.has(scope));
 }
 
-export function installOAuthProtocolRoutes(app: Hono, provider?: OAuthRuntimeProvider, authenticateBearer?: AuthenticateBearer,
+export function installOAuthProtocolRoutes<E extends Env>(app: Hono<E>, provider?: OAuthRuntimeProvider, authenticateBearer?: AuthenticateBearer,
 	presentationBaseUrl?: string, allowAdminLoopback = false) {
 	const presentationOrigin = (presentationBaseUrl ?? '').replace(/\/+$/u, '');
 	const adminCallbackUrl = presentationOrigin ? `${presentationOrigin}/auth/callback/treeseed` : undefined;

@@ -8,9 +8,10 @@ import { identityMigrationFailureReason } from './identity-migration-diagnostic.
 
 const root = '/run/treeseed/identity/api-migration';
 const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u);
+const endpoint = z.string().refine(value => identityEndpointSchema.safeParse(value).success, 'Canonical identity endpoint required.');
 export const identityMigrationConfigurationSchema = z.object({ schemaVersion: z.literal('treeseed.identity-api-migration/v1'),
-  issuer: identityEndpointSchema, resource: identityEndpointSchema, backupGeneration: z.number().int().positive().optional(),
-  workloads: z.array(z.object({ id, issuer: identityEndpointSchema, subject: id, clientId: id,
+  issuer: endpoint, resource: endpoint, backupGeneration: z.number().int().positive().optional(),
+  workloads: z.array(z.object({ id, issuer: endpoint, subject: id, clientId: id,
     displayName: z.string().min(1).max(256), permissions: z.array(z.string()), scopes: z.array(z.string()) }).strict()).max(128),
 }).strict();
 

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { serializeFrontmatterDocument } from '../../../../../src/api/content/frontmatter.ts';
 import { snapshotAgents } from '../../../../../src/api/capacity/services/capacity/agents/team-clone/agent-team-clone-service.ts';
+import { validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
 
 const commit = 'a'.repeat(40);
 const definition = {
@@ -38,7 +39,8 @@ describe('exact TreeDX agent-team source snapshot', () => {
 
 	it('fails closed instead of silently dropping an invalid definition', async () => {
 		await expect(snapshotAgents(connection([{ path: 'agents/invalid.mdx', content: '---\nid: invalid\n---\n' }])))
-			.rejects.toMatchObject({ code: 'agent_team_definition_invalid' });
+			.rejects.toMatchObject({ code: 'agent_team_definition_invalid', status: 409,
+				details: { path: 'agents/invalid.mdx', diagnostics: validateAgentDefinitionModel({ id: 'invalid' }).diagnostics } });
 	});
 
 	it('rejects two definitions that would overwrite the same target agent class', async () => {

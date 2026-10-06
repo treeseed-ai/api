@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { commitLivingExecutionLifecycle } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/execution/living-execution-lifecycle.ts';
 import type { CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
+import { assignment } from '../execution/fixtures/assignment.ts';
+import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 
 const revisionConflict = () => Object.assign(new Error('concurrent graph revision'), {
 	code: '23505', constraint: 'execution_graph_revisions_pkey',
@@ -8,10 +10,19 @@ const revisionConflict = () => Object.assign(new Error('concurrent graph revisio
 
 const sourceRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
 	digest: `sha256:${'a'.repeat(64)}`, repository: 'library', commit: 'b'.repeat(40), path: 'proposals/one.mdx' };
+const attempt = assignmentAttemptSchema.parse({ ...assignment, nodeId: 'actor', graphRevision: 1, sourceRef });
 const input = (store: CapacityGovernanceDatabase) => ({ store,
 	assignment: { id: 'assignment', teamId: 'team', executionNodeId: 'actor', executionNodeRevision: 1,
-		assignmentAttempt: { sourceRef } } as never, status: 'completed', now: '2026-09-13T12:00:00.000Z' });
+		graphRevision: 1, stateVersion: 1, assignmentAttempt: attempt } as never,
+	status: 'completed', now: '2026-09-13T12:00:00.000Z' });
 const operations = [{ query: 'same assignment transition' }, { query: 'same teardown' }];
+const nodeRow = { id: 'actor', team_id: 'team', project_id: 'project',
+	work_item_id: 'work', kind: 'acting', pair_role: 'actor', source_ref_json: sourceRef, authority_refs_json: [],
+	rule_revision: 1, node_revision: 1, agent_class: 'engineer', status: 'running',
+	estimate_json: { expectedSeconds: 2, maximumSeconds: 3 }, required_capabilities_json: [],
+	requested_permissions_json: { content: { read: ['proposal'], write: [] }, tools: ['source.read'] },
+	workspace: 'read-only', acceptance_criteria_json: ['done'], maximum_review_cycles: 2,
+	graph_revision_created: 1, graph_revision_updated: 1 };
 
 function fixture(fail: (attempt: number) => Error | null) {
 	const attempts: Array<Array<{ query: string; params: unknown[] }>> = [];
@@ -23,13 +34,9 @@ function fixture(fail: (attempt: number) => Error | null) {
 				const error = fail(attempts.length); if (error) throw error;
 			}
 			const rows = sql.includes('SELECT revision') ? [{ revision: attempts.length + 9 }]
-				: sql.includes('SELECT * FROM execution_nodes') ? [{ id: 'actor', team_id: 'team', project_id: 'project',
-					work_item_id: 'work', kind: 'acting', pair_role: 'actor', source_ref_json: sourceRef, authority_refs_json: [],
-					rule_revision: 1, node_revision: 1, agent_class: 'engineer', status: 'running',
-					estimate_json: { expectedSeconds: 2, maximumSeconds: 3 }, required_capabilities_json: [],
-					requested_permissions_json: { content: { read: ['proposal'], write: [] }, tools: ['source.read'] },
-					workspace: 'read-only', acceptance_criteria_json: ['done'], maximum_review_cycles: 2,
-					graph_revision_created: 1, graph_revision_updated: 1 }] : [];
+				: sql.includes('SELECT * FROM execution_nodes') ? [structuredClone(nodeRow)]
+					: sql.includes('SELECT id FROM capacity_provider_assignments') ? [{ id: attempt.id }]
+						: sql.includes('SELECT id FROM execution_nodes') ? [{ id: attempt.nodeId }] : [];
 			return { rows, rowCount: rows.length };
 		};
 		return apply({ query } as never);
@@ -68,7 +75,9 @@ describe('concurrent assignment graph completion', () => {
 	it('propagates an inherited transaction failure without reusing its aborted connection', async () => {
 		const error = revisionConflict();
 		const store = fixture(() => null);
-		const database = { run: vi.fn(async () => {}), first: vi.fn(async () => null), all: vi.fn(async () => []),
+		const database = { run: vi.fn(async () => {}), first: vi.fn(async (sql: string) =>
+			 sql.includes('SELECT revision') ? { revision: 10 } : { id: sql.includes('capacity_provider_assignments') ? attempt.id : attempt.nodeId }),
+			all: vi.fn(async (sql: string) => sql.includes('execution_nodes') ? [structuredClone(nodeRow)] : []),
 			batch: vi.fn(async () => { throw error; }) } as unknown as CapacityGovernanceDatabase;
 		await expect(commitLivingExecutionLifecycle(input(store.store), operations, database)).rejects.toBe(error);
 		expect(store.transaction).not.toHaveBeenCalled();

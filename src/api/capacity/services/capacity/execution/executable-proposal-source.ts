@@ -1,6 +1,5 @@
-import { createHash } from 'node:crypto';
 import { CapacityOperationError } from '../../../../control-plane/repositories/capacity/capacity-operation-error.ts';
-import { hasCompleteExecutablePlan, readExactProposal } from '../../../../governance/executable-proposal.ts';
+import { hasCompleteExecutablePlan, readExactDecision, readExactProposal } from '../../../../governance/executable-proposal.ts';
 import type { ExecutableProposalSource } from '../../../policy/execution/execution-graph-projector.ts';
 import { loadProposalBlockingFeedback } from './proposal-planning-source.ts';
 
@@ -85,14 +84,15 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 		if (accepted && stable(recordedRef) !== stable(exact.ref)) throw new CapacityOperationError(
 			409, 'proposal_decision_ref_stale', 'The accepted decision does not match the current exact proposal revision.');
 		const selectedProjectId = text(row.project_id);
+		const decision = accepted ? await readExactDecision(store, { ...row, id: row.accepted_decision_id }) : null;
 		sources.push({
 			teamId, projectId: selectedProjectId, repository: exact.ref.repository!, path: exact.ref.path!, commit: exact.ref.commit!,
 			digest: exact.ref.digest!, proposalRevision: Number(accepted ? row.proposal_version : row.active_version),
 			frontmatter: exact.definition,
 			feedback: await loadProposalBlockingFeedback(store, text(row.proposal_id)),
 			decision: accepted ? {
-				id: text(row.accepted_decision_id), revision: 1,
-				digest: `sha256:${createHash('sha256').update(stable(decisionRecord)).digest('hex')}`,
+				id: decision!.ref.id, revision: Number(decision!.ref.revision), digest: decision!.ref.digest!,
+				repository: decision!.ref.repository!, commit: decision!.ref.commit!, path: decision!.ref.path!,
 				current: true,
 			} : null,
 		});

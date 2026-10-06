@@ -1,5 +1,6 @@
 import { CAPABILITY_PERMISSIONS,ControlPlaneStore,principalIsAdmin,TEAM_ROLE_DESCRIPTIONS,uniqueStrings } from "../../../../persistence/store.ts";
-export async function getTeamAccessSummaryMethod(this: ControlPlaneStore, teamId, principal) {
+import type { OperationInvocationContext } from '../../../../control-plane/catalog/operation-registry.ts';
+export async function getTeamAccessSummaryMethod(this: ControlPlaneStore, teamId: string, principal: OperationInvocationContext['principal'] | null) {
     await this.ensureInitialized();
     const context = await this.resolvePrincipalTeamContext(teamId, principal);
     const roles = context?.roles ?? [];

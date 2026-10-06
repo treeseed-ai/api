@@ -1,20 +1,24 @@
 import { resolveApiConfig } from '../../../configuration/runtime-config.ts';
 import { getSiteAuthConfig } from '../../../../auth/config.ts';
 import { AUTH_PROVIDERS,jsonError,controlPlaneAuthContext } from '../index.ts';
-export function providerConfigFor(c, provider) {
+import type { Context } from 'hono';
+import type { ApiConfig } from '../../../types.ts';
+export function providerConfigFor(c: Context, provider: string) {
     const config = getSiteAuthConfig(controlPlaneAuthContext(c));
-    const spec = AUTH_PROVIDERS[provider];
-    const credentials = config.providers?.[provider];
+    const specifications: Readonly<Record<string, typeof AUTH_PROVIDERS[keyof typeof AUTH_PROVIDERS] | undefined>> = AUTH_PROVIDERS;
+    const providers: Readonly<Record<string, typeof config.providers[keyof typeof config.providers] | undefined>> = config.providers;
+    const spec = specifications[provider];
+    const credentials = providers?.[provider];
     return spec && credentials?.clientId && credentials?.clientSecret ? { ...spec, ...credentials } : null;
 }
-export function mergeStringConfig(target, config) {
+export function mergeStringConfig(target: Record<string, unknown>, config: Record<string, unknown> | null | undefined) {
     for (const [key, value] of Object.entries(config ?? {})) {
         if (typeof value === 'string' && value.trim())
             target[key] = value;
     }
     return target;
 }
-export function requireConfiguredServiceCredential(c, config) {
+export function requireConfiguredServiceCredential(c: Context, config: Pick<ApiConfig, 'webServiceId' | 'webServiceSecret'>) {
     const serviceId = c.req.header('x-treeseed-service-id') ?? '';
     const serviceSecret = c.req.header('x-treeseed-service-secret') ?? '';
     if (!config.webServiceId || !config.webServiceSecret || serviceId !== config.webServiceId || serviceSecret !== config.webServiceSecret) {

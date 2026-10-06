@@ -82,7 +82,9 @@ function source(items = [
 		teamId: 'team', projectId: 'project', repository: 'treeseed-ai/sdk',
 		path: 'proposals/agent-runtime.mdx', commit: 'a'.repeat(40), digest: `sha256:${'b'.repeat(64)}`,
 		proposalRevision: 1,
-		decision: { id: 'decision', revision: 1, digest: `sha256:${'c'.repeat(64)}`, current: true },
+		// Controlled UNIT authority; native Decision production is a separate test.
+		decision: { id: 'decision', revision: 1, digest: `sha256:${'c'.repeat(64)}`, current: true,
+			repository: 'project-library', commit: 'c'.repeat(40), path: 'decisions/decision.mdx' },
 		frontmatter: {
 			schemaVersion: 'treeseed.proposal/v1',
 			id: 'agent-runtime', projectId: 'project', title: 'Agent runtime',

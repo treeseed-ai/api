@@ -1,5 +1,6 @@
 import { createPublicKey,createVerify } from 'node:crypto';
 import { parseBase64urlJson,providerJwksCache } from '../../index.ts';
+import type { providerConfigFor } from '../../configuration/foundation-configuration.ts';
 export const POSTGRES_AUTH_PROVIDER_ID = 'control-plane-postgres';
 export const AUTH_PROVIDERS = {
     github: { label: 'GitHub', authorizeUrl: 'https://github.com/login/oauth/authorize', tokenUrl: 'https://github.com/login/oauth/access_token', scopes: 'read:user user:email' },
@@ -7,7 +8,7 @@ export const AUTH_PROVIDERS = {
     microsoft: { label: 'Microsoft', authorizeUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize', tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token', scopes: 'openid email profile User.Read', issuerPrefix: 'https://login.microsoftonline.com/', jwksUrl: 'https://login.microsoftonline.com/common/discovery/v2.0/keys' },
     apple: { label: 'Apple', authorizeUrl: 'https://appleid.apple.com/auth/authorize', tokenUrl: 'https://appleid.apple.com/auth/token', scopes: 'name email', issuer: 'https://appleid.apple.com', jwksUrl: 'https://appleid.apple.com/auth/keys' },
 };
-export async function verifyProviderIdToken(token, configured, expectedNonce) {
+export async function verifyProviderIdToken(token: unknown, configured: Extract<NonNullable<ReturnType<typeof providerConfigFor>>, { jwksUrl: string }> & { issuer?: string; issuerPrefix?: string }, expectedNonce: string) {
     const [encodedHeader, encodedPayload, encodedSignature] = String(token ?? '').split('.');
     if (!encodedHeader || !encodedPayload || !encodedSignature)
         throw new Error('The identity provider did not return a valid identity token.');

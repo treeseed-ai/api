@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { finalizeEstimateReadyApproval, integrateAssignmentEstimate, mergeAssignmentEstimate, retryEstimateContention } from '../../../../../src/api/capacity/services/capacity/assignments/planning/estimates/integration.ts';
 import { proposalApprovalFingerprint } from '../../../../../src/api/governance/executable-proposal.ts';
+import { readyWorkItem } from '../../governance/proposals/architecture/ready-proposal-fixture.ts';
 
 const estimate = { expectedSeconds: 200, maximumSeconds: 300, rationale: 'Exact source inspection.' };
-const frozen = { id: 'proposal-1', projectId: 'project-1', status: 'draft', executionPlan: { workItems: [
-	{ id: 'research', agentClass: 'researcher', review: 'required', objective: 'Inspect the source.' },
-	{ id: 'implementation', agentClass: 'engineer', review: 'required', objective: 'Implement the contract.' },
+const frozen = { schemaVersion: 'treeseed.proposal/v1', id: 'proposal-1', projectId: 'project-1',
+	title: 'Exact estimator input', request: 'Inspect and implement the contract.', summary: 'Preserve exact proposal authority.', status: 'draft', executionPlan: { workItems: [
+	{ ...readyWorkItem(), id: 'research', agentClass: 'researcher', objective: 'Inspect the source.', estimate: undefined, reviewEstimate: undefined },
+	{ ...readyWorkItem(), id: 'implementation', agentClass: 'engineer', objective: 'Implement the contract.', estimate: undefined, reviewEstimate: undefined },
 ] } };
 const candidate = { ...frozen, executionPlan: { workItems: [
 	frozen.executionPlan.workItems[0], { ...frozen.executionPlan.workItems[1], estimate },

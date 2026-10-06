@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
+import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import { isUniqueConstraintViolation } from '../../../database-errors.ts';
 import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
@@ -37,8 +39,8 @@ function positiveOrZero(value: number, name: string) {
 
 export function capacityUsageIdentity(input: CapacityUsageReportRequest, reservation: Record<string, unknown>): CapacityUsageIdentity {
 	const durableAttempt = Number(reservation.assignment_attempt ?? 0);
-	const assignmentAttempt = Number(input.assignmentAttempt ?? durableAttempt);
-	if (!Number.isInteger(assignmentAttempt) || assignmentAttempt < 0) throw new CapacityGovernanceError('capacity_usage_assignment_attempt_invalid', 'Usage assignmentAttempt must be a non-negative integer.', 400);
+	const assignmentAttempt = input.assignmentAttempt === undefined ? durableAttempt : input.assignmentAttempt;
+	if (typeof assignmentAttempt !== 'number' || !Number.isSafeInteger(assignmentAttempt) || assignmentAttempt < 1) throw new CapacityGovernanceError('capacity_usage_assignment_attempt_invalid', 'Usage assignmentAttempt must be an unchanged positive integer.', 400);
 	if (assignmentAttempt !== durableAttempt) throw new CapacityGovernanceError('capacity_usage_assignment_attempt_conflict', 'Usage assignmentAttempt does not match the durable assignment attempt.', 409, { assignmentAttempt, durableAttempt });
 	const usageDimension = String(input.usageDimension).trim();
 	if (!/^[a-z0-9][a-z0-9._-]{0,63}$/u.test(usageDimension)) throw new CapacityGovernanceError('capacity_usage_dimension_invalid', 'usageDimension must be a lowercase stable identifier of at most 64 characters.', 400);
@@ -50,6 +52,20 @@ export function capacityUsageIdentity(input: CapacityUsageReportRequest, reserva
 export function assertCapacityUsageMatches(row: Record<string, unknown>, input: CapacityUsageReportRequest, identity: CapacityUsageIdentity) {
 	let metadata: Record<string, unknown> = {};
 	try { metadata = JSON.parse(String(row.metadata_json ?? '{}')) as Record<string, unknown>; } catch { /* handled by mismatch */ }
+	const usage = input.usageActual ?? {};
+	const descriptorMatches = row.execution_profile_id === (usage.executionProfileId ?? 'standard-code-model')
+		&& row.business_model === (usage.businessModel ?? 'provider-native')
+		&& (row.model_name ?? null) === (usage.modelName ?? null)
+		&& (usage.executionProviderId == null || row.execution_provider_id === usage.executionProviderId);
+	const counts = [['inputTokens', 'input_tokens'], ['outputTokens', 'output_tokens'], ['cachedInputTokens', 'cached_input_tokens'],
+		['reasoningTokens', 'reasoning_tokens'], ['filesOpened', 'files_opened'], ['filesChanged', 'files_changed'],
+		['diffLinesAdded', 'diff_lines_added'], ['diffLinesRemoved', 'diff_lines_removed'], ['testRuns', 'test_runs'], ['retryCount', 'retry_count']] as const;
+	const countersMatch = counts.every(([field, column]) => usage[field] == null ? row[column] == null
+		: typeof usage[field] === 'number' && Number(row[column]) === usage[field]);
+	const minutesMatch = ([['quotaMinutes', 'quota_minutes'], ['wallMinutes', 'wall_minutes']] as const).every(([field, column]) =>
+		usage[field] == null ? row[column] == null : typeof usage[field] === 'number' && durableRealEquals(row[column], usage[field]));
+	let nativeMatches = false;
+	try { nativeMatches = isDeepStrictEqual(JSON.parse(String(row.native_usage_json)), usage.nativeUsage ?? {}); } catch { /* corrupt history cannot replay */ }
 	const matches = String(row.id ?? '') === identity.id
 		&& String(row.idempotency_key ?? '') === identity.idempotencyKey
 		&& String(row.assignment_id ?? '') === input.assignmentId
@@ -59,7 +75,8 @@ export function assertCapacityUsageMatches(row: Record<string, unknown>, input: 
 		&& durableRealEquals(row.active_seconds, input.activeSeconds)
 		&& durableRealEquals(row.elapsed_seconds, input.elapsedSeconds)
 		&& durableRealEquals(metadata.providerUnits, input.providerUnits)
-		&& durableRealEquals(row.actual_usd, input.usd);
+		&& durableRealEquals(row.actual_usd, input.usd)
+		&& descriptorMatches && countersMatch && minutesMatch && nativeMatches;
 	if (!matches) throw new CapacityGovernanceError('capacity_usage_idempotency_conflict', 'Usage identity is already bound to a different report.', 409, { assignmentId: input.assignmentId, usageActualId: identity.id });
 }
 
@@ -73,6 +90,15 @@ export function capacityUsageInsertOperation(input: CapacityUsageReportRequest, 
 		: typeof reservation.assignment_attempt_json === 'string'
 			? JSON.parse(reservation.assignment_attempt_json) as Record<string, unknown>
 			: reservation.assignment_attempt_json as Record<string, unknown>;
+	const parsedAttempt = assignmentAttemptSchema.safeParse(attempt);
+	if (!parsedAttempt.success || !isDeepStrictEqual(parsedAttempt.data, attempt)) throw new CapacityGovernanceError(
+		'provider_assignment_contract_invalid', 'Usage persistence requires the unchanged complete admitted attempt.', 409);
+	if (usage.executionProviderId != null && usage.executionProviderId !== parsedAttempt.data.provider.executionProviderId) throw new CapacityGovernanceError(
+		'provider_assignment_usage_invalid', 'Usage execution provider differs from the frozen selection.', 409);
+	const native = usage.nativeUsage ?? {};
+	if (!native || typeof native !== 'object' || Array.isArray(native) || Object.values(native).some(value =>
+		typeof value !== 'number' || !Number.isFinite(value) || value < 0)) throw new CapacityGovernanceError(
+		'provider_assignment_usage_invalid', 'Native usage requires unchanged finite nonnegative measurements.', 400);
 	const effectiveProfile = attempt?.effectiveProfile as Record<string, unknown> | undefined;
 	const activity = typeof effectiveProfile?.activity === 'string' ? effectiveProfile.activity : null;
 	const taskSignature = activity && reservation.project_agent_class_id
@@ -119,11 +145,16 @@ export async function reportCapacityUsage(database: CapacityGovernanceDatabase, 
 	if (String(reservation.assignment_id ?? '') !== input.assignmentId) throw new CapacityGovernanceError('capacity_usage_assignment_mismatch', 'Usage report assignment does not own the reservation.', 409);
 	if (String(reservation.membership_id ?? '') !== input.membershipId) throw new CapacityGovernanceError('capacity_usage_membership_mismatch', 'Usage report membership does not own the reservation.', 403);
 	const identity = capacityUsageIdentity(input, reservation);
+	const existing = await database.first(`SELECT * FROM capacity_usage_actuals WHERE id = ? OR idempotency_key = ? LIMIT 1`, [identity.id, identity.idempotencyKey]);
+	if (existing) {
+		assertCapacityUsageMatches(existing, input, identity);
+		return { replayed: true, usageActual: existing };
+	}
 	const token = randomUUID();
 	const now = new Date().toISOString();
 	try {
 		await database.batch([
-			{ query: `UPDATE capacity_reservations SET usage_report_token = ?, updated_at = ? WHERE id = ? AND team_id = ? AND usage_report_token IS NULL AND settlement_token IS NULL AND state IN ('reserved', 'consuming') AND NOT EXISTS (SELECT 1 FROM capacity_ledger_entries WHERE reservation_id = ? AND phase = 'task_completed_actual_settlement')`, params: [token, now, input.reservationId, input.teamId, input.reservationId] },
+			{ query: `UPDATE capacity_reservations SET usage_report_token = ?, updated_at = ? WHERE id = ? AND team_id = ? AND usage_report_token IS NULL AND settlement_token IS NULL AND state IN ('reserved', 'consuming') AND NOT EXISTS (SELECT 1 FROM capacity_ledger_entries WHERE reservation_id = ? AND phase = 'task_completed_actual_settlement') AND NOT EXISTS (SELECT 1 FROM capacity_usage_actuals WHERE id = ? OR idempotency_key = ?)`, params: [token, now, input.reservationId, input.teamId, input.reservationId, identity.id, identity.idempotencyKey] },
 			capacityUsageInsertOperation({ ...input, metadata: { ...(input.metadata ?? {}), usageReportToken: token } }, reservation, identity, { column: 'usage_report_token', token }, now),
 			{ query: `UPDATE capacity_reservations SET usage_report_token = NULL, updated_at = ? WHERE id = ? AND team_id = ? AND usage_report_token = ?`, params: [now, input.reservationId, input.teamId, token] },
 		]);

@@ -1,8 +1,9 @@
 import { equalHash,isoNow,ControlPlaneStore,serializeTeamInvite,stableHash,tokenPrefix } from "../../../../persistence/store.ts";
-export async function getPendingTeamInviteByTokenMethod(this: ControlPlaneStore, token) {
+import type { NativeTeamInviteRow } from '../../../support/teams/teams.ts';
+export async function getPendingTeamInviteByTokenMethod(this: ControlPlaneStore, token: string) {
     await this.ensureInitialized();
     const prefix = tokenPrefix(String(token ?? ''));
-    const rows = await this.all(`SELECT * FROM team_invites WHERE token_prefix = ? AND status = 'pending'`, [prefix]);
+    const rows = await this.all<NativeTeamInviteRow>(`SELECT * FROM team_invites WHERE token_prefix = ? AND status = 'pending'`, [prefix]);
     for (const row of rows) {
         if (row.expires_at && new Date(String(row.expires_at)).getTime() <= Date.now()) {
             await this.run(`UPDATE team_invites SET status = 'expired', updated_at = ? WHERE id = ?`, [isoNow(), row.id]);

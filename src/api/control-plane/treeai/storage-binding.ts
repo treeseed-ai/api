@@ -3,7 +3,7 @@ import { ensureAiStorageBucket } from '@treeseed/deployment/security/ai-storage'
 import { managedSecretSession, serviceCredentialScope, type SecretSession } from '../../../security/managed-secrets.ts';
 import { CapacityOperationError } from '../repositories/capacity/capacity-operation-error.ts';
 
-export const storageFailure = (status: number, code: string, message: string): never => { throw new CapacityOperationError(status, code, message); };
+export function storageFailure(status: number, code: string, message: string): never { throw new CapacityOperationError(status, code, message); }
 export async function aiStorageConnection(store: any, teamId: string, connectionId: string) {
 	const connection = await store.getTeamServiceConnection(teamId, connectionId);
 	if (!connection || connection.teamId !== teamId || connection.status !== 'active' || connection.providerId !== 'cloudflare'

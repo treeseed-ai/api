@@ -22,6 +22,19 @@ activityProfiles:
 `;
 
 describe('agent definition source validation', () => {
+	it('retains exact governed profile validation and denies retired signal fields without producing a second signal-reference authority', () => {
+		const held = validSource;
+		const result = validateAgentDefinitionSource(validSource);
+		expect(result.ok).toBe(true); expect(Object.keys(result).sort()).toEqual(['data', 'diagnostics', 'ok']);
+		for (const signals of ['{ publishes: [retired-signal] }', '{ subscribesTo: [{ contract: retired-signal }] }']) {
+			const source = validSource.replace('    permissions:\n', `    signals: ${signals}\n    permissions:\n`), before = source;
+			const denied = validateAgentDefinitionSource(source);
+			expect(denied).toMatchObject({ ok: false, data: null });
+			expect(denied.diagnostics.length).toBeGreaterThan(0);
+			expect(denied).not.toHaveProperty('references'); expect(source).toBe(before);
+		}
+		expect(validSource).toBe(held);
+	});
 	it('uses the dotted extension contract required by TreeDX repository queries', () => {
 		expect(REPOSITORY_DEFINITION_EXTENSIONS).toEqual(['.md', '.mdx', '.yaml', '.yml']);
 	});

@@ -6,12 +6,20 @@ function dependencies() {
 	return {
 		providerAssignments: { sourceWorkspace: vi.fn(), next: vi.fn(), show: vi.fn(), explain: vi.fn(), renew: vi.fn(), startExecution: vi.fn(), startCloseout: vi.fn(),
 			respondToDiscussion: vi.fn(), acknowledgeCommunication: vi.fn(), traceCommunication: vi.fn(), returnAssignment: vi.fn(), complete: vi.fn(), fail: vi.fn(), reportUsage: vi.fn(), settle: vi.fn(), createEvent: vi.fn() },
-		providerSignals: vi.fn(),
 		providerWorkflows: { dispatch: vi.fn(), show: vi.fn() },
 	} as any;
 }
 
 describe('provider assignment operation catalog', () => {
+	it('exposes no retired frozen signal publication operation while retaining ordinary provider execution and event bindings', () => {
+		const operations = createProviderAssignmentOperations(dependencies());
+		expect(operations.filter(operation => operation.binding.descriptor.operationId === 'providers.assignments.signal.publish'
+			|| operation.binding.descriptor.rest?.path === '/v1/provider/assignments/{assignmentId}/signals')).toEqual([]);
+		for (const binding of [CONTROL_PLANE_OPERATIONS.providers.nextAssignment, CONTROL_PLANE_OPERATIONS.providers.startExecution,
+			CONTROL_PLANE_OPERATIONS.providers.completeAssignment, CONTROL_PLANE_OPERATIONS.providers.settleAssignment, CONTROL_PLANE_OPERATIONS.providers.createEvent]) {
+			expect(operations.filter(operation => operation.binding === binding)).toHaveLength(1);
+		}
+	});
 	it('binds runtime and source operations to exact SDK objects', () => {
 		const operations = createProviderAssignmentOperations(dependencies());
 		expect(operations.map((operation) => operation.binding)).toEqual([
@@ -25,7 +33,7 @@ describe('provider assignment operation catalog', () => {
 			CONTROL_PLANE_OPERATIONS.providers.completeAssignment, CONTROL_PLANE_OPERATIONS.providers.failAssignment,
 			CONTROL_PLANE_OPERATIONS.providers.reportUsage, CONTROL_PLANE_OPERATIONS.providers.settleAssignment,
 			CONTROL_PLANE_OPERATIONS.providers.createEvent,
-			CONTROL_PLANE_OPERATIONS.providers.publishSignal, CONTROL_PLANE_OPERATIONS.providers.dispatchWorkflow,
+			CONTROL_PLANE_OPERATIONS.providers.dispatchWorkflow,
 			CONTROL_PLANE_OPERATIONS.providers.workflowRun,
 		]);
 	});

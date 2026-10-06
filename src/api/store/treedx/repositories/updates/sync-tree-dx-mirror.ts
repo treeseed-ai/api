@@ -1,7 +1,8 @@
 import { isoNow,ControlPlaneStore,objectValue,serializeTreeDxMirror } from "../../../../persistence/store.ts";
-export async function syncTreeDxMirrorMethod(this: ControlPlaneStore, teamId, mirrorId, input: any = {}) {
+import type { TreeDxMirrorRow } from "../../../../persistence/store.ts";
+export async function syncTreeDxMirrorMethod(this: ControlPlaneStore, teamId: string, mirrorId: string, input: any = {}) {
     await this.ensureInitialized();
-    const existing = serializeTreeDxMirror(await this.first(`SELECT * FROM treedx_mirrors WHERE team_id = ? AND id = ? LIMIT 1`, [teamId, mirrorId]));
+    const existing = serializeTreeDxMirror(await this.first<TreeDxMirrorRow>(`SELECT * FROM treedx_mirrors WHERE team_id = ? AND id = ? LIMIT 1`, [teamId, mirrorId]));
     if (!existing)
         return null;
     const timestamp = isoNow();
@@ -16,5 +17,5 @@ export async function syncTreeDxMirrorMethod(this: ControlPlaneStore, teamId, mi
         teamId,
         mirrorId,
     ]);
-    return serializeTreeDxMirror(await this.first(`SELECT * FROM treedx_mirrors WHERE team_id = ? AND id = ? LIMIT 1`, [teamId, mirrorId]));
+    return serializeTreeDxMirror(await this.first<TreeDxMirrorRow>(`SELECT * FROM treedx_mirrors WHERE team_id = ? AND id = ? LIMIT 1`, [teamId, mirrorId]));
 }

@@ -1,5 +1,5 @@
 import { isoNow,ControlPlaneStore,validateTeamName } from "../../../persistence/store.ts";
-export async function updateTeamSettingsMethod(this: ControlPlaneStore, teamId, input) {
+export async function updateTeamSettingsMethod(this: ControlPlaneStore, teamId: string, input: Record<string, unknown>) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const existing = await this.getTeam(teamId);

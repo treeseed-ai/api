@@ -1,5 +1,5 @@
 import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
-export async function transitionGovernanceProposalMethod(this: ControlPlaneStore, proposalId, nextState, input: any = {}) {
+export async function transitionGovernanceProposalMethod(this: ControlPlaneStore, proposalId: string, nextState: string, input: any = {}) {
     await this.ensureInitialized();
     const existing = await this.getGovernanceProposal(proposalId);
     if (!existing)

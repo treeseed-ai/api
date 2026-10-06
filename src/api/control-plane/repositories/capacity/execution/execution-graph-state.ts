@@ -54,16 +54,25 @@ export function applyOperationalState(current: TeamGraph, projected: TeamGraph, 
 			if (prior.pairRole !== 'reviewer' || recoveredTerminalStatus !== 'blocked') {
 				terminalProjectionNodeIds.add(node.id);
 			}
-			return { ...prior, ...(continuedTerminal ? node : {}), status: recoveredTerminalStatus,
+			// Recovered terminal evidence freezes execution authority, not future
+			// scheduling priority. An omitted projected priority clears the old value.
+			const { priority: _priority, ...frozen } = prior;
+			return { ...frozen, ...(continuedTerminal ? node : {}),
+				...(node.priority !== undefined ? { priority: node.priority } : {}), status: recoveredTerminalStatus,
 			// A terminal assignment is evidence for an existing node revision, not a
 			// new semantic revision. Repeated reconciliation must converge instead of
 			// manufacturing fresh ready Actor revisions that can be leased again.
 			nodeRevision: Math.max(prior.nodeRevision, applicableTerminal!.nodeRevision), graphRevisionUpdated: revision };
 		}
 		const operational = prior && !freshSimulationAttempt && node.kind !== 'condition'
-			&& ((prior.pairRole !== 'reviewer' && ['completed', 'failed', 'cancelled'].includes(prior.status))
+			&& ((['completed', 'failed', 'cancelled'].includes(prior.status))
 				|| (['assigned', 'running'].includes(prior.status) && activeAssignmentNodeIds.has(prior.id)));
-		if (operational) return { ...prior, graphRevisionUpdated: revision };
+		if (operational) {
+			// Priority governs future selection, not the already issued attempt's
+			// frozen revision, source, grants or limits. Omission clears it exactly.
+			const { priority: _priority, ...frozen } = prior;
+			return { ...frozen, ...(node.priority !== undefined ? { priority: node.priority } : {}), graphRevisionUpdated: revision };
+		}
 		const semantic = (value: ExecutionNode) => {
 			const { status: _status, nodeRevision: _nodeRevision, graphRevisionCreated: _created,
 				graphRevisionUpdated: _updated, ...rest } = value;
@@ -134,6 +143,7 @@ export function applyOperationalState(current: TeamGraph, projected: TeamGraph, 
 /** Reconcile a committed request-changes result whose paired node update was interrupted. */
 export function recoverIncompleteReviewCycles(graph: TeamGraph, completedReviews: ReadonlyMap<string, number>,
 	latestRequestChangesReviewers: ReadonlySet<string>, revision: number): TeamGraph {
+	let changed = false;
 	for (const reviewer of graph.nodes) {
 		const completed = completedReviews.get(reviewer.id) ?? 0;
 		if (reviewer.pairRole !== 'reviewer' || reviewer.status !== 'failed'
@@ -145,8 +155,9 @@ export function recoverIncompleteReviewCycles(graph: TeamGraph, completedReviews
 		if (!actor) continue;
 		reviewer.nodeRevision += 1; reviewer.status = 'blocked'; reviewer.graphRevisionUpdated = revision;
 		actor.nodeRevision += 1; actor.status = 'ready'; actor.graphRevisionUpdated = revision;
+		changed = true;
 	}
-	graph.digest = digest({ teamId: graph.teamId, nodes: graph.nodes, edges: graph.edges });
+	if (changed) graph.digest = digest({ teamId: graph.teamId, nodes: graph.nodes, edges: graph.edges });
 	return graph;
 }
 

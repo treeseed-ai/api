@@ -1,18 +1,13 @@
-import type { ControlPlaneOperationBinding } from '@treeseed/sdk/operator-contracts';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import { controlPlaneSchemaJson, type ControlPlaneOperationBinding } from '@treeseed/sdk/operator-contracts';
 
-type SdkSchema = ControlPlaneOperationBinding<any, any, any, any>['schema']['output'];
-
-function jsonSchema(schema: SdkSchema) {
-	return zodToJsonSchema(schema, { target: 'openApi3', $refStrategy: 'none' });
-}
+type SdkSchema = ControlPlaneOperationBinding<unknown, unknown, unknown, unknown>['schema']['output'];
 
 function issues(error: { issues: Array<{ message: string; path: Array<string | number> }> }) {
 	return error.issues.map((issue) => ({ message: issue.message, path: issue.path }));
 }
 
 export function sdkStandardSchema(schema: SdkSchema) {
-	const document = jsonSchema(schema);
+	const document = controlPlaneSchemaJson(schema);
 	return {
 		'~standard': {
 			version: 1 as const,
@@ -29,13 +24,16 @@ export function sdkStandardSchema(schema: SdkSchema) {
 	};
 }
 
-export function sdkOperationInputStandardSchema(binding: ControlPlaneOperationBinding<any, any, any, any>) {
+export function sdkOperationInputStandardSchema(binding: {
+	descriptor: Pick<ControlPlaneOperationBinding['descriptor'], 'kind'>;
+	schema: { path: SdkSchema; query: SdkSchema; body: SdkSchema };
+}) {
 	const document = {
 		type: 'object',
 		properties: {
-			path: jsonSchema(binding.schema.path),
-			query: jsonSchema(binding.schema.query),
-			...(binding.descriptor.kind === 'mutation' ? { body: jsonSchema(binding.schema.body) } : {}),
+			path: controlPlaneSchemaJson(binding.schema.path),
+			query: controlPlaneSchemaJson(binding.schema.query),
+			...(binding.descriptor.kind === 'mutation' ? { body: controlPlaneSchemaJson(binding.schema.body) } : {}),
 		},
 		additionalProperties: false,
 	};
@@ -59,5 +57,5 @@ export function sdkOperationInputStandardSchema(binding: ControlPlaneOperationBi
 }
 
 export function sdkSchemaJson(schema: SdkSchema) {
-	return jsonSchema(schema);
+	return controlPlaneSchemaJson(schema);
 }

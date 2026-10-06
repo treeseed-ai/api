@@ -1,6 +1,6 @@
 import { parseJson } from '../../foundation.ts';
 
-export function serializeHubContentSource(row) {
+export function serializeHubContentSource(row: Record<string, unknown> | null | undefined) {
     if (!row)
         return null;
     return {

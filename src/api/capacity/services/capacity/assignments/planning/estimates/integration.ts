@@ -11,7 +11,15 @@ import type { WorkdayTreeDxConnectionStore } from '../../../workdays/treedx/work
 
 type EstimateIntegrationStore = CapacityGovernanceDatabase & WorkdayTreeDxConnectionStore & {
 	getGovernanceProposal(id: string): Promise<Record<string, unknown> | null>;
+	updateGovernanceProposalDraft(actor: { id: string; type: string }, proposalId: string, input: Record<string, unknown>): Promise<unknown>;
+	evaluateGovernanceProposal(proposalId: string, input: Record<string, unknown>): Promise<unknown>;
 };
+
+function requireEstimateAuthority(store: CapacityGovernanceDatabase & Partial<EstimateIntegrationStore>): asserts store is EstimateIntegrationStore {
+	if (!store.config || !store.getProjectTreeDxLibrary || !store.getGovernanceProposal
+		|| !store.updateGovernanceProposalDraft || !store.evaluateGovernanceProposal) throw new CapacityGovernanceError(
+		'assignment_estimate_authority_unavailable', 'Estimate integration requires its original governed proposal and library authority.', 503);
+}
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
@@ -86,7 +94,7 @@ export async function retryEstimateContention(write: () => Promise<void>, input:
 }
 
 export async function integrateAssignmentEstimate(
-	store: EstimateIntegrationStore, assignment: DurableProviderAssignment, result: AssignmentResult,
+	store: CapacityGovernanceDatabase & Partial<EstimateIntegrationStore>, assignment: DurableProviderAssignment, result: AssignmentResult,
 ): Promise<void> {
 	if (assignment.assignmentAttempt?.effectiveProfile.activity !== 'estimating') return;
 	const leaseExpiry = Date.parse(assignment.leaseExpiresAt ?? '');
@@ -103,7 +111,7 @@ export async function finalizeEstimateReadyApproval(store: Pick<EstimateIntegrat
 		ORDER BY created_at DESC, id DESC LIMIT 1`, [proposalId]);
 	const evidence = typeof approval?.evidence_json === 'string'
 		? record(JSON.parse(approval.evidence_json)) : record(approval?.evidence_json);
-	if (evidence.pendingEstimates !== true || evidence.approvalFingerprint !== proposalApprovalFingerprint(definition)) return false;
+	if (!approval || evidence.pendingEstimates !== true || evidence.approvalFingerprint !== proposalApprovalFingerprint(definition)) return false;
 	await store.evaluateGovernanceProposal(proposalId, {
 		adminDecision: 'approved', actorType: 'user', actorId: text(approval.actor_id),
 	});
@@ -111,16 +119,19 @@ export async function finalizeEstimateReadyApproval(store: Pick<EstimateIntegrat
 }
 
 async function integrateAssignmentEstimateOnce(
-	store: EstimateIntegrationStore, assignment: DurableProviderAssignment, result: AssignmentResult,
+	store: CapacityGovernanceDatabase & Partial<EstimateIntegrationStore>, assignment: DurableProviderAssignment, result: AssignmentResult,
 ): Promise<void> {
 	const attempt = assignment.assignmentAttempt;
-	if (attempt.sourceRef.model !== 'proposal' || !assignment.agentId) throw new CapacityGovernanceError(
+	if (!attempt || attempt.sourceRef.model !== 'proposal' || !assignment.agentId) throw new CapacityGovernanceError(
 		'assignment_estimate_source_missing', 'Estimating assignment lacks a frozen proposal, work item, or agent.', 409);
+	if (!store.getGovernanceProposal) throw new CapacityGovernanceError(
+		'assignment_estimate_authority_unavailable', 'Estimate integration requires governed proposal authority.', 503);
 	const proposal = await store.getGovernanceProposal(attempt.sourceRef.id);
 	if (!proposal || proposal.projectId !== assignment.projectId || proposal.teamId !== assignment.teamId) throw new CapacityGovernanceError(
 		'assignment_estimate_proposal_mismatch', 'Estimating assignment proposal is outside its project and team.', 409);
 	if (!['draft', 'submitted', 'open'].includes(text(proposal.status))) throw new CapacityGovernanceError(
 		'assignment_estimate_proposal_closed', 'Estimating cannot update a proposal after voting or decision.', 409);
+	requireEstimateAuthority(store);
 	const frozen = await readExactProposal(store, proposal, attempt.sourceRef);
 	const current = await readExactProposal(store, proposal);
 	const matches = result.references.filter((reference): reference is Extract<AssignmentResult['references'][number], { kind: 'treedx' }> => reference.kind === 'treedx'

@@ -12,7 +12,7 @@ export async function governanceProposalReadinessMethod(this: ControlPlaneStore,
 	if (!proposal) return null;
 	const proposalVersion = Number(proposal.activeVersion ?? 0);
 	const events = await this.all(`SELECT id, actor_id, event_type, evidence_json FROM governance_events WHERE proposal_id = ? ORDER BY created_at ASC LIMIT 500`, [proposalId]);
-	const discussions = events.map((row) => ({ ...row, evidence: record(row.evidence_json) })).filter((row) => row.event_type === 'proposal.discussion');
+	const discussions = events.map((row): Row & { evidence: Row } => ({ ...row, evidence: record(row.evidence_json) })).filter((row) => row.event_type === 'proposal.discussion');
 	const blockers = (await loadProposalBlockingFeedback(this, proposalId)).filter((feedback) => !feedback.resolved);
 	const reviews = discussions.filter((row) => ['support', 'concern'].includes(text(row.evidence.kind)) && text(row.actor_id) !== text(proposal.createdById)
 		&& Number(row.evidence.proposalVersion) === proposalVersion);
@@ -44,12 +44,12 @@ export async function governanceProposalReadinessMethod(this: ControlPlaneStore,
 }
 
 export async function assertGovernanceProposalReady(this: ControlPlaneStore, proposalId: string, stage: 'content' | 'voting') {
-	const readiness = await governanceProposalReadinessMethod.call(this, proposalId);
-	if (!readiness) return null;
-	const missing = stage === 'content' ? readiness.missingContent : readiness.missingVoting;
-	if (missing.length) {
-		const error: Error & Record<string, unknown> = new Error(`Proposal is not ready for ${stage === 'content' ? 'discussion' : 'voting'}: ${missing.join(', ')}.`);
-		error.status = 409; error.code = 'governance_proposal_not_ready'; error.readiness = readiness; throw error;
+	const readiness = await this.governanceProposalReadiness(proposalId);
+	const missing = stage === 'content' ? readiness?.missingContent : readiness?.missingVoting;
+	const ready = stage === 'content' ? readiness?.contentReady : readiness?.votingReady;
+	if (ready !== true || !Array.isArray(missing) || missing.length) {
+		throw Object.assign(new Error(`Proposal is not ready for ${stage === 'content' ? 'discussion' : 'voting'}: ${Array.isArray(missing) ? missing.join(', ') : 'missing readiness authority'}.`),
+			{ status: 409, code: 'governance_proposal_not_ready', readiness });
 	}
 	return readiness;
 }

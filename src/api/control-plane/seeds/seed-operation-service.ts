@@ -4,18 +4,10 @@ import { applySeedWithStore, planSeedWithStore, resolveSeedResource } from '../.
 import { SeedOperationError } from './seed-operation-error.ts';
 import { CapacityGrantService } from '../../capacity/services/capacity/allocations/grant-service.ts';
 import { createHash } from 'node:crypto';
+import type { ControlPlaneStore } from '../../persistence/store.ts';
 
 type Principal = NonNullable<OperationInvocationContext['principal']>;
-type Store = {
-	listSeedRuns(limit: number): Promise<Record<string, unknown>[]>;
-	getSeedRun(id: string): Promise<Record<string, unknown> | null | undefined>;
-	createSeedRun(input: Record<string, unknown>): Promise<Record<string, unknown>>;
-	principalCanAccessTeam(principal: Principal, teamId: string): Promise<boolean>;
-	principalCanManageTeam(principal: Principal, teamId: string): Promise<boolean>;
-	first(query: string, params?: unknown[]): Promise<Record<string, unknown> | null>;
-	all(query: string, params?: unknown[]): Promise<Record<string, unknown>[]>;
-	run(query: string, params?: unknown[]): Promise<unknown>;
-};
+type Store = ControlPlaneStore;
 type ProviderEnrollmentService = {
 	connect(principal: Principal, teamId: string, idempotencyKey: string): Promise<Record<string, unknown>>;
 };
@@ -38,14 +30,14 @@ const existingTeams = (plan: any) => [...new Set<string>(plan.actions.filter((ac
 const createsTeams = (plan: any) => plan.actions.some((action: any) => action.kind === 'team' && action.action === 'create');
 const seedAdmin = (principal: Principal) => principal.permissions?.includes('*:*:*') || principal.permissions?.includes('seeds:apply:global') || principal.roles?.includes('platform_admin');
 function bundle(body: Record<string, unknown>): SeedBundleV3 {
-	const value = (body.bundle ?? body) as SeedBundleV3;
-	if (value && typeof value === 'object' && value.schemaVersion === 'treeseed.seed-bundle/v2') {
+	const value = body.bundle ?? body;
+	if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 'treeseed.seed-bundle/v2') {
 		throw new SeedOperationError(409, 'seed_bundle_v2_migration_required', 'Historical v2 bundles are readable receipts but must be migrated to treeseed.seed-bundle/v3 before reconciliation.');
 	}
-	if (!value || typeof value !== 'object' || value.schemaVersion !== 'treeseed.seed-bundle/v3') {
+	if (!value || typeof value !== 'object' || !('schemaVersion' in value) || value.schemaVersion !== 'treeseed.seed-bundle/v3') {
 		throw new SeedOperationError(400, 'seed_bundle_required', 'A portable treeseed.seed-bundle/v3 bundle is required.');
 	}
-	return value;
+	return value as SeedBundleV3;
 }
 async function validateBundle(value: SeedBundleV3) {
 	const diagnostics = validateSeedBundle(value);
@@ -140,7 +132,7 @@ export function createSeedOperationService(store: Store, config: { repoRoot?: st
 	async function latestSourceBundle(name: string) {
 		const runs = await store.listSeedRuns(100);
 		for (const run of runs) {
-			if (String(run.seed_name ?? run.seedName) !== name) continue;
+			if (String('seed_name' in run ? run.seed_name ?? run.seedName : run.seedName) !== name) continue;
 			const plan = run.plan && typeof run.plan === 'object' ? run.plan as Record<string, unknown> : {};
 			const source = plan.sourceBundle;
 			if (source && typeof source === 'object' && !Array.isArray(source)) return source as SeedBundleV3;
@@ -171,7 +163,7 @@ export function createSeedOperationService(store: Store, config: { repoRoot?: st
 			const planned = await planSeedWithStore({ seedName: name, environments: environments(body.environments), mode: 'plan', store, bundle: value, actor: { actorType: 'user', principal } });
 			if (!planned.plan) throw new SeedOperationError(400, 'seed_plan_invalid', 'The seed could not be planned.');
 			await requirePlanAccess(principal, planned.plan);
-			const run = await store.createSeedRun({ seedName: planned.plan.seed, seedVersion: planned.plan.version, environments: planned.plan.environments, mode: 'plan', state: 'completed', actorType: 'user', actorId: principal.id, manifestHash: planned.manifestHash, plan: planned.plan, result: { actionCount: planned.plan.summary.create + planned.plan.summary.update }, completedAt: new Date().toISOString() });
+			const run = await store.createSeedRun({ seedName: planned.plan.seed, seedVersion: planned.plan.version, environments: planned.plan.environments, mode: 'plan', state: 'completed', actorType: 'user', actorId: principal.id, manifestHash: 'manifestHash' in planned ? planned.manifestHash : undefined, plan: planned.plan, result: { actionCount: planned.plan.summary.create + planned.plan.summary.update }, completedAt: new Date().toISOString() });
 			return { seed: planned.plan.seed, mode: 'plan', environments: planned.plan.environments, summary: planned.plan.summary, actions: planned.plan.actions, runtime: planned.plan.runtime, diagnostics: planned.plan.diagnostics, run };
 		},
 		async apply(principalValue: OperationInvocationContext['principal'], name: string, body: Record<string, unknown>) {
@@ -189,14 +181,14 @@ export function createSeedOperationService(store: Store, config: { repoRoot?: st
 				const detail = error instanceof Error && error.message.trim() ? error.message.trim() : 'Seed reconciliation failed.';
 				throw new SeedOperationError(502, 'seed_reconciliation_failed', detail);
 			}
-			if (applied.result?.blocked === true) throw new SeedOperationError(409, 'seed_apply_blocked', String(applied.result.reason ?? 'The seed application is blocked.'));
+			if ('blocked' in applied.result && applied.result.blocked === true) throw new SeedOperationError(409, 'seed_apply_blocked', String(applied.result.reason ?? 'The seed application is blocked.'));
 			const providerClosure = await reconcileSeedProviderPrerequisites(store, config, applied.plan, true, principal);
 			return { seed: applied.plan.seed, mode: 'apply', environments: applied.plan.environments, summary: applied.plan.summary, runtime: applied.plan.runtime, actions: applied.plan.actions, diagnostics: applied.plan.diagnostics, run: applied.run, result: { ...applied.result, providerClosure } };
 		},
 		async show(principalValue: OperationInvocationContext['principal'], name: string) {
 			requirePrincipal(principalValue);
 			const runs = await store.listSeedRuns(100);
-			const run = runs.find((entry) => String(entry.seed_name ?? entry.seedName) === name);
+			const run = runs.find((entry) => String('seed_name' in entry ? entry.seed_name ?? entry.seedName : entry.seedName) === name);
 			if (!run) throw new SeedOperationError(404, 'seed_not_found', 'No applied or planned seed record was found.');
 			return run;
 		},

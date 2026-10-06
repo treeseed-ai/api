@@ -28,7 +28,7 @@ export const RESOURCE_BUCKETS = [
 	'supportRepositories',
 ] as const;
 
-export const SUPPORTED_BUCKETS = new Set(RESOURCE_BUCKETS);
+export const SUPPORTED_BUCKETS = new Set<string>(RESOURCE_BUCKETS);
 
 export const ALLOWED_ENVIRONMENTS = new Set<string>(SEED_ENVIRONMENTS);
 

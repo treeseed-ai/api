@@ -32,6 +32,13 @@ describe.skipIf(!url)('transactional workload registration in disposable Postgre
       const value = { id: 'service', issuer: 'https://identity.example.test', subject: 'verified', clientId: 'admin-bff',
         displayName: 'Admin', permissions: ['auth:read:self'], scopes: ['treeseed:read'] };
       const plan = planIdentityWorkloads(await inventory(), [value]);
+      const held = await inventory();
+      for (const issuer of ['', 'not-a-url', 'https://', 'http://identity.example.test',
+        'https://user:secret@identity.example.test', 'https://identity.example.test?query=1', 'https://identity.example.test#fragment']) {
+        const requested = [{ ...value, issuer }], before = structuredClone(requested);
+        expect(() => planIdentityWorkloads(held, requested)).toThrow();
+        expect(await inventory()).toEqual(held); expect(requested).toEqual(before);
+      }
       await expect(applyIdentityWorkloads(database, { ...plan, requested: [{ ...value, permissions: ['*:*:*'] }] })).rejects.toThrow('plan changed');
       await pool.query("INSERT INTO users(id,status,created_at,updated_at) VALUES ('human','active','now','now')");
       await expect(applyIdentityWorkloads(database, { ...plan, requested: [value] })).rejects.toThrow('plan changed');

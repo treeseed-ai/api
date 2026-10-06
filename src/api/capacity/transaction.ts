@@ -14,7 +14,7 @@ export async function capacityTransaction<T>(store: CapacityGovernanceDatabase,
 		return apply({
 			ensureInitialized: async () => {},
 			run: async (sql, params) => { await query(sql, params); },
-			first: async <R extends Record<string, unknown>>(sql: string, params?: unknown[]) => (await query(sql, params)).rows[0] as R ?? null,
+			first: async <R extends Record<string, unknown>>(sql: string, params?: unknown[]): Promise<R | null> => (await query(sql, params)).rows[0] as R ?? null,
 			all: async <R extends Record<string, unknown>>(sql: string, params?: unknown[]) => (await query(sql, params)).rows as R[],
 			batch: operations => executePostgresBatch(client, operations),
 		});

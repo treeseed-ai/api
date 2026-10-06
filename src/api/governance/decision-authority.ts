@@ -1,3 +1,4 @@
+import { readExactDecision } from './executable-proposal.ts';
 type Row = Record<string, unknown>;
 export interface DecisionDependencyReference { projectId: string; decisionId: string }
 export interface DecisionDependencySnapshot extends DecisionDependencyReference { teamId: string; proposalId: string; proposalVersion: number; proposalContentHash: string }
@@ -47,10 +48,10 @@ function snapshot(row: Row, dependencies: DecisionDependencySnapshot[]): Decisio
 	};
 }
 
-function rowProblem(row: Row | null, expected?: { teamId?: string; projectId?: string }) {
+function rowProblem(row: Row | null, expected?: { teamId?: string; projectId?: string | readonly string[] }) {
 	if (!row) return { code: 'governance_decision_missing', message: 'The governance decision does not exist.' };
 	if (expected?.teamId && text(row.team_id) !== expected.teamId) return { code: 'governance_decision_team_mismatch', message: 'The governance decision belongs to another team.' };
-	if (expected?.projectId && text(row.project_id) !== expected.projectId) return { code: 'governance_decision_project_mismatch', message: 'The governance decision belongs to another project.' };
+	if (expected?.projectId && !(typeof expected.projectId === 'string' ? [expected.projectId] : expected.projectId).includes(text(row.project_id))) return { code: 'governance_decision_project_mismatch', message: 'The governance decision belongs to another project.' };
 	if (text(row.status) !== 'accepted' || row.superseded_at) return { code: 'governance_decision_not_accepted', message: 'The governance decision is no longer accepted and current.' };
 	if (text(row.proposal_status) !== 'accepted') return { code: 'governance_proposal_not_accepted', message: 'The source proposal is no longer accepted.' };
 	if (number(row.active_version) !== number(row.proposal_version) || text(row.active_content_hash) !== text(row.proposal_content_hash)) {
@@ -90,13 +91,16 @@ export async function resolveDecisionDependencySnapshots(
 export async function validateDecisionAuthority(
 	database: DecisionAuthorityDatabase,
 	decisionId: string,
-	expected: { teamId?: string; projectId?: string } = {},
+	expected: { teamId?: string; projectId?: string | readonly string[] } = {},
 	ancestors: Set<string> = new Set(),
 ): Promise<DecisionAuthorityValidation> {
 	if (!decisionId || ancestors.has(decisionId)) return { valid: false, code: 'governance_decision_dependency_cycle', message: 'The governance decision dependency graph contains a cycle.', current: null };
 	const row = await decisionRow(database, decisionId);
 	const problem = rowProblem(row, expected);
 	if (problem || !row) return { valid: false, code: problem!.code, message: problem!.message, current: null };
+	try { await readExactDecision(database, row); }
+	catch (error) { const failure = error as { code?: string; message?: string };
+		return { valid: false, code: failure.code ?? 'governance_decision_content_unavailable', message: failure.message ?? 'The governed Decision cannot be read.', current: null }; }
 	const nextAncestors = new Set(ancestors).add(decisionId);
 	const recorded = recordedDependencies(row);
 	const references = normalizeDecisionDependencyReferences(recorded);

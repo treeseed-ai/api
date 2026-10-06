@@ -1,5 +1,5 @@
 import { ControlPlaneStore } from "../../../../persistence/store.ts";
-export async function governanceEligibleVotersMethod(this: ControlPlaneStore, teamId, providerId = 'admin_approval_v1') {
+export async function governanceEligibleVotersMethod(this: ControlPlaneStore, teamId: string, providerId = 'admin_approval_v1') {
     const members = await this.listTeamMembers(teamId);
     return members
         .filter((member) => member.status === 'active')

@@ -1,12 +1,6 @@
-import {
-PROVIDER_MEMBERSHIP_SCOPES,
-validateProviderSupplyOffer,
-type CapacityProviderIdentityRotationRequest,
-type CapacityProviderSignedProof,
-type ProviderAccessTokenIssue,
-type ProviderRegistrationSubmission,
-type ProviderTeamCredentialIssue,
-} from '@treeseed/sdk/capacity-provider';
+import { PROVIDER_MEMBERSHIP_SCOPES, validateProviderSupplyOffer, type CapacityProviderIdentityRotationRequest,
+type CapacityProviderSignedProof, type ProviderAccessTokenIssue, type ProviderRegistrationSubmission,
+type ProviderTeamCredentialIssue } from '@treeseed/sdk/capacity-provider';
 import { randomUUID } from 'node:crypto';
 import { CapacityGovernanceError } from '../../database.ts';
 import { CapacityCredentialAuthorizationRepository } from '../../repositories/accounts/credential-authorization.ts';
@@ -16,12 +10,10 @@ import { CapacityAuditRepository } from '../../repositories/support/audit.ts';
 import { CapacitySecretCodec,canonicalJson,capacityProviderFingerprint,sha256,verifyCapacityProviderProof } from '../../security.ts';
 import { settleCapacityReservationExactlyOnce } from '../capacity/accounting/settlement-service.ts';
 import { accessTokenValiditySeconds } from './access-token-validity.ts';
-
 function secretPrefix(value: string) {
 	const parts = value.split('_');
 	return parts.length >= 3 ? `${parts[0]}_${parts[1]}` : '';
 }
-
 function nowIso(now?: Date) {
 	return (now ?? new Date()).toISOString();
 }
@@ -29,7 +21,6 @@ export class CapacityRegistrationService {
 	private readonly auditRepository: CapacityAuditRepository;
 	private readonly credentialAuthorizationRepository: CapacityCredentialAuthorizationRepository;
 	private readonly identityRepository: CapacityProviderIdentityRepository;
-
 	constructor(
 		private readonly repository: CapacityGovernanceRepository,
 		private readonly secrets: CapacitySecretCodec,
@@ -39,13 +30,11 @@ export class CapacityRegistrationService {
 		this.credentialAuthorizationRepository = new CapacityCredentialAuthorizationRepository(repository.database);
 		this.identityRepository = new CapacityProviderIdentityRepository(repository.database);
 	}
-
 	private async assertTeamExists(teamId: string) {
 		if (!await this.repository.teamExists(teamId)) {
 			throw new CapacityGovernanceError('capacity_team_not_found', 'Capacity provider governance team does not exist.', 404, { teamId });
 		}
 	}
-
 	async registrationKey(teamId: string, actorId: string | null) {
 		await this.assertTeamExists(teamId);
 		const existing = await this.repository.registrationKeyMetadata(teamId);
@@ -53,6 +42,7 @@ export class CapacityRegistrationService {
 		const issued = this.secrets.issue('registration');
 		const now = nowIso();
 		const created = await this.repository.createRegistrationKey({ id: randomUUID(), teamId, generation: 1, prefix: issued.prefix, hash: issued.hash, encryptedRevealValue: this.secrets.encrypt(issued.plaintext, `${teamId}:1`), actorId, now });
+		if (!created) throw new CapacityGovernanceError('registration_key_missing', 'Team capacity registration key does not exist.', 404);
 await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-principal', actorId, action: 'registration-key.created', resourceType: 'team-capacity-registration-key', resourceId: created?.keyPrefix, now });
 		return created;
 	}
@@ -63,11 +53,13 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		if (!row) throw new CapacityGovernanceError('registration_key_missing', 'Team capacity registration key does not exist.', 404);
 		const now = nowIso();
 		await this.repository.recordRegistrationKeyReveal(teamId, now);
+		const metadata = await this.repository.registrationKeyMetadata(teamId);
+		if (!metadata) throw new CapacityGovernanceError('registration_key_missing', 'Team capacity registration key does not exist.', 404);
 		await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-principal', actorId, action: 'registration-key.revealed', resourceType: 'team-capacity-registration-key', resourceId: String(row.key_prefix), now });
-		return { ...(await this.repository.registrationKeyMetadata(teamId)), registrationKey: this.secrets.decrypt(String(row.encrypted_reveal_value), `${teamId}:${Number(row.generation)}`) };
+		return { ...metadata, registrationKey: this.secrets.decrypt(String(row.encrypted_reveal_value), `${teamId}:${Number(row.generation)}`) };
 	}
 
-	async rotateRegistrationKey(teamId: string, actorId: string | null, idempotencyKey: string) {
+	async rotateRegistrationKey(teamId: string, actorId: string | null, idempotencyKey: string | undefined) {
 		if (!idempotencyKey) throw new CapacityGovernanceError('idempotency_key_required', 'Idempotency-Key is required.', 400);
 		await this.assertTeamExists(teamId);
 		const prior = await this.repository.registrationKeyByRotationIdempotency(teamId, idempotencyKey);
@@ -114,6 +106,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		const priorIdempotentRequest = await this.repository.registrationRequestByIdempotency(String(keyRow.team_id), idempotencyKey);
 		if (priorIdempotentRequest) {
 			if (priorIdempotentRequest.requestDigest !== requestDigest || priorIdempotentRequest.request.providerFingerprint !== verified.fingerprint) throw new CapacityGovernanceError('idempotency_key_conflict', 'Registration idempotency key is already bound to another request.', 409);
+			await this.auditRepository.recordRegistrationRequest(priorIdempotentRequest.request, idempotencyKey);
 			return priorIdempotentRequest.request;
 		}
 		if (keyRow.status !== 'active') throw new CapacityGovernanceError('registration_key_disabled', 'Team capacity registration key is disabled.', 403);
@@ -153,7 +146,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		});
 		if (!request) throw new CapacityGovernanceError('registration_key_disabled', 'Team capacity registration key was disabled or rotated before registration committed.', 403);
 		if (!(await this.repository.registrationRequestByIdempotency(String(keyRow.team_id), idempotencyKey))) throw new CapacityGovernanceError('provider_registration_exists', 'Provider already has a registration request for this key generation.', 409, { requestId: request.id, status: request.status });
-		await this.auditRepository.record({ id: randomUUID(), teamId: request.teamId, providerId: request.providerId, actorType: 'provider-identity', actorId: request.providerFingerprint, action: 'provider-registration.requested', resourceType: 'provider-registration-request', resourceId: request.id, requestId: request.id, idempotencyKey, metadata: { registrationKeyGeneration: request.registrationKeyGeneration }, now });
+		await this.auditRepository.recordRegistrationRequest(request, idempotencyKey);
 		return request;
 	}
 
@@ -168,7 +161,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		return request;
 	}
 
-	async approve(teamId: string, requestId: string, actorId: string, idempotencyKey: string, teamAlias?: string | null) {
+	async approve(teamId: string, requestId: string, actorId: string, idempotencyKey: string | undefined, teamAlias?: string | null) {
 		if (!idempotencyKey) throw new CapacityGovernanceError('idempotency_key_required', 'Idempotency-Key is required.', 400);
 		await this.assertTeamExists(teamId);
 		const existing = await this.repository.expireRegistrationRequest(requestId, nowIso());
@@ -177,6 +170,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		const prior = await this.repository.registrationRequestTransitionEvidence(requestId);
 		if (prior?.transition_idempotency_key === idempotencyKey) {
 			if (prior.transition_request_digest !== requestDigest) throw new CapacityGovernanceError('idempotency_key_conflict', 'Registration review idempotency key is already bound to another request.', 409);
+			await this.auditRepository.recordRegistrationReview(existing, idempotencyKey);
 			return existing;
 		}
 		if (existing.status === 'approved') return existing;
@@ -184,12 +178,13 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		const now = nowIso();
 		const approved = await this.repository.approveRequest({ requestId, membershipId: randomUUID(), authorizationId: randomUUID(), actorId, teamAlias, idempotencyKey, requestDigest, now });
 		if (!approved || approved.status !== 'approved') throw new CapacityGovernanceError('provider_registration_state_conflict', 'Provider registration request changed before approval.', 409);
-		if ((await this.repository.registrationRequestTransitionEvidence(requestId))?.transition_idempotency_key !== idempotencyKey) throw new CapacityGovernanceError('provider_registration_state_conflict', 'Another review operation won before approval.', 409);
-		await this.auditRepository.record({ id: randomUUID(), teamId, providerId: approved.providerId, membershipId: approved.membershipId, actorType: 'team-principal', actorId, action: 'provider-registration.approved', resourceType: 'provider-registration-request', resourceId: requestId, requestId, idempotencyKey, metadata: { membershipOnly: true }, now });
+		const committed = await this.repository.registrationRequestTransitionEvidence(requestId);
+		if (committed?.transition_action !== 'approve' || committed.transition_idempotency_key !== idempotencyKey || committed.transition_request_digest !== requestDigest) throw new CapacityGovernanceError('provider_registration_state_conflict', 'Another review operation won before approval.', 409);
+		await this.auditRepository.recordRegistrationReview(approved, idempotencyKey);
 		return approved;
 	}
 
-	async reject(teamId: string, requestId: string, actorId: string, reason: string, idempotencyKey: string) {
+	async reject(teamId: string, requestId: string, actorId: string, reason: string, idempotencyKey: string | undefined) {
 		if (!idempotencyKey) throw new CapacityGovernanceError('idempotency_key_required', 'Idempotency-Key is required.', 400);
 		await this.assertTeamExists(teamId);
 		if (!reason.trim()) throw new CapacityGovernanceError('rejection_reason_required', 'Rejection reason is required.', 400);
@@ -199,15 +194,16 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		const prior = await this.repository.registrationRequestTransitionEvidence(requestId);
 		if (prior?.transition_idempotency_key === idempotencyKey) {
 			if (prior.transition_request_digest !== requestDigest) throw new CapacityGovernanceError('idempotency_key_conflict', 'Registration review idempotency key is already bound to another request.', 409);
+			await this.auditRepository.recordRegistrationReview(existing, idempotencyKey);
 			return existing;
 		}
-		if (existing.status === 'rejected') return existing;
 		if (existing.status !== 'pending') throw new CapacityGovernanceError('provider_registration_not_pending', 'Only a pending request can be rejected.', 409, { status: existing.status });
 		const now = nowIso();
 		const rejected = await this.repository.rejectRequest({ requestId, actorId, reason: reason.trim(), idempotencyKey, requestDigest, now });
 		if (!rejected || rejected.status !== 'rejected') throw new CapacityGovernanceError('provider_registration_state_conflict', 'Provider registration request changed before rejection.', 409);
-		if ((await this.repository.registrationRequestTransitionEvidence(requestId))?.transition_idempotency_key !== idempotencyKey) throw new CapacityGovernanceError('provider_registration_state_conflict', 'Another review operation won before rejection.', 409);
-		await this.auditRepository.record({ id: randomUUID(), teamId, providerId: rejected.providerId, actorType: 'team-principal', actorId, action: 'provider-registration.rejected', resourceType: 'provider-registration-request', resourceId: requestId, requestId, idempotencyKey, metadata: { reason: reason.trim() }, now });
+		const committed = await this.repository.registrationRequestTransitionEvidence(requestId);
+		if (committed?.transition_action !== 'reject' || committed.transition_idempotency_key !== idempotencyKey || committed.transition_request_digest !== requestDigest) throw new CapacityGovernanceError('provider_registration_state_conflict', 'Another review operation won before rejection.', 409);
+		await this.auditRepository.recordRegistrationReview(rejected, idempotencyKey);
 		return rejected;
 	}
 
@@ -226,11 +222,11 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		if (existing.status !== 'pending') throw new CapacityGovernanceError('provider_registration_not_pending', 'Only a pending request can be cancelled.', 409, { status: existing.status });
 		const now = nowIso();
 		const cancelled = await this.repository.cancelRequest(requestId, idempotencyKey, requestDigest, now);
-		if ((await this.repository.registrationRequestTransitionEvidence(requestId))?.transition_idempotency_key !== idempotencyKey) throw new CapacityGovernanceError('provider_registration_state_conflict', 'Another review operation won before cancellation.', 409);
+		const committed = await this.repository.registrationRequestTransitionEvidence(requestId);
+		if (!cancelled || cancelled.status !== 'cancelled' || committed?.transition_action !== 'cancel' || committed.transition_idempotency_key !== idempotencyKey || committed.transition_request_digest !== requestDigest) throw new CapacityGovernanceError('provider_registration_state_conflict', 'Another review operation won before cancellation.', 409);
 		await this.auditRepository.record({ id: randomUUID(), teamId, providerId: existing.providerId, actorType: 'team-principal', actorId, action: 'provider-registration.cancelled', resourceType: 'provider-registration-request', resourceId: requestId, requestId, idempotencyKey, now });
 		return cancelled;
 	}
-
 	async exchangeCredential(requestId: string, proof: CapacityProviderSignedProof, path: string, idempotencyKey: string): Promise<ProviderTeamCredentialIssue> {
 		if (!idempotencyKey) throw new CapacityGovernanceError('idempotency_key_required', 'Idempotency-Key is required.', 400);
 		const request = await this.repository.registrationRequestById(requestId);
@@ -238,8 +234,9 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		await this.assertTeamExists(request.teamId);
 		const identity = await this.identityRepository.byId(request.providerId);
 		const membership = await this.repository.membershipById(request.membershipId);
-		if (!identity || !membership || membership.status !== 'approved') throw new CapacityGovernanceError('provider_membership_not_approved', 'Provider membership is not approved.', 403);
+		if (!identity || identity.status !== 'active' || !membership || membership.status !== 'approved' || membership.providerId !== identity.providerId || membership.teamId !== request.teamId) throw new CapacityGovernanceError('provider_membership_not_approved', 'Provider membership is not approved.', 403);
 		const verified = verifyCapacityProviderProof({ proof, publicJwk: identity.publicJwk, method: 'POST', path, audience: this.audience, body: { requestId, idempotencyKey } });
+		if (verified.payload.identityVersion !== identity.identityVersion) throw new CapacityGovernanceError('provider_identity_version_invalid', 'Provider proof identity version is stale.', 401);
 		const now = nowIso();
 		if (!await this.repository.consumeProofNonce(verified.fingerprint, verified.payload.jti, verified.payload.expiresAt, now)) throw new CapacityGovernanceError('provider_proof_replayed', 'Provider proof has already been used.', 409);
 		const priorIssue = await this.repository.credentialByIssueKey(membership.id, idempotencyKey);
@@ -247,6 +244,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 			if (priorIssue.metadata.status !== 'active') throw new CapacityGovernanceError('provider_credential_revoked', 'The credential created by this issuance operation is no longer active.', 403, { credentialId: priorIssue.metadata.id });
 			const replay = this.secrets.derive('credential', `membership-credential:${priorIssue.metadata.id}`);
 			if (replay.hash !== priorIssue.hash) throw new CapacityGovernanceError('provider_credential_replay_invalid', 'Credential issuance replay did not match durable credential evidence.', 500, { credentialId: priorIssue.metadata.id });
+			await this.auditRepository.recordOnce({ teamId: membership.teamId, providerId: membership.providerId, membershipId: membership.id, actorType: 'provider-identity', actorId: identity.fingerprint, action: 'provider-credential.issued', resourceType: 'provider-team-credential', resourceId: priorIssue.metadata.id, requestId, idempotencyKey, now: priorIssue.metadata.createdAt });
 			return { ...priorIssue.metadata, credential: replay.plaintext };
 		}
 		const active = await this.repository.activeCredential(membership.id);
@@ -260,11 +258,10 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		const issued = this.secrets.derive('credential', `membership-credential:${credentialId}`);
 		const metadata = await this.repository.createCredential({ id: credentialId, authorization, membership, prefix: issued.prefix, hash: issued.hash, issueIdempotencyKey: idempotencyKey, scopes: [...PROVIDER_MEMBERSHIP_SCOPES], rotatedFromId: prior?.metadata.id, now });
 		if (!metadata) throw new CapacityGovernanceError('provider_credential_issue_failed', 'Membership credential could not be issued.', 500);
-		await this.repository.markCredentialRevealed(metadata.id, now);
-		await this.auditRepository.record({ id: randomUUID(), teamId: membership.teamId, providerId: membership.providerId, membershipId: membership.id, actorType: 'provider-identity', actorId: identity.fingerprint, action: 'provider-credential.issued', resourceType: 'provider-team-credential', resourceId: metadata.id, requestId, idempotencyKey, now });
-		return { ...metadata, credential: issued.plaintext };
+		await this.repository.markCredentialRevealed(metadata.id, metadata.createdAt);
+		await this.auditRepository.recordOnce({ teamId: membership.teamId, providerId: membership.providerId, membershipId: membership.id, actorType: 'provider-identity', actorId: identity.fingerprint, action: 'provider-credential.issued', resourceType: 'provider-team-credential', resourceId: metadata.id, requestId, idempotencyKey, now: metadata.createdAt });
+		return { ...metadata, credential: this.secrets.derive('credential', `membership-credential:${metadata.id}`).plaintext };
 	}
-
 	async issueAccessToken(input: {
 		credentialValue: string;
 		credentialId: string;
@@ -282,6 +279,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		const membership = await this.repository.membershipById(matched.metadata.membershipId);
 		const identity = membership ? await this.identityRepository.byId(membership.providerId) : null;
 		if (!membership || !identity) throw new CapacityGovernanceError('provider_identity_not_found', 'Provider identity for the membership credential does not exist.', 404);
+		if (identity.status !== 'active') throw new CapacityGovernanceError('provider_identity_not_active', 'Provider identity is not active.', 403);
 		await this.assertTeamExists(membership.teamId);
 		const validitySeconds = accessTokenValiditySeconds(input.requestedValiditySeconds);
 		const verified = verifyCapacityProviderProof({
@@ -292,24 +290,24 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 			audience: this.audience,
 			body: { credentialId: input.credentialId, idempotencyKey: input.idempotencyKey, ...(input.requestedValiditySeconds === undefined ? {} : { requestedValiditySeconds: input.requestedValiditySeconds }) },
 		});
+		if (verified.payload.identityVersion !== identity.identityVersion) throw new CapacityGovernanceError('provider_identity_version_invalid', 'Provider proof identity version is stale.', 401);
 		const issuedAt = nowIso();
 		if (!await this.repository.consumeProofNonce(verified.fingerprint, verified.payload.jti, verified.payload.expiresAt, issuedAt)) throw new CapacityGovernanceError('provider_proof_replayed', 'Provider proof has already been used.', 409);
-		const priorIssue = await this.repository.accessTokenByIssueKey(membership.id, input.idempotencyKey);
-		if (priorIssue) {
-			if (String(priorIssue.credential_id) !== input.credentialId) throw new CapacityGovernanceError('idempotency_key_conflict', 'Access-token idempotency key is already bound to another credential.', 409);
-			if (priorIssue.status !== 'active' || Date.parse(String(priorIssue.expires_at)) <= Date.now()) throw new CapacityGovernanceError('provider_access_token_replay_expired', 'The access token created by this idempotent operation is no longer active.', 409, { accessTokenId: priorIssue.id });
-			const replay = this.secrets.derive('access', `provider-access-token:${String(priorIssue.id)}`);
-			if (replay.hash !== String(priorIssue.token_hash)) throw new CapacityGovernanceError('provider_access_token_replay_invalid', 'Access-token replay did not match durable token evidence.', 500, { accessTokenId: priorIssue.id });
-			return { id: String(priorIssue.id), teamId: membership.teamId, providerId: membership.providerId, membershipId: membership.id, credentialId: input.credentialId, status: 'active', scopes: JSON.parse(String(priorIssue.scopes_json || '[]')) as ProviderAccessTokenIssue['scopes'], issuedAt: String(priorIssue.issued_at), expiresAt: String(priorIssue.expires_at), accessToken: replay.plaintext, identityVersion: identity.identityVersion };
+		let committed = await this.repository.accessTokenByIssueKey(membership.id, input.idempotencyKey);
+		if (!committed) {
+			const id = randomUUID(), expiresAt = new Date(Date.parse(issuedAt) + validitySeconds * 1000).toISOString();
+			const issued = this.secrets.derive('access', `provider-access-token:${id}`);
+			await this.repository.createAccessToken({ id, credential: matched.metadata, idempotencyKey: input.idempotencyKey, prefix: issued.prefix, hash: issued.hash, issuedAt, expiresAt });
+			committed = await this.repository.accessTokenByIssueKey(membership.id, input.idempotencyKey);
 		}
-		const expiresAt = new Date(Date.parse(issuedAt) + validitySeconds * 1000).toISOString();
-		const id = randomUUID();
-		const issued = this.secrets.derive('access', `provider-access-token:${id}`);
-		await this.repository.createAccessToken({ id, credential: matched.metadata, idempotencyKey: input.idempotencyKey, prefix: issued.prefix, hash: issued.hash, issuedAt, expiresAt });
-		await this.auditRepository.record({ id: randomUUID(), teamId: membership.teamId, providerId: membership.providerId, membershipId: membership.id, actorType: 'provider-identity', actorId: identity.fingerprint, action: 'provider-access-token.issued', resourceType: 'provider-access-token', resourceId: id, idempotencyKey: input.idempotencyKey, metadata: { credentialId: input.credentialId, expiresAt, validitySeconds }, now: issuedAt });
-		return { id, teamId: membership.teamId, providerId: membership.providerId, membershipId: matched.metadata.membershipId, credentialId: matched.metadata.id, status: 'active', scopes: matched.metadata.scopes, issuedAt, expiresAt, accessToken: issued.plaintext, identityVersion: identity.identityVersion };
+		if (!committed) throw new CapacityGovernanceError('provider_access_token_issue_failed', 'Access-token issuance did not commit its original identity.', 500);
+		if (String(committed.credential_id) !== input.credentialId) throw new CapacityGovernanceError('idempotency_key_conflict', 'Access-token idempotency key is already bound to another credential.', 409);
+		if (committed.status !== 'active' || !Number.isFinite(Date.parse(String(committed.expires_at))) || Date.parse(String(committed.expires_at)) <= Date.now()) throw new CapacityGovernanceError('provider_access_token_replay_expired', 'The access token created by this idempotent operation is no longer active.', 409, { accessTokenId: committed.id });
+		const replay = this.secrets.derive('access', `provider-access-token:${String(committed.id)}`);
+		if (replay.hash !== String(committed.token_hash)) throw new CapacityGovernanceError('provider_access_token_replay_invalid', 'Access-token replay did not match durable token evidence.', 500, { accessTokenId: committed.id });
+		await this.auditRepository.recordOnce({ teamId: membership.teamId, providerId: membership.providerId, membershipId: membership.id, actorType: 'provider-identity', actorId: identity.fingerprint, action: 'provider-access-token.issued', resourceType: 'provider-access-token', resourceId: String(committed.id), idempotencyKey: input.idempotencyKey, metadata: { credentialId: input.credentialId, expiresAt: String(committed.expires_at), validitySeconds: (Date.parse(String(committed.expires_at)) - Date.parse(String(committed.issued_at))) / 1000 }, now: String(committed.issued_at) });
+		return { id: String(committed.id), teamId: membership.teamId, providerId: membership.providerId, membershipId: membership.id, credentialId: input.credentialId, status: 'active', scopes: JSON.parse(String(committed.scopes_json || '[]')) as ProviderAccessTokenIssue['scopes'], issuedAt: String(committed.issued_at), expiresAt: String(committed.expires_at), accessToken: replay.plaintext, identityVersion: identity.identityVersion };
 	}
-
 	async rotateIdentity(principal: { membershipId: string; teamId: string; capacityProviderId: string }, request: CapacityProviderIdentityRotationRequest, idempotencyKey: string) {
 		if (!idempotencyKey) throw new CapacityGovernanceError('idempotency_key_required', 'Idempotency-Key is required.', 400);
 		const signedBody = { expectedIdentityVersion: request.expectedIdentityVersion, newPublicJwk: request.newPublicJwk };
@@ -319,6 +317,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 			if (String(priorRotation.request_digest) !== requestDigest) throw new CapacityGovernanceError('idempotency_key_conflict', 'Identity-rotation idempotency key is already bound to another request.', 409);
 			const priorResult = await this.identityRepository.byId(principal.capacityProviderId);
 			if (!priorResult || priorResult.identityVersion < Number(priorRotation.to_identity_version)) throw new CapacityGovernanceError('provider_identity_rotation_incomplete', 'Identity rotation evidence exists without its provider postcondition.', 500);
+			await this.auditRepository.recordIdentityRotation(this.repository, principal.capacityProviderId, priorRotation, idempotencyKey);
 			return priorResult;
 		}
 		const current = await this.identityRepository.byId(principal.capacityProviderId);
@@ -336,24 +335,20 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 			{ fingerprint: newVerified.fingerprint, jti: newVerified.payload.jti, expiresAt: newVerified.payload.expiresAt },
 		], now });
 		if (!rotated || rotated.identityVersion !== current.identityVersion + 1 || rotated.fingerprint !== newVerified.fingerprint) throw new CapacityGovernanceError('provider_identity_version_conflict', 'Provider identity changed before rotation committed.', 409);
-		let membershipCursor: string | undefined;
-		do {
-			const page = await this.repository.membershipsForProviderPage(current.providerId, { limit: 200, cursor: membershipCursor });
-			for (const membership of page.items) {
-				await this.auditRepository.record({ id: randomUUID(), teamId: membership.teamId, providerId: current.providerId, membershipId: membership.id, actorType: 'provider-identity', actorId: current.fingerprint, action: 'provider-identity.rotated', resourceType: 'capacity-provider', resourceId: current.providerId, idempotencyKey, metadata: { previousFingerprint: current.fingerprint, fingerprint: rotated.fingerprint, previousVersion: current.identityVersion, identityVersion: rotated.identityVersion }, now });
-			}
-			membershipCursor = page.page.nextCursor ?? undefined;
-		} while (membershipCursor);
+		const committedRotation = await this.identityRepository.rotationByKey(current.providerId, idempotencyKey);
+		if (!committedRotation || committedRotation.request_digest !== requestDigest) throw new CapacityGovernanceError('provider_identity_version_conflict', 'Another rotation owns the committed provider version.', 409);
+		await this.auditRepository.recordIdentityRotation(this.repository, current.providerId, committedRotation, idempotencyKey);
 		return rotated;
 	}
-
 	async authenticateAccessToken(accessToken: string) {
 		const prefix = secretPrefix(accessToken);
 		const row = prefix ? await this.repository.accessTokenByPrefix(prefix) : null;
 		if (!row || !this.secrets.verify(accessToken, String(row.token_hash))) return null;
 		const now = nowIso();
 		if (row.status !== 'active' || row.membership_status !== 'approved' || row.provider_status !== 'active') return null;
-		if (Date.parse(String(row.expires_at)) <= Date.now()) {
+		const expiry = typeof row.expires_at === 'string' ? Date.parse(row.expires_at) : NaN;
+		if (!Number.isFinite(expiry)) return null;
+		if (expiry <= Date.now()) {
 			await this.repository.expireAccessToken(String(row.id), now);
 			return null;
 		}
@@ -377,7 +372,6 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 			},
 		};
 	}
-
 	async listRequestsPage(teamId: string, input: { status?: string | null; limit?: unknown; cursor?: unknown } = {}) {
 		await this.repository.expireRegistrationRequestsForTeam(teamId, nowIso());
 		return this.repository.listRegistrationRequestsPage(teamId, input);
@@ -415,15 +409,16 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		const prior = await this.repository.credentialRevocationEvidence(membershipId, credentialId);
 		if (prior?.revoke_idempotency_key === idempotencyKey) {
 			if (prior.revoke_request_digest !== requestDigest) throw new CapacityGovernanceError('idempotency_key_conflict', 'Credential revocation idempotency key is already bound to another request.', 409);
-			return credential;
 		}
 		const now = nowIso();
 		if (credential.status !== 'revoked') await this.repository.revokeCredential(credentialId, idempotencyKey, requestDigest, now);
-		await this.auditRepository.record({ id: randomUUID(), teamId, providerId: membership.providerId, membershipId, actorType: 'team-principal', actorId, action: 'provider-credential.revoked', resourceType: 'provider-team-credential', resourceId: credentialId, idempotencyKey, now });
-		return await this.repository.credentialById(membershipId, credentialId) ?? credential;
+		const committed = await this.repository.credentialById(membershipId, credentialId);
+		if (!committed || committed.status !== 'revoked' || !committed.revokedAt) throw new CapacityGovernanceError('provider_credential_revocation_incomplete', 'Credential revocation lacks its original committed postcondition.', 500);
+		await this.auditRepository.recordOnce({ teamId, providerId: membership.providerId, membershipId, actorType: 'team-principal', actorId, action: 'provider-credential.revoked', resourceType: 'provider-team-credential', resourceId: credentialId, idempotencyKey, now: committed.revokedAt });
+		return committed;
 	}
 
-	async authorizeTeamCredentialRotation(teamId: string, membershipId: string, actorId: string, idempotencyKey: string) {
+	async authorizeTeamCredentialRotation(teamId: string, membershipId: string, actorId: string, idempotencyKey: string | undefined) {
 		if (!idempotencyKey) throw new CapacityGovernanceError('idempotency_key_required', 'Idempotency-Key is required.', 400);
 		const membership = await this.repository.membershipById(membershipId);
 		if (!membership || membership.teamId !== teamId) throw new CapacityGovernanceError('provider_membership_not_found', 'Provider membership does not exist.', 404);
@@ -451,22 +446,24 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		return authorization;
 	}
 
-	async updateMembership(teamId: string, membershipId: string, actorId: string, status: 'approved' | 'suspended' | 'revoked', idempotencyKey: string, actorType: 'team-principal' | 'provider-identity' = 'team-principal') {
+	async updateMembership(teamId: string, membershipId: string, actorId: string, status: 'approved' | 'suspended' | 'revoked', idempotencyKey: string | undefined, actorType: 'team-principal' | 'provider-identity' = 'team-principal') {
 		if (!idempotencyKey) throw new CapacityGovernanceError('idempotency_key_required', 'Idempotency-Key is required.', 400);
 		const current = await this.repository.membershipById(membershipId);
 		if (!current || current.teamId !== teamId) throw new CapacityGovernanceError('provider_membership_not_found', 'Provider membership does not exist.', 404);
 		const requestDigest = sha256(canonicalJson({ status }));
 		const prior = await this.repository.membershipStatusEvidence(membershipId);
-		if (prior?.status_idempotency_key === idempotencyKey) {
+		const replay = prior?.status_idempotency_key === idempotencyKey;
+		if (replay) {
 			if (prior.status_request_digest !== requestDigest) throw new CapacityGovernanceError('idempotency_key_conflict', 'Membership-status idempotency key is already bound to another request.', 409);
-			return current;
 		}
-		if (current.status === status) return current;
-		if (current.status === 'revoked') throw new CapacityGovernanceError('provider_membership_revoked', 'A revoked membership cannot be resumed.', 409);
-		const now = nowIso();
-		const updated = await this.repository.updateMembershipStatus({ teamId, membershipId, expectedStatus: current.status as 'approved' | 'suspended', status, actorId, idempotencyKey, requestDigest, now });
+		if (!replay && current.status === status) return current;
+		if (!replay && current.status === 'revoked') throw new CapacityGovernanceError('provider_membership_revoked', 'A revoked membership cannot be resumed.', 409);
+		const updated = replay ? current : await this.repository.updateMembershipStatus({ teamId, membershipId, expectedStatus: current.status as 'approved' | 'suspended', status, actorId, idempotencyKey, requestDigest, now: nowIso() });
+		if (!updated || updated.status !== status) throw new CapacityGovernanceError('provider_membership_state_conflict', 'Membership changed before the status operation committed.', 409);
+		const now = updated.updatedAt;
 		if ((await this.repository.membershipStatusEvidence(membershipId))?.status_idempotency_key !== idempotencyKey) throw new CapacityGovernanceError('provider_membership_state_conflict', 'Membership changed before the status operation committed.', 409);
 		if (status === 'suspended' || status === 'revoked') {
+			if (status === 'revoked') await this.repository.revokeMembershipCredentials(membershipId, now);
 			let assignments;
 			do {
 				assignments = await this.repository.activeAssignmentsForMembershipBatch(membershipId);
@@ -489,7 +486,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 				}
 			} while (assignments.length > 0);
 		}
-		await this.auditRepository.record({ id: randomUUID(), teamId, providerId: current.providerId, membershipId, actorType, actorId, action: `provider-membership.${status}`, resourceType: 'provider-team-membership', resourceId: membershipId, idempotencyKey, now });
+		await this.auditRepository.recordOnce({ teamId, providerId: current.providerId, membershipId, actorType, actorId, action: `provider-membership.${status}`, resourceType: 'provider-team-membership', resourceId: membershipId, idempotencyKey, now }, `${membershipId}:${idempotencyKey}`);
 		return updated;
 	}
 

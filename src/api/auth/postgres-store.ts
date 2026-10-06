@@ -235,26 +235,26 @@ export class PostgresAuthStore {
     constructor(readonly config: ApiConfig, readonly db: PostgresDatabaseLike) { }
 }
 export interface PostgresAuthStore {
-    run(query: string, params?: unknown[]);
-    first<T = Record<string, unknown>>(query: string, params?: unknown[]);
-    all<T = Record<string, unknown>>(query: string, params?: unknown[]);
-    ensureInitialized();
-    ensureAuthSchema();
-    seedCatalog();
-    seedConfiguredServices();
-    loadUser(userId: string);
-    loadIdentityByProvider(provider: string, providerSubject: string);
-    loadUserByVerifiedEmail(email: string);
-    loadUserByUsername(username: string);
-    canAdoptUsernameMatch(identity: UserIdentityProfileInput, user: UserRow | null);
-    rolesForUser(userId: string);
-    permissionsForUser(userId: string);
-    permissionsForRoles(roleKeys: string[]);
-    scopesForPrincipal(permissions: string[]);
+    run(query: string, params?: unknown[]): Promise<void>;
+    first<T extends Record<string, unknown> = Record<string, unknown>>(query: string, params?: unknown[]): Promise<T | null>;
+    all<T extends Record<string, unknown> = Record<string, unknown>>(query: string, params?: unknown[]): Promise<T[]>;
+    ensureInitialized(): Promise<void>;
+    ensureAuthSchema(): Promise<void>;
+    seedCatalog(): Promise<void>;
+    seedConfiguredServices(): Promise<void>;
+    loadUser(userId: string): Promise<UserRow | null>;
+    loadIdentityByProvider(provider: string, providerSubject: string): ReturnType<typeof extractedMethods.loadIdentityByProviderMethod>;
+    loadUserByVerifiedEmail(email: string): Promise<UserRow | null>;
+    loadUserByUsername(username: string): Promise<UserRow | null>;
+    canAdoptUsernameMatch(identity: UserIdentityProfileInput, user: UserRow | null): boolean;
+    rolesForUser(userId: string): Promise<string[]>;
+    permissionsForUser(userId: string): Promise<string[]>;
+    permissionsForRoles(roleKeys: string[]): Promise<string[]>;
+    scopesForPrincipal(permissions: string[]): string[];
     principalForUser(userId: string): Promise<PrincipalRecord>;
-    assignRole(userId: string, roleKey: string);
-    replaceRoles(userId: string, roleKeys: string[]);
-    bootstrapRolesForUser(userId: string, identity: UserIdentityProfileInput);
+    assignRole(userId: string, roleKey: string): Promise<void>;
+    replaceRoles(userId: string, roleKeys: string[]): Promise<void>;
+    bootstrapRolesForUser(userId: string, identity: UserIdentityProfileInput): Promise<void>;
     reconcileBootstrapAdmins(): Promise<void>;
     writeAuditEvent(input: {
         actorType: string;
@@ -263,16 +263,16 @@ export interface PostgresAuthStore {
         targetType: string | null;
         targetId: string | null;
         data?: Record<string, unknown>;
-    });
-    userMetadata(identity: UserIdentityProfileInput, existingUsername?: string | null);
-    syncUser(identity: UserIdentityProfileInput);
+    }): Promise<void>;
+    userMetadata(identity: UserIdentityProfileInput, existingUsername?: string | null): ReturnType<typeof extractedMethods.userMetadataMethod>;
+    syncUser(identity: UserIdentityProfileInput): ReturnType<typeof extractedMethods.syncUserMethod>;
     createUser(input: {
         email?: string | null;
         username?: string | null;
         displayName?: string | null;
         metadata?: Record<string, unknown>;
-    });
-    setUserRoles(userId: string, roles: string[]);
+    }): Promise<PrincipalRecord>;
+    setUserRoles(userId: string, roles: string[]): Promise<PrincipalRecord>;
     startDeviceFlow(request: DeviceCodeStartRequest): Promise<DeviceCodeStartResponse>;
     approveDeviceFlow(request: DeviceCodeApproveRequest): Promise<{
         ok: true;
@@ -283,7 +283,7 @@ export interface PostgresAuthStore {
         sessionType?: string;
         scopes?: string[];
         data?: Record<string, unknown>;
-    }): Promise<TokenRefreshResponse>;
+    }): Promise<TokenRefreshResponse & { status: 'approved' }>;
     refreshAccessToken(request: TokenRefreshRequest): Promise<TokenRefreshResponse>;
     startAuthorizationCode(request: import('../types.ts').AuthorizationCodeStartRequest): Promise<import('../types.ts').AuthorizationCodeStartResponse>;
     exchangeAuthorizationCode(request: import('../types.ts').AuthorizationCodeExchangeRequest): Promise<TokenRefreshResponse>;
@@ -292,23 +292,23 @@ export interface PostgresAuthStore {
         name: string;
         scopes?: string[];
         expiresAt?: string | null;
-    });
-    listPersonalAccessTokens(userId: string);
-    revokePersonalAccessToken(userId: string, tokenId: string);
+    }): Promise<PersonalAccessTokenResult>;
+    listPersonalAccessTokens(userId: string): ReturnType<typeof extractedMethods.listPersonalAccessTokensMethod>;
+    revokePersonalAccessToken(userId: string, tokenId: string): Promise<void>;
     upsertServiceCredential(input: {
         serviceId: string;
         name: string;
         secret: string;
         roles?: string[];
         permissions?: string[];
-    });
+    }): Promise<string>;
     createServiceCredential(input: {
         serviceId: string;
         name: string;
         roles?: string[];
         permissions?: string[];
     }): Promise<ServiceCredentialResult>;
-    rotateServiceCredential(serviceId: string);
+    rotateServiceCredential(serviceId: string): Promise<ServiceCredentialResult>;
     authenticateBearerToken(token: string): Promise<{
         principal: ApiPrincipal;
         credential: ApiCredential;
@@ -317,7 +317,7 @@ export interface PostgresAuthStore {
         principal: ApiPrincipal;
         credential: ApiCredential;
     } | null>;
-    exchangeTrustedUserAssertion(claims: TrustedUserAssertionClaims);
+    exchangeTrustedUserAssertion(claims: TrustedUserAssertionClaims): ReturnType<typeof extractedMethods.exchangeTrustedUserAssertionMethod>;
 }
 PostgresAuthStore.prototype.run = extractedMethods.runMethod;
 PostgresAuthStore.prototype.first = extractedMethods.firstMethod;

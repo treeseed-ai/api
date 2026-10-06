@@ -1,8 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, generateKeyPairSync, createHash } from 'node:crypto';
 import pg from 'pg';
 import { describe, expect, it, vi } from 'vitest';
 import { createControlPlanePostgresDatabase } from '../../../../../src/api/support/control-plane-postgres.ts';
 import { AvailabilitySessionService } from '../../../../../src/api/capacity/services/accounts/availability-session-service.ts';
+import { canonicalOfferBuildInput, signSuppliedOffer } from '../execution/fixtures/assignment-attempt-fixtures.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 async function clientForeignKeys(pool: pg.Pool, table: string): Promise<string[]> {
@@ -12,9 +13,10 @@ async function clientForeignKeys(pool: pg.Pool, table: string): Promise<string[]
     ORDER BY trigger_row.tgname`, [table]);
   return result.rows.map(row => row.conname);
 }
-describe.skipIf(!url)('availability publication foreign-key lock compatibility', () => {
+describe('availability publication foreign-key lock compatibility', () => {
   async function publishAlongside(kind: 'assignment' | 'reservation', operation: 'open' | 'refresh' = 'refresh') {
-    const connection = new URL(url!);
+    if (!url) throw new Error('TREESEED_TEST_POSTGRES_URL is required; native availability lock coverage cannot be skipped.');
+    const connection = new URL(url);
     if (connection.hostname !== '127.0.0.1' || connection.pathname !== '/postgres') throw new Error('Explicit disposable loopback PostgreSQL required.');
     const admin = new pg.Pool({ connectionString: connection.href });
     const name = `treeseed_availability_locks_${randomUUID().replaceAll('-', '')}`;
@@ -30,10 +32,13 @@ describe.skipIf(!url)('availability publication foreign-key lock compatibility',
     try {
       await db.migrate();
       const now = new Date().toISOString();
+      const adapter = canonicalOfferBuildInput(now).providers[0]!;
+      const signed = signSuppliedOffer(adapter.offers[0]!, generateKeyPairSync('ed25519').privateKey);
       await db.pool.query(`INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ('team','team','Team',$1,$1)`, [now]);
       await db.pool.query(`INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('project','team','project','Project',$1,$1)`, [now]);
       await db.pool.query(`INSERT INTO capacity_providers (id,fingerprint,public_jwk_json,display_name,created_at,updated_at)
-        VALUES ('provider','test','{}','Provider',$1,$1)`, [now]);
+        VALUES ('provider',$2,$3,'Provider',$1,$1)`, [now,
+          createHash('sha256').update(JSON.stringify(signed.publicJwk)).digest('hex'), JSON.stringify(signed.publicJwk)]);
       await db.pool.query(`INSERT INTO capacity_provider_team_memberships
         (id,team_id,capacity_provider_id,approved_at,approved_by_id,created_at,updated_at)
         VALUES ('membership','team','provider',$1,'test',$1,$1)`, [now]);
@@ -47,7 +52,7 @@ describe.skipIf(!url)('availability publication foreign-key lock compatibility',
       const service = new AvailabilitySessionService(store);
       const principal = { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider' };
       const input = { adapters: [{ id: 'codex', adapter: 'codex', runtimeBuild: `sha256:${'a'.repeat(64)}`,
-        status: 'available', maxConcurrentWorkers: 5, laneIds: ['communication', 'platform', 'workday'] }],
+        offers: [signed.offer], status: 'available', maxConcurrentWorkers: 5, laneIds: ['communication', 'platform', 'workday'] }],
         lanes: ['communication', 'platform', 'workday'].map(purpose => ({ id: purpose, purpose, maxConcurrentWorkers: 5 })) };
       const session = await service.open(principal, input);
       expect(session?.sequence).toBe(1);

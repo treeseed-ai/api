@@ -1,5 +1,5 @@
 import { ControlPlaneStore } from "../../../../../persistence/store.ts";
-export async function effectiveGovernanceVotesMethod(this: ControlPlaneStore, proposal) {
+export async function effectiveGovernanceVotesMethod(this: ControlPlaneStore, proposal: NonNullable<Awaited<ReturnType<ControlPlaneStore['getGovernanceProposal']>>>) {
     const directVotes = await this.listGovernanceProposalVotes(proposal.id, { proposalVersion: proposal.activeVersion });
     const byUser = new Map(directVotes.map((vote) => [vote.userId, vote]));
     const snapshot = await this.latestGovernanceElectorateSnapshot(proposal.id, proposal.activeVersion);

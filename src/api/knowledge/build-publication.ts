@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { type KnowledgePublicationManifest, type KnowledgeVisibility } from '@treeseed/sdk/knowledge';
+import type { KnowledgeVisibility } from '@treeseed/sdk/knowledge';
+import type { KnowledgePublicationManifest } from './runtime/publication-manifest.ts';
 const KNOWLEDGE_PUBLICATION_SCHEMA_VERSION = 'treeseed.knowledge-publication/v1' as const;
 import type { KnowledgeSnapshotProject } from './packs/knowledge-pack-builder.ts';
 
@@ -21,7 +22,7 @@ export function buildKnowledgePublication(input: { teamId: string; generatedAt: 
 	]);
 	const entries: KnowledgePublicationManifest['entries'] = (input.previousManifest?.entries ?? [])
 		.filter((entry) => retainedProjectIds.has(entry.projectId) && !changedProjectIds.has(entry.projectId));
-	const indexes = Object.fromEntries(['public', 'authenticated', 'team', 'project', 'admin'].map((key) => [key, []])) as Record<KnowledgeVisibility, string[]>;
+	const indexes: Record<KnowledgeVisibility, string[]> = { public: [], authenticated: [], team: [], project: [], admin: [] };
 	for (const project of [...input.projects].sort((left, right) => left.projectId.localeCompare(right.projectId))) {
 		for (const [kind, values] of [['book', project.books], ['page', project.pages.map((page) => page.definition)]] as const) {
 			for (const definition of [...values].sort((left, right) => left.id.localeCompare(right.id))) {
@@ -33,10 +34,11 @@ export function buildKnowledgePublication(input: { teamId: string; generatedAt: 
 				const key = `teams/${input.teamId}/objects/sha256/${digest}`;
 				objects.push({ key, body });
 				const page = kind === 'page' ? project.pages.find((candidate) => candidate.definition.id === definition.id) : undefined;
-				entries.push({ kind, id: definition.id, ...(kind === 'page' ? { bookId: definition.bookId } : {}),
+				const bookId = 'bookId' in definition ? definition.bookId : undefined;
+				entries.push({ kind, id: definition.id, ...(kind === 'page' ? { bookId } : {}),
 					visibility: definition.visibility, status: definition.status as 'published' | 'archived', projectId: project.projectId,
 					sourcePath: kind === 'book' ? project.bookSourcePaths?.[definition.id] ?? `books/${definition.slug}.md`
-						: page?.sourcePath ?? `knowledge/${definition.bookId}/${definition.slug}.md`,
+						: page?.sourcePath ?? `knowledge/${bookId}/${definition.slug}.md`,
 					content: { objectKey: key, sha256: digest, byteSize: Buffer.byteLength(body) } });
 			}
 		}

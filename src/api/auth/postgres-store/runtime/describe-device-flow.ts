@@ -16,7 +16,7 @@ export async function describeDeviceFlowMethod(
 		clientId: row.client_id,
 		clientName: row.client_id === 'trsd' ? 'TreeSeed CLI' : row.client_id,
 		userCode: row.user_code,
-		scopes: parseJson<string[]>(row.requested_scopes_json, []),
+		scopes: parseJson<OAuthDeviceApprovalPresentation['scopes']>(row.requested_scopes_json, []),
 		expiresAt: row.expires_at,
 		status: 'pending',
 	};

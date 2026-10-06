@@ -5,7 +5,9 @@ import { identityEndpointSchema } from '@treeseed/sdk/identity';
 const identifier = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u);
 const names = z.array(z.string().regex(/^[A-Za-z0-9*][A-Za-z0-9:._/*-]{0,127}$/u)).max(128)
   .refine(values => new Set(values).size === values.length).transform(values => [...values].sort());
-const registration = z.object({ id: identifier, issuer: identityEndpointSchema, subject: identifier,
+// Keep validation owned by the SDK without embedding its private Zod type dialect.
+const endpoint = z.string().refine(value => identityEndpointSchema.safeParse(value).success, 'Canonical identity endpoint required.');
+const registration = z.object({ id: identifier, issuer: endpoint, subject: identifier,
   clientId: identifier, displayName: z.string().trim().min(1).max(256), permissions: names, scopes: names }).strict();
 export type IdentityWorkloadRegistration = z.input<typeof registration>;
 export interface IdentityWorkloadInventory {

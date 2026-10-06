@@ -1,8 +1,13 @@
 import { projectSeedMetadata } from '../index.js';
+import type { ControlPlaneStore } from '../../../../api/persistence/store.ts';
 
-function managedMetadata(desired, actual) {
-    const desiredRecord = desired && typeof desired === 'object' && !Array.isArray(desired) ? desired : {};
-    const actualRecord = actual && typeof actual === 'object' && !Array.isArray(actual) ? actual : {};
+type ResourceAction = { payload: Record<string, unknown> & {
+    repository?: { role?: unknown } | null; library?: { repositoryPolicy?: unknown } | null;
+} };
+
+function managedMetadata(desired: unknown, actual: unknown): Record<string, unknown> {
+    const desiredRecord = desired && typeof desired === 'object' && !Array.isArray(desired) ? desired as Record<string, unknown> : {};
+    const actualRecord = actual && typeof actual === 'object' && !Array.isArray(actual) ? actual as Record<string, unknown> : {};
     return Object.fromEntries(Object.entries(desiredRecord).map(([key, desiredValue]) => [
         key,
         desiredValue && typeof desiredValue === 'object' && !Array.isArray(desiredValue)
@@ -11,7 +16,7 @@ function managedMetadata(desired, actual) {
     ]));
 }
 
-export function teamCurrentPayload(action, team) {
+export function teamCurrentPayload(action: ResourceAction, team: Awaited<ReturnType<ControlPlaneStore['getTeamBySlug']>>) {
     if (!team)
         return null;
     return {
@@ -24,7 +29,7 @@ export function teamCurrentPayload(action, team) {
     };
 }
 
-export async function projectCurrentPayload(store, action, project) {
+export async function projectCurrentPayload(store: Pick<ControlPlaneStore, 'listHubRepositories'>, action: ResourceAction, project: Awaited<ReturnType<ControlPlaneStore['getProjectByTeamAndSlug']>>) {
     if (!project)
         return null;
     const repository = action.payload.repository;
@@ -56,7 +61,7 @@ export async function projectCurrentPayload(store, action, project) {
                 repositoryPolicy: configuredRepository.repositoryPolicy,
             }
             : null,
-		library: libraryRepository ? {
+		library: libraryRepository && library ? {
 			role: libraryRepository.role,
 			provider: libraryRepository.provider,
 			owner: libraryRepository.owner,
@@ -70,7 +75,7 @@ export async function projectCurrentPayload(store, action, project) {
     };
 }
 
-export function hubRepositoryCurrentPayload(action, repository) {
+export function hubRepositoryCurrentPayload(action: ResourceAction, repository: Awaited<ReturnType<ControlPlaneStore['listHubRepositories']>>[number] | null | undefined) {
     if (!repository)
         return null;
     return {

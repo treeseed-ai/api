@@ -58,7 +58,7 @@ function fetchPinnedMetadata(url: URL, address: string, family: number): Promise
 			});
 			response.on('end', () => resolve({
 				ok: Boolean(response.statusCode && response.statusCode >= 200 && response.statusCode < 300),
-				headers: new Headers(Object.entries(response.headers).flatMap(([key, value]) => value === undefined ? [] : [[key, Array.isArray(value) ? value.join(', ') : value]])),
+				headers: new Headers(Object.entries(response.headers).flatMap<[string, string]>(([key, value]) => value === undefined ? [] : [[key, Array.isArray(value) ? value.join(', ') : value]])),
 				async text() { return Buffer.concat(chunks).toString('utf8'); },
 			}));
 		});

@@ -1,6 +1,8 @@
+import type { controlPlaneErrorStatus } from '../catalog/operation-registry.ts';
+
 export class KnowledgeOperationError extends Error {
 	constructor(
-		readonly status: 400 | 401 | 403 | 404 | 409 | 412 | 422 | 429 | 500 | 503,
+		readonly status: ReturnType<typeof controlPlaneErrorStatus>,
 		readonly code: string,
 		message: string,
 	) {

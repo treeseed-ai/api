@@ -14,6 +14,9 @@ export async function reconcileTreeDxRefSignals(database: CapacityGovernanceData
 	const listed = await connection.client.listRepositoryPaths({ repoId: connection.repositoryId, ref: connection.baseRef, paths: [projectLibraryPath(connection.contentPath, '**')], kinds: ['blob'], limit: 1, allowProtected: true });
 	const currentRef = text(listed.resolvedRef);
 	if (!/^[a-f0-9]{40}$/u.test(currentRef)) throw new Error(`TreeDX did not resolve an immutable content ref for project ${projectId}.`);
+	if (/^[a-f0-9]{40}$/u.test(connection.baseRef) && currentRef !== connection.baseRef) {
+		throw new Error(`TreeDX resolved a different commit from the exact requested content ref for project ${projectId}.`);
+	}
 	const key = `${projectId}:${connection.repositoryId}:${connection.baseRef}`;
 	const state = await database.first(`SELECT * FROM runtime_records WHERE record_type = 'treedx-signal-ref' AND record_key = ? ORDER BY updated_at DESC LIMIT 1`, [key]);
 	const previousRef = text(object(state?.payload_json).resolvedRef);

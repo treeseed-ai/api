@@ -1,7 +1,8 @@
 import YAML from 'yaml';
 import { createLocalSeedStore,exportMetadata,generatedKey,maybeAssign,normalizeExportEnvironments,pruneNullish,seededKey,slugKey,sortBy } from '../index.js';
+import type { ControlPlaneStore } from '../../../../api/persistence/store.ts';
 
-export async function exportSeedWithStore(input) {
+export async function exportSeedWithStore(input: { store: ControlPlaneStore; teamId?: string; team?: string; name?: string; environments?: unknown }) {
     const diagnostics = [];
     const team = input.teamId
         ? await input.store.getTeam(input.teamId)
@@ -40,16 +41,16 @@ export async function exportSeedWithStore(input) {
                     ...(team.profileSummary ? { profileSummary: team.profileSummary } : {}),
                     ...(exportMetadata(team.metadata) ? { metadata: exportMetadata(team.metadata) } : {}),
                 }],
-            projects: [],
-            hubRepositories: [],
+            projects: Array<Record<string, unknown>>(),
+            hubRepositories: Array<Record<string, unknown>>(),
         },
     };
-    const projects = (await input.store.listTeamProjects(team.id)).sort(sortBy((project) => project.slug));
+    const projects = (await input.store.listTeamProjects(team.id)).sort(sortBy<{ slug: string }>((project) => project.slug));
     const projectKeyById = new Map();
     const chosenRepositoryRoleByProjectId = new Map();
     for (const project of projects) {
         const repositories = await input.store.listHubRepositories(project.id);
-        const repository = repositories.find((entry) => ['primary', 'package', 'software', 'content'].includes(entry.role)) ?? repositories[0];
+        const repository = repositories.find((entry) => ['primary', 'package', 'software', 'content'].includes(entry!.role)) ?? repositories[0];
         if (!repository?.url) {
             diagnostics.push({ severity: 'warning', code: 'seed.export_project_without_repository', message: `Project ${project.slug} does not have a canonical repository URL and was skipped.`, path: `projects.${project.slug}` });
             continue;
@@ -84,8 +85,11 @@ export async function exportSeedWithStore(input) {
         const projectKey = projectKeyById.get(project.id);
         if (!projectKey)
             continue;
-        const repositories = (await input.store.listHubRepositories(project.id)).sort(sortBy((repository) => repository.role));
-        for (const repository of repositories) {
+        const repositories = (await input.store.listHubRepositories(project.id)).sort(sortBy<{ role: string } | null>((repository) => repository!.role));
+        for (const row of repositories) {
+            // listHubRepositories serializes actual SQL rows. Retain the
+            // original property-read failure if a non-row is ever supplied.
+            const repository = row!;
             if (repository.role === chosenRepositoryRoleByProjectId.get(project.id))
                 continue;
             const resource: Record<string, unknown> = {
@@ -124,7 +128,9 @@ export async function exportSeedWithStore(input) {
     };
 }
 
-export async function exportSeedFromCli(input) {
+export async function exportSeedFromCli(input: Omit<Parameters<typeof exportSeedWithStore>[0], 'store'> & {
+    store?: ControlPlaneStore; projectRoot: string; env?: NodeJS.ProcessEnv; seedName?: string;
+}) {
     const store = input.store ?? await createLocalSeedStore(input.projectRoot, input.env);
     return exportSeedWithStore({
         ...input,

@@ -11,6 +11,7 @@ export interface ProviderSynthesisPrincipal {
 	membershipId: string;
 	teamId: string;
 	capacityProviderId: string;
+	accessTokenId?: string;
 }
 
 export interface ProviderSynthesisContextInput {
@@ -124,6 +125,13 @@ export async function resolveProviderSynthesisContext(
 	input: ProviderSynthesisContextInput = {},
 ): Promise<ProviderSynthesisContext> {
 	await database.ensureInitialized();
+	if (principal.accessTokenId !== undefined) {
+		const token = await database.first(`SELECT status,expires_at FROM capacity_provider_access_tokens
+			WHERE id=? AND membership_id=? LIMIT 1`, [principal.accessTokenId, principal.membershipId]);
+		const expiry = typeof token?.expires_at === 'string' ? Date.parse(token.expires_at) : NaN;
+		if (token?.status !== 'active' || !Number.isFinite(expiry) || expiry <= Date.now()) throw new CapacityGovernanceError(
+			'provider_authentication_required', 'Provider access token authority is no longer active.', 401);
+	}
 	const authority = await database.first(
 		`SELECT provider.id AS provider_id, provider.status AS provider_status
 		 FROM capacity_provider_team_memberships membership

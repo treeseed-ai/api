@@ -106,8 +106,11 @@ export async function reconcileManagedTeamLibrary(store:any,teamId:string,env:No
 	if(!owner)throw new Error('A GitHub library owner must be configured before the managed Team Library can be provisioned.');
 	const repositoryName=text(projectLibrary.repositoryName,managedTeamLibraryRepositoryName(teamId));
 	if(!isManagedTeamLibraryRepositoryName(teamId,repositoryName))throw new Error('Managed Team Library repository identity does not match its owning team.');
+	const repositoryPolicy=record(projectLibrary.repositoryPolicy),visibility=repositoryPolicy.visibility===undefined?'private':repositoryPolicy.visibility,
+		lifecycle=repositoryPolicy.lifecycle===undefined?'create-or-adopt':repositoryPolicy.lifecycle;
+	if((visibility!=='public'&&visibility!=='private')||(lifecycle!=='create-or-adopt'&&lifecycle!=='adopt-only'))throw new Error('Managed Team Library repository policy is invalid.');
 	const repositoryAuthority=await resolveGitHubRepositoryCreationAuthority({store,teamId,owner,env,fetchImpl:store.config?.fetchImpl});
-	const provider=await reconcileLibraryProvider({store,teamId,projectId:String(project.id),projectSlug:'team',owner,name:repositoryName,visibility:projectLibrary.repositoryPolicy?.visibility??'private',lifecycle:projectLibrary.repositoryPolicy?.lifecycle??'create-or-adopt',env,fetchImpl:store.config?.fetchImpl,seedFiles:projectLibrary.repositoryPolicy?undefined:managedTeamLibrarySeedFiles(String(project.id)),repositoryAuthority});
+	const provider=await reconcileLibraryProvider({store,teamId,projectId:String(project.id),projectSlug:'team',owner,name:repositoryName,visibility,lifecycle,env,fetchImpl:store.config?.fetchImpl,seedFiles:projectLibrary.repositoryPolicy?undefined:managedTeamLibrarySeedFiles(String(project.id)),repositoryAuthority});
 	const binding=await ensureProjectKnowledgeBinding({store,projectId:String(project.id),teamId,projectSlug:'team',libraryRoot:'.',libraryRef:'refs/remotes/origin/staging',libraryRepositoryUrl:`https://github.com/${owner}/${repositoryName}.git`,libraryDefaultBranch:'main',libraryCredentialId:provider.credentialId,expectedUpstreamHeads:provider.heads,env});
 	const now=new Date().toISOString();
 	await enqueueTreeDxCommitReplication(store,{teamId,projectId:String(project.id),commitSha:binding.resolvedRef,sourceRef:binding.sourceRef,createdAt:now});
@@ -122,7 +125,7 @@ export async function reconcileManagedTeamLibrary(store:any,teamId:string,env:No
 	await store.run('UPDATE projects SET metadata_json = ?, updated_at = ? WHERE id = ?',[JSON.stringify(projectMetadata),now,project.id]);
 	const teamMetadata={...metadata,teamLibrary:{projectId:project.id,projectSlug:'team',state:mirrorReady?'known-good':'replicating',repository:`${owner}/${repositoryName}`,repositoryName,repositoryId:binding.repositoryId}};
 	await store.run('UPDATE teams SET metadata_json = ?, updated_at = ? WHERE id = ?',[JSON.stringify(teamMetadata),now,teamId]);
-	return {teamId,projectId:project.id,repository:`${owner}/${repositoryName}`,state:mirrorReady?'known-good':'replicating',...binding};
+	return {teamId,repository:`${owner}/${repositoryName}`,state:mirrorReady?'known-good':'replicating',...binding};
 }
 
 export async function markManagedTeamLibraryMirrorKnownGood(store:any,input:{teamId:string;projectId:string;commitSha:string;r2Receipt:unknown}) {

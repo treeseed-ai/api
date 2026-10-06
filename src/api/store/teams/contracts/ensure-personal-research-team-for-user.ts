@@ -1,7 +1,7 @@
 import { ControlPlaneStore,validateTeamName } from "../../../persistence/store.ts";
-export async function ensurePersonalResearchTeamForUserMethod(this: ControlPlaneStore, userId) {
+export async function ensurePersonalResearchTeamForUserMethod(this: ControlPlaneStore, userId: string) {
     await this.ensureInitialized();
-    const user = await this.first(`SELECT id, username, display_name FROM users WHERE id = ? LIMIT 1`, [userId]);
+    const user = await this.first<{ id: string; username: string | null; display_name: string | null }>(`SELECT id, username, display_name FROM users WHERE id = ? LIMIT 1`, [userId]);
     const validation = validateTeamName(user?.username);
     if (!user?.id || !validation.ok) {
         return { ok: false, code: 'missing_username', message: 'A valid username is required before creating a personal research team.' };

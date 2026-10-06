@@ -8,6 +8,7 @@ export async function applyTextChangeset(input: {
 	idempotencyKey?: string;
 }) {
 	const patch = createUnifiedChangeset(input.changes);
+	if (!patch) return;
 	const patchSha256 = createHash('sha256').update(patch).digest('hex');
 	return input.client.applyChangeset({
 		workspaceId: input.workspace.workspaceId,

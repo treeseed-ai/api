@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,normalizeTeamRoleKey,serializeTeamInvite,stableHash,tokenPrefix } from "../../../persistence/store.ts";
-export async function createTeamInviteMethod(this: ControlPlaneStore, teamId, input) {
+import type { NativeTeamInviteRow } from '../../support/teams/teams.ts';
+export async function createTeamInviteMethod(this: ControlPlaneStore, teamId: string, input: Record<string, unknown>) {
     await this.ensureInitialized();
     const email = String(input.email ?? '').trim().toLowerCase();
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
@@ -10,7 +11,7 @@ export async function createTeamInviteMethod(this: ControlPlaneStore, teamId, in
     const token = `tiv_${randomUUID().replaceAll('-', '')}${randomUUID().replaceAll('-', '')}`;
     const timestamp = isoNow();
     const expiresAt = input.expiresAt ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-    const existing = await this.first(`SELECT * FROM team_invites
+    const existing = await this.first<NativeTeamInviteRow>(`SELECT * FROM team_invites
         WHERE team_id = ? AND email = ? AND status = 'pending'
         ORDER BY created_at DESC LIMIT 1`, [teamId, email]);
     if (existing?.id) {

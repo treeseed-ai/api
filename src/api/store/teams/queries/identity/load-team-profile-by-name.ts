@@ -1,6 +1,7 @@
 import { ControlPlaneStore,teamIsPrivate } from "../../../../persistence/store.ts";
 import { publicTeamKnowledgeProfile } from '../../../public-profiles/knowledge-profile.ts';
-export async function loadTeamProfileByNameMethod(this: ControlPlaneStore, name, principal = null) {
+import type { OperationInvocationContext } from '../../../../control-plane/catalog/operation-registry.ts';
+export async function loadTeamProfileByNameMethod(this: ControlPlaneStore, name: unknown, principal: OperationInvocationContext['principal'] | null = null) {
     const team = await this.getTeamByName(name);
     if (!team || team.status !== 'active')
         return null;

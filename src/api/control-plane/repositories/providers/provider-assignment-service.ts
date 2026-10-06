@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
+import { CapacityWorkdayEventRepository } from '../../../capacity/repositories/capacity/workdays/workday-event.ts';
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
 import { reportCapacityUsage } from '../../../capacity/services/capacity/accounting/usage-report-service.ts';
 import { settleCapacityReservationExactlyOnce, type CapacitySettlementRequest } from '../../../capacity/services/capacity/accounting/settlement-service.ts';
@@ -9,12 +11,12 @@ import { parseCommunicationAddresses } from '@treeseed/sdk/operator-contracts';
 import { assignmentReferenceSchema } from '@treeseed/sdk/agent-capacity';
 import { redactTranscriptValue } from './transcript-redaction.ts';
 import { providerPrincipal, type ProviderPrincipal } from './provider-runtime-service.ts';
-import { assignmentActivityType, assignmentRecord as record, assignmentWorkdayRunId, assertProviderOwnsAssignment, type ProviderAssignmentStore } from './provider-assignment-support.ts';
+import { assignmentActivityType, assignmentRecord as record, assignmentWorkdayRunId, assertProviderOwnsAssignment, type AssignmentObservation, type ProviderAssignmentStore } from './provider-assignment-support.ts';
 import { commitDiscussionMessage } from '../../../discussions/content.ts';
 import { loadDiscussions } from '../../../discussions/content.ts';
 import { recordAssignmentDiscussionResponse } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-discussion-response-service.ts';
 import { resolveTeamCommunicationTargets } from '../../../capacity/services/capacity/invocations/communication-target-resolution.ts';
-import type { DiagnosticEnvelopeService } from '../../../security/diagnostic-envelope.ts';
+import type { DiagnosticEnvelopeService } from '../../../../security/diagnostic-envelope.ts';
 import { createSourceWorkspaceService } from './source/source-workspace-service.ts';
 
 type SessionEvents = { subscribe(teamId: string, listener: (event: { eventType: string; payload: Record<string, unknown> }) => void): Promise<() => void> };
@@ -31,22 +33,24 @@ export function normalizeStoredTimestamp(value: unknown) {
 	const parsed = new Date(value); return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : '';
 }
 
-async function communicationProvenance(store: ProviderAssignmentStore, assignment: Record<string, unknown>) {
-	if (String(assignment.execution_kind ?? assignment.executionKind ?? '') !== 'conversation') return null;
-	const invocationId = String(assignment.invocation_id ?? assignment.invocationId ?? '');
-	const invocation = invocationId ? await store.first('SELECT * FROM agent_invocation_requests WHERE id=? AND team_id=? LIMIT 1', [invocationId, assignment.team_id ?? assignment.teamId]) : null;
+async function communicationProvenance(store: ProviderAssignmentStore, assignment: AssignmentObservation) {
+	const raw = record(assignment);
+	if (String(raw.execution_kind ?? assignment.executionKind ?? '') !== 'conversation') return null;
+	const invocationId = String(raw.invocation_id ?? assignment.invocationId ?? '');
+	const invocation = invocationId ? await store.first('SELECT * FROM agent_invocation_requests WHERE id=? AND team_id=? LIMIT 1', [invocationId, raw.team_id ?? assignment.teamId]) : null;
 	if (!invocation) return null; const metadata = discussionInvocationProvenance(invocation).metadata; const communication = record(metadata.communication);
-	const topicId = String(communication.topicId ?? ''); const topic = topicId ? await store.first('SELECT id,slug FROM communication_discussion_topics WHERE id=? AND team_id=? LIMIT 1', [topicId, assignment.team_id ?? assignment.teamId]) : null;
+	const topicId = String(communication.topicId ?? ''); const topic = topicId ? await store.first<{ id: string; slug: string }>('SELECT id,slug FROM communication_discussion_topics WHERE id=? AND team_id=? LIMIT 1', [topicId, raw.team_id ?? assignment.teamId]) : null;
 	return topic ? { invocation, metadata, communication, topic } : null;
 }
 
-async function appendCommunicationEvent(store: ProviderAssignmentStore, assignment: Record<string, unknown>, type: string, summary: string, actor: { kind: string; id: string; handle?: string }, payload: Record<string, unknown> = {}) {
+async function appendCommunicationEvent(store: ProviderAssignmentStore, assignment: AssignmentObservation, type: string, summary: string, actor: { kind: string; id: string; handle?: string }, payload: Record<string, unknown> = {}) {
 	const provenance = await communicationProvenance(store, assignment); if (!provenance) return null;
-	const assignmentId = String(assignment.id), invocationId = String(assignment.invocation_id ?? assignment.invocationId ?? ''), sendId = String(provenance.communication.sendId ?? '');
+	const raw = record(assignment);
+	const assignmentId = String(assignment.id), invocationId = String(raw.invocation_id ?? assignment.invocationId ?? ''), sendId = String(provenance.communication.sendId ?? '');
 	const eventIdentity = payload.traceSequence == null ? type : `${type}:${String(payload.traceSequence)}`;
 	const id = `topic-event-${stableId(String(provenance.topic.id), `${assignmentId}:${eventIdentity}`)}`, now = new Date().toISOString();
 	await store.run(`INSERT INTO communication_topic_events (id,topic_id,team_id,event_type,occurred_at,send_id,invocation_id,assignment_id,actor_kind,actor_id,actor_handle,summary,payload_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb) ON CONFLICT (id) DO NOTHING`, [id, provenance.topic.id, assignment.team_id ?? assignment.teamId, type, now,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb) ON CONFLICT (id) DO NOTHING`, [id, provenance.topic.id, raw.team_id ?? assignment.teamId, type, now,
 		sendId || null, invocationId || null, assignmentId, actor.kind, actor.id, actor.handle ?? null, summary, JSON.stringify(payload)]);
 	return now;
 }
@@ -61,7 +65,7 @@ export function discussionInvocationProvenance(invocation: Record<string, unknow
 	};
 }
 
-function providerEventInput(assignment: Record<string, unknown>, body: Record<string, unknown>) {
+function providerEventInput(assignment: AssignmentObservation, body: Record<string, unknown>) {
 	const id = typeof body.id === 'string' ? body.id.trim() : '';
 	const eventType = typeof body.eventType === 'string' ? body.eventType.trim() : '';
 	const component = typeof body.component === 'string' ? body.component.trim() : '';
@@ -74,18 +78,64 @@ function providerEventInput(assignment: Record<string, unknown>, body: Record<st
 	if (!message || message.length > 4_000) throw new CapacityGovernanceError('provider_runtime_event_message_invalid', 'Provider runtime event message must contain at most 4,000 characters.', 400);
 	const sanitized = redactTranscriptValue({ context: body.context, refs: body.refs, metrics: body.metrics }) as Record<string, unknown>;
 	if (JSON.stringify(sanitized).length > 262_144) throw new CapacityGovernanceError('provider_runtime_event_payload_too_large', 'Provider runtime event evidence exceeds 256 KiB.', 413);
+	const metadata: Record<string, unknown> = { severity: status === 'failed' || status === 'error' ? 'error' : status === 'warning' ? 'warning' : 'info', metrics: record(sanitized.metrics), redactionStatus: 'sanitized' };
 	return { id: `provider-runtime:${String(assignment.id)}:${id}`, eventType, status, title: eventType, message,
 		assignmentId: assignment.id, projectId: assignment.projectId, workdayId: assignment.workDayId, createdAt: body.createdAt,
 		context: { ...record(sanitized.context), component, agentId: assignment.agentId, agentClassId: assignment.projectAgentClassId,
 			handlerId: assignment.handlerId, capacityProviderId: assignment.capacityProviderId, runnerId: assignment.runnerId,
 			executionProviderId: assignment.executionProviderId, activityType: assignmentActivityType(assignment) },
-		refs: record(sanitized.refs), metadata: { severity: status === 'failed' || status === 'error' ? 'error' : status === 'warning' ? 'warning' : 'info', metrics: record(sanitized.metrics), redactionStatus: 'sanitized' } };
+		refs: record(sanitized.refs), metadata };
+}
+
+function protectedEventMatches(envelope: Record<string, unknown>, event: ReturnType<typeof providerEventInput>,
+	actor: ProviderPrincipal, body: Record<string, unknown>, envelopes: DiagnosticEnvelopeService) {
+	const aad = record(envelope.aad);
+	return Object.keys(envelope).length > 0 && aad.purpose === 'diagnostics' && aad.teamId === actor.teamId
+		&& aad.assignmentId === event.assignmentId && aad.resourceId === event.id && aad.sequence === body.sequence && aad.eventType === event.eventType
+		&& isDeepStrictEqual(envelopes.decrypt(envelope), body.protectedPayload);
+}
+
+async function protectedEventMetadata(store: ProviderAssignmentStore, assignment: AssignmentObservation, actor: ProviderPrincipal,
+	runId: string, body: Record<string, unknown>, event: ReturnType<typeof providerEventInput>, envelopes?: DiagnosticEnvelopeService) {
+	const payload = body.protectedPayload;
+	if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).length === 0) throw new CapacityGovernanceError(
+		'provider_runtime_event_protected_payload_invalid', 'Protected evidence must be a nonempty object.', 400);
+	if (!Number.isSafeInteger(body.sequence) || Number(body.sequence) < 0) throw new CapacityGovernanceError(
+		'provider_runtime_event_sequence_invalid', 'Protected evidence requires a nonnegative integer sequence.', 400);
+	if (assignment.teamId !== actor.teamId || assignment.membershipId !== actor.membershipId) throw new CapacityGovernanceError(
+		'provider_assignment_forbidden', 'Protected evidence must belong to the exact provider membership and team.', 403);
+	const expiresAt = typeof assignment.leaseExpiresAt === 'string' ? Date.parse(assignment.leaseExpiresAt) : NaN;
+	if (assignment.status !== 'leased' || assignment.leaseState !== 'leased' || !Number.isFinite(expiresAt) || expiresAt <= Date.now()
+		|| typeof body.leaseToken !== 'string' || !body.leaseToken || body.leaseToken !== assignment.leaseToken
+		|| typeof body.runnerId !== 'string' || !body.runnerId || body.runnerId !== assignment.runnerId) throw new CapacityGovernanceError(
+		'provider_runtime_event_lease_invalid', 'Protected evidence requires the exact current lease and runner.', 409);
+	const serialized = JSON.stringify(payload);
+	if (!serialized || !isDeepStrictEqual(JSON.parse(serialized), payload)) throw new CapacityGovernanceError(
+		'provider_runtime_event_protected_payload_invalid', 'Protected evidence must retain its exact JSON value.', 400);
+	if (Buffer.byteLength(serialized) > 1_048_576) throw new CapacityGovernanceError(
+		'provider_runtime_event_payload_too_large', 'Protected evidence exceeds 1 MiB.', 413);
+	if (!envelopes) throw new CapacityGovernanceError('diagnostics_encryption_unavailable', 'Protected diagnostics require an active encryption key.', 503);
+	const existing = await new CapacityWorkdayEventRepository(store).get(actor.teamId, runId, event.id);
+	const retained = record(existing?.metadata.protectedPayloadEnvelope);
+	if (existing && !protectedEventMatches(retained, event, actor, body, envelopes)) throw new CapacityGovernanceError(
+		'capacity_workday_event_idempotency_conflict', 'Capacity workday event id is bound to different protected evidence.', 409);
+	return { ...event.metadata, protectedPayloadEnvelope: existing ? retained : envelopes.encrypt(record(payload), {
+		teamId: actor.teamId, assignmentId: String(assignment.id), resourceId: event.id, sequence: Number(body.sequence), eventType: event.eventType }) };
 }
 
 async function ownedAssignment(store: ProviderAssignmentStore, assignmentId: string, principal: ProviderPrincipal) {
 	const assignment = await store.first('SELECT * FROM capacity_provider_assignments WHERE id = ? AND team_id = ? AND membership_id = ? LIMIT 1', [assignmentId, principal.teamId, principal.membershipId]);
 	if (!assignment) throw new CapacityGovernanceError('provider_assignment_not_found', 'Provider assignment does not exist for this membership.', 404);
+	if (assignment.capacity_provider_id !== principal.capacityProviderId) throw new CapacityGovernanceError(
+		'provider_assignment_forbidden', 'Provider identity does not own the assignment.', 403);
 	return assignment;
+}
+
+function measuredNumber(value: unknown, field: string, integer = true): number {
+	if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || integer && !Number.isSafeInteger(value)) {
+		throw new CapacityGovernanceError('provider_assignment_usage_invalid', `${field} requires an unchanged nonnegative measurement.`, 400, { field });
+	}
+	return value;
 }
 
 export function createProviderAssignmentService(storeValue: ProviderAssignmentStore, sessionEvents?: SessionEvents, contentStore: any = storeValue, diagnosticEnvelopes?: DiagnosticEnvelopeService, sourceOptions?: { controlPlaneId: string }) {
@@ -105,23 +155,34 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 		},
 		async next(auth: unknown, body: Record<string, unknown>, signal?: AbortSignal) {
 			const actor = principal(auth, ['provider:assignments:read']);
+			const input = structuredClone(body), wait = input.waitSeconds;
+			if (wait !== undefined && (typeof wait !== 'number' || !Number.isFinite(wait) || wait < 0 || wait > 30)) throw new CapacityGovernanceError(
+				'provider_assignment_wait_invalid', 'Wait seconds must be an unchanged finite number from zero through thirty.', 400);
+			const empty = { assignment: null, leaseToken: null, leaseSeconds: 30, diagnostics: null, leaseDiagnostics: null };
+			if (signal?.aborted) return empty;
 			await reconcileBlockedDiscussionInvocations(store, actor.teamId);
-			const waitMs = Math.max(0, Math.min(30, Number(body.waitSeconds) || 0)) * 1000;
+			if (signal?.aborted) return empty;
+			const waitMs = typeof wait === 'number' ? wait * 1000 : 0;
 			const deadline = Date.now() + waitMs;
 			let wake: (() => void) | null = null; let unsubscribe: (() => void) | null = null;
-			let result = await store.leaseNextProviderAssignment(actor, body);
+			let result = await store.leaseNextProviderAssignment(actor, input);
 			try {
-				if (!result.assignment && waitMs > 0 && sessionEvents) unsubscribe = await sessionEvents.subscribe(actor.teamId, (event) => {
+				if (!result.assignment && waitMs > 0 && sessionEvents && !signal?.aborted) unsubscribe = await sessionEvents.subscribe(actor.teamId, (event) => {
 					if (event.eventType !== 'capacity.assignment.available') return;
-					const purpose = typeof body.lanePurpose === 'string' ? body.lanePurpose : null;
+					const purpose = typeof input.lanePurpose === 'string' ? input.lanePurpose : null;
 					if (!purpose || !event.payload.lanePurpose || event.payload.lanePurpose === purpose) wake?.();
 				});
-				if (!result.assignment && unsubscribe) result = await store.leaseNextProviderAssignment(actor, body);
+				if (!result.assignment && unsubscribe && !signal?.aborted && Date.now() < deadline) result = await store.leaseNextProviderAssignment(actor, input);
 				while (!result.assignment && Date.now() < deadline && !signal?.aborted) {
-					await new Promise<void>((resolve) => { wake = resolve; setTimeout(resolve, Math.min(250, Math.max(1, deadline - Date.now()))); }); wake = null;
-					result = await store.leaseNextProviderAssignment(actor, body);
+					await new Promise<void>((resolve) => {
+						const finish = () => { clearTimeout(timer); signal?.removeEventListener('abort', finish); wake = null; resolve(); };
+						const timer = setTimeout(finish, Math.min(250, Math.max(1, deadline - Date.now())));
+						wake = finish; signal?.addEventListener('abort', finish, { once: true });
+						if (signal?.aborted) finish();
+					});
+					if (!signal?.aborted && Date.now() < deadline) result = await store.leaseNextProviderAssignment(actor, input);
 				}
-			} finally { unsubscribe?.(); }
+			} finally { wake = null; unsubscribe?.(); }
 			return { assignment: result.assignment, leaseToken: result.leaseToken, leaseSeconds: result.leaseSeconds,
 				diagnostics: result.diagnostics ?? null, leaseDiagnostics: result.diagnostics ?? null };
 		},
@@ -290,27 +351,44 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 		async reportUsage(auth: unknown, assignmentId: string, body: Record<string, unknown>, idempotencyKey = '') {
 			rejectRetiredModeRun(body);
 			const actor = principal(auth, ['provider:usage:write']); const assignment = await ownedAssignment(store, assignmentId, actor);
+			if (body.accountingMode !== undefined && body.accountingMode !== 'informational' && body.accountingMode !== 'incremental') {
+				throw new CapacityGovernanceError('capacity_usage_accounting_mode_invalid', 'Nonterminal reports require informational or incremental accounting.', 400);
+			}
 			return reportCapacityUsage(store, { teamId: actor.teamId, membershipId: actor.membershipId, reservationId: String(assignment.reservation_id ?? ''), assignmentId: String(assignment.id), idempotencyKey,
-				assignmentAttempt: body.assignmentAttempt == null ? null : Number(body.assignmentAttempt), usageDimension: String(body.usageDimension ?? ''), accountingMode: body.accountingMode === 'incremental' ? 'incremental' : 'informational',
-				activeSeconds: Number(body.activeSeconds ?? 0), elapsedSeconds: Number(body.elapsedSeconds ?? 0), providerUnits: body.providerUnits == null ? null : Number(body.providerUnits), usd: body.usd == null ? null : Number(body.usd),
+				assignmentAttempt: body.assignmentAttempt === undefined ? undefined : measuredNumber(body.assignmentAttempt, 'assignmentAttempt'), usageDimension: String(body.usageDimension ?? ''), accountingMode: body.accountingMode === 'incremental' ? 'incremental' : 'informational',
+				activeSeconds: measuredNumber(body.activeSeconds, 'activeSeconds'), elapsedSeconds: measuredNumber(body.elapsedSeconds, 'elapsedSeconds'), providerUnits: body.providerUnits == null ? null : measuredNumber(body.providerUnits, 'providerUnits', false), usd: body.usd == null ? null : measuredNumber(body.usd, 'usd', false),
 				source: 'provider_usage_report', metadata: objectValue(body.metadata), usageActual: objectValue(body.usageActual) });
 		},
 		async settle(auth: unknown, assignmentId: string, body: Record<string, unknown>, idempotencyKey = '') {
 			rejectRetiredModeRun(body);
 			const actor = principal(auth, ['provider:usage:write', 'provider:assignments:write']); const assignment = await ownedAssignment(store, assignmentId, actor);
 			const settlement = await settleCapacityReservationExactlyOnce(store, { settlementKey: idempotencyKey, teamId: actor.teamId, membershipId: actor.membershipId,
-				reservationId: String(assignment.reservation_id ?? ''), assignmentId: String(assignment.id), assignmentAttempt: body.assignmentAttempt == null ? null : Number(body.assignmentAttempt),
+				reservationId: String(assignment.reservation_id ?? ''), assignmentId: String(assignment.id), assignmentAttempt: body.assignmentAttempt === undefined ? undefined : measuredNumber(body.assignmentAttempt, 'assignmentAttempt'),
 				usageDimension: typeof body.usageDimension === 'string' ? body.usageDimension : 'aggregate', usageIdempotencyKey: typeof body.usageIdempotencyKey === 'string' ? body.usageIdempotencyKey : null,
-				activeSeconds: Number(body.activeSeconds), elapsedSeconds: Number(body.elapsedSeconds), providerUnits: body.providerUnits == null ? null : Number(body.providerUnits), usd: body.usd == null ? null : Number(body.usd),
+				activeSeconds: measuredNumber(body.activeSeconds, 'activeSeconds'), elapsedSeconds: measuredNumber(body.elapsedSeconds, 'elapsedSeconds'), providerUnits: body.providerUnits == null ? null : measuredNumber(body.providerUnits, 'providerUnits', false), usd: body.usd == null ? null : measuredNumber(body.usd, 'usd', false),
 				source: 'provider_usage_report', metadata: objectValue(body.metadata), usageActual: objectValue(body.usageActual) as CapacitySettlementRequest['usageActual'] });
 			return settlement;
 		},
 		async createEvent(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
+			rejectRetiredModeRun(body);
 			const actor = principal(auth, ['provider:assignments:write']);
 			const assignment = assertProviderOwnsAssignment(await store.getProviderAssignment(actor.teamId, assignmentId), actor, 'report runtime events for');
 			const runId = assignmentWorkdayRunId(assignment);
 			if (!runId || !store.createCapacityWorkdayEvent) throw new CapacityGovernanceError('provider_runtime_event_workday_required', 'Provider runtime events require a durable workday assignment.', 409);
-			return store.createCapacityWorkdayEvent(actor.teamId, runId, providerEventInput(assignment, body));
+			const event = providerEventInput(assignment, body);
+			if (Object.hasOwn(body, 'protectedPayload')) event.metadata = await protectedEventMetadata(store, assignment, actor, runId, body, event, diagnosticEnvelopes);
+			const result = await store.createCapacityWorkdayEvent(actor.teamId, runId, event);
+			if (Object.hasOwn(body, 'protectedPayload')) {
+				const observed = record(result), metadata = record(observed.metadata);
+				const comparable = (value: Record<string, unknown>) => ({ id: value.id, assignmentId: value.assignmentId, eventType: value.eventType,
+					status: value.status, title: value.title, message: value.message, context: value.context, refs: value.refs,
+					metadata: { ...record(value.metadata), protectedPayloadEnvelope: undefined },
+					...(body.createdAt !== undefined ? { createdAt: value.createdAt } : {}) });
+				if (!protectedEventMatches(record(metadata.protectedPayloadEnvelope), event, actor, body, diagnosticEnvelopes!)
+					|| !isDeepStrictEqual(JSON.parse(JSON.stringify(comparable(event))), JSON.parse(JSON.stringify(comparable(observed)))))
+					throw new CapacityGovernanceError('capacity_workday_event_idempotency_conflict', 'Capacity workday event id is bound to different protected evidence.', 409);
+			}
+			return result;
 		},
 	};
 }

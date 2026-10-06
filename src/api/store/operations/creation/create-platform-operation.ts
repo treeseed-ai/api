@@ -1,9 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,serializePlatformOperation } from "../../../persistence/store.ts";
-export async function createPlatformOperationMethod(this: ControlPlaneStore, input) {
+export async function createPlatformOperationMethod(this: ControlPlaneStore, input: {
+    id?: string; namespace: string; operation: string; status?: unknown; target?: string;
+    idempotencyKey?: string | null; input?: unknown; requestedByType?: string;
+    requestedById?: string | null; requestedBy?: { type?: string; id?: string | null };
+}) {
     await this.ensureInitialized();
     if (input.idempotencyKey) {
-        const existing = await this.first(`SELECT * FROM platform_operations
+        const existing = await this.first<PlatformOperationRow>(`SELECT * FROM platform_operations
 				 WHERE namespace = ? AND operation = ? AND idempotency_key = ?
 				 ORDER BY created_at DESC LIMIT 1`, [input.namespace, input.operation, input.idempotencyKey]);
         if (existing) {
@@ -38,3 +42,4 @@ export async function createPlatformOperationMethod(this: ControlPlaneStore, inp
     });
     return this.findPlatformOperationById(id);
 }
+import type { PlatformOperationRow } from "../../support/operations/operations.ts";

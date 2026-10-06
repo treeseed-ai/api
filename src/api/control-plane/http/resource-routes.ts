@@ -1,6 +1,6 @@
 import { createMcpHonoApp } from '@modelcontextprotocol/hono';
 import { OAuthError, OAuthErrorCode, requireBearerAuth, type ServerEventBus } from '@modelcontextprotocol/server';
-import type { Hono } from 'hono';
+import type { Env, Hono } from 'hono';
 import { controlPlaneOperations } from '../catalog/index.ts';
 import type { OperationRegistry } from '../catalog/operation-registry.ts';
 import { createControlPlaneMcpHandler } from '../mcp/create-mcp-handler.ts';
@@ -9,6 +9,12 @@ import { generateOpenApi, openApiDigest } from '../openapi/generate-openapi.ts';
 import { createOperationHttpHandler } from './operation-http-handler.ts';
 import type { ConfirmationService } from '../confirmation/confirmation-service.ts';
 
+// The existing MCP adapter installs this variable, but returns an unparameterized
+// Hono app. Declare its documented unknown body without inventing a second parser.
+declare module 'hono' {
+	interface ContextVariableMap { parsedBody: unknown; }
+}
+
 export interface AuthenticatedPrincipal {
 	principal: { id: string; displayName?: string; scopes?: string[]; roles?: string[]; permissions?: string[]; metadata?: Record<string, unknown> };
 	credential: { id: string; oauthClientId?: string; expiresAt?: number };
@@ -16,8 +22,8 @@ export interface AuthenticatedPrincipal {
 
 /** Resource operations only. Authentication issuers and browser bridges are
  * composed by the application, never inferred from a request Host header. */
-export function installControlPlaneResourceRoutes(
-	app: Hono,
+export function installControlPlaneResourceRoutes<E extends Env>(
+	app: Hono<E>,
 	authenticateBearerToken: (token: string) => Promise<AuthenticatedPrincipal | null>,
 	registry: OperationRegistry = controlPlaneOperations,
 	confirmations?: ConfirmationService,

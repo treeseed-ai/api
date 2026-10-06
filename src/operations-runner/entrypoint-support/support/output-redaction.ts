@@ -1,6 +1,6 @@
 
 
-export function objectValue(value) {
+export function objectValue(value: unknown) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
@@ -8,7 +8,7 @@ export const SENSITIVE_OUTPUT_KEY_PATTERN = /(?:^|[_-])(?:token|password|passphr
 
 export const SENSITIVE_OUTPUT_VALUE_PATTERN = /(?:github_pat_[A-Za-z0-9_]+|gh[pousr]_[A-Za-z0-9_]{16,}|sk-[A-Za-z0-9_-]{16,}|[A-Za-z0-9+/=]{48,})/gu;
 
-export function redactProjectHostOperationValue(value, key = '') {
+export function redactProjectHostOperationValue(value: unknown, key = ''): unknown {
     if (SENSITIVE_OUTPUT_KEY_PATTERN.test(key))
         return '[redacted]';
     if (typeof value === 'string')
@@ -17,7 +17,7 @@ export function redactProjectHostOperationValue(value, key = '') {
         return value.map((entry) => redactProjectHostOperationValue(entry));
     if (!value || typeof value !== 'object')
         return value;
-    const output = {};
+    const output: Record<string, unknown> = {};
     for (const [entryKey, entryValue] of Object.entries(value)) {
         output[entryKey] = redactProjectHostOperationValue(entryValue, entryKey);
     }

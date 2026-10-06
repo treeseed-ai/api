@@ -3,8 +3,12 @@ import { ensureProjectKnowledgeBinding } from './project-knowledge-binding.js';
 import { reconcileLibraryProvider } from './library-provider-reconciliation.js';
 import { resolveGitHubRepositoryCreationAuthority } from '../../../../../security/provider-credential-authority.ts';
 import { reconcileManagedTeamLibrary } from '../../../../../api/teams/managed-team-library-service.ts';
+import type { applyAction } from '../../support/action-dispatch.ts';
 
-export async function ensureProjectSeedDependencies({ action, store, ids, manifestHash, appliedAt, env, localOnly, dependencyState, plan }) {
+export async function ensureProjectSeedDependencies({ action, store, ids, manifestHash, appliedAt, env, localOnly, dependencyState, plan }: Parameters<typeof applyAction>[0] & {
+    env?: NodeJS.ProcessEnv; localOnly?: boolean;
+    dependencyState?: { teamLibraries?: Map<string, ReturnType<typeof reconcileManagedTeamLibrary>>; repositoryCatalog?: Promise<unknown> };
+}) {
     if (action.kind !== 'project')
         return [];
     const projectId = ids.projects.get(action.key) ?? action.existing?.id;
@@ -15,7 +19,7 @@ export async function ensureProjectSeedDependencies({ action, store, ids, manife
     const repairs = [];
 	const metadata = mergeSeedMetadata(projectSeedMetadata(action.existing?.metadata), action.payload.metadata, action, manifestHash, appliedAt);
     const repositories = await store.listHubRepositories(projectId);
-	const desiredRepositories = [repository, action.payload.library].filter(Boolean);
+	const desiredRepositories = [repository, action.payload.library].filter(entry => entry != null);
 	for (const desiredRepository of desiredRepositories) {
 		const existingRepository = repositories.find((entry) => entry.role === desiredRepository.role);
 		const currentBranch = desiredRepository.repositoryPolicy?.stagingBranch ?? desiredRepository.defaultBranch ?? 'main';

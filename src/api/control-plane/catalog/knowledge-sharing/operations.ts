@@ -24,7 +24,7 @@ function view(row:Record<string,unknown>){
 function active(row:Record<string,unknown>){return row.status==='active'&&(!row.expiresAt||Date.parse(String(row.expiresAt))>Date.now());}
 
 async function resolveProjects(dependencies:KnowledgeShareOperationDependencies,teamId:string,body:unknown,operation:'read'|'query'|'context'|'graph'){
-	const request=teamKnowledgeRequestSchema.parse(body),sameTeam=await dependencies.store.listTeamProjects(teamId),bySlug=new Map(sameTeam.map((project:Record<string,unknown>)=>[String(project.slug),project]));
+	const request=teamKnowledgeRequestSchema.parse(body),sameTeam:Array<Record<string,unknown>>=await dependencies.store.listTeamProjects(teamId),bySlug=new Map(sameTeam.map((project:Record<string,unknown>)=>[String(project.slug),project]));
 	const sameIds=new Set(sameTeam.map((project:Record<string,unknown>)=>String(project.id)));
 	const missingIds=request.projectIds.filter((id)=>!sameIds.has(id)),missingSlugs=request.projectSlugs.filter((slug)=>!bySlug.has(slug));
 	if(missingIds.length||missingSlugs.length)throw new ControlPlaneOperationError(404,'knowledge_project_not_found','A selected same-team project was not found.');
@@ -49,7 +49,7 @@ async function resolveProjects(dependencies:KnowledgeShareOperationDependencies,
 	return {request,projects:[...selectedSame,...selectedShared]};
 }
 
-function federated(dependencies:KnowledgeShareOperationDependencies,kind:'search'|'query'|'context'|'graph'):BoundOperation<any>{
+function federated(dependencies:KnowledgeShareOperationDependencies,kind:'search'|'query'|'context'|'graph'):BoundOperation<(typeof CONTROL_PLANE_OPERATIONS.knowledge)['teamSearch'|'teamQuery'|'teamContext'|'teamGraph']>{
 	const binding=CONTROL_PLANE_OPERATIONS.knowledge[kind==='search'?'teamSearch':kind==='query'?'teamQuery':kind==='context'?'teamContext':'teamGraph'];
 	const upstream=CONTROL_PLANE_OPERATIONS.treedx.federated[kind];
 	return {binding,async handler(input,context){const actor=await access(dependencies,input.path.teamId,context);const resolved=await resolveProjects(dependencies,input.path.teamId,input.body,kind==='search'?'read':kind);

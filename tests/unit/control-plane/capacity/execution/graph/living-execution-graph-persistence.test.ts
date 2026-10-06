@@ -443,9 +443,11 @@ describe('normalized living execution graph persistence', () => {
 	});
 });
 
-describe.skipIf(!process.env.TREESEED_TEST_POSTGRES_URL)('graph operational-state admission fence in PostgreSQL', () => {
+describe('graph operational-state admission fence in PostgreSQL', () => {
 	it('rejects stale projections after admission and completion without creating a revision', async () => {
-		const connection = new URL(process.env.TREESEED_TEST_POSTGRES_URL!);
+		const url = process.env.TREESEED_TEST_POSTGRES_URL;
+		if (!url) throw new Error('TREESEED_TEST_POSTGRES_URL is required; native graph admission fence coverage cannot be skipped.');
+		const connection = new URL(url);
 		if (connection.hostname !== '127.0.0.1' || connection.pathname !== '/postgres') throw new Error('Disposable loopback PostgreSQL required.');
 		const admin = new pg.Pool({ connectionString: connection.href });
 		const name = `treeseed_graph_test_${randomUUID().replaceAll('-', '')}`;

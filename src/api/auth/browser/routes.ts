@@ -1,4 +1,4 @@
-import type { Hono } from 'hono';
+import type { Env, Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { BROWSER_SESSION_BRIDGE_PATH, browserSessionRequests as schemas, browserSessionResponses } from '@treeseed/sdk/identity';
 import type { BrowserCaller, createBrowserIdentityService } from './service.ts';
@@ -9,7 +9,7 @@ type Service = Awaited<ReturnType<typeof createBrowserIdentityService>>;
 /** Server-to-server only, never a browser-cookie auth surface. App selection
  * comes exclusively from the verified workload principal and configured map.
  * Do not register these routes before coordinated Identity activation. */
-export function installIdentityBrowserRoutes(app: Hono, options: {
+export function installIdentityBrowserRoutes<E extends Env>(app: Hono<E>, options: {
   authenticate(token: string): Promise<BrowserCaller | null>;
   services: ReadonlyMap<string, Service>;
 }) {

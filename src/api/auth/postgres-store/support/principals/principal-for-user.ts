@@ -8,7 +8,7 @@ export async function principalForUserMethod(this: PostgresAuthStore, userId: st
     const permissions = await this.permissionsForUser(userId);
     const preferences = await this.first<{ color_scheme?: string; theme_mode?: string }>(
         'SELECT color_scheme, theme_mode FROM user_preferences WHERE user_id = ? LIMIT 1', [userId]);
-    const metadata = parseJson(user.metadata_json, {});
+    const metadata = parseJson<Record<string, unknown>>(user.metadata_json, {});
     return {
         userId,
         principal: {

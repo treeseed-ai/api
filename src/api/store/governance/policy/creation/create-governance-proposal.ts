@@ -2,7 +2,7 @@ import { governanceVotingProvider } from '../../../../governance/voting.ts';
 import { decisionDependencyReferencesAreComplete,normalizeDecisionDependencyReferences } from '../../../../governance/decision-authority.ts';
 import { randomUUID } from 'node:crypto';
 import { governanceContentHash,governanceSlug,isoNow,ControlPlaneStore,optionalStringValue,stringValue } from "../../../../persistence/store.ts";
-export async function createGovernanceProposalMethod(this: ControlPlaneStore, principal, input: any = {}) {
+export async function createGovernanceProposalMethod(this: ControlPlaneStore, principal: ApiPrincipal | null | undefined, input: any = {}) {
     await this.ensureInitialized();
     const body = stringValue(input.request ?? input.body);
     const title = optionalStringValue(input.title) ?? body.split(/\r?\n/u).find((line) => line.trim())?.trim().slice(0, 120) ?? '';
@@ -20,9 +20,9 @@ export async function createGovernanceProposalMethod(this: ControlPlaneStore, pr
     const provider = governanceVotingProvider(policy?.providerId);
     const timestamp = isoNow();
     const id = input.id ?? randomUUID();
-    const proposalTypes = [...new Set((Array.isArray(input.proposalTypes) ? input.proposalTypes : [input.proposalType ?? input.decisionType])
-        .filter((value) => typeof value === 'string')
-        .map((value) => value.trim())
+    const proposalTypes = [...new Set<string>((Array.isArray(input.proposalTypes) ? input.proposalTypes : [input.proposalType ?? input.decisionType])
+        .filter((value: unknown): value is string => typeof value === 'string')
+        .map((value: string) => value.trim())
         .filter(Boolean))];
     const proposalType = proposalTypes[0] ?? 'implementation';
     const normalizedTypes = proposalTypes.length ? proposalTypes : [proposalType];
@@ -83,3 +83,4 @@ export async function createGovernanceProposalMethod(this: ControlPlaneStore, pr
     });
     return this.getGovernanceProposal(id);
 }
+import type { ApiPrincipal } from '../../../../types.ts';

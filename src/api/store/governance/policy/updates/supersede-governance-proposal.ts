@@ -1,6 +1,6 @@
 import { ControlPlaneStore,objectValue,optionalStringValue } from "../../../../persistence/store.ts";
 import { assertExpectedProposalVersion } from '../support/simulation-evidence.ts';
-export async function supersedeGovernanceProposalMethod(this: ControlPlaneStore, principal, proposalId, input: any = {}) {
+export async function supersedeGovernanceProposalMethod(this: ControlPlaneStore, principal: ApiPrincipal | null | undefined, proposalId: string, input: any = {}) {
     const proposal = await this.getGovernanceProposal(proposalId);
     if (!proposal) return null;
     assertExpectedProposalVersion(input, proposal.activeVersion);
@@ -14,3 +14,4 @@ export async function supersedeGovernanceProposalMethod(this: ControlPlaneStore,
         },
     });
 }
+import type { ApiPrincipal } from '../../../../types.ts';

@@ -1,6 +1,6 @@
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { accountDeletionConfirmationMatches } from '../../../auth/account.ts';
-import { ControlPlaneOperationError, type BoundOperation } from './operation-registry.ts';
+import { ControlPlaneOperationError, controlPlaneErrorStatus, type BoundOperation } from './operation-registry.ts';
 import { affected, claimAccountRevision, requireRevision, touchAccountRevision } from './accounts/concurrency.ts';
 
 export interface AccountOperationDependencies {
@@ -36,7 +36,7 @@ export interface AccountOperationDependencies {
 }
 
 function serviceResult(result: Record<string, any>, fallback: string) {
-	if (!result.ok) throw new ControlPlaneOperationError(Number(result.status ?? 400), String(result.code ?? 'account_operation_failed'), String(result.message ?? fallback));
+	if (!result.ok) throw new ControlPlaneOperationError(controlPlaneErrorStatus(result.status ?? 400), String(result.code ?? 'account_operation_failed'), String(result.message ?? fallback));
 	return result;
 }
 
@@ -158,7 +158,7 @@ export function createAccountEmailsOperation(dependencies: AccountOperationDepen
 }
 
 function emailFailure(result: Record<string, any>, fallback: string): never {
-	throw new ControlPlaneOperationError(Number(result.status ?? 400), String(result.code ?? 'email_operation_failed'), String(result.message ?? result.error ?? fallback));
+	throw new ControlPlaneOperationError(controlPlaneErrorStatus(result.status ?? 400), String(result.code ?? 'email_operation_failed'), String(result.message ?? result.error ?? fallback));
 }
 
 export function createAccountEmailAddOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.addEmail> {
@@ -318,7 +318,8 @@ export function createAccountNotificationsOperation(dependencies: AccountOperati
 	return { binding: CONTROL_PLANE_OPERATIONS.accounts.notifications, async handler(input, context) {
 		const actor = principal(context);
 		const allowed = new Set((await dependencies.store.listProjectsForPrincipal(actor)).map((project) => project.id));
-		const limit = Math.min(100, Math.max(1, Number(input.query.limit ?? 20)));
+		const suppliedQuery: Record<string, unknown> = input.query;
+		const limit = Math.min(100, Math.max(1, Number(suppliedQuery.limit ?? 20)));
 		const rows = await dependencies.store.all(`SELECT user_notifications.id, user_notifications.read_at, user_notifications.created_at, notification_events.*
 			FROM user_notifications INNER JOIN notification_events ON notification_events.id = user_notifications.event_id
 			WHERE user_notifications.user_id = ? ORDER BY user_notifications.created_at DESC LIMIT ?`, [actor.id, limit * 3]);

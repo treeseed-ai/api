@@ -48,7 +48,7 @@ async function projectAgentClasses(store: any, projectId: string) {
 }
 
 export async function resolveTeamCommunicationTargets(store: any, teamId: string, addresses: CommunicationAddressInput[]) {
-	const projects = (await store.listTeamProjects(teamId)).filter((project: Row) => !project.status || project.status === 'active');
+	const projects: Row[] = (await store.listTeamProjects(teamId)).filter((project: Row) => !project.status || project.status === 'active');
 	const inventory = await Promise.all(projects.map(async (project: Row) => {
 		const classes = await projectAgentClasses(store, text(project.id));
 		return { projectId: text(project.id), projectSlug: text(project.slug, text(project.id)), agents: projectAgents(classes) };

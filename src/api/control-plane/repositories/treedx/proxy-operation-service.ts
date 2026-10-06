@@ -7,7 +7,7 @@ import { evaluateTreeDxProxyHandleAccess, treeDxProxyAuthorizedPathPatterns } fr
 import type { CapacityGovernanceDatabase } from '../../../capacity/database.ts';
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
 import { projectTreeDxProxyCommit, recordTreeDxProxySuccess, type TreeDxProxyStore } from '../../../capacity/services/treedx/repositories/treedx-proxy-effects.ts';
-import { resolveTreeDxProxyBaseUrl, resolveTreeDxProxyToken, treeDxTokenScope, verifyTreeDxWorkspace,
+import { resolveTreeDxProxyBaseUrl, resolveTreeDxProxyToken, treeDxTokenScope, verifyTreeDxWorkspace, assertTreeDxWorkspaceIdentity,
 	type TreeDxProxyRuntime, type TreeDxProxyScope } from '../../../capacity/services/treedx/repositories/treedx-proxy-token-service.ts';
 import { providerPrincipal, type ProviderPrincipal } from '../providers/provider-runtime-service.ts';
 import type { OperationInvocationContext } from '../../catalog/operation-registry.ts';
@@ -25,14 +25,14 @@ interface Store extends TreeDxProxyStore {
 	getTreeDxProxyHandle(teamId: string, projectId: string, handleId: string): Promise<Record<string, unknown> | null>;
 	getTeamServiceConnection(teamId: string, connectionId: string): Promise<Record<string, unknown> | null>;
 	upsertTeamTreeDx(teamId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
-	run(sql: string, parameters?: unknown[]): Promise<unknown>;
 	first(sql: string, parameters?: unknown[]): Promise<any>;
 	all(sql: string, parameters?: unknown[]): Promise<any[]>;
 }
 
 type Permission = 'projects:read:team' | 'projects:manage:team';
 type Access = { actorType: 'user' | 'capacity_provider'; principal: Record<string, unknown> | ProviderPrincipal;
-	details: { project: { id: string; teamId: string } }; assignment: Record<string, unknown> | null; handle: Record<string, unknown> | null };
+	details: { project: { id: string; teamId: string } }; assignment: Record<string, unknown> | null; handle: Record<string, unknown> | null;
+	readGrant?: Record<string, unknown> };
 
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
@@ -142,24 +142,30 @@ async function authorize(store: Store, projectId: string, permission: Permission
 	if(permission==='projects:manage:team'&&(!primaryRepository||!primaryProject))return reject('treedx_proxy_cross_project_write_denied','TreeDX writes are restricted to the assignment primary workspace.');
 	if (handle.tokenHash && (!identity.token || createHash('sha256').update(identity.token).digest('hex') !== handle.tokenHash)) return reject('treedx_proxy_token_mismatch', 'TreeDX proxy handle token does not match.');
 	if (!requiredHandleScopes(scope).some((value) => (handle.scopes as unknown[] ?? []).map(String).includes(value))) return reject('treedx_proxy_scope_denied', 'TreeDX proxy handle does not allow this operation.');
+	if (readGrant && !primaryRepository && (!Array.isArray(readGrant.allowedPaths) || !readGrant.allowedPaths.length)) {
+		return reject('treedx_proxy_path_denied', 'Secondary-repository reads require nonempty bounded path authority.');
+	}
 	const requestPaths = scope.paths.filter((value) => value !== '**' && value !== '*');
 	for (const pathValue of requestPaths.length ? requestPaths : [null]) {
 		const evaluated = evaluateTreeDxProxyHandleAccess(handle, { teamId: principal.teamId, projectId:String(assignment.projectId), assignmentId: identity.assignmentId,
 			repositoryId: String(resources.repoId ?? scope.repoIds.find((value) => value !== '*') ?? '') || null,
 			workspaceId: typeof resources.workspaceId === 'string' ? resources.workspaceId : null, operation: scope.capabilities[0] ?? null,
 			path: pathValue, token: identity.token });
-		if (!evaluated.ok&&primaryRepository) return reject(evaluated.code ?? 'treedx_proxy_request_denied', evaluated.reason ?? 'TreeDX proxy handle does not allow this request.', evaluated.metadata ?? {});
+		if (!evaluated.ok && (primaryRepository || !['treedx_proxy_repository_mismatch', 'treedx_proxy_path_denied'].includes(evaluated.code ?? ''))) {
+			return reject(evaluated.code ?? 'treedx_proxy_request_denied', evaluated.reason ?? 'TreeDX proxy handle does not allow this request.', evaluated.metadata ?? {});
+		}
 		if(readGrant&&!primaryRepository&&pathValue){const allowed=Array.isArray(readGrant.allowedPaths)?readGrant.allowedPaths.map(String):[];if(!allowed.some((pattern)=>treeDxScopedPathAllows(pattern,pathValue)))return reject('treedx_proxy_path_denied','The secondary-repository read path is outside its bounded authority.');}
 	}
-	return { actorType: 'capacity_provider', principal, details, assignment, handle };
+	return { actorType: 'capacity_provider', principal, details, assignment, handle, readGrant };
 }
 
 export function selectTreeDxReadRepositoryGrant(grants: Record<string, unknown>[], projectId: string,
 	repositoryId: unknown, requestedRef: unknown) {
 	const repository=String(repositoryId??''),ref=String(requestedRef??'');
-	return grants.find((grant)=>String(grant.projectId)===projectId
+	const matches = grants.filter((grant)=>String(grant.projectId)===projectId
 		&&(!repository||String(grant.repositoryId)===repository)
 		&&(!ref||String(grant.baseRef)===ref));
+	return matches.length === 1 ? matches[0] : undefined;
 }
 
 export function treeDxRequestedReadRef(method: string, query: Record<string, unknown>, body: unknown) {
@@ -167,7 +173,7 @@ export function treeDxRequestedReadRef(method: string, query: Record<string, unk
 }
 
 function actorId(access: Access) {
-	return access.actorType === 'capacity_provider' ? String((access.principal as ProviderPrincipal).capacityProviderId) : String(access.principal.id);
+	return access.actorType === 'capacity_provider' ? String((access.principal as ProviderPrincipal).capacityProviderId) : String(record(access.principal).id);
 }
 
 export function bindCurrentLibraryView(operation: { method: string }, input: { path: Record<string, unknown>; query: Record<string, unknown>; body: unknown }, library: Record<string, unknown> | null) {
@@ -313,8 +319,7 @@ export function createTreeDxProxyOperationService(storeValue: CapacityGovernance
 			// TreeDX grants upstream authority to the control-plane service identity. The
 			// end user or capacity provider remains the audited actor below, but must not
 			// replace the service principal in the bounded delegation token.
-			const crossProjectGrant=access.actorType==='capacity_provider'&&String(access.handle?.projectId)!==projectId
-				?(Array.isArray(record(access.handle?.metadata).readRepositories)?(record(access.handle?.metadata).readRepositories as unknown[]).map(record):[]).find((grant)=>String(grant.projectId)===projectId):null;
+			const crossProjectGrant = access.readGrant;
 			const crossProjectPaths=crossProjectGrant&&Array.isArray(crossProjectGrant.allowedPaths)
 				? treeDxBoundedScopedPaths(crossProjectGrant.allowedPaths.map(String),scope.paths) : null;
 			const compactScope = access.actorType === 'capacity_provider' ? { ...scope,
@@ -332,6 +337,8 @@ export function createTreeDxProxyOperationService(storeValue: CapacityGovernance
 						traceparent: context.traceparent, idempotencyKey: context.idempotencyKey, signal: context.signal,
 					}),
 				});
+				if (operation.operationId === 'getWorkspace') assertTreeDxWorkspaceIdentity({ projectId,
+					repositoryId: repositoryId(library)!, workspaceId: String(input.path.workspaceId) }, payload);
 				const identity = requestIdentity(context, input.query);
 				await projectTreeDxProxyCommit({ store, access: access as never, projectId, method: operation.method,
 					path: operation.path, body: input.body, payload });

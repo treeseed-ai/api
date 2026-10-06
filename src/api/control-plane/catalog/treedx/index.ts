@@ -5,7 +5,7 @@ import { ControlPlaneOperationError, type BoundOperation } from '../operation-re
 
 export interface TreeDxOperationDependencies { treeDxProxy: TreeDxProxyOperationService; }
 
-function result<T>(call: () => T | Promise<T>) {
+function result<T>(call: () => T) {
 	return Promise.resolve().then(call).catch((error) => {
 		if (error instanceof CapacityGovernanceError) throw new ControlPlaneOperationError(error.status as 400, error.code, error.message);
 		throw error;

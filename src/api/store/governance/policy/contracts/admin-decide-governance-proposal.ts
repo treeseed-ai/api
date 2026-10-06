@@ -1,7 +1,7 @@
 import { ControlPlaneStore } from "../../../../persistence/store.ts";
 import { assertExpectedProposalVersion,simulationEvidence } from '../support/simulation-evidence.ts';
 import { hasCompleteExecutablePlan, proposalApprovalFingerprint, readExactProposal } from '../../../../governance/executable-proposal.ts';
-export async function adminDecideGovernanceProposalMethod(this: ControlPlaneStore, principal, proposalId, input: any = {}) {
+export async function adminDecideGovernanceProposalMethod(this: ControlPlaneStore, principal: ApiPrincipal | null | undefined, proposalId: string, input: any = {}) {
     const proposal = await this.getGovernanceProposal(proposalId);
     if (!proposal) return null;
     assertExpectedProposalVersion(input, proposal.activeVersion);
@@ -25,6 +25,7 @@ export async function adminDecideGovernanceProposalMethod(this: ControlPlaneStor
         adminDecision: decision,
         actorType: 'user',
         actorId: principal?.id ?? null,
+        reason,
     });
     const simulation = simulationEvidence(input, principal?.id);
     await this.recordGovernanceEvent({
@@ -34,3 +35,4 @@ export async function adminDecideGovernanceProposalMethod(this: ControlPlaneStor
     });
     return result;
 }
+import type { ApiPrincipal } from '../../../../types.ts';

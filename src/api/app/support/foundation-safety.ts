@@ -1,21 +1,23 @@
 import { timingSafeEqual } from 'node:crypto';
 import { SENSITIVE_QUERY_PARAM_PATTERN } from './index.ts';
-export function jsonError(c, status, error, details: any = {}) {
-    return c.json({
+import type { Context } from 'hono';
+import { controlPlaneErrorStatus } from '../../control-plane/catalog/operation-registry.ts';
+export function jsonError(c: Context, status: unknown, error: unknown, details: unknown = {}) {
+    return c.json(Object.assign({
         ok: false,
         error,
-        ...details,
-    }, { status });
+    }, details), { status: controlPlaneErrorStatus(status) });
 }
-export function jsonThrownError(c, error, fallbackStatus = 500) {
-    const status = Number(error?.status ?? fallbackStatus);
+export function jsonThrownError(c: Context, error: unknown, fallbackStatus: unknown = 500) {
+    const failure = error && (typeof error === 'object' || typeof error === 'function') ? error as Record<string, unknown> : {};
+    const status = controlPlaneErrorStatus(failure.status ?? fallbackStatus);
     const message = error instanceof Error ? error.message : String(error ?? 'Request failed.');
-    return jsonError(c, status >= 400 && status < 600 ? status : fallbackStatus, message, {
-        code: error?.code ?? 'request_failed',
-        details: error?.details,
+    return jsonError(c, status, message, {
+        code: failure.code ?? 'request_failed',
+        details: failure.details,
     });
 }
-export function redactedRequestTarget(requestUrl) {
+export function redactedRequestTarget(requestUrl: string | URL) {
     const url = new URL(requestUrl);
     const query = [...url.searchParams.entries()]
         .map(([key, value]) => {
@@ -25,7 +27,7 @@ export function redactedRequestTarget(requestUrl) {
         .join('&');
     return `${url.pathname}${query ? `?${query}` : ''}`;
 }
-export function safeTokenEquals(left, right) {
+export function safeTokenEquals(left: unknown, right: unknown) {
     if (!left || !right)
         return false;
     const leftBuffer = Buffer.from(String(left));

@@ -36,10 +36,10 @@ export async function createRemoteGitCredentialDelivery(input: {
 		[input.operationId, `${idempotencyBase}:%`],
 	);
 	const active = (item: any) => item.grant_status === 'delivered' && Date.parse(item.grant_expires_at) > now.getTime();
-	const reusable = attempts.findLast((item) => active(item) && item.status === 'ready' && Date.parse(item.expires_at) > now.getTime());
+	const reusable = [...attempts].reverse().find((item) => active(item) && item.status === 'ready' && Date.parse(item.expires_at) > now.getTime());
 	if (reusable) return { deliveryId: reusable.delivery_id as string, expiresAt: reusable.expires_at as string, reused: true };
 
-	const partial = attempts.findLast((item) => active(item) && !item.delivery_id);
+	const partial = [...attempts].reverse().find((item) => active(item) && !item.delivery_id);
 	const grantId = partial?.id ?? randomUUID();
 	const candidateDeliveryId = randomUUID();
 	const idempotencyKey = partial?.idempotency_key ?? `${idempotencyBase}:${attempts.length + 1}`;

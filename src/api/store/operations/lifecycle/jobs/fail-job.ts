@@ -1,5 +1,5 @@
 import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
-export async function failJobMethod(this: ControlPlaneStore, jobId, input) {
+export async function failJobMethod(this: ControlPlaneStore, jobId: string, input: { code?: string | null; message: string }) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     await this.run(`UPDATE remote_jobs

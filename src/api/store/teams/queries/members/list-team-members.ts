@@ -1,7 +1,8 @@
 import { ControlPlaneStore,serializeTeamMember,TEAM_ROLE_CAPABILITIES,TEAM_ROLE_DESCRIPTIONS,uniqueStrings } from "../../../../persistence/store.ts";
-export async function listTeamMembersMethod(this: ControlPlaneStore, teamId) {
+import type { NativeTeamMemberRow } from '../../../support/teams/teams.ts';
+export async function listTeamMembersMethod(this: ControlPlaneStore, teamId: string) {
     await this.ensureInitialized();
-    const rows = await this.all(`SELECT team_memberships.*, users.display_name, users.email
+    const rows = await this.all<NativeTeamMemberRow>(`SELECT team_memberships.*, users.display_name, users.email
 			 FROM team_memberships
 			 INNER JOIN users ON users.id = team_memberships.user_id
 			 WHERE team_memberships.team_id = ?
@@ -11,11 +12,11 @@ export async function listTeamMembersMethod(this: ControlPlaneStore, teamId) {
     }
     const membershipIds = rows.map((row) => row.id);
     const placeholders = membershipIds.map(() => '?').join(', ');
-    const roleRows = await this.all(`SELECT team_role_bindings.team_membership_id, roles.key
+    const roleRows = await this.all<{ team_membership_id: string; key: string }>(`SELECT team_role_bindings.team_membership_id, roles.key
 			 FROM team_role_bindings
 			 INNER JOIN roles ON roles.id = team_role_bindings.role_id
 			 WHERE team_role_bindings.team_membership_id IN (${placeholders})`, membershipIds);
-    const rolesByMembership = new Map();
+    const rolesByMembership = new Map<string, string[]>();
     for (const row of roleRows) {
         const existing = rolesByMembership.get(row.team_membership_id) ?? [];
         existing.push(row.key);
@@ -23,7 +24,7 @@ export async function listTeamMembersMethod(this: ControlPlaneStore, teamId) {
     }
     return rows.map((row) => {
         const roles = rolesByMembership.get(row.id) ?? [];
-        const member = serializeTeamMember(row, roles);
+        const member = serializeTeamMember(row, roles)!;
         return {
             ...member,
             joinedAt: member.createdAt,

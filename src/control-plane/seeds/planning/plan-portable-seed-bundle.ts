@@ -53,7 +53,7 @@ export async function planPortableSeedBundle(input: {
 		kind: 'teamMembership', key: membership.key, label: membership.principal.email,
 		environments: environments.selected, action: 'create',
 		payload: { teamKey: membership.team, email: membership.principal.email, roles: membership.roles,
-			missingUser: membership.missingUser, metadata: ownership(bundle, membership.key) },
+			missingUser: 'missingUser' in membership ? membership.missingUser : undefined, metadata: ownership(bundle, membership.key) },
 	} : {
 		kind: 'servicePrincipalMembership', key: membership.key, label: membership.principal.displayName,
 		environments: environments.selected, action: 'create',

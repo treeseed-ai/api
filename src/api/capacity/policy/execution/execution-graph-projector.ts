@@ -23,7 +23,7 @@ export interface ExecutableProposalSource {
 	proposalRevision: number;
 	frontmatter: Row;
 	feedback?: Array<{ id: string; kind: 'concern' | 'question'; resolved: boolean; sourceRef: ExactEntityReference }>;
-	decision: { id: string; revision: number; digest: string; current: boolean } | null;
+	decision: { id: string; revision: number; digest: string; current: boolean; repository?: string; commit?: string; path?: string } | null;
 }
 
 export interface ExecutionGraphProjection {
@@ -69,9 +69,13 @@ function proposalRef(source: ExecutableProposalSource): ExactEntityReference {
 
 function decisionRef(source: ExecutableProposalSource): ExactEntityReference | null {
 	if (!source.decision?.current) return null;
+	if (!source.decision.repository || !/^[a-f0-9]{40}$/u.test(source.decision.commit ?? '') || !source.decision.path) {
+		throw Object.assign(new Error('Accepted execution authority requires its exact governed TreeDX Decision.'), { code: 'governance_decision_content_missing' });
+	}
 	return {
-		store: 'postgresql', model: 'decision', id: source.decision.id,
+		store: 'treedx', model: 'decision', id: source.decision.id,
 		revision: source.decision.revision, digest: source.decision.digest,
+		repository: source.decision.repository, commit: source.decision.commit, path: source.decision.path,
 	};
 }
 
@@ -132,6 +136,7 @@ function workNode(input: {
 		schemaVersion: 'treeseed.execution-node/v1', id,
 		teamId: input.source.teamId, projectId: input.source.projectId,
 		workItemId: itemId, kind, pairRole: input.pairRole, sourceRef,
+		...(input.workItem.priority !== undefined ? { priority: input.workItem.priority } : {}),
 		authorityRefs: authority ? [authority] : [],
 		ruleRevision: RULE_REVISION, nodeRevision: 1, agentClass,
 		status: authority ? 'blocked' : 'proposed',
@@ -139,7 +144,6 @@ function workNode(input: {
 			? ['treeseed.engineering.review']
 			: Array.isArray(input.workItem.requiredCapabilities) ? input.workItem.requiredCapabilities : [],
 		requestedPermissions: requestedPermissions(input.workItem, input.profile, input.pairRole),
-		...(input.pairRole === 'actor' && input.workItem.output ? { output: input.workItem.output } : {}),
 		workspace: input.pairRole === 'reviewer' ? 'treedx' : input.workItem.workspace,
 		acceptanceCriteria: input.workItem.acceptanceCriteria,
 		maximumReviewCycles: reviewed ? Number(input.workItem.maximumReviewCycles) : 1,
@@ -194,6 +198,9 @@ export function projectTeamExecutionGraph(input: {
 
 	for (const source of [...input.sources].sort((left, right) =>
 		left.projectId.localeCompare(right.projectId) || left.path.localeCompare(right.path))) {
+		if (source.teamId !== input.teamId) throw Object.assign(new Error('Proposal source belongs to another team.'), {
+			code: 'execution_source_team_mismatch',
+		});
 		const validation = validatePortableContentData('proposal', source.frontmatter);
 		if (!validation.ok) throw Object.assign(new Error(`Proposal ${source.path} is invalid.`), {
 			code: 'proposal_execution_plan_invalid', diagnostics: validation.diagnostics,
@@ -272,6 +279,7 @@ export function projectTeamExecutionGraph(input: {
 
 	for (const link of input.dependencyLinks ?? []) {
 		const endpoint = (ref: ExactEntityReference, role: 'predecessor' | 'dependent') => {
+			if (ref.store !== 'treedx' || ref.model !== 'proposal') return undefined;
 			const item = ref.anchor?.match(/^work-item\/([a-z0-9]+(?:-[a-z0-9]+)*)$/u)?.[1];
 			const candidates = nodes.filter((node) => node.sourceRef.store === 'treedx'
 				&& node.sourceRef.model === 'proposal' && node.sourceRef.id === ref.id

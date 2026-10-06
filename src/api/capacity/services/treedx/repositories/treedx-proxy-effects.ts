@@ -4,7 +4,8 @@ import type { TreeDxProxyScope } from './treedx-proxy-token-service.ts';
 import { projectTreeDxCommitSignals } from './treedx-change-projector.ts';
 import { recordTreeDxAuthoringState } from './treedx-authoring-journal.ts';
 
-export interface TreeDxProxyStore extends CapacityGovernanceDatabase {
+export interface TreeDxProxyStore extends CapacityGovernanceDatabase,
+	Pick<Parameters<typeof recordTreeDxAuthoringState>[0], 'upsertProjectTreeDxLibrary'> {
 	getProjectTreeDxLibrary(projectId: string): Promise<Record<string, unknown> | null>;
 	getProject(projectId: string): Promise<{ teamId: string } | null>;
 	recordTreeDxProxyAudit(input: Record<string, unknown>): Promise<unknown>;
@@ -13,7 +14,10 @@ export interface TreeDxProxyStore extends CapacityGovernanceDatabase {
 interface TreeDxProxyAccess {
 	actorType: 'user' | 'capacity_provider';
 	principal: Record<string, unknown>;
-	assignment: Record<string, unknown> | null;
+	assignment: (Record<string, unknown> & {
+		id: string;
+		assignmentAttempt?: { effectiveProfile?: Record<string, unknown> };
+	}) | null;
 	handle: Record<string, unknown> | null;
 }
 

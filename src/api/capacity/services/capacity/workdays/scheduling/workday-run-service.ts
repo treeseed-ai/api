@@ -10,7 +10,7 @@ import { recordCapacityWorkdayScheduleFailure,type WorkdayScheduleStore } from '
 
 type JsonRecord = Record<string, unknown>;
 interface WorkdayRunServiceStore extends WorkdayScheduleStore {
-	preflightCapacityWorkdayRun(run: CapacityWorkdayRunRecord): Promise<unknown>;
+	preflightCapacityWorkdayRun(run: CapacityWorkdayRunRecord): Promise<JsonRecord>;
 	scheduleCapacityWorkdayRun(run: CapacityWorkdayRunRecord): Promise<unknown>;
 	terminalizeCapacityWorkdayAssignments(teamId: string, runId: string, input: JsonRecord): Promise<unknown>;
 	createCapacityWorkdayEvent(teamId: string, runId: string, input: JsonRecord): Promise<unknown>;

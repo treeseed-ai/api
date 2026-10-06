@@ -19,6 +19,10 @@ beforeEach(() => {
 
 function fixture(overrides: Record<string, unknown> = {}) {
   const current = { ...row, ...overrides };
+  if (typeof overrides.assignment_attempt_json === 'string' && !Object.hasOwn(overrides, 'attempt_count')) {
+    const attempt = assignmentAttemptSchema.safeParse(JSON.parse(overrides.assignment_attempt_json));
+    if (attempt.success) current.attempt_count = attempt.data.attempt;
+  }
   const store = { first: vi.fn(async () => current), run: vi.fn(async (_sql: string, args: unknown[]) => { current.workspace_context_json = String(args[0]); current.state_version++; }) };
   const content = { getProject: vi.fn(async () => ({ id: 'project', teamId: 'team' })), listHubRepositories: vi.fn(async () => [{ id: 'repository', role: 'software', provider: 'github', owner: 'example', name: 'project', defaultBranch: 'staging' }]) };
   const fetchImpl = vi.fn<typeof fetch>(async () => new Response(commit));
@@ -64,10 +68,31 @@ it('authorizes only exact same-repository Git predecessors from the immutable at
 });
 
 describe('provider source workspace authorization', () => {
+  it('binds canonical source authorization to the unchanged frozen ordinal rather than incrementing an operational lifecycle counter', async () => {
+    for (const ordinal of [1, 2, 3, Number.MAX_SAFE_INTEGER]) {
+      const attempt = assignmentAttemptSchema.parse({ ...canonicalAttempt, attempt: ordinal });
+      const f = fixture({ assignment_attempt_json: JSON.stringify(attempt), attempt_count: ordinal });
+      const original = JSON.stringify(attempt);
+      const first = await f.service({ principal }, 'assignment', f.request);
+      const second = await f.service({ principal }, 'assignment', f.request);
+      expect(first.authorization.attempt).toBe(ordinal); expect(second.authorization.attempt).toBe(ordinal);
+      expect(f.current.attempt_count).toBe(ordinal); expect(Reflect.get(f.current, 'assignment_attempt_json')).toBe(original);
+    }
+  });
+  it('denies a moved missing malformed or mismatched canonical source ordinal before credential acquisition without rewriting failed inputs', async () => {
+    for (const attempt_count of [0, 2, -1, null, undefined, '1', 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const f = fixture({ assignment_attempt_json: JSON.stringify(canonicalAttempt), attempt_count });
+      const before = structuredClone(f.current); mocks.credential.mockClear(); f.fetchImpl.mockClear();
+      await expect(f.service({ principal }, 'assignment', f.request)).rejects.toMatchObject({ code: 'assignment_source_lease_invalid' });
+      expect(f.current).toEqual(before); expect(mocks.credential).not.toHaveBeenCalled();
+      expect(f.fetchImpl).not.toHaveBeenCalled(); expect(f.store.run).not.toHaveBeenCalled();
+    }
+  });
   it('pins a revision and seals the credential to the exact current assignment and host key', async () => {
     const f = fixture();
     const response = await f.service({ principal }, 'assignment', f.request);
     expect(response.authorization).toMatchObject({ providerId: 'provider', assignmentId: 'assignment', attempt: 1, mode: 'analysis', acquisition: 'upstream-authorized', publication: 'denied', source: { teamId: 'team', projectId: 'project', commit } });
+    if (!response.credential) throw new Error('The original credential-bound fixture must deliver a sealed credential.');
     expect(openSourceCredential({ authorization: response.authorization, delivery: response.credential, privateKey: f.recipient.privateKey }, now).token).toBe('synthetic-git-token');
     expect(JSON.stringify(response)).not.toContain('synthetic-git-token');
     expect(f.current.workspace_context_json).not.toMatch(/synthetic|ciphertext|privateKey/u);
@@ -128,11 +153,12 @@ describe('provider source workspace authorization', () => {
 			workday_parameters_json: '{"acceptanceCampaignId":"campaign"}', assignment_attempt_json: JSON.stringify(canonicalAttempt) };
 		expect(assignmentSourceMode(base)).toMatchObject({ mode: 'work', acquisition: 'upstream-public', publication: 'simulation-branch',
 			publicationRef: 'simulation/campaign/workday/assignment' });
-		const dependent = structuredClone(canonicalAttempt);
+		const dependent = assignmentAttemptSchema.parse(canonicalAttempt);
+		if (dependent.workspace.mode !== 'git') throw new Error('Missing original Git workspace');
 		dependent.workspace.baseCommit = '9'.repeat(40);
 		expect(assignmentSourceMode({ ...base, assignment_attempt_json: JSON.stringify(dependent) })).toMatchObject({
 			mode: 'work', acquisition: 'simulation-local', publication: 'simulation-branch' });
-		const integration = structuredClone(canonicalAttempt);
+		const integration = assignmentAttemptSchema.parse(canonicalAttempt);
 		integration.predecessorResultIds = ['approved-actor-1', 'approved-actor-2'];
 		expect(assignmentSourceMode({ ...base, assignment_attempt_json: JSON.stringify(integration) })).toMatchObject({
 			mode: 'work', acquisition: 'simulation-local', publication: 'simulation-branch' });

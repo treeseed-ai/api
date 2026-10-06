@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { KnowledgePublicationManifest } from '@treeseed/sdk/knowledge';
+import type { KnowledgePublicationManifest } from './runtime/publication-manifest.ts';
 import { canonicalKnowledgePublicationValue } from './build-publication.ts';
 import type { KnowledgePublicationStorage } from './publication-storage.ts';
 import type { KnowledgeSnapshotProject } from './packs/knowledge-pack-builder.ts';

@@ -11,7 +11,8 @@ export async function listGovernanceProposalsMethod(this: ControlPlaneStore, fil
         }
     }
     params.push(limit);
-    const rows = await this.all(`SELECT * FROM governance_proposals ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
+    const rows = await this.all<GovernanceProposalRow>(`SELECT * FROM governance_proposals ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
 			 ORDER BY updated_at DESC LIMIT ?`, params);
     return rows.map(serializeGovernanceProposal);
 }
+import type { GovernanceProposalRow } from "../../../../support/governance/policy/governance.ts";

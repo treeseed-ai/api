@@ -188,6 +188,7 @@ export function createWorkflowService(store: any) {
 					JSON.stringify({ ...allowedInputs, treeseed_operation_correlation: { required: false, maximumLength: 64 } }),
 					JSON.stringify(secrets), JSON.stringify(variables), JSON.stringify(actors), JSON.stringify(modes), now, now]);
 			const saved = serializeWorkflowOperation(await store.first('SELECT * FROM project_workflow_operations WHERE id = ?', [operationId]));
+			if (!saved) throw new WorkflowOperationError(503, 'workflow_operation_readback_missing', 'Workflow operation could not be read back.');
 			await store.recordAuditEvent({ eventType: 'workflow.operation.configured', actorType: 'user', actorId: granted.principal.id,
 				targetType: 'project_workflow_operation', targetId: saved.id, data: { projectId, teamId: granted.project.teamId,
 					workflowId, repositoryBindingId: repository.id, workflowBindingId: binding.id } });

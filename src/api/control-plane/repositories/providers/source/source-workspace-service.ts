@@ -25,18 +25,22 @@ function equalSecret(left: unknown, right: string) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 export function assertSourceAssignmentLease(row: RecordValue | null, principal: ProviderPrincipal, assignmentId: string, runnerId: string, leaseToken: string, now: Date) {
+  const attempt = row?.assignment_attempt_json == null ? null : assignmentAttemptSchema.safeParse(record(row.assignment_attempt_json));
+  const ordinalValid = attempt === null
+    ? Number.isSafeInteger(row?.attempt_count) && Number(row?.attempt_count) >= 0 && Number(row?.attempt_count) < Number.MAX_SAFE_INTEGER
+    : attempt.success && row?.attempt_count === attempt.data.attempt;
   if (!row || row.id !== assignmentId || row.team_id !== principal.teamId || row.capacity_provider_id !== principal.capacityProviderId
     || row.membership_id !== principal.membershipId || row.runner_id !== runnerId || !equalSecret(row.lease_token, leaseToken)
     || !['leased', 'running'].includes(String(row.status)) || row.lease_state !== 'leased'
     || !Number.isFinite(Date.parse(String(row.lease_expires_at))) || Date.parse(String(row.lease_expires_at)) <= now.getTime()
-    || !Number.isSafeInteger(row.attempt_count) || Number(row.attempt_count) < 0 || Number(row.attempt_count) >= Number.MAX_SAFE_INTEGER) {
+    || !ordinalValid) {
     const checks = {
       assignment: row?.id === assignmentId, team: row?.team_id === principal.teamId,
       provider: row?.capacity_provider_id === principal.capacityProviderId, membership: row?.membership_id === principal.membershipId,
       runner: row?.runner_id === runnerId, token: equalSecret(row?.lease_token, leaseToken),
       state: ['leased', 'running'].includes(String(row?.status)) && row?.lease_state === 'leased',
       expiry: Number.isFinite(Date.parse(String(row?.lease_expires_at))) && Date.parse(String(row?.lease_expires_at)) > now.getTime(),
-      attempt: Number.isSafeInteger(row?.attempt_count) && Number(row?.attempt_count) >= 0 && Number(row?.attempt_count) < Number.MAX_SAFE_INTEGER,
+      attempt: ordinalValid,
     };
     const failed = Object.entries(checks).filter(([, valid]) => !valid).map(([name]) => name);
     throw new CapacityGovernanceError('assignment_source_lease_invalid', `Source access requires this provider runner’s current assignment lease (failed checks: ${failed.join(', ')}).`, 403);
@@ -53,10 +57,11 @@ export function assignmentSourceMode(row: RecordValue) {
 	if (!attempt.success) return { mode: 'analysis' as const,
 		acquisition: executionMode === 'production' ? 'upstream-authorized' as const : 'upstream-public' as const,
 		publication: 'denied' as const };
-	if (attempt.data.workspace.mode === 'git') {
+	const workspace = attempt.data.workspace;
+	if (workspace.mode === 'git') {
 		const campaignId = String(record(row.workday_parameters_json).acceptanceCampaignId || 'local');
 		const frozenUpstreamBase = attempt.data.contextRefs.some(reference => reference.store === 'git'
-			&& reference.commit === attempt.data.workspace.baseCommit) && attempt.data.predecessorResultIds.length === 0;
+			&& reference.commit === workspace.baseCommit) && attempt.data.predecessorResultIds.length === 0;
 		const acquisition = executionMode === 'production' ? 'upstream-authorized' as const
 			: frozenUpstreamBase ? 'upstream-public' as const : 'simulation-local' as const;
 		const publicationRef = executionMode === 'simulation'
@@ -179,7 +184,7 @@ export function createSourceWorkspaceService(database: CapacityGovernanceDatabas
     const expiry = Math.min(Date.parse(String(row.lease_expires_at)), credentialExpiry, issued.getTime() + 300_000);
     if (!Number.isFinite(expiry) || expiry <= issued.getTime()) throw new CapacityGovernanceError('assignment_source_credential_expired', 'Source credential expired during authorization.', 409);
     const authorization: SourceWorkspaceAuthorization = { schemaVersion: 'treeseed.source-workspace-authorization/v1', id: randomUUID(),
-      providerId: actor.capacityProviderId, assignmentId, attempt: Number(row.attempt_count) + 1,
+      providerId: actor.capacityProviderId, assignmentId, attempt: attempt.success ? attempt.data.attempt : Number(row.attempt_count) + 1,
 	  source: { controlPlaneId: options.controlPlaneId, teamId: actor.teamId, projectId, repositoryId: pin.repository.id,
 		commit: pin.exactCommit, ...(additionalCommits.length ? { additionalCommits } : {}), formatVersion: 1, profile: 'source-only' },
 		...sourceMode, ...(pin.credentialBindingId ? { credentialBindingId: pin.credentialBindingId } : {}), issuedAt: issued.toISOString(), expiresAt: new Date(expiry).toISOString() };

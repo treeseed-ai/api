@@ -1,5 +1,5 @@
 import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
-export async function retryJobMethod(this: ControlPlaneStore, jobId, input: any = {}) {
+export async function retryJobMethod(this: ControlPlaneStore, jobId: string, input: any = {}) {
     await this.ensureInitialized();
     const existing = await this.findJobById(jobId);
     if (!existing)

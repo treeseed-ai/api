@@ -3,15 +3,16 @@ vi.mock('../../../../../src/api/capacity/services/capacity/assignments/lifecycle
 	reconcileAssignmentContent: vi.fn(async () => undefined),
 }));
 import { advanceLivingWorkday } from '../../../../../src/api/capacity/services/capacity/workdays/lifecycle/living-workday-lifecycle.ts';
-import { compileWorkday, validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
+import { DEFAULT_WORKDAY_POLICY, compileWorkday, validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
 import { runtimeWorkdayPhase } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
+import { compileCapacityWorkdayRunRecord } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 
 const fluidPlan = { ...compileWorkday({ id: 'fluid-workday', teamId: 'team', policyId: 'default', policyRevision: 1,
-	executionMode: 'simulation', policy: { durationSeconds: 3600, planningPercent: 100 / 3,
+	executionMode: 'simulation', policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 3600, planningPercent: 100 / 3,
 		maximumConcurrency: 5, communicationConcurrency: 5 }, agentIds: [],
 	startsAt: '2026-09-29T12:00:00Z' }), state: 'active' as const };
-const fluidRun = { id: 'fluid-workday', teamId: 'team', executionKind: 'workday',
-	parameters: { appliedPlan: fluidPlan, scheduledProjectIds: ['sdk', 'api'] } } as never;
+const fluidRun = compileCapacityWorkdayRunRecord('team', { id: 'fluid-workday', executionMode: 'simulation',
+	parameters: { appliedPlan: fluidPlan, scheduledProjectIds: ['sdk', 'api'] } });
 
 describe('fluid workday phase from the living graph', () => {
 	it('keeps the initial planning window even if approved work is ready', async () => {
@@ -25,7 +26,7 @@ describe('fluid workday phase from the living graph', () => {
 		expect(first).toHaveBeenCalledOnce();
 	});
 	it('admits acting only when a ready node exists in selected projects', async () => {
-		const first = vi.fn(async () => ({ id: 'actor' }));
+		const first = vi.fn(async (_sql: string) => ({ id: 'actor' }));
 		expect(await runtimeWorkdayPhase({ first } as never, fluidRun, '2026-09-29T12:20:00Z')).toBe('acting');
 		expect(first.mock.calls[0]?.[0]).toContain("node.kind IN ('acting','reviewing')");
 	});
@@ -53,7 +54,7 @@ vi.mock('../../../../../src/api/governance/executable-proposal.ts', async (impor
 }));
 
 const now = '2026-09-13T16:00:00.000Z';
-const policy = { durationSeconds: 60, maximumConcurrency: 2, planningTurnMaximumSeconds: 10,
+const policy = { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 60, maximumConcurrency: 2, planningTurnMaximumSeconds: 10,
 	communicationConcurrency: 1, projectPercentages: { project: 100 }, agentClassPercentages: { project: { architect: 100 } } };
 const planningPermissions = { content: { read: ['proposal'], write: ['proposal'] }, tools: ['discussion'] };
 const planningAgent = (agentClass: string) => ({ schemaVersion: 'treeseed.agent/v1', id: `project/${agentClass}`,
@@ -68,8 +69,8 @@ const plan = { schemaVersion: 'treeseed.workday/v1', id: 'workday', teamId: 'tea
 	planningRounds: [{ round: 1, state: 'active', assignmentIds: ['planning:workday:1:project/architect'] },
 		{ round: 2, state: 'pending', assignmentIds: ['planning:workday:2:project/architect'] }],
 	admittedSecondsByProject: {}, admittedSecondsByAgentClass: {}, activatedAt: '2026-09-13T15:00:00.000Z' } as const;
-const run = { id: 'workday', teamId: 'team', status: 'running', completedAt: null,
-	reportRefs: {}, parameters: { appliedPlan: plan } } as never;
+const run = compileCapacityWorkdayRunRecord('team', { id: 'workday', status: 'running', executionMode: 'simulation',
+	startedAt: plan.startsAt, parameters: { durationSeconds: 60, appliedPlan: plan } }, { now });
 const reportReference = { kind: 'treedx', projectId: 'project', repository: 'team-library',
 	commit: 'a'.repeat(40), path: 'notes/report.mdx', workspaceId: 'workspace' };
 const reportResult = { schemaVersion: 'treeseed.assignment-result/v1', id: 'result', assignmentId: 'assignment',
@@ -280,13 +281,13 @@ describe('living workday lifecycle', () => {
 		expect(sql).not.toMatch(/capacity_workday_demands|workday_capacity_envelopes/u);
 	});
 
-	it.each(['failed', 'cancelled', 'stale'])('settles a %s Reporter as a failed workday, not success or an endless drain', async status => {
+	it.each(['failed', 'cancelled', 'stale'])('retains %s Reporter failure evidence without ending a workday that has no closeout report', async status => {
 		const closingRun = { ...run, parameters: { appliedPlan: { ...plan, state: 'closing', closingAt: now } } } as never;
 		const store = { all: vi.fn(async (sql: string) => sql.includes('execution_nodes')
 			? [{ id: 'report', kind: 'reporting', status }] : [{ state: 'released' }]),
 			updateCapacityWorkdayRun: vi.fn(async () => closingRun) };
 		expect(await advanceLivingWorkday(store as never, closingRun, now)).toMatchObject({
-			status: 'failed', plan: { state: 'ended', endedAt: now } });
+			status: 'failed', plan: { state: 'closing' } });
 	});
 	it('does not end a failed Reporter until reservations are settled', async () => {
 		const closingRun = { ...run, parameters: { appliedPlan: { ...plan, state: 'closing', closingAt: now } } } as never;
@@ -317,21 +318,23 @@ describe('living workday lifecycle', () => {
 	it('ends only after Reporter completion and reservation settlement', async () => {
 		const closing = { ...plan, state: 'closing', closingAt: now } as const;
 		const closingRun = { ...run, parameters: { appliedPlan: closing } } as never;
-		const updateCapacityWorkdayRun = vi.fn(async () => closingRun);
+		const updateCapacityWorkdayRun = vi.fn(async (_team: string, _id: string, _input: Record<string, unknown>) => closingRun);
 		const store = { all: vi.fn(async (sql: string) => sql.includes('SELECT id,kind,status')
 			? [{ id: 'reporting:workday:project/reporter', kind: 'reporting', status: 'completed' }]
 			: sql.includes('assignment_result_json') ? [{ id: 'assignment', assignment_result_json: JSON.stringify(reportResult) }]
 			: sql.includes('JOIN execution_edges') ? [{ status: 'completed' }] : [{ state: 'consumed' }]), updateCapacityWorkdayRun };
 		const result = await advanceLivingWorkday(store as never, closingRun, now);
-		expect(result).toMatchObject({ changed: true, status: 'completed', plan: { state: 'ended', endedAt: now } });
+		expect(result).toMatchObject({ changed: true, status: 'completed', plan: { state: 'ended', endedAt: now, reportRef: reportReference } });
 		expect(updateCapacityWorkdayRun).toHaveBeenCalledWith('team', 'workday', expect.objectContaining({
-			reportRefs: { 'reporting:workday:project/reporter': reportReference } }));
+			parameters: expect.objectContaining({ appliedPlan: expect.objectContaining({ reportRef: reportReference }) }) }));
+		expect(updateCapacityWorkdayRun.mock.calls[0]?.[2]).not.toHaveProperty('reportRefs');
 	});
-	it.each(['missing', 'duplicate', 'invalid', 'wrong-assignment', 'wrong-store'])('rejects %s Reporter evidence despite a completed graph node', async failure => {
+	it.each(['missing', 'duplicate', 'invalid', 'wrong-assignment', 'wrong-store', 'future-completion'])('rejects %s Reporter evidence despite a completed graph node', async failure => {
 		const closingRun = { ...run, parameters: { appliedPlan: { ...plan, state: 'closing', closingAt: now } } } as never;
 		const result = { ...reportResult,
 			...(failure === 'wrong-assignment' ? { assignmentId: 'another' } : {}),
 			...(failure === 'wrong-store' ? { references: [] } : {}) };
+		if (failure === 'future-completion') result.completedAt = '2026-09-13T16:01:00.000Z';
 		const row = { id: 'assignment', assignment_result_json: failure === 'invalid' ? '{broken' : JSON.stringify(result) };
 		const store = { all: vi.fn(async (sql: string) => sql.includes('SELECT id,kind,status')
 			? [{ id: 'report', kind: 'reporting', status: 'completed' }]

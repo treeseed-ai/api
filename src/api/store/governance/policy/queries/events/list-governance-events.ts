@@ -11,7 +11,8 @@ export async function listGovernanceEventsMethod(this: ControlPlaneStore, filter
         }
     }
     params.push(limit);
-    const rows = await this.all(`SELECT * FROM governance_events ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
+    const rows = await this.all<GovernanceEventRow>(`SELECT * FROM governance_events ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
 			 ORDER BY created_at DESC LIMIT ?`, params);
     return rows.map(serializeGovernanceEvent);
 }
+import type { GovernanceEventRow } from "../../../../support/governance/policy/governance.ts";

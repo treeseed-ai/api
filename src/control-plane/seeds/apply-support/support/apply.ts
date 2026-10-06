@@ -1,26 +1,25 @@
 import { addSeedReferencesToIds,applyAction,approvalMatchesPlan,createLocalSeedStore,createProductionApproval,createSeedRunIfAvailable,ensureLocalSeedTeamMemberships,ensureProjectSeedDependencies,isoNow,manifestHashFor,mutationActions,planSeedWithStore,redactSeedApplyResult,resolveSeedReferences,seedRunInput,selectedActions,updateSeedRunIfAvailable } from '../index.js';
 
-async function verifyAppliedSeed(input, store) {
-    const observed = await planSeedWithStore({
-        projectRoot: input.projectRoot,
-        seedName: input.seedName,
-        environments: input.environments,
-        mode: 'plan',
-        store,
-        env: input.env,
-        manifestRef: input.manifestRef,
-        actor: input.actor,
-        bundle: input.bundle,
-    });
+type ApplySeedInput = Parameters<typeof planSeedWithStore>[0] & { localOnly?: boolean; approvalRequestId?: string };
+
+async function verifyAppliedSeed(input: ApplySeedInput, store: Parameters<typeof applyAction>[0]['store']) {
+    const observed = await planSeedWithStore({ ...input, mode: 'plan', store });
     if (!observed.plan) throw new Error(observed.diagnostics?.[0]?.message ?? 'Seed read-back verification failed.');
     const drift = observed.plan.actions.filter((action) => ['create', 'update', 'delete', 'error'].includes(action.action));
     if (drift.length) {
         throw new Error(`Seed read-back verification found drift: ${drift.map((action) => `${action.action}:${action.key}`).join(', ')}.`);
     }
-    return { verified: true, manifestHash: observed.manifestHash, summary: observed.plan.summary };
+    return { verified: true, manifestHash: 'manifestHash' in observed ? observed.manifestHash : undefined, summary: observed.plan.summary };
 }
 
-export async function applyPlannedSeedActions(input, dependencies = {}) {
+export async function applyPlannedSeedActions(input: Omit<Parameters<typeof ensureProjectSeedDependencies>[0], 'action'> & {
+    actor?: ApplySeedInput['actor']; setActiveActionKey?: (key: string) => void;
+    plan: Parameters<typeof ensureProjectSeedDependencies>[0]['plan'] & { environments: string[] };
+}, dependencies: Partial<{
+    applyAction: typeof applyAction;
+    ensureProjectSeedDependencies: typeof ensureProjectSeedDependencies;
+    ensureLocalSeedTeamMemberships: typeof ensureLocalSeedTeamMemberships;
+}> = {}) {
     const apply = dependencies.applyAction ?? applyAction;
     const ensureDependencies = dependencies.ensureProjectSeedDependencies ?? ensureProjectSeedDependencies;
     const ensureMemberships = dependencies.ensureLocalSeedTeamMemberships ?? ensureLocalSeedTeamMemberships;
@@ -58,18 +57,8 @@ export async function applyPlannedSeedActions(input, dependencies = {}) {
     return { repairs, localTeamMemberships };
 }
 
-export async function applySeedWithStore(input) {
-    const planned = await planSeedWithStore({
-        projectRoot: input.projectRoot,
-        seedName: input.seedName,
-        environments: input.environments,
-        mode: 'apply',
-        store: input.store,
-        env: input.env,
-        manifestRef: input.manifestRef,
-        actor: input.actor,
-        bundle: input.bundle,
-    });
+export async function applySeedWithStore(input: ApplySeedInput) {
+    const planned = await planSeedWithStore({ ...input, mode: 'apply' });
     if (!planned.plan) {
         throw new Error(planned.diagnostics?.[0]?.message ?? 'Seed plan failed.');
     }
@@ -77,13 +66,13 @@ export async function applySeedWithStore(input) {
         throw new Error('Local seed apply only supports the local environment.');
     }
     const store = input.store ?? await createLocalSeedStore(input.projectRoot, input.env);
-    const manifestHash = planned['manifestHash'] ?? manifestHashFor(planned.manifestPath);
+    const manifestHash = ('manifestHash' in planned ? planned.manifestHash : undefined) ?? manifestHashFor(planned.manifestPath);
     let run = await createSeedRunIfAvailable(store, seedRunInput({
         plan: input.bundle ? { ...planned.plan, sourceBundle: input.bundle } : planned.plan,
         manifestHash,
         actor: input.actor,
     }));
-    let activeActionKey = null;
+    let activeActionKey: string | null = null;
     try {
     const hasProduction = planned.plan.environments.includes('prod');
     if (hasProduction) {
@@ -95,7 +84,7 @@ export async function applySeedWithStore(input) {
             const result = {
                 blocked: true,
                 reason: approvalResult.message ?? 'Production seed apply requires approval.',
-                approvalRequest: approvalResult.approvalRequest ?? approval ?? null,
+                approvalRequest: ('approvalRequest' in approvalResult ? approvalResult.approvalRequest : undefined) ?? approval ?? null,
                 actionCount: 0,
                 manifestHash,
             };
@@ -173,7 +162,7 @@ export async function applySeedWithStore(input) {
     }
 }
 
-export async function applyLocalSeedFromCli(input) {
+export async function applyLocalSeedFromCli(input: ApplySeedInput) {
     return applySeedWithStore({
         ...input,
         localOnly: true,

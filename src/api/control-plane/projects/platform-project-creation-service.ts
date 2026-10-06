@@ -31,7 +31,7 @@ async function github(fetchImpl: typeof fetch, token: string | undefined, path: 
 	return response.status === 204 ? {} : response.json() as Promise<Row>;
 }
 
-async function templateFiles(buffer: Buffer, slug: string) {
+export async function templateFiles(buffer: Buffer, slug: string) {
 	if (buffer.byteLength > 8 * 1024 * 1024) throw new Error('The compressed project template exceeds the 8 MiB safety limit.');
 	const archive = gunzipSync(buffer, { maxOutputLength: 64 * 1024 * 1024 });
 	const unpack = extract();
@@ -42,7 +42,8 @@ async function templateFiles(buffer: Buffer, slug: string) {
 		const safe = path && !path.startsWith('/') && !path.split('/').some((part) => !part || part === '.' || part === '..');
 		if (header.type !== 'file' || !safe || files.size >= 2_000) { stream.resume(); stream.once('end', () => header.type === 'directory' && safe ? next() : unpack.destroy(new Error('The project template contains an unsafe entry.'))); return; }
 		const chunks: Buffer[] = []; let size = 0;
-		stream.on('data', (chunk: Buffer) => { size += chunk.length; if (size > 4 * 1024 * 1024) unpack.destroy(new Error(`Template file ${path} exceeds 4 MiB.`)); else chunks.push(chunk); });
+		stream.on('data', (chunk: unknown) => { if (!Buffer.isBuffer(chunk)) { unpack.destroy(new Error(`Template file ${path} does not contain binary bytes.`)); return; }
+			size += chunk.length; if (size > 4 * 1024 * 1024) unpack.destroy(new Error(`Template file ${path} exceeds 4 MiB.`)); else chunks.push(chunk); });
 		stream.once('end', () => { const source = Buffer.concat(chunks); const name = slug.split('-').map((part) => `${part[0]?.toUpperCase() ?? ''}${part.slice(1)}`).join(' ');
 			files.set(path, source.includes(0) ? source : Buffer.from(source.toString('utf8').replaceAll('__SITE_SLUG__', slug).replaceAll('__SITE_NAME__', name))); next(); });
 	});

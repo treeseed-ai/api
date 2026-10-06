@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { compileWorkday } from '@treeseed/sdk/agent-capacity';
+import { DEFAULT_WORKDAY_POLICY, compileWorkday } from '@treeseed/sdk/agent-capacity';
 import { livingAllocationInputs } from '../../../../../../src/api/capacity/services/capacity/assignments/admission/living-allocation-inputs.ts';
 
 describe('bounded closing workday allocation', () => {
@@ -7,7 +7,7 @@ describe('bounded closing workday allocation', () => {
 		const now = '2026-09-16T12:30:00.000Z', capabilityId = 'treeseed.coordination.reporting';
 		const plan = { ...compileWorkday({ id: 'closing', teamId: 'team', policyId: 'default', policyRevision: 1,
 			executionMode: 'simulation', startsAt: '2026-09-16T12:00:00.000Z', agentIds: [],
-			policy: { durationSeconds: 600, maximumConcurrency: 1, communicationConcurrency: 1 } }), state: 'closing' };
+			policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 600, maximumConcurrency: 1, communicationConcurrency: 1 } }), state: 'closing' };
 		const run = { id: 'closing', teamId: 'team', parameters: { appliedPlan: plan } };
 		const observation = { day: now.slice(0, 10), observedAt: now, healthy: true, activeSeconds: 0, reservedSeconds: 0 };
 		const provider = { id: 'codex-implementation', accountingLimits: { modelConfigurationId: 'terra',

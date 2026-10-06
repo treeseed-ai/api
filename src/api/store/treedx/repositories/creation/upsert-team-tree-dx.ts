@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,objectValue,serializeTreeDxInstance } from "../../../../persistence/store.ts";
-export async function upsertTeamTreeDxMethod(this: ControlPlaneStore, teamId, input: any = {}) {
+import type { TreeDxInstanceRow } from "../../../../persistence/store.ts";
+export async function upsertTeamTreeDxMethod(this: ControlPlaneStore, teamId: string, input: any = {}) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const existing = await this.getPrimaryTreeDxInstance(teamId);
@@ -57,7 +58,7 @@ export async function upsertTeamTreeDxMethod(this: ControlPlaneStore, teamId, in
         existing?.createdAt ?? timestamp,
         timestamp,
     ]);
-    return serializeTreeDxInstance(await this.first(`SELECT * FROM treedx_instances WHERE team_id = ? AND id = ? LIMIT 1`, [teamId, id])) ?? {
+    return serializeTreeDxInstance(await this.first<TreeDxInstanceRow>(`SELECT * FROM treedx_instances WHERE team_id = ? AND id = ? LIMIT 1`, [teamId, id])) ?? {
         id,
         teamId,
         kind,

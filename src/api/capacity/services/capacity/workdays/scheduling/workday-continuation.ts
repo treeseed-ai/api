@@ -9,6 +9,22 @@ const record = (value: unknown): Row => {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
 };
 
+function continuationParameters(value: unknown): Row {
+	let parsed = value;
+	try { if (typeof parsed === 'string') parsed = JSON.parse(parsed); } catch {
+		throw new CapacityGovernanceError('workday_continuation_scope_invalid', 'Continuation parameters must retain readable original object bytes.', 409);
+	}
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !Object.keys(parsed).length) throw new CapacityGovernanceError(
+		'workday_continuation_scope_invalid', 'Continuation parameters must retain a nonempty original object.', 409);
+	const parameters = parsed as Row;
+	if (Object.hasOwn(parameters, 'continueFromWorkdayId')) {
+		const parent = parameters.continueFromWorkdayId;
+		if (typeof parent !== 'string' || !parent || parent !== parent.trim()) throw new CapacityGovernanceError(
+			'workday_continuation_scope_invalid', 'A supplied continuation parent must be one exact nonempty identifier.', 409);
+	}
+	return parameters;
+}
+
 export function assignmentBelongsToRun(row: Row, node: ExecutionNode | undefined,
 	runId: string, history: ReadonlySet<string>): boolean {
 	if (!node?.workdayId || !runId) return true;
@@ -18,7 +34,7 @@ export function assignmentBelongsToRun(row: Row, node: ExecutionNode | undefined
 	const refs = Array.isArray(attempt.authorityRefs) ? attempt.authorityRefs : [];
 	return canonicalJson(attempt.sourceRef) === canonicalJson(node.sourceRef)
 		&& canonicalJson(refs.filter(ref => record(ref).model === 'decision'))
-			=== canonicalJson(node.authorityRefs.filter(ref => ref.model === 'decision'));
+			=== canonicalJson((node.authorityRefs ?? []).filter(ref => ref.model === 'decision'));
 }
 
 /** Derive history from ordinary workday records; no copied campaign/result authority. */
@@ -34,14 +50,16 @@ export async function workdayContinuationHistory(store: Store, teamId: string, p
 			|| providerId && row.capacity_provider_id !== providerId
 			|| !['completed','degraded','cancelled','failed'].includes(String(row.status))) throw new CapacityGovernanceError(
 			'workday_continuation_scope_invalid', 'Continuation requires settled work in the same team, mode and provider custody.', 409);
+		const parameters = continuationParameters(row.parameters_json);
 		const active = await store.first(`SELECT id FROM capacity_provider_assignments WHERE team_id=? AND work_day_id=?
-			AND status IN ('pending','leased','running','returned') LIMIT 1`, [teamId, id]);
+			AND (status IN ('pending','leased','running') OR lease_state='leased' OR lease_token IS NOT NULL
+				OR (status='returned' AND lease_state IS DISTINCT FROM 'released')) LIMIT 1`, [teamId, id]);
 		const reserved = await store.first(`SELECT id FROM capacity_reservations WHERE team_id=? AND work_day_id=?
 			AND state IN ('reserved','consuming') LIMIT 1`, [teamId, id]);
 		if (active || reserved) throw new CapacityGovernanceError('workday_continuation_unsettled',
 			'Previous assignments and reservations must settle before continuation.', 409);
 		history.push(row);
-		id = String(record(row.parameters_json).continueFromWorkdayId ?? '');
+		id = typeof parameters.continueFromWorkdayId === 'string' ? parameters.continueFromWorkdayId : '';
 	}
 	return history;
 }

@@ -45,7 +45,7 @@ function graphEdge(value: unknown) {
 	return record(candidate.edge ?? candidate);
 }
 
-function tokenEstimate(value:unknown) {
+function tokenEstimate(value:unknown): number | null {
 	const pack=unpack(value);
 	if(typeof pack.totalTokenEstimate==='number')return pack.totalTokenEstimate;
 	const estimate=record(record(pack.diagnostics).budget).estimatedTokens;

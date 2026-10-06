@@ -1,15 +1,15 @@
-import { createCapacityControlPlane } from '../../../api/capacity/control-plane.js';
+import { createCapacityControlPlane, type CapacityControlPlaneStore } from '../../../api/capacity/control-plane.js';
 import { ControlPlaneStore } from '../../../api/persistence/store.js';
 import { createControlPlanePostgresDatabase } from '../../../api/support/control-plane-postgres.js';
 import { DirectControlPlaneRunnerClient } from '../../client/direct-control-plane-runner-client.js';
 
-export function createClient(config, sharedStore?: ReturnType<typeof createControlPlaneStore>) {
+export function createClient(config: Parameters<typeof createControlPlaneStore>[0], sharedStore?: ReturnType<typeof createControlPlaneStore>) {
     const store = sharedStore ?? createControlPlaneStore(config);
     if (!store) throw new Error('API database URL is required for the operations runner.');
     return new DirectControlPlaneRunnerClient(store, !sharedStore);
 }
 
-export function createControlPlaneStore(config) {
+export function createControlPlaneStore(config: Record<string, unknown> & { apiDatabaseUrl?: string | null }): (CapacityControlPlaneStore & ControlPlaneStore) | null {
     if (!config.apiDatabaseUrl)
         return null;
     const db = createControlPlanePostgresDatabase(config.apiDatabaseUrl);

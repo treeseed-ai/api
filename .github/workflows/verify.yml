@@ -24,6 +24,7 @@ jobs:
     env:
       CI: "true"
       GH_TOKEN: ${{ secrets.TREESEED_GITHUB_TOKEN || github.token }}
+      TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,33 +40,57 @@ jobs:
       - name: Install dependencies
         timeout-minutes: 20
         run: npm ci --ignore-scripts --workspaces=false --no-audit --no-fund
-      - uses: treeseed-ai/sdk/.github/actions/install-exact-sdk@752ebfd1508f1e1eedbad66c2ceb99500400f759
+      - name: Checkout exact native TreeDX
+        uses: actions/checkout@v4
+        with:
+          repository: treeseed-ai/treedx
+          ref: 7e9a896df4040051464d312ea0de96b098b922f5
+          path: .treeseed/tools/treedx
+      - name: Checkout exact execution authority
+        uses: actions/checkout@v4
+        with:
+          repository: treeseed-ai/platform
+          ref: e4c4cad1e526f53d3549c8fc27c3e60122b20ee4
+          path: .treeseed/tools/platform
+          submodules: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: erlef/setup-beam@v1
+        env:
+          ImageOS: ubuntu24
+        with:
+          otp-version: '27'
+          elixir-version: '1.17'
+      - name: Verify all native TreeDX server prerequisites
+        working-directory: .treeseed/tools/treedx
+        run: |
+          ./scripts/verification/test-all.sh
+      - name: Build the verified native TreeDX engine
+        working-directory: .treeseed/tools/treedx/apps/api
+        run: MIX_ENV=dev mix compile
+      - uses: treeseed-ai/sdk/.github/actions/install-exact-sdk@cbc03314871d271bce7275c5cee71d950397a0c3
         with:
           github-token: ${{ github.token }}
           paths: |
             node_modules/@treeseed/sdk
             node_modules/@treeseed/deployment/node_modules/@treeseed/sdk
+      - name: Provision disposable signed native TreeDX
+        run: node --import tsx scripts/verification/native-treedx.ts start
+      - name: Verify all native TreeDX client SDK prerequisites
+        working-directory: .treeseed/tools/treedx
+        run: ./scripts/verification/test-sdk-packages.sh
       - run: npm run verify:direct
-        env:
-          TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
       - name: Verify real PostgreSQL backup-writer migration closure
-        env:
-          TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
         run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/services/live/replication-migration-postgres.test.ts
       - name: Verify transactional identity mapping in PostgreSQL
-        env:
-          TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
         run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/accounts/identity-mapping-postgres.test.ts tests/unit/control-plane/accounts/browser-session-postgres.test.ts tests/unit/control-plane/accounts/restricted-runtime-postgres.test.ts tests/unit/control-plane/accounts/identity/principal-store-postgres.test.ts tests/unit/control-plane/accounts/workloads
       - name: Verify concurrent PostgreSQL pool and workday policy allocation
-        env:
-          TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
         run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/accounts/postgres/pool-budget.test.ts tests/unit/control-plane/capacity/workdays/profile-postgres.test.ts tests/unit/control-plane/capacity/workdays/continuation.test.ts tests/unit/control-plane/capacity/workdays/lifecycle/concurrent-runs-postgres.test.ts tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts tests/unit/control-plane/capacity/execution/admission/postgres.test.ts tests/unit/control-plane/capacity/communication/discussion-supply-postgres.test.ts tests/unit/control-plane/providers/assignments/provider-discussion-response-postgres.test.ts
       - name: Pack verified artifact
         run: mkdir -p artifacts && npm pack --json --ignore-scripts --pack-destination artifacts
       - name: Execute coded golden component scenes
         uses: treeseed-ai/reviewer/.github/actions/run-scenes@98e14a4da20054c64b8a1751ed204161550209bb
-        env:
-          TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
         with:
           ids: guarantee.api.golden.component-boundaries
       - uses: actions/upload-artifact@v4
@@ -73,3 +98,13 @@ jobs:
           name: api-${{ github.sha }}
           path: artifacts/*.tgz
           if-no-files-found: error
+      - name: Retain native prerequisite logs
+        if: always() && env.API_NATIVE_TREEDX_ROOT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-prerequisite-evidence-${{ github.sha }}
+          path: ${{ env.API_NATIVE_TREEDX_ROOT }}/*.log
+          if-no-files-found: error
+      - name: Close allocated native TreeDX and signer server
+        if: always()
+        run: node --import tsx scripts/verification/native-treedx.ts stop

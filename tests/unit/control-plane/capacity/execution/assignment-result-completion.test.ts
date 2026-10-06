@@ -4,7 +4,8 @@ import { validateAssignmentResultCompletion } from '../../../../../src/api/capac
 const digest = `sha256:${'a'.repeat(64)}`;
 const assignment = {
 	id: 'assignment-1', teamId: 'team-1', projectId: 'project-1', executionNodeId: 'node-1', executionNodeRevision: 1,
-	assignmentAttempt: { id: 'assignment-1', workspace: { mode: 'git', repository: 'treeseed-ai/sdk', baseCommit: 'c'.repeat(40), branch: 'treeseed/assignments/assignment-1', writablePaths: ['src'] } },
+	assignmentAttempt: { id: 'assignment-1', createdAt: '2026-09-13T11:59:59.000Z', deadline: '2026-09-13T12:00:01.000Z',
+		workspace: { mode: 'git', repository: 'treeseed-ai/sdk', baseCommit: 'c'.repeat(40), branch: 'treeseed/assignments/assignment-1', writablePaths: ['src'] } },
 };
 const result = {
 	schemaVersion: 'treeseed.assignment-result/v1', id: 'result-1', assignmentId: 'assignment-1',

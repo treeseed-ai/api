@@ -4,7 +4,9 @@ import { CapacityGovernanceError } from '../../../../database.ts';
 import { releaseCapacityReservationsExactlyOnce } from '../../accounting/settlement-service.ts';
 import { ProviderAssignmentRepository } from '../../../../repositories/capacity/assignments/assignment.ts';
 import { closeTerminalAssignmentWorkspace } from '../../assignments/observability/assignment-terminal-workspace.ts';
+import type { WorkdayTreeDxConnectionStore } from '../treedx/workday-treedx-connection.ts';
 import { terminalAssignmentAuthority } from '../../assignments/lifecycle/assignment-terminal-authority.ts';
+import { terminalPerformance, record } from '../../assignments/lifecycle/completion/assignment-terminal-performance.ts';
 import { assignmentContentIntegrationReadySql,CONTENT_INTEGRATED_EVENT,CONTENT_INTEGRATION_REQUIRED_EVENT } from '../../assignments/lifecycle/assignment-content-integration-requirement.ts';
 
 interface TerminalAssignmentRow extends Record<string, unknown> {
@@ -76,6 +78,16 @@ async function settleTerminalAssignments(
 				{ teamId, runId, assignmentId: assignment.id },
 			);
 		}
+		const admitted = await new ProviderAssignmentRepository(database).get(teamId, assignment.id);
+		if (!admitted) throw new CapacityGovernanceError('workday_assignment_admission_provenance_missing',
+			`Workday assignment ${assignment.id} has no readable admitted authority.`, 409);
+		const measured = await database.first(`SELECT active_seconds,elapsed_seconds,input_tokens,cached_input_tokens,
+			reasoning_tokens,output_tokens,actual_usd FROM capacity_usage_actuals
+			WHERE id=? AND assignment_id=? AND accounting_mode='aggregate' LIMIT 1`,
+			[`usage:${admitted.id}:${admitted.attemptCount}:aggregate`, admitted.id]);
+		// The same measurement gate owns operator cancellation and provider
+		// closeout. A released lease cannot turn unknown executed work into zero.
+		terminalPerformance(admitted, { completion: { disposition: 'cancelled' } }, 'failed', now, record(measured));
 	}
 	await releaseCapacityReservationsExactlyOnce(
 		database,
@@ -125,12 +137,13 @@ async function releaseUnsettledTerminalAssignments(
 }
 
 async function cleanupTerminalAssignmentWorkspaces(
-	database: CapacityGovernanceDatabase,
+	database: CapacityGovernanceDatabase & Partial<WorkdayTreeDxConnectionStore>,
 	teamId: string,
 	runId: string,
 	now: string,
 ) {
 	const repository = new ProviderAssignmentRepository(database);
+	let afterId = '';
 	while (true) {
 		const rows = await database.all<{ id: string }>(
 			`SELECT DISTINCT assignment.id
@@ -139,9 +152,9 @@ async function cleanupTerminalAssignmentWorkspaces(
 			 JOIN treedx_proxy_handles handle ON handle.assignment_id = assignment.id AND handle.team_id = assignment.team_id
 			 WHERE assignment.team_id = ? AND run.id = ?
 			   AND assignment.status IN ('completed', 'failed', 'expired', 'cancelled')
-			   AND handle.status != 'revoked'
+			   AND assignment.id > ?
 			 ORDER BY assignment.id ASC LIMIT ?`,
-			[teamId, runId, MAX_CAPACITY_PAGE_LIMIT],
+			[teamId, runId, afterId, MAX_CAPACITY_PAGE_LIMIT],
 		);
 		if (!rows.length) return;
 		for (const row of rows) {
@@ -151,15 +164,16 @@ async function cleanupTerminalAssignmentWorkspaces(
 			const authority = terminalAssignmentAuthority(assignment, now);
 			await database.batch([
 				{ query: `UPDATE capacity_provider_assignments SET treedx_proxy_handle_json = ?, workspace_context_json = ?, updated_at = ? WHERE id = ? AND team_id = ? AND status IN ('completed','failed','expired','cancelled')`, params: [JSON.stringify(authority.proxyHandle), JSON.stringify(authority.workspaceContext), now, row.id, teamId] },
-				{ query: `UPDATE treedx_proxy_handles SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE assignment_id = ? AND team_id = ?`, params: [now, now, row.id, teamId] },
+				{ query: `UPDATE treedx_proxy_handles SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE assignment_id = ? AND team_id = ? AND status != 'revoked'`, params: [now, now, row.id, teamId] },
 			]);
 		}
+		afterId = rows[rows.length - 1]!.id;
 		if (rows.length < MAX_CAPACITY_PAGE_LIMIT) return;
 	}
 }
 
 export async function terminalizeCapacityWorkdayAssignments(
-	database: CapacityGovernanceDatabase,
+	database: CapacityGovernanceDatabase & Partial<WorkdayTreeDxConnectionStore>,
 	teamId: string,
 	runId: string,
 	input: WorkdayAssignmentTerminalizationInput = {},
@@ -294,12 +308,21 @@ export async function terminalizeCapacityWorkdayAssignments(
 		   AND assignment.lease_token IS NOT NULL AND assignment.lease_expires_at IS NOT NULL AND assignment.lease_expires_at > ?
 		   AND ? > ?`, [teamId, runId, now, preserveUntil, now],
 	);
+	const orphaned = await database.first<{ total?: unknown }>(
+		`SELECT COUNT(*) AS total FROM execution_nodes node
+		 JOIN capacity_workday_runs run ON run.id=node.workday_id AND run.team_id=node.team_id
+		 WHERE node.team_id=? AND run.id=? AND node.status IN ('assigned','running')
+		   AND NOT EXISTS (SELECT 1 FROM capacity_provider_assignments assignment
+		     WHERE assignment.team_id=node.team_id AND run.id = assignment.work_day_id
+		       AND assignment.execution_node_id=node.id AND assignment.execution_node_revision=node.node_revision
+		       AND assignment.status NOT IN ('completed','failed','expired','cancelled'))`, [teamId, runId],
+	);
 
 	return {
 		assignmentCount: number(finalTotals?.assignment_count ?? initialTotals?.assignment_count),
 		completedAssignments: number(finalTotals?.completed_assignments),
 		failedAssignments: number(finalTotals?.failed_assignments),
-		unfinishedAssignmentCount: number(finalTotals?.unfinished_assignments),
+		unfinishedAssignmentCount: number(finalTotals?.unfinished_assignments) + number(orphaned?.total),
 		deferredActiveAssignmentCount: number(deferred?.total),
 		settlementErrors: [],
 		settlementErrorCount: 0,

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,serializeHubContentSource } from "../../../../persistence/store.ts";
-export async function ensureHubContentSourceTreeDxMethod(this: ControlPlaneStore, projectId, teamId, contentRepositoryId, topology) {
+export async function ensureHubContentSourceTreeDxMethod(this: ControlPlaneStore, projectId: string, teamId: string, contentRepositoryId: string | null, topology: { contentRepository?: { r2?: Record<string, unknown> } } | null | undefined) {
     const timestamp = isoNow();
     const existing = serializeHubContentSource(await this.first(`SELECT * FROM hub_content_sources WHERE hub_id = ? LIMIT 1`, [projectId]));
     const r2 = topology?.contentRepository?.r2 ?? {};

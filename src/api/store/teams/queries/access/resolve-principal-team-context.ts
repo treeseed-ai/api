@@ -1,5 +1,6 @@
 import { ALL_TEAM_CAPABILITIES,ControlPlaneStore,uniqueCapabilities } from "../../../../persistence/store.ts";
-export async function resolvePrincipalTeamContextMethod(this: ControlPlaneStore, teamId, principal) {
+import type { OperationInvocationContext } from '../../../../control-plane/catalog/operation-registry.ts';
+export async function resolvePrincipalTeamContextMethod(this: ControlPlaneStore, teamId: string, principal: OperationInvocationContext['principal'] | null) {
     await this.ensureInitialized();
     if (!principal)
         return null;
@@ -13,7 +14,7 @@ export async function resolvePrincipalTeamContextMethod(this: ControlPlaneStore,
     const userId = typeof principal.id === 'string' ? principal.id : '';
     if (!userId)
         return null;
-    const membership = await this.first(`SELECT * FROM team_memberships WHERE team_id = ? AND user_id = ? AND status = 'active' LIMIT 1`, [teamId, userId]);
+    const membership = await this.first<{ id: string }>(`SELECT * FROM team_memberships WHERE team_id = ? AND user_id = ? AND status = 'active' LIMIT 1`, [teamId, userId]);
     if (!membership?.id) {
         return null;
     }

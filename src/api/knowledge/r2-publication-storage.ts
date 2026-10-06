@@ -1,4 +1,4 @@
-import { type KnowledgePublicationManifest } from '@treeseed/sdk/knowledge';
+import type { KnowledgePublicationManifest } from './runtime/publication-manifest.ts';
 import { createLibraryStorageClient } from '../../security/library-storage.ts';
 import type { KnowledgePublicationStorage } from './publication-storage.ts';
 import { parseKnowledgePublicationManifest } from './runtime/publication-manifest.ts';
@@ -50,7 +50,7 @@ export function createR2KnowledgePublicationStorage(options: { store?: any; env?
 		},
 		async retireRevisions({ teamId, revisions, expectedCurrentRevision }) {
 			const current = await this.readCurrent(teamId);
-			if (current?.revision !== expectedCurrentRevision) throw new Error('The published knowledge revision changed before revision retirement.');
+			if (!current || current.revision !== expectedCurrentRevision) throw new Error('The published knowledge revision changed before revision retirement.');
 			const requested = new Set(revisions.map(safeSegment));
 			if (requested.has(current.revision) || (current.previousRevision && requested.has(current.previousRevision))) throw new Error('A current or rollback knowledge revision cannot be retired.');
 			const all = await this.listRevisions!(teamId);

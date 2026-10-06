@@ -1,6 +1,6 @@
 import { createHash,randomUUID } from 'node:crypto';
 import { CapacityGovernanceError } from '../../../database.ts';
-import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
+import { validateAgentDefinitionModel, type AgentDefinition, type CapacityWorkdayRunRecord } from '@treeseed/sdk/agent-capacity';
 import { decodeWorkdayAgentProfileSnapshot } from '../workdays/policy/workday-agent-profile-policy.ts';
 import { assignmentPreparationSeconds } from '../assignments/planning/assignment-time-budget.ts';
 import { reconcileAssignmentContent } from '../assignments/lifecycle/assignment-content-readback.ts';
@@ -11,13 +11,13 @@ export function conversationRunDurationSeconds(productiveSeconds: number): numbe
 	return Math.max(1, productiveSeconds) + assignmentPreparationSeconds(undefined);
 }
 
-interface DiscussionInvocationStore {
+export interface DiscussionInvocationStore {
 	first(query: string, params?: unknown[]): Promise<Row | null>;
 	all(query: string, params?: unknown[]): Promise<Row[]>;
 	run(query: string, params?: unknown[]): Promise<unknown>;
-	createCapacityWorkdayRun(teamId: string, input: Row): Promise<Row>;
+	createCapacityWorkdayRun(teamId: string, input: Row): Promise<CapacityWorkdayRunRecord>;
 	tickCapacityWorkdayRun(teamId: string, runId: string, now?: string, idempotencyKey?: string): Promise<Row>;
-	updateCapacityWorkdayRun(teamId: string, runId: string, input: Row): Promise<Row | null>;
+	updateCapacityWorkdayRun(teamId: string, runId: string, input: Row): Promise<CapacityWorkdayRunRecord | null>;
 }
 
 export async function terminalizeCompletedConversationInvocation(
@@ -73,7 +73,7 @@ function record(value: unknown): Row {
 	if (typeof value === 'string') try { return record(JSON.parse(value)); } catch { return {}; }
 	return {};
 }
-function text(value: unknown): string { return typeof value === 'string' ? value.trim() : ''; }
+function text(value: unknown, fallback = ''): string { return typeof value === 'string' && value.trim() ? value.trim() : fallback; }
 function values(value:unknown):unknown[]{if(Array.isArray(value))return value;if(typeof value==='string')try{return values(JSON.parse(value));}catch{return [];}return [];}
 function list(value:unknown):string[]{return values(value).map(String);}
 function records(value: unknown): Row[] { if (Array.isArray(value)) return value.map(record); if (typeof value === 'string') try { return records(JSON.parse(value)); } catch { return []; } return []; }
@@ -195,7 +195,8 @@ async function assertExactParent(store: DiscussionInvocationStore, input: Discus
 	return { id: workdayId, parameters: record(run.parameters_json) };
 }
 
-async function communicationSupply(store: DiscussionInvocationStore, teamId: string, now = new Date().toISOString()) {
+async function communicationSupply(store: DiscussionInvocationStore, teamId: string, now = new Date().toISOString()):
+	Promise<(Row & { maxConcurrentWorkers: number; providerRuntimeBuild: string | null }) | null> {
 	const candidates = await store.all(
 		`SELECT membership.id AS membership_id, membership.capacity_provider_id, execution.id AS execution_provider_id
 		 FROM capacity_provider_team_memberships membership
@@ -357,7 +358,7 @@ export async function admitDiscussionInvocations(store: DiscussionInvocationStor
 		}
 		try {
 			const runIdentity = parent ? { id: parent.id, existing: true } : await nextConversationRunId(store, input.teamId, invocation.id);
-			const effectiveSeconds = Math.max(input.durationSeconds, invocation.productiveSeconds);
+			const effectiveSeconds = input.durationSeconds;
 			const claimToken=randomUUID();
 			await store.run(`UPDATE agent_invocation_requests SET status='admitted',execution_id=?,blocking_state_json=?,updated_at=? WHERE id=? AND status IN ('queued','blocked') AND (execution_id IS NULL OR execution_id='')`, [runIdentity.id,JSON.stringify({code:'communication_admission_claimed',claimToken}),new Date().toISOString(), invocation.id]);
 			const claimed = await store.first(`SELECT status,execution_id,blocking_state_json FROM agent_invocation_requests WHERE id=? LIMIT 1`, [invocation.id]);

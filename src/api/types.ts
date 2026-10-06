@@ -240,4 +240,4 @@ export interface ApiServerOptions {
 	authenticateBearerOverride?: (token: string) => Promise<{ principal: ApiPrincipal; credential: ApiCredential } | null>;
 }
 
-export type PostgresDatabaseLike = any;
+export type PostgresDatabaseLike = Pick<import('./support/control-plane-postgres.ts').ControlPlanePostgresDatabase, 'prepare'>;

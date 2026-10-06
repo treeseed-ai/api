@@ -1,7 +1,8 @@
-import { createServer } from 'node:http';
+import { createServer, type IncomingMessage } from 'node:http';
+import type { loadHealthConfig } from '../configuration/runtime-config.ts';
 import { registerWorkflowConfigurationDelivery } from '../../workflows/configuration-deliveries.ts';
 
-async function readJson(request, maxBytes = 100_000) {
+async function readJson(request: IncomingMessage, maxBytes = 100_000) {
     const chunks: Buffer[] = []; let total = 0;
     for await (const chunk of request) {
         const bytes = Buffer.from(chunk); total += bytes.length;
@@ -11,7 +12,7 @@ async function readJson(request, maxBytes = 100_000) {
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
-export function startHealthServer(config, state: any = {}) {
+export function startHealthServer(config: Partial<ReturnType<typeof loadHealthConfig>>, state: { ready?: boolean; status?: string; error?: string | null } = {}) {
     if (config.port === undefined || config.port === null)
         return null;
     const server = createServer(async (request, response) => {

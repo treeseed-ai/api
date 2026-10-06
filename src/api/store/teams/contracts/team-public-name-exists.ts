@@ -1,5 +1,5 @@
 import { ControlPlaneStore,missingSchemaError,normalizeTeamName } from "../../../persistence/store.ts";
-export async function teamPublicNameExistsMethod(this: ControlPlaneStore, name, excludeTeamId = null) {
+export async function teamPublicNameExistsMethod(this: ControlPlaneStore, name: unknown, excludeTeamId: string | null = null) {
     await this.ensureInitialized();
     const value = normalizeTeamName(name);
     if (!value)

@@ -33,8 +33,8 @@ export function serializeCapacityProviderMembershipView(row: Row | null): Capaci
 	const membershipStatus = text(row, 'membership_status') as ProviderTeamMembershipStatus;
 	if (!IDENTITY_STATUSES.has(identityStatus)) corrupt(row, 'identity_status');
 	if (!MEMBERSHIP_STATUSES.has(membershipStatus)) corrupt(row, 'membership_status');
-	const identityVersion = Number(row.identity_version);
-	if (!Number.isInteger(identityVersion) || identityVersion < 1) corrupt(row, 'identity_version');
+	const identityVersion = row.identity_version;
+	if (typeof identityVersion !== 'number' || !Number.isSafeInteger(identityVersion) || identityVersion < 1) corrupt(row, 'identity_version');
 	const publicJwk = object(row, 'public_jwk_json') as unknown as CapacityProviderPublicJwk;
 	const validation = validateCapacityProviderPublicJwk(publicJwk);
 	if (!validation.ok) corrupt(row, 'public_jwk_json');
@@ -50,8 +50,8 @@ function serializeIdentity(row: Row | null): CapacityProviderIdentity | null {
 	if (!row) return null;
 	const status = text(row, 'status') as CapacityProviderIdentityStatus;
 	if (!IDENTITY_STATUSES.has(status)) corrupt(row, 'status');
-	const identityVersion = Number(row.identity_version);
-	if (!Number.isInteger(identityVersion) || identityVersion < 1) corrupt(row, 'identity_version');
+	const identityVersion = row.identity_version;
+	if (typeof identityVersion !== 'number' || !Number.isSafeInteger(identityVersion) || identityVersion < 1) corrupt(row, 'identity_version');
 	const publicJwk = object(row, 'public_jwk_json') as unknown as CapacityProviderPublicJwk;
 	if (!validateCapacityProviderPublicJwk(publicJwk).ok) corrupt(row, 'public_jwk_json');
 	return {
@@ -106,8 +106,8 @@ export class CapacityProviderIdentityRepository {
 	async rotate(input: { id: string; providerId: string; expectedVersion: number; oldFingerprint: string; fingerprint: string; publicJwkJson: string; idempotencyKey: string; requestDigest: string; proofs: Array<{ fingerprint: string; jti: string; expiresAt: string }>; now: string }) {
 		try {
 			await this.database.batch([
-				{ query: `DELETE FROM capacity_provider_proof_nonces WHERE expires_at <= ?`, params: [input.now] },
-				...input.proofs.map((proof) => ({ query: `INSERT INTO capacity_provider_proof_nonces (provider_fingerprint, jti, expires_at, created_at) VALUES (?, ?, ?, ?)`, params: [proof.fingerprint, proof.jti, proof.expiresAt, input.now] })),
+				{ query: `WITH authority AS MATERIALIZED (SELECT id FROM capacity_providers WHERE id = ? FOR UPDATE), expired AS (DELETE FROM capacity_provider_proof_nonces WHERE expires_at <= ? RETURNING jti) SELECT id FROM authority`, params: [input.providerId, input.now] },
+				...input.proofs.map((proof) => ({ query: `INSERT INTO capacity_provider_proof_nonces (provider_fingerprint, jti, expires_at, created_at) SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM capacity_providers WHERE id = ? AND identity_version = ? AND fingerprint = ? AND status = 'active')`, params: [proof.fingerprint, proof.jti, proof.expiresAt, input.now, input.providerId, input.expectedVersion, input.oldFingerprint] })),
 				{ query: `INSERT INTO capacity_provider_identity_rotations (id, capacity_provider_id, from_identity_version, to_identity_version, old_fingerprint, new_fingerprint, idempotency_key, request_digest, created_at) SELECT ?, id, identity_version, identity_version + 1, fingerprint, ?, ?, ?, ? FROM capacity_providers WHERE id = ? AND identity_version = ? AND fingerprint = ? AND status = 'active'`, params: [input.id, input.fingerprint, input.idempotencyKey, input.requestDigest, input.now, input.providerId, input.expectedVersion, input.oldFingerprint] },
 				{ query: `UPDATE capacity_providers SET fingerprint = ?, public_jwk_json = ?, identity_version = identity_version + 1, rotated_at = ?, updated_at = ? WHERE id = ? AND identity_version = ? AND status = 'active' AND EXISTS (SELECT 1 FROM capacity_provider_identity_rotations WHERE id = ? AND capacity_provider_id = ?)`, params: [input.fingerprint, input.publicJwkJson, input.now, input.now, input.providerId, input.expectedVersion, input.id, input.providerId] },
 				{ query: `UPDATE capacity_provider_access_tokens SET status = 'revoked', revoked_at = ?, updated_at = ? WHERE membership_id IN (SELECT id FROM capacity_provider_team_memberships WHERE capacity_provider_id = ?) AND status = 'active' AND EXISTS (SELECT 1 FROM capacity_provider_identity_rotations WHERE id = ? AND capacity_provider_id = ?)`, params: [input.now, input.now, input.providerId, input.id, input.providerId] },

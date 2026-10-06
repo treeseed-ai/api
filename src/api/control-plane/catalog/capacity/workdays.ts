@@ -1,26 +1,13 @@
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { CapacityOperationError } from '../../repositories/capacity/capacity-operation-error.ts';
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
-import { ControlPlaneOperationError, type BoundOperation, type OperationInvocationContext } from '../operation-registry.ts';
+import { ControlPlaneOperationError, controlPlaneErrorStatus, type BoundOperation } from '../operation-registry.ts';
+import type { createWorkdayService } from '../../repositories/capacity/workday-service.ts';
 
-type Principal = OperationInvocationContext['principal'];
-export interface WorkdayOperationDependencies { workdays: {
-	profilesList(principal: Principal, teamId: string, query: Record<string, unknown>): Promise<Record<string, unknown>>;
-	profilesShow(principal: Principal, teamId: string, profileId: string): Promise<Record<string, unknown>>;
-	profilesUpdate(principal: Principal, teamId: string, profileId: string, body: Record<string, unknown>, ifMatch?: string): Promise<Record<string, unknown>>;
-	list(principal: Principal, teamId: string, query: Record<string, unknown>): Promise<Record<string, unknown>>;
-	preflight(principal: Principal, teamId: string, body: Record<string, unknown>): Promise<Record<string, unknown>>;
-	start(principal: Principal, teamId: string, body: Record<string, unknown>, idempotencyKey?: string): Promise<Record<string, unknown>>;
-	show(principal: Principal, teamId: string, runId: string): Promise<Record<string, unknown>>;
-	stop(principal: Principal, teamId: string, runId: string, body: Record<string, unknown>): Promise<Record<string, unknown>>;
-	events(principal: Principal, teamId: string, runId: string, query: Record<string, unknown>): Promise<Record<string, unknown>>;
-	schedules(principal: Principal, teamId: string): Promise<Record<string, unknown>>;
-	createSchedule(principal: Principal, teamId: string, body: Record<string, unknown>): Promise<Record<string, unknown>>;
-	updateSchedule(principal: Principal, teamId: string, scheduleId: string, body: Record<string, unknown>, ifMatch?: string): Promise<Record<string, unknown>>;
-}; }
+export interface WorkdayOperationDependencies { workdays: ReturnType<typeof createWorkdayService>; }
 
 function result<T>(call: () => T | Promise<T>) { return Promise.resolve().then(call).catch((error) => {
-	if (error instanceof CapacityOperationError || error instanceof CapacityGovernanceError) throw new ControlPlaneOperationError(error.status, error.code, error.message);
+	if (error instanceof CapacityOperationError || error instanceof CapacityGovernanceError) throw new ControlPlaneOperationError(controlPlaneErrorStatus(error.status), error.code, error.message);
 	throw error;
 }); }
 

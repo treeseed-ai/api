@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,validateTeamName } from "../../../persistence/store.ts";
-export async function createTeamMethod(this: ControlPlaneStore, input) {
+export async function createTeamMethod(this: ControlPlaneStore, input: Record<string, unknown> & {
+    id?: string; ownerUserId?: string; allowUserNamespaceOwnerId?: string;
+}) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const id = input.id ?? randomUUID();

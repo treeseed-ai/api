@@ -19,13 +19,15 @@ import { normalizeProviderAssignmentLeaseSeconds } from './assignment-lease-serv
 import { terminalAssignmentAuthority } from './assignment-terminal-authority.ts';
 import { composeAssignmentLifecycleOutput } from './assignment-lifecycle-output.ts';
 import { terminalizeOperationHandoff } from '../handoffs/operation-handoff-lifecycle-service.ts';
+import { closeTerminalAssignmentWorkspace } from '../observability/assignment-terminal-workspace.ts';
+import type { WorkdayTreeDxConnectionStore } from '../../workdays/treedx/workday-treedx-connection.ts';
 import { archivedConversationCancellation, planningBoundaryCancellation } from './assignment-failure-policy.ts';
 import { assertAssignmentCompletionEvidence } from './completion/assignment-completion-evidence.ts';
 import { quarantineContextOverflowOffer } from './context-capacity/overflow.ts';
 import { optionalFiniteNumber,record,terminalPerformance,type ExtendedProviderAssignmentLifecycleRequest,type JsonRecord } from './completion/assignment-terminal-performance.ts';
 import { reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 export type { ExtendedProviderAssignmentLifecycleRequest } from './completion/assignment-terminal-performance.ts';
-interface ProviderAssignmentLifecycleStore extends CapacityGovernanceDatabase {
+interface ProviderAssignmentLifecycleStore extends CapacityGovernanceDatabase, Partial<WorkdayTreeDxConnectionStore> {
 	getProviderAssignment(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null>;
 	recordAgentFallbackOutput(input: AgentFallbackOutputWrite): Promise<unknown>;
 	recordProviderAssignmentExplanation(teamId:string,assignmentId:string,input:ProviderAssignmentExplanationWrite):Promise<ProviderAssignmentExplanation|null>;
@@ -172,18 +174,19 @@ export class ProviderAssignmentLifecycleService {
 		input: ExtendedProviderAssignmentLifecycleRequest = {},
 	): Promise<ProviderAssignmentLifecycleMutationResult | null> {
 		await this.store.ensureInitialized();
+		return this.withLockedAssignment(principal, assignmentId, service => service.returnTerminal(principal, assignmentId, input));
+	}
+	private async returnTerminal(principal: ProviderLeasePrincipal, assignmentId: string, input: ExtendedProviderAssignmentLifecycleRequest) {
 		const now = new Date().toISOString();
 		const assignment = await this.store.getProviderAssignment(principal.teamId, assignmentId);
 		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now)) return null;
-		const contextCapacityAlert=await quarantineContextOverflowOffer({store:this.store,assignment,code:input.code,observedAt:now});
+		const contextCapacityAlert=await quarantineContextOverflowOffer({store:this.store,assignment,code:input.code ?? undefined,observedAt:now});
 		if (record(assignment.metadata).cancellationRequested === true) {
 			return this.transition(principal, assignment, input, now, {
 				status: 'cancelled', timestampColumn: 'failed_at', defaultCode: 'operator_cancelled', defaultReason: String(record(assignment.metadata).cancellationReason ?? 'Assignment cancelled by a team operator.'),
 				metadata: { ...record(assignment.metadata), operationalState: 'cancelled', cancelledAt: now },
-			});
+			}, this.store);
 		}
-		const completionInput = Object.keys(record(input.completion)).length ? input : { ...input, completion: { disposition: 'completed' } };
-		assertAssignmentCompletionEvidence(completionInput);
 		assertAssignmentCompletionEvidence(input);
 		const assignmentMetadata = record(assignment.metadata);
 		const envelopeMetadata = record(record(assignment.capacityEnvelope).metadata);
@@ -195,20 +198,20 @@ export class ProviderAssignmentLifecycleService {
 		const maxAttempts = Number.isFinite(configuredMaxAttempts)
 			? Math.max(1, Math.min(Math.floor(configuredMaxAttempts), 20))
 			: 3;
-		const nextAttemptCount = Number(assignment.attemptCount ?? 0) + 1;
-		if (nextAttemptCount >= maxAttempts) {
-			return this.fail(principal, assignmentId, {
+		const currentAttempt = assignment.assignmentAttempt?.attempt ?? assignment.attemptCount;
+		if (currentAttempt >= maxAttempts) {
+			return this.failTerminal(principal, assignmentId, {
 				...input,
 				retryable: false,
 				code: 'provider_assignment_retry_exhausted',
-				reason: `Provider assignment exhausted its retry policy after ${nextAttemptCount} attempts.`,
-				message: `Provider assignment exhausted its retry policy after ${nextAttemptCount} attempts.`,
+				reason: `Provider assignment exhausted its retry policy after ${currentAttempt} attempts.`,
+				message: `Provider assignment exhausted its retry policy after ${currentAttempt} attempts.`,
 				output: {
 					...record(input.output ?? input.summary),
 					retryPolicy: {
 						originalCode: input.code ?? null,
 						originalReason: input.reason ?? input.message ?? null,
-						attemptCount: nextAttemptCount,
+						attemptCount: currentAttempt,
 						maxAttempts,
 					},
 				},
@@ -216,12 +219,24 @@ export class ProviderAssignmentLifecycleService {
 					...record(input.metadata),
 					originalCode: input.code ?? null,
 					originalReason: input.reason ?? input.message ?? null,
-					attemptCount: nextAttemptCount,
+					attemptCount: currentAttempt,
 					maxAttempts,
 				},
-			});
+			}, classifyCapacityFailure({ code: 'provider_assignment_retry_exhausted', retryable: false }));
 		}
 		if (input.fallbackOutput) await this.persistFallback(assignment, input.fallbackOutput);
+		if (assignment.reservationId) {
+			const usage = record(input.usage);
+			const activeSeconds = input.activeSeconds ?? usage.activeSeconds;
+			const elapsedSeconds = input.elapsedSeconds ?? usage.elapsedSeconds;
+			if (typeof activeSeconds !== 'number' || !Number.isFinite(activeSeconds) || activeSeconds < 0
+				|| typeof elapsedSeconds !== 'number' || !Number.isFinite(elapsedSeconds) || elapsedSeconds < 0) throw new CapacityGovernanceError(
+				'provider_assignment_usage_invalid', 'Return requires exact finite nonnegative measured seconds.', 400);
+			await settleCapacityReservationExactlyOnce(this.store, { settlementKey: `assignment-return:${assignment.id}:${assignment.stateVersion}`,
+				teamId: principal.teamId, membershipId: principal.membershipId, reservationId: assignment.reservationId, assignmentId: assignment.id,
+				assignmentAttempt: assignment.assignmentAttempt?.attempt, activeSeconds, elapsedSeconds,
+				usageActual: usage, source: 'provider_assignment_return', existingSettlementPolicy: 'replay' });
+		}
 		const metadata = {
 			...record(assignment.metadata),
 			...(contextCapacityAlert?{contextCapacityAlert}:{}),
@@ -232,13 +247,13 @@ export class ProviderAssignmentLifecycleService {
 				at: now,
 			},
 		};
-		return this.transition(principal, assignment, completionInput, now, {
+		return this.transition(principal, assignment, input, now, {
 			status: 'returned',
 			timestampColumn: 'returned_at',
 			defaultCode: 'provider_assignment_returned',
 			defaultReason: null,
 			metadata,
-		});
+		}, this.store);
 	}
 
 	async complete(
@@ -252,7 +267,7 @@ export class ProviderAssignmentLifecycleService {
 		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now)) return null;
 		if (!assignment.assignmentAttempt) throw new CapacityGovernanceError('assignment_graph_authority_required',
 			'Only a living-graph assignment with an immutable attempt can complete.', 409, { assignmentId });
-		const terminalInput = Object.keys(record(input.completion)).length ? input : { ...input, completion: { disposition: 'completed' } };
+		const terminalInput = input;
 		if (assignment.reservationId) {
 			const reservation = await this.store.first(
 				`SELECT state FROM capacity_reservations WHERE id = ? AND team_id = ? AND membership_id = ? AND assignment_id = ? LIMIT 1`,
@@ -262,7 +277,7 @@ export class ProviderAssignmentLifecycleService {
 		}
 		await assertRequiredSignals(this.store, assignment);
 		await assertCommunicationOutcome(this.store, assignment);
-		const assignmentResult = validateAssignmentResultCompletion(assignment, terminalInput as JsonRecord);
+		const assignmentResult = validateAssignmentResultCompletion(assignment, terminalInput as JsonRecord, now);
 		const contentReferences = await verifyAssignmentContent(this.store, assignment, assignmentResult);
 		if (assignmentResult) await integrateAssignmentEstimate(this.store, assignment, assignmentResult);
 		const reviewDisposition = assignmentResult
@@ -298,6 +313,10 @@ export class ProviderAssignmentLifecycleService {
 			reason: input.reason ?? input.message ?? 'Provider assignment failed and can be retried.',
 		});
 		await this.store.ensureInitialized();
+		return this.withLockedAssignment(principal, assignmentId, service => service.failTerminal(principal, assignmentId, input, failure));
+	}
+	private async withLockedAssignment<T>(principal: ProviderLeasePrincipal, assignmentId: string,
+		apply: (service: ProviderAssignmentLifecycleService) => Promise<T>): Promise<T> {
 		return capacityTransaction(this.store, async database => {
 			await database.run('SELECT id FROM teams WHERE id=? FOR UPDATE', [principal.teamId]);
 			await database.run('SELECT id FROM capacity_provider_assignments WHERE id=? AND team_id=? FOR UPDATE', [assignmentId, principal.teamId]);
@@ -308,7 +327,7 @@ export class ProviderAssignmentLifecycleService {
 				recordAgentFallbackOutput: evidence.recordFallbackOutput.bind(evidence) };
 			const store = new Proxy(this.store, { get: (target, key) =>
 				Reflect.has(overrides, key) ? Reflect.get(overrides, key) : Reflect.get(target, key) });
-			return new ProviderAssignmentLifecycleService(store).failTerminal(principal, assignmentId, input, failure);
+			return apply(new ProviderAssignmentLifecycleService(store));
 		});
 	}
 
@@ -414,11 +433,18 @@ export class ProviderAssignmentLifecycleService {
 			 SET status = ?, lease_state = 'released', lease_token = NULL, lease_expires_at = NULL,
 			     lease_renewed_at = NULL, runner_id = COALESCE(?, runner_id), ${options.timestampColumn} = ?,
 			     lifecycle_reason = ?, lifecycle_code = ?, lifecycle_output_json = ?${metadataWrite},
-			     attempt_count = attempt_count + 1, state_version = state_version + 1, updated_at = ?
+			     state_version = state_version + 1, updated_at = ?
 			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ? AND membership_id = ?
 			   AND state_version = ? AND status = 'leased' AND lease_state = 'leased'
 			   AND lease_token = ? ${options.allowExpiredLease ? '' : 'AND (lease_expires_at IS NULL OR lease_expires_at > ?)'} `, params: [options.status, ...params] }];
 		if (['completed','failed','cancelled'].includes(options.status)) {
+			const workspaceId = record(assignment.treedxProxyHandle).workspaceId ?? record(assignment.workspaceContext).workspaceId;
+			if (workspaceId) {
+				if (!this.store.config || !this.store.getProjectTreeDxLibrary) throw new CapacityGovernanceError(
+					'assignment_terminal_workspace_cleanup_unavailable', 'Owned workspace closure requires its authoritative library binding.', 503);
+				await closeTerminalAssignmentWorkspace({ config: this.store.config,
+					getProjectTreeDxLibrary: this.store.getProjectTreeDxLibrary.bind(this.store) }, assignment);
+			}
 			const terminalWorkspace = terminalAssignmentAuthority(assignment, now);
 			operations.push({
 				query: `UPDATE treedx_proxy_handles SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?), updated_at = ?
@@ -436,10 +462,11 @@ export class ProviderAssignmentLifecycleService {
 				params: [options.status==='cancelled'?'cancelled':'failed',assignment.id, now, JSON.stringify({ code: input.code ?? options.defaultCode, reason: input.reason ?? input.message ?? options.defaultReason }), now, assignment.invocationId, assignment.teamId],
 			});
 		}
-		await commitLivingExecutionLifecycle({ store: this.store, assignment,
+		const committed = await commitLivingExecutionLifecycle({ store: this.store, assignment,
 			status: options.status, now, result: options.assignmentResult,
-			returnCode: options.status === 'returned' ? input.code : undefined,
+			returnCode: options.status === 'returned' ? input.code ?? undefined : undefined,
 			reviewDisposition: options.reviewDisposition ?? null }, operations, transaction);
+		if (!committed) return null;
 		const transitioned = await this.store.getProviderAssignment(principal.teamId, assignment.id);
 		if (!transitioned || transitioned.stateVersion !== assignment.stateVersion + 1 || transitioned.status !== options.status) return null;
 		if (assignment.operationHandoffId && (options.status === 'completed' || options.status === 'failed')) await terminalizeOperationHandoff(this.store, assignment.operationHandoffId, assignment.id, options.status, now);

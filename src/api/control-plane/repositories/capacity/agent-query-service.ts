@@ -1,4 +1,4 @@
-import { decodeCapacityPageCursor, normalizeCapacityPageLimit } from '@treeseed/sdk/capacity-pagination';
+import { decodeCapacityPageCursor, normalizeCapacityPageLimit, type CapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import { authorizeCapacityProject, type CapacityPrincipal } from './capacity-authorization.ts';
 import { CapacityOperationError } from './capacity-operation-error.ts';
 import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
@@ -12,12 +12,40 @@ function artifactId(value: any) { return String(value?.id ?? value?.taskId ?? ''
 function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 
 async function acceptedAgents(store: any, projectId: string) {
-	const page = await store.listProjectAgentClassesPage(projectId, { limit: 200, cursor: null });
-	return (Array.isArray(page?.items) ? page.items : []).flatMap((agentClass: any) => {
+	const classes: Record<string, unknown>[] = [];
+	const seen = new Set<string>();
+	let cursor: CapacityPageCursor | null = null;
+	for (;;) {
+		const result = record(await store.listProjectAgentClassesPage(projectId, { limit: 200, cursor }));
+		const pagination = record(result.page);
+		const invalid = () => new CapacityOperationError(409, 'agent_class_inventory_invalid', 'Configured class inspection requires complete valid pagination.');
+		if (!Array.isArray(result.items) || typeof pagination.hasMore !== 'boolean') throw invalid();
+		for (const item of result.items) {
+			if (!item || typeof item !== 'object' || Array.isArray(item)) throw invalid();
+			classes.push(item);
+		}
+		if (!pagination.hasMore) {
+			if (pagination.nextCursor !== null) throw invalid();
+			break;
+		}
+		if (typeof pagination.nextCursor !== 'string' || !pagination.nextCursor || seen.has(pagination.nextCursor)) throw invalid();
+		try { cursor = decodeCapacityPageCursor(pagination.nextCursor); }
+		catch { throw invalid(); }
+		if (!cursor) throw invalid();
+		seen.add(pagination.nextCursor);
+	}
+	const identities = new Set<string>(), slugs = new Set<string>();
+	return classes.flatMap((agentClass) => {
 		const agents = record(agentClass.handlerRefs).agents;
-		return Array.isArray(agents) ? agents.flatMap((value) => {
+		if (agents === undefined) return [];
+		if (!Array.isArray(agents)) throw new CapacityOperationError(409, 'agent_definition_invalid', 'Stored agent definitions must be a complete array.');
+		return agents.map((value) => {
 			const parsed = validateAgentDefinitionModel(value);
-			return parsed.ok && parsed.data ? [parsed.data] : [];
+			if (!parsed.ok || !parsed.data) throw new CapacityOperationError(409, 'agent_definition_invalid', 'Stored agent authority is malformed.');
+			const slug = parsed.data.id.split('/').at(-1)!;
+			if (identities.has(parsed.data.id) || slugs.has(slug)) throw new CapacityOperationError(409, 'agent_definition_duplicate', 'Stored agent identity is ambiguous.');
+			identities.add(parsed.data.id); slugs.add(slug);
+			return parsed.data;
 		}).map((agent) => ({
 			agentSlug: agent.id.split('/').at(-1) ?? agent.id, name: agent.name,
 			projectAgentClassId: agentClass.id, allocationClass: agentClass.slug, definitionRevision: String(record(agentClass.metadata).immutableRef ?? agentClass.updatedAt ?? ''),
@@ -28,7 +56,7 @@ async function acceptedAgents(store: any, projectId: string) {
 				permissions: profile.permissions, dependsOn: profile.dependsOn ?? null,
 			}])),
 			status: agentClass.status === 'active' ? 'ready' : agentClass.status,
-		})) : [];
+		}));
 	}).filter((agent: any) => agent.agentSlug);
 }
 
