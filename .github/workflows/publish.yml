@@ -8,24 +8,9 @@ on:
 jobs:
   candidate-source:
     if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
     permissions: { actions: read, contents: read }
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with: { node-version: 24 }
-      - run: ./scripts/build/hydrate-exact-sdk.sh artifacts/sealed-sdk download
-        env: { GH_TOKEN: "${{ secrets.TREESEED_GITHUB_TOKEN || github.token }}" }
-      - run: npm ci --ignore-scripts --no-audit --no-fund && ./scripts/build/hydrate-exact-sdk.sh artifacts/sealed-sdk install
-      - run: npm run verify:direct
-      - run: mkdir -p source-assets && npm pack --json --ignore-scripts --pack-destination source-assets && npm sbom --sbom-format cyclonedx > source-assets/sbom.cdx.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: "api-source-${{ github.sha }}"
-          path: |
-            source-assets/
-            artifacts/sealed-sdk/
-          if-no-files-found: error
+    uses: ./.github/workflows/verify.yml
+    secrets: inherit
 
   candidate-build:
     if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main'

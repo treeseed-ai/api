@@ -2289,3 +2289,6 @@ workflow:
   - id: execution-template-parser-native
     action: { verifier: api.golden.execution-template-parser-native }
     expect: { status: passed }
+  - id: execution-publisher-prerequisite-unit
+    action: { verifier: api.golden.execution-publisher-prerequisite-unit }
+    expect: { status: passed }

@@ -12,6 +12,33 @@ function object(value: unknown): Record<string, unknown> {
 	return value as Record<string, unknown>;
 }
 
+it('capacity candidate source delivery reuses the same complete native verification authority before sealing declared artifacts', () => {
+	const source = readFileSync('.github/workflows/publish.yml'), verifySource = readFileSync('.github/workflows/verify.yml');
+	const publishing = object(parse(source.toString('utf8'))), verify = object(parse(verifySource.toString('utf8')));
+	const candidate = object(object(publishing.jobs)['candidate-source']);
+	expect(candidate.uses).toBe('./.github/workflows/verify.yml');
+	expect(candidate.secrets).toBe('inherit'); expect(candidate).not.toHaveProperty('steps'); expect(candidate).not.toHaveProperty('services');
+	expect(object(verify.on)).toHaveProperty('workflow_call');
+	const job = object(object(verify.jobs).verify); if (!Array.isArray(job.steps)) throw new Error('Original complete Verify steps required');
+	const steps = job.steps.map(object), download = steps.find(step => step.run === './scripts/build/hydrate-exact-sdk.sh artifacts/sealed-sdk download');
+	const tests = steps.find(step => step.run === 'npm run verify:direct');
+	const scene = steps.find(step => typeof step.uses === 'string' && step.uses.includes('/run-scenes@'));
+	const pack = steps.find(step => step.name === 'Pack verified artifact');
+	const upload = steps.find(step => object(step.with ?? {}).name === 'api-source-${{ github.sha }}');
+	expect(tests).toBeDefined(); expect(scene).toBeDefined(); expect(pack).toBeDefined();
+	expect(download).toBeDefined(); expect(steps.indexOf(download!)).toBeLessThan(steps.indexOf(tests!));
+	expect(String(pack?.run)).toContain('npm sbom --sbom-format cyclonedx > source-assets/sbom.cdx.json');
+	expect(String(pack?.run)).toContain('npm pack --json --ignore-scripts --pack-destination source-assets');
+	expect(String(pack?.run).match(/npm pack/gu)).toHaveLength(1);
+	expect(object(steps.find(step => object(step.with ?? {}).name === 'api-${{ github.sha }}')?.with).path).toBe('source-assets/*.tgz');
+	expect(steps.indexOf(pack!)).toBeGreaterThan(steps.indexOf(tests!));
+	expect(upload).toBeDefined(); expect(steps.indexOf(upload!)).toBeGreaterThan(steps.indexOf(scene!));
+	expect(String(object(upload?.with).path).trim().split(/\s+/u)).toEqual(['source-assets/', 'artifacts/sealed-sdk/']);
+	expect(object(upload?.with)['if-no-files-found']).toBe('error');
+	for (const id of ['candidate-build', 'candidate-seal']) expect(String(object(object(publishing.jobs)[id]).needs)).toBe(id === 'candidate-build' ? 'candidate-source' : 'candidate-build');
+	expect(readFileSync('.github/workflows/publish.yml')).toEqual(source); expect(readFileSync('.github/workflows/verify.yml')).toEqual(verifySource);
+});
+
 it('capacity execution dependency closure selects the sole exact SDK authority for every transitive consumer', () => {
 	const bytes = readFileSync('package.json'), lockBytes = readFileSync('package-lock.json');
 	const manifest = object(JSON.parse(bytes.toString('utf8'))), lock = object(JSON.parse(lockBytes.toString('utf8')));
