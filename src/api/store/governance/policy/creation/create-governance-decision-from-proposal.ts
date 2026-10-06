@@ -3,12 +3,12 @@ import { isoNow,ControlPlaneStore,serializeGovernanceDecision } from "../../../.
 import { resolveDecisionDependencySnapshots, validateDecisionAuthority } from '../../../../governance/decision-authority.ts';
 import { reconcileExecutionGraph } from '../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { hasCompleteExecutablePlan, publishProposalDecision, readExactProposal } from '../../../../governance/executable-proposal.ts';
-export async function createGovernanceDecisionFromProposalMethod(this: ControlPlaneStore, proposalId: string, input: any = {}) {
+export async function createGovernanceDecisionFromProposalMethod(this: ControlPlaneStore, proposalId: string, input: any = {}): Promise<ReturnType<typeof serializeGovernanceDecision>> {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
     if (!proposal)
         return null;
-    const existing = await this.first(`SELECT * FROM governance_decisions WHERE proposal_id = ? LIMIT 1`, [proposalId]);
+    const existing = await this.first<Record<string, unknown> & { id: string; created_at: string }>(`SELECT * FROM governance_decisions WHERE proposal_id = ? LIMIT 1`, [proposalId]);
     if (existing?.id && existing.status !== 'creating') {
         const validation = await validateDecisionAuthority(this, String(existing.id), {
             teamId: proposal.teamId, projectId: proposal.projectId,

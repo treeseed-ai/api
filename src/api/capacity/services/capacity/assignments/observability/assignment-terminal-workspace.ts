@@ -25,11 +25,9 @@ export async function closeTerminalAssignmentWorkspace(
 	if (!workspaceId) return { required: false, closed: true, workspaceId: null };
 	if (!store.config || !store.getProjectTreeDxLibrary) throw new CapacityGovernanceError(
 		'assignment_terminal_workspace_cleanup_unavailable', 'Owned workspace closure requires its authoritative library binding.', 503);
-	const runId = text(record(assignment.metadata).workdayRunId, assignment.workDayId, assignment.id);
 	const connection = await resolveWorkdayTreeDxConnection({ config: store.config, getProjectTreeDxLibrary: store.getProjectTreeDxLibrary.bind(store) }, {
 		projectId: assignment.projectId,
 		repositoryId: text(proxy.repositoryId, workspace.repositoryId),
-		runId,
 		capabilities: ['repos:read', 'files:read'],
 	});
 	if (!connection) throw new CapacityGovernanceError(

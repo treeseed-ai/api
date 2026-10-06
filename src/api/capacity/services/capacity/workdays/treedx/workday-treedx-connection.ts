@@ -19,7 +19,7 @@ function text(...values: unknown[]): string {
 
 export async function resolveWorkdayTreeDxConnection(
 	store: WorkdayTreeDxConnectionStore,
-	input: { projectId: string; repositoryId?: string; runId: string; capabilities: string[] },
+	input: { projectId: string; repositoryId?: string; capabilities: string[] },
 ) {
 	const library = await store.getProjectTreeDxLibrary(input.projectId);
 	const treeDx = record(record(record(library?.topology).contentRepository).treeDx);
@@ -35,7 +35,7 @@ export async function resolveWorkdayTreeDxConnection(
 			process.env.TREESEED_TREEDX_PROXY_TENANT_ID) || 'treeseed-control-plane',
 		projectId: input.projectId,
 		connectionId: text(treeDx.connectionId, treeDx.instanceId, 'treedx-workday-binding'),
-		scope: { repositoryIds: [repositoryId], capabilities: input.capabilities, refs: ['*'], paths: ['**'], workdayRunId: input.runId },
+		scope: { repositoryIds: [repositoryId], capabilities: input.capabilities, refs: ['*'], paths: ['**'] },
 	}).token;
 	const normalizedBaseUrl = resolveTreeDxServiceUrl(baseUrl, { ...process.env, ...store.config });
 	const transport = new FetchTransport({ baseUrl: normalizedBaseUrl, token, timeoutMs: 60_000, fetchImpl: store.config.fetchImpl });
