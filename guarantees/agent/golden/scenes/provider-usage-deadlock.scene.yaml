@@ -1,0 +1,11 @@
+schemaVersion: treeseed.scene/v1
+id: api.golden.provider-usage-deadlock
+title: Concurrent provider usage deadlock recovery
+scope: local-component-tests
+workflow:
+  - id: five-way-usage-retry
+    action: { verifier: api.golden.provider-usage-deadlock-retry }
+    expect: { status: passed }
+  - id: retry-boundary
+    action: { verifier: api.golden.provider-usage-deadlock-bound }
+    expect: { status: passed }

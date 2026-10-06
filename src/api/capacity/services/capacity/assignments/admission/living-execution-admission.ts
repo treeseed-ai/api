@@ -7,6 +7,7 @@ import type { DurableProviderAssignment } from '../../../../repositories/capacit
 import type { ProviderLeasePrincipal } from '../../../accounts/lease-authority-service.ts';
 import { compileAssignmentTimeBudget } from '../planning/assignment-time-budget.ts';
 import { workdayReportContext } from './workday-report-context.ts';
+import { workdayLineageSql } from '../../workdays/scheduling/workday-continuation.ts';
 
 interface Store extends CapacityGovernanceDatabase {
 	getProviderAssignment(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null>;
@@ -26,17 +27,16 @@ const reviewCycleAdmissionFence = `NOT EXISTS (
 	AND reviewer.pair_role='reviewer'
 	AND (SELECT COUNT(*) FROM capacity_provider_assignments review_history
 		WHERE review_history.team_id=node.team_id AND review_history.execution_node_id=reviewer.id
-		AND (node.workday_id IS NULL OR review_history.work_day_id=node.workday_id)
+		AND (node.workday_id IS NULL OR review_history.work_day_id IN ${workdayLineageSql('node.workday_id', 'node.team_id')})
 		AND review_history.status='completed' AND review_history.assignment_result_json IS NOT NULL
 		AND review_history.lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='request-changes'
 	)>=COALESCE(reviewer.maximum_review_cycles,1)
 )`;
 
 export function assignmentAccountingMode(assignment: Pick<AssignmentAttempt, 'effectiveProfile' | 'sourceRef' | 'workItemId'>,
-	phase: 'planning' | 'acting' | 'ended'): 'planning' | 'acting' {
+	_phase: 'planning' | 'acting' | 'ended'): 'planning' | 'acting' {
 	return assignment.effectiveProfile.activity === 'planning' || assignment.effectiveProfile.activity === 'estimating'
-		|| (assignment.effectiveProfile.activity === 'reviewing' && assignment.sourceRef.model === 'proposal'
-			&& assignment.workItemId === 'proposal-review' && phase === 'planning') ? 'planning' : 'acting';
+		? 'planning' : 'acting';
 }
 
 /** Atomically claim one normalized node and create its one reservation/attempt. */
@@ -181,17 +181,24 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 				assignment.teamId,assignment.nodeId,assignment.nodeRevision] },
 		{ query: `UPDATE capacity_provider_assignments SET explanation_json=?::jsonb,graph_revision=?,execution_node_id=?,execution_node_revision=?,
 			assignment_attempt_json=?::jsonb,treedx_proxy_handle_json=?::jsonb,workspace_context_json=?::jsonb,updated_at=?
-			WHERE id=? AND team_id=? AND reservation_id=?`,
+			WHERE id=? AND team_id=? AND reservation_id=? AND status='pending' AND lease_state='unleased'
+			AND EXISTS (SELECT 1 FROM capacity_reservations owned WHERE owned.id=capacity_provider_assignments.reservation_id
+				AND owned.team_id=capacity_provider_assignments.team_id AND owned.assignment_id=capacity_provider_assignments.id
+				AND owned.admission_token=?)`,
 			params: [JSON.stringify({ metadata: { allocation: input.allocation } }),assignment.graphRevision,assignment.nodeId,assignment.nodeRevision,JSON.stringify(assignment),
 				JSON.stringify(input.treedxProxyHandle),JSON.stringify({ assignmentAttempt: assignment,
 					predecessorResults: input.predecessorResults, authorizedContext, treedxProxyHandle: input.treedxProxyHandle }),input.now,
-				assignment.id,assignment.teamId,assignment.reservationId] },
+				assignment.id,assignment.teamId,assignment.reservationId,admissionToken] },
 		...(input.invocationId ? [{ query: `UPDATE agent_invocation_requests SET assignment_id=?, status='running', updated_at=?
 			WHERE id=? AND team_id=? AND status IN ('admitted','running') AND (assignment_id IS NULL OR assignment_id=? OR EXISTS (
 				SELECT 1 FROM capacity_provider_assignments prior WHERE prior.id=agent_invocation_requests.assignment_id
 				AND prior.team_id=agent_invocation_requests.team_id AND prior.invocation_id=agent_invocation_requests.id
-				AND prior.status IN ('returned','failed','cancelled')))`,
-			params: [assignment.id,input.now,input.invocationId,assignment.teamId,assignment.id] }] : []),
+				AND prior.status IN ('returned','failed','cancelled')))
+			AND EXISTS (SELECT 1 FROM capacity_provider_assignments admitted
+				WHERE admitted.id=? AND admitted.team_id=? AND admitted.reservation_id=?
+				AND admitted.invocation_id=? AND admitted.status='pending')`,
+			params: [assignment.id,input.now,input.invocationId,assignment.teamId,assignment.id,
+				assignment.id,assignment.teamId,assignment.reservationId,input.invocationId] }] : []),
 		{ query: `INSERT INTO treedx_proxy_handles (
 			id,team_id,project_id,assignment_id,repository_id,workspace_id,status,scopes_json,
 			allowed_operations_json,allowed_paths_json,allowed_read_paths_json,allowed_write_paths_json,

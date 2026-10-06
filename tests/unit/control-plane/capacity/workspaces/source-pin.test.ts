@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { persistAssignmentSourcePin, readAssignmentSourcePin, resolveAuthorizedSourceCommit, type AssignmentSourcePin } from '../../../../../src/api/control-plane/repositories/providers/source/source-pin.ts';
+import { persistAssignmentSourcePin, readAssignmentSourcePin, resolveAuthorizedSourceCommit, sameAssignmentSourcePin, type AssignmentSourcePin } from '../../../../../src/api/control-plane/repositories/providers/source/source-pin.ts';
 import { classifyCapacityFailure } from '../../../../../src/api/capacity/policy/failure-classification.ts';
 
 const repository = { id: 'repository', provider: 'github' as const, owner: 'example', name: 'project', ref: 'staging', cloneUrl: 'https://github.com/example/project.git' };
@@ -7,6 +7,16 @@ const pin: AssignmentSourcePin = { schemaVersion: 'treeseed.assignment-source-pi
 const input = { assignmentId: 'assignment', teamId: 'team', providerId: 'provider', membershipId: 'membership', runnerId: 'runner', leaseToken: 'synthetic-lease', stateVersion: 7, context: { project: { id: 'project' } }, pin, now: '2026-09-10T23:00:00.000Z' };
 
 describe('exact assignment source pins', () => {
+  it('compares exact pin fields independent of serialized key order and rejects changed or missing custody', () => {
+    const reordered = { credentialBindingId: pin.credentialBindingId, exactCommit: pin.exactCommit,
+      repository: { cloneUrl: pin.repository.cloneUrl, ref: pin.repository.ref, name: pin.repository.name,
+        owner: pin.repository.owner, provider: pin.repository.provider, id: pin.repository.id }, schemaVersion: pin.schemaVersion };
+    expect(JSON.stringify(reordered)).not.toBe(JSON.stringify(pin));
+    expect(sameAssignmentSourcePin(reordered, pin)).toBe(true);
+    expect(sameAssignmentSourcePin({ ...reordered, exactCommit: 'b'.repeat(40) }, pin)).toBe(false);
+    expect(sameAssignmentSourcePin({ ...reordered, credentialBindingId: 'other' }, pin)).toBe(false);
+    expect(sameAssignmentSourcePin(null, pin)).toBe(false);
+  });
   it('resolves a ref through authorized GitHub transport without redirects or arbitrary URLs', async () => {
     const fetchImpl = vi.fn(async () => new Response(`${pin.exactCommit}\n`));
     expect(await resolveAuthorizedSourceCommit({ ...repository, cloneUrl: 'https://attacker.invalid' }, 'synthetic-token', fetchImpl)).toBe(pin.exactCommit);

@@ -3,8 +3,36 @@ import type { AssignmentResult, ExecutionEdge, ExecutionNode } from '@treeseed/s
 import type { DurableProviderAssignment } from '../../../../../repositories/capacity/assignments/assignment.ts';
 import type { CapacityGovernanceDatabase } from '../../../../../database.ts';
 import { decodeExecutionEdge, decodeExecutionNode } from '../../../../../../control-plane/repositories/capacity/execution/execution-graph-storage.ts';
+import { capacityTransaction } from '../../../../../transaction.ts';
 
 type Operation = { query: string; params?: unknown[] };
+
+/** The same team row fences both reconciliation and terminal result projection.
+ * Read the next revision only after taking the lock on the writing connection.
+ * Timeout closeout already owns a transaction and must keep that connection. */
+export async function commitLivingExecutionLifecycle(
+	input: Parameters<typeof livingExecutionLifecycleOperations>[0], operations: Operation[],
+	transaction?: CapacityGovernanceDatabase,
+): Promise<void> {
+	const apply = async (database: CapacityGovernanceDatabase) => {
+		await database.run('SELECT id FROM teams WHERE id=? FOR UPDATE', [input.assignment.teamId]);
+		const projection = await livingExecutionLifecycleOperations({ ...input, store: database });
+		await database.batch([...operations.slice(0, 1), ...projection, ...operations.slice(1)]);
+	};
+	// An inherited transaction owns preceding settlement and must be rolled
+	// back by its caller. Never retry against its aborted connection.
+	if (transaction) { await apply(transaction); return; }
+	for (let attempt = 0; ; attempt += 1) {
+		try { await capacityTransaction(input.store, apply); return; }
+		catch (error) {
+			const conflict = error as { code?: unknown; constraint?: unknown };
+			if (attempt >= 3 || conflict.code !== '23505'
+				|| conflict.constraint !== 'execution_graph_revisions_pkey') throw error;
+			// The failed transaction has rolled back. Reacquire the team lock and
+			// reread projection on a fresh connection, keeping original inputs.
+		}
+	}
+}
 
 const stable = (value: unknown): string => {
 	if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
@@ -75,7 +103,7 @@ export async function livingExecutionLifecycleOperations(input: {
 	const reviewExhausted = revisionRequested
 		&& Number(priorReviewRow?.count ?? 0) + 1 >= (target.maximumReviewCycles ?? 1);
 	if (revisionRequested && !actor) throw new Error('review_actor_node_missing');
-	target.status = recoverableReviewReturn && target.workItemId !== 'proposal-review' && attempt >= maxAttempts
+	target.status = recoverableReviewReturn && attempt >= maxAttempts
 		? 'failed' : nodeStatus as ExecutionNode['status'];
 	target.graphRevisionUpdated = nextRevision;
 	const changed = [target.id];

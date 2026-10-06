@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
 
 type Row = Record<string, unknown>;
@@ -6,9 +7,14 @@ type Activity = keyof AgentDefinition['activityProfiles'];
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 const text = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
+// Planning node IDs include the workday, round, project and agent. Keep long
+// proposal names in the exact source reference, not in the bounded node ID.
+const proposalKey = (id: string): string => id.length > 50
+	? createHash('sha256').update(id).digest('hex').slice(0, 32) : id;
 
 export interface WorkdayParticipant {
 	projectId: string;
+	proposalId?: string;
 	definition: AgentDefinition;
 	activity: Extract<Activity, 'planning' | 'estimating'>;
 	id: string;
@@ -33,23 +39,24 @@ export function workdayParticipants(parameters: Row): WorkdayParticipant[] {
 			const validation = validateAgentDefinitionModel(entry.definition);
 			if (!validation.ok || !validation.data) continue;
 			const frozenActivities = array(entry.activities).map(text).filter(Boolean) as Activity[];
-			const workItems = array(record(record(record(parameters.proposalsByProjectId)[projectId]).executionPlan).workItems).map(record);
-			const canEstimate = workItems.some(item => text(item.agentClass) === validation.data!.agentClass
-				&& Object.keys(record(item.estimate)).length === 0)
-				|| (validation.data.agentClass === 'reviewer' && workItems.some(item => item.review === 'required'
-					&& Object.keys(record(item.reviewEstimate)).length === 0));
 			const activities = (explicitActivitySelection ? frozenActivities : frozenActivities.filter((activity) =>
 				activity === 'planning' || activity === 'estimating'))
-				.filter((activity) => activity !== 'estimating' || canEstimate)
 				.filter((activity): activity is 'planning' | 'estimating' => activity === 'planning' || activity === 'estimating');
 			for (const activity of activities) {
 				if (!validation.data.activityProfiles[activity]) continue;
-				participants.push({
-					projectId,
-					definition: validation.data,
-					activity,
-					id: `${projectId}/${validation.data.id}:${activity}`,
-				});
+				if (activity === 'planning') participants.push({ projectId, definition: validation.data,
+					activity, id: `${projectId}/${validation.data.id}:planning` });
+				else for (const proposalValue of array(record(parameters.proposalsByProjectId)[projectId])) {
+					const proposal = record(proposalValue);
+					const proposalId = text(proposal.id);
+					const items = array(record(proposal.executionPlan).workItems).map(record);
+					const canEstimate = items.some(item => text(item.agentClass) === validation.data!.agentClass
+						&& Object.keys(record(item.estimate)).length === 0)
+						|| (validation.data.agentClass === 'reviewer' && items.some(item => item.review === 'required'
+							&& Object.keys(record(item.reviewEstimate)).length === 0));
+					if (proposalId && canEstimate) participants.push({ projectId, proposalId,
+						definition: validation.data, activity, id: `${projectId}/${validation.data.id}:estimating:${proposalKey(proposalId)}` });
+				}
 			}
 		}
 	}

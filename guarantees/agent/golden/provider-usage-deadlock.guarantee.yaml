@@ -1,0 +1,12 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.golden.provider-usage-deadlock
+journey: Complete concurrent provider usage reporting despite PostgreSQL deadlocks
+ownerPackage: "@treeseed/api"
+type: agent
+subtype: accounting
+status: planned
+gates: [core]
+summary: Five concurrent SQL-only usage batches retry rolled-back deadlocks with a bounded production policy.
+scene:
+  required: true
+  manifest: guarantees/agent/golden/scenes/provider-usage-deadlock.scene.yaml

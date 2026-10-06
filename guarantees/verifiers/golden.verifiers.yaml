@@ -1,6 +1,426 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.transaction-reprojection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/assignments/assignment-graph-transition-retry.test.ts
+    testName: "reprojects only the rolled-back graph operations against the committed revision"
+  api.golden.transaction-retry-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/assignments/assignment-graph-transition-retry.test.ts
+    testName: "fails closed on unrelated uniqueness errors and bounded repeated contention"
+  api.golden.transaction-inherited-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/assignments/assignment-graph-transition-retry.test.ts
+    testName: "propagates an inherited transaction failure without reusing its aborted connection"
+  api.golden.invocation-terminal-returned:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rebinds only its own terminal conversation attempt: returned"
+  api.golden.invocation-terminal-failed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rebinds only its own terminal conversation attempt: failed"
+  api.golden.invocation-terminal-cancelled:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rebinds only its own terminal conversation attempt: cancelled"
+  api.golden.invocation-terminal-foreign-team:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rebinds only its own terminal conversation attempt: foreign-team"
+  api.golden.invocation-terminal-foreign-invocation:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rebinds only its own terminal conversation attempt: foreign-invocation"
+  api.golden.invocation-terminal-leased:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rebinds only its own terminal conversation attempt: leased"
+  api.golden.progress-postgres-custody:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress-postgres.test.ts
+    testName: "retains captured preparation evidence and ordered replay without duplicate discussion commits"
+  api.golden.preparation-progress:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "persists all captured EJ preparation stages without waiting for TreeDX projection"
+  api.golden.preparation-no-commit-wait:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "does not put a delayed discussion commit on the preparation critical path"
+  api.golden.provider-progress-authority:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "keeps routine provider progress in its one authoritative workday event stream"
+  api.golden.provider-terminal-projection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "preserves terminal and diagnostic warning discussion projection with exact durable content"
+  api.golden.terminal-projection-fatal:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "keeps required terminal projection failure fatal rather than returning a false receipt"
+  api.golden.terminal-projection-replay:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "replays required terminal projection after a durable event survived a failed discussion commit"
+  api.golden.progress-idempotency:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "retains durable progress idempotency and rejects changed evidence"
+  api.golden.workday-lifecycle-projection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "preserves ordinary workday lifecycle projection and activity mirror exclusion"
+  api.golden.progress-token-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "still rejects transient token deltas before durable insertion"
+  api.golden.late-planning-round:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/scheduling/planning-round-window.test.ts
+    testName: "captured EI third round preserves deadlines and creates only usable new rounds"
+  api.golden.fluid-planning-window:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/scheduling/planning-round-window.test.ts
+    testName: "fluid planning after initial phase preserves deadlines and creates only usable new rounds"
+  api.golden.unusable-execution-window:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/execution-window-replay.test.ts
+    testName: "rejects captured EI sub-second execution rather than starting a model that cannot close out"
+  api.golden.short-productive-window:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/execution-window-replay.test.ts
+    testName: "preserves a short but productive window outside the existing closeout reserve"
+  api.golden.reviewed-allocation-history:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/allocation-inputs.test.ts
+    testName: "retains only exact approved Actor history after graph retirement"
+  api.golden.expired-allocation-history:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/allocation-inputs.test.ts
+    testName: "calibrates productive deadline expiration, not uncertain lease recovery"
+  api.golden.availability-assignment-locks:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/ontology/availability-locks-postgres.test.ts
+    testName: publishes while a concurrent assignment write holds a dependent provider row
+  api.golden.availability-reservation-locks:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/ontology/availability-locks-postgres.test.ts
+    testName: publishes while a concurrent reservation write holds a dependent provider row
+  api.golden.availability-accounting-serialization:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/ontology/availability-postgres.test.ts
+    testName: serializes observations across memberships before validation and publication
+  api.golden.availability-open-assignment-locks:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/ontology/availability-locks-postgres.test.ts
+    testName: opens availability while an assignment FK write holds a dependent provider row
+  api.golden.availability-open-reservation-locks:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/ontology/availability-locks-postgres.test.ts
+    testName: opens availability while a reservation FK write holds a dependent provider row
+  api.golden.operator-phase-postgres:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts
+    testName: settles actual returned pre-model phase cancellation once without late completion, cap expansion or approval
+  api.golden.operator-phase-closeout:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
+    testName: normalizes a claimed returned turn without replacing the provider closure or measured usage
+  api.golden.operator-phase-no-fabrication:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
+    testName: does not invent isolation teardown when the provider supplied no receipt
+  api.golden.operator-phase-early-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
+    testName: preserves ordinary cancellation for earlier despite a planning-looking reason or key
+  api.golden.operator-phase-acting-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
+    testName: preserves ordinary cancellation for acting despite a planning-looking reason or key
+  api.golden.operator-phase-fluid-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
+    testName: preserves ordinary cancellation for fluid despite a planning-looking reason or key
+  api.golden.operator-phase-provider-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
+    testName: preserves ordinary cancellation for wrong-provider despite a planning-looking reason or key
+  api.golden.admission-source-custody-leased:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: preserves source custody when a losing admission reaches an existing leased assignment
+  api.golden.admission-source-custody-pending:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: preserves source custody when a losing admission reaches an existing pending assignment
+  api.golden.admission-source-custody-completed:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: preserves source custody when a losing admission reaches an existing completed assignment
+  api.golden.admitted-discussion-binding:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "does not let a denied admission steal the invocation before the winning assignment exists"
+  api.golden.discussion-binding-foreign-team:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rejects mismatched conversation admission authority: foreign-team"
+  api.golden.discussion-binding-wrong-reservation:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rejects mismatched conversation admission authority: wrong-reservation"
+  api.golden.discussion-binding-wrong-invocation:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rejects mismatched conversation admission authority: wrong-invocation"
+  api.golden.discussion-binding-terminal:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rejects mismatched conversation admission authority: terminal"
+  api.golden.discussion-binding-bound-other:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rejects mismatched conversation admission authority: bound-other"
+  api.golden.concurrent-terminal-revisions:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/persistence/concurrent-results-postgres.test.ts
+    testName: "commits five simultaneous results against reconciliation without duplicate or lost revisions"
+  api.golden.phase-before-tick:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/assignments/planning-boundary-cancellation.test.ts
+    testName: cancels the captured timeout when its phase ends before periodic cancellation
+  api.golden.phase-after-tick:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/assignments/planning-boundary-cancellation.test.ts
+    testName: recognizes phase cancellation after the periodic request without trusting a provider request
+  api.golden.phase-task-timeout-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/assignments/planning-boundary-cancellation.test.ts
+    testName: preserves earlier task expiration and acting failures
+  api.golden.phase-fluid-planning-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/assignments/planning-boundary-cancellation.test.ts
+    testName: keeps fluid planning and non-timeout failures unchanged
+  api.golden.phase-authority-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/assignments/planning-boundary-cancellation.test.ts
+    testName: does not infer phase cancellation from missing or malformed authority
+  api.golden.phase-before-tick-postgres:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts
+    testName: settles actual phase timeout before periodic cancellation once without late completion, cap expansion or approval
+  api.golden.phase-after-tick-postgres:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts
+    testName: settles actual phase stop after periodic cancellation once without late completion, cap expansion or approval
+  api.golden.phase-real-timeout-postgres:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts
+    testName: settles actual 12 seconds once without late completion, cap expansion or approval
+  api.golden.phase-real-overrun-postgres:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts
+    testName: settles actual 25 seconds once without late completion, cap expansion or approval
+  api.golden.active-window-production:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/assignment-active-window.test.ts
+    testName: does not precharge unused infrastructure watchdog time in production
+  api.golden.active-window-simulation:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/assignment-active-window.test.ts
+    testName: does not precharge unused infrastructure watchdog time in simulation
+  api.golden.active-window-rollover:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/assignment-active-window.test.ts
+    testName: clamps after real preparation without crossing the UTC accounting day
+  api.golden.active-window-exhaustion:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/assignment-active-window.test.ts
+    testName: defers after authority is exhausted without changing provider supply
+  api.golden.continuation-history:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/workdays/continuation.test.ts
+    testName: derives a bounded exact lineage from existing records without another ledger
+  api.golden.continuation-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/workdays/continuation.test.ts
+    testName: rejects retained leases, unsettled reservations, cycles, unknown decisions and project expansion
+  api.golden.continuation-freshness:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/graph/living-execution-graph-persistence.test.ts
+    testName: preserves exact completed history only for explicit continuation, never fresh simulation or changed authority
+  api.golden.explicit-proposal-selection:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: keeps one or several explicit proposals while ignoring unrelated open proposals
+  api.golden.terminal-scoped-planning:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: stops regenerating terminal explicit proposal and decision scope without shortening the planning phase
+  api.golden.incomplete-scoped-planning:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: keeps incomplete scoped proposals planning even when exact executable-plan parsing is not ready
+  api.golden.unscoped-proposal-discovery:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: adds a newly created proposal owner and Reviewer to the next round without replacing the frozen planning agents
+  api.golden.decision-proposal-selection:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: keeps decision-only continuation planning scoped without rediscovering unrelated proposals
+  api.golden.decision-proposal-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: fails closed on missing or foreign-team decision planning scope before proposal discovery
+  api.golden.source-pin-field-comparison:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/workspaces/source-pin.test.ts
+    testName: compares exact pin fields independent of serialized key order and rejects changed or missing custody
+  api.golden.source-pin-mutation-denied:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/workspaces/source-workspace-service.test.ts
+    testName: rejects a public pin that no longer matches the immutable assignment SHA
+  api.golden.project-library-binding:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/ready-execution-node.test.ts
+    testName: keeps the assignment project library binding distinct from Team Library context
+  api.golden.project-workspace-write:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/assignment-attempt-builder.test.ts
+    testName: writes planning content to its project library while retaining Team Library as read-only context
+  api.golden.cross-project-write-denied:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/assignment-attempt-builder.test.ts
+    testName: rejects a writable TreeDX source bound to another project library
+  api.golden.provider-usage-deadlock-retry:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/postgres-batch-retry.test.ts
+    testName: settles five concurrent usage-like batches despite repeated deadlocks
+  api.golden.provider-usage-deadlock-bound:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/postgres-batch-retry.test.ts
+    testName: bounds SQL batch deadlock retries without retrying unrelated failures
+  api.golden.bounded-planning-node-id:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: admits a long governed proposal without exceeding the planning node ID bound
+  api.golden.retired-graph-estimate-migration:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/graph/migrations/retired-graph-estimate-minimum.test.ts
+    testName: removes only the retired minimum from persisted graph estimates and replays as a noop
+  api.golden.early-external-approval:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/governance/proposals/early-external-approval.test.ts
+    testName: records external approval without creating an unestimated decision
+  api.golden.estimate-finalizes-approval:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/planning/assignment-estimate-integration.test.ts
+    testName: finalizes only a matching external approval after all owner and reviewer estimates arrive
+  api.golden.fluid-phase:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: continues or resumes planning when no approved acting node is ready
+  api.golden.external-approval:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: keeps planning a fully estimated ready proposal until external approval yields acting work
+  api.golden.parallel-proposals:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: projects concurrent same-project proposal estimates against distinct exact sources
+  api.golden.reporter-carry-forward:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: lets Reporter close the workday while selected decision work carries forward
   api.golden.canonical-adapter-headroom:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
@@ -20,22 +440,22 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/ready-execution-node.test.ts
-    testName: "loads exact proposal and source context for proposal-level reviewing nodes"
+    testName: "admits unbound decision work without a separate proposal Reviewer"
   api.golden.proposal-review-binding:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/living-execution-graph-persistence.test.ts
-    testName: "binds the real proposal Reviewer before a decision exists without adopting an unrelated run"
+    testName: "binds selected proposal work and its accepted decision to one simulation"
   api.golden.proposal-review-phase:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/scheduling/proposal-review-phase.test.ts
-    testName: "carries one ready proposal Reviewer into acting, but never admits paired work review during planning"
+    testName: "does not admit a separate proposal Reviewer in either phase"
   api.golden.proposal-review-accounting:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/scheduling/proposal-review-phase.test.ts
-    testName: "charges governance review to its allocator-issued phase and paired work review to acting"
+    testName: "charges paired work review to acting"
   api.golden.proposal-review-supply:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -45,7 +465,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/assignment-attempt-builder.test.ts
-    testName: "uses the acting window for a governance review whose viable minimum outlives planning"
+    testName: "allocates a paired work review from the acting window without a minimum floor"
   api.golden.proposal-review-phase-denial:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -65,7 +485,22 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workspaces/source-workspace-service.test.ts
-    testName: "still resolves a public moving ref upstream when no exact assignment source exists"
+    testName: "resolves public moving refs with API-only custody and reuses the immutable pin"
+  api.golden.planning-source-quota:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workspaces/source-workspace-service.test.ts
+    testName: "does not exhaust anonymous quota across repeated planning source authorizations"
+  api.golden.public-source-custody-failure:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workspaces/source-workspace-service.test.ts
+    testName: "supports public moving refs without a configured connection, but never retries a failed managed lookup anonymously"
+  api.golden.public-source-authority-selection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workspaces/source-credential-authority.test.ts
+    testName: "permits anonymous public metadata only when no unpinned managed authority exists"
   api.golden.public-source-pin-denial:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -231,6 +666,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-recovery-graph-custody.test.ts
     testName: "finds ready graph work and assignment evidence by the canonical workday IDs"
+  api.golden.recovery-isolation:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-recovery-graph-custody.test.ts
+    testName: recovers later terminal workdays before reporting a corrupt historical assignment
   api.golden.missing-result:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -290,7 +730,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
-    testName: "blocks closing and Reporter on the selected decision review terminals"
+    testName: "lets Reporter close the workday while selected decision work carries forward"
   api.golden.response-authority:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

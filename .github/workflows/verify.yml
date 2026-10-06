@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         timeout-minutes: 20
         run: npm ci --ignore-scripts --workspaces=false --no-audit --no-fund
-      - uses: treeseed-ai/sdk/.github/actions/install-exact-sdk@f7951717fcb6bf27ce6c9f1547b675cf8d52ef1e
+      - uses: treeseed-ai/sdk/.github/actions/install-exact-sdk@a12f06dc33c02161cedb4d74928fb915a803911f
         with:
           github-token: ${{ github.token }}
           paths: |
@@ -55,11 +55,11 @@ jobs:
       - name: Verify concurrent PostgreSQL pool and workday policy allocation
         env:
           TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
-        run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/accounts/postgres/pool-budget.test.ts tests/unit/control-plane/capacity/workdays/profile-postgres.test.ts tests/unit/control-plane/capacity/workdays/lifecycle/concurrent-runs-postgres.test.ts tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts tests/unit/control-plane/capacity/execution/admission/postgres.test.ts tests/unit/control-plane/capacity/communication/discussion-supply-postgres.test.ts tests/unit/control-plane/providers/assignments/provider-discussion-response-postgres.test.ts
+        run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/accounts/postgres/pool-budget.test.ts tests/unit/control-plane/capacity/workdays/profile-postgres.test.ts tests/unit/control-plane/capacity/workdays/continuation.test.ts tests/unit/control-plane/capacity/workdays/lifecycle/concurrent-runs-postgres.test.ts tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts tests/unit/control-plane/capacity/execution/admission/postgres.test.ts tests/unit/control-plane/capacity/communication/discussion-supply-postgres.test.ts tests/unit/control-plane/providers/assignments/provider-discussion-response-postgres.test.ts
       - name: Pack verified artifact
         run: mkdir -p artifacts && npm pack --json --ignore-scripts --pack-destination artifacts
       - name: Execute coded golden component scenes
-        uses: treeseed-ai/reviewer/.github/actions/run-scenes@e29c5bf2db97188c47fdc67a7a098e81a95ced22
+        uses: treeseed-ai/reviewer/.github/actions/run-scenes@21042577587be3d5cc16cd8399b181ebfcd11ede
         env:
           TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
         with:

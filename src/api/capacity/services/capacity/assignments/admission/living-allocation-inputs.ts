@@ -1,9 +1,9 @@
-import { allocateWorkdayCapacity, appliedWorkdaySchema, remainingCapabilitySeconds, workdayPhase,
+import { allocateWorkdayCapacity, appliedWorkdaySchema, remainingCapabilitySeconds,
 	type AllocationMeasurement, type AssignmentAllocationConstraint } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import type { ProviderSynthesisExecutionProvider } from '../../providers/provider-synthesis-context-service.ts';
-import { executionNodeRunScope } from '../../../build/ready-execution-node.ts';
+import { executionNodeRunScope, runtimeWorkdayPhase } from '../../../build/ready-execution-node.ts';
 
 export type LivingAllocationInputs = Record<string, { measurements: AllocationMeasurement[]; constraints: AssignmentAllocationConstraint[];
 	opportunity: ReturnType<typeof allocateWorkdayCapacity>[string] }>;
@@ -40,7 +40,7 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 		for (const run of input.runs) {
 			const parsed = appliedWorkdaySchema.safeParse(run.parameters.appliedPlan);
 			if (!parsed.success) continue;
-			const plan = parsed.data, phase = workdayPhase(plan, input.now);
+			const plan = parsed.data, phase = await runtimeWorkdayPhase(store, run, input.now);
 			const scope = executionNodeRunScope(run);
 			const projectIds = Array.isArray(run.parameters.scheduledProjectIds)
 				? run.parameters.scheduledProjectIds.filter((id): id is string => typeof id === 'string' && Boolean(id)) : [];
@@ -51,12 +51,12 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 				AND ${projectIds.length ? `node.project_id IN (${projectIds.map(() => '?').join(',')})` : 'false'}
 				AND node.required_capabilities_json::jsonb @> ?::jsonb
 				AND ${plan.state === 'closing' ? "node.kind='reporting'" : phase === 'planning'
-					? "(node.kind IN ('planning','estimating','communication') OR (node.kind='reviewing' AND node.pair_role IS NULL AND node.source_ref_json::jsonb->>'model'='proposal'))"
-					: "node.kind NOT IN ('planning','estimating','reporting')"}`,
+					? "node.kind IN ('planning','estimating','communication')"
+					: "(node.kind='acting' OR (node.kind='reviewing' AND node.pair_role='reviewer') OR node.kind='communication')"}`,
 				[run.teamId, ...scope.parameters, ...projectIds, JSON.stringify([input.capabilityId])]);
 			const usage = commitments.filter(row => row.work_day_id === run.id).map(row => ({ planning: row.mode === 'planning',
 				seconds: ['reserved', 'consuming'].includes(String(row.state)) ? Math.max(Number(row.reserved_seconds), Number(row.active_seconds)) : Number(row.active_seconds) }));
-			workdays.push({ plan, committedSeconds: usage.reduce((sum, row) => sum + row.seconds, 0),
+			workdays.push({ plan, actingReady: phase === 'acting', committedSeconds: usage.reduce((sum, row) => sum + row.seconds, 0),
 				planningCommittedSeconds: usage.filter(row => row.planning).reduce((sum, row) => sum + row.seconds, 0),
 				maximumAdditionalSeconds: Number(readiness?.ready_count) > 0
 					? plan.state === 'closing' ? Number(readiness?.maximum_seconds ?? 0)
@@ -64,6 +64,9 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 							* (input.activity === 'chat' ? plan.policySnapshot.communicationConcurrency : plan.policySnapshot.maximumConcurrency) : 0 });
 		}
 		const shares = allocateWorkdayCapacity({ remainingSeconds: supply, now: input.now, workdays });
+		// Retirement can advance a graph node and mark it stale. Learn Actor
+		// success only from a validated approval of this immutable result, never
+		// from mutable current graph state or an unreviewed/rejected completion.
 		const rows = await store.all(`SELECT usage.id,usage.created_at,usage.active_seconds,assignment.status,assignment.lifecycle_code,
 			assignment.assignment_attempt_json::jsonb->'estimate'->>'expectedSeconds' AS expected_seconds,
 			assignment.assignment_attempt_json::jsonb->'limits'->>'maximumSeconds' AS allocated_seconds
@@ -78,7 +81,15 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 				: "NOT (node.kind='reviewing' AND node.pair_role IS NULL AND node.source_ref_json::jsonb->>'model'='proposal')"}
 			AND usage.accounting_mode='aggregate' AND ((assignment.status='completed'
 				AND (node.pair_role IS DISTINCT FROM 'actor'
-					OR (node.status='completed' AND assignment.execution_node_revision=node.node_revision)))
+					OR EXISTS (SELECT 1 FROM capacity_provider_assignments review
+						JOIN execution_edges pair ON pair.team_id=review.team_id
+							AND pair.from_node_id=assignment.execution_node_id AND pair.to_node_id=review.execution_node_id
+							AND pair.provenance='review-pair'
+						WHERE review.team_id=assignment.team_id AND review.status='completed'
+						AND review.assignment_result_json IS NOT NULL
+						AND review.lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='approved'
+						AND review.assignment_attempt_json::jsonb->'predecessorResultIds'
+							@> jsonb_build_array(assignment.assignment_result_json::jsonb->>'id'))))
 				OR (assignment.status='failed' AND assignment.lifecycle_code='assignment_timeout'))
 			ORDER BY usage.created_at DESC,usage.id DESC LIMIT 20`,
 			[input.capacityProviderId, provider.id, input.agentClass, limits.modelConfigurationId, input.capabilityId, input.activity]);

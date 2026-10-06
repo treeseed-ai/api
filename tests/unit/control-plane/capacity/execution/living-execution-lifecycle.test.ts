@@ -6,7 +6,7 @@ const sourceRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision
 	repository: 'library', commit, path: 'proposals/one.mdx' };
 const row = (id: string, status: string, pairRole: 'actor' | 'reviewer' = 'actor', workItemId = id, revision = 1) => ({ id, team_id: 'team', project_id: 'project', work_item_id: workItemId,
 	kind: pairRole === 'reviewer' ? 'reviewing' : 'acting', pair_role: pairRole, source_ref_json: sourceRef, authority_refs_json: [], rule_revision: 1,
-	node_revision: revision, agent_class: pairRole === 'reviewer' ? 'reviewer' : 'engineer', status, estimate_json: { minimumSeconds: 1, expectedSeconds: 2, maximumSeconds: 3 },
+	node_revision: revision, agent_class: pairRole === 'reviewer' ? 'reviewer' : 'engineer', status, estimate_json: { expectedSeconds: 2, maximumSeconds: 3 },
 	required_capabilities_json: [], requested_permissions_json: { content: { read: ['proposal'], write: [] }, tools: ['source.read'] },
 	workspace: 'read-only', acceptance_criteria_json: ['done'], maximum_review_cycles: 2,
 	graph_revision_created: 1, graph_revision_updated: 1 });

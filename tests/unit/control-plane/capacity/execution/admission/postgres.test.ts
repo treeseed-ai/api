@@ -38,13 +38,17 @@ describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
 			await database.pool.query(`UPDATE capacity_provider_availability_sessions SET execution_providers_json=$1 WHERE id='session'`,
 				[JSON.stringify([{ id: 'codex-implementation', nativeLimits: { modelConfigurationId: 'terra-medium' },
 					accountingObservation: { modelUsage: observed, capabilityUsage: { 'code-change': observed } } }])]);
+			let staleAdmissionRead = false;
 			const store = { ensureInitialized: () => database.migrate(),
 				run: async (sql: string, params: unknown[] = []) => { await database.prepare(sql).bind(...params).run(); },
 				first: (sql: string, params: unknown[] = []) => database.prepare(sql).bind(...params).first(),
 				all: async (sql: string, params: unknown[] = []) => (await database.prepare(sql).bind(...params).all()).results,
 				batch: (operations: Array<{ query: string; params?: unknown[] }>) => database.batch(operations),
-				getProviderAssignment: (team: string, id: string) => database.prepare(`SELECT id,execution_node_id AS "executionNodeId",
-					execution_node_revision AS "executionNodeRevision" FROM capacity_provider_assignments WHERE team_id=? AND id=?`).bind(team, id).first(),
+				getProviderAssignment: (team: string, id: string) => {
+					if (staleAdmissionRead) { staleAdmissionRead = false; return Promise.resolve(null); }
+					return database.prepare(`SELECT id,execution_node_id AS "executionNodeId",
+						execution_node_revision AS "executionNodeRevision" FROM capacity_provider_assignments WHERE team_id=? AND id=?`).bind(team, id).first();
+				},
 			};
 			const attempts = ['first', 'second'].map(id => assignmentAttemptSchema.parse({ ...assignment,
 				id, idempotencyKey: id, nodeId: id, reservationId: `reservation-${id}` }));
@@ -69,6 +73,16 @@ describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
 			expect((await database.pool.query('SELECT count(*)::int AS count FROM capacity_reservations')).rows[0].count).toBe(1);
 			const winner = attempts[results.findIndex(result => result.status === 'fulfilled')]!;
 			await run(winner);
+			// Both admissions observed absence, but the winner committed and was
+			// leased/pinned before the losing SQL batch acquired the workday lock.
+			const custody = { sourceWorkspace: { exactCommit: 'a'.repeat(40) }, retained: 'winner' };
+			await database.pool.query(`UPDATE capacity_provider_assignments SET status='leased',lease_state='leased',
+				workspace_context_json=$1 WHERE id=$2`, [JSON.stringify(custody), winner.id]);
+			staleAdmissionRead = true;
+			await run(winner);
+			expect((await database.pool.query('SELECT workspace_context_json::jsonb AS context FROM capacity_provider_assignments WHERE id=$1', [winner.id])).rows[0].context)
+				.toEqual(custody);
+			await database.pool.query(`UPDATE capacity_provider_assignments SET status='pending',lease_state='unleased' WHERE id=$1`, [winner.id]);
 			const admitted = await new ProviderAssignmentRepository(store as never).get('team', winner.id);
 			expect(admitted?.explanation)
 				.toMatchObject({ metadata: { allocation: { admitted: true } } });
@@ -96,6 +110,12 @@ describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
 				id: winner.id, status: 'pending', reservationId: winner.reservationId, assignmentAttempt: null,
 			});
 			expect(await repository.getForCancellation('other-team', winner.id)).toBeNull();
+			await database.pool.query(`UPDATE capacity_provider_assignments SET assignment_attempt_json='not-json' WHERE id=$1`, [winner.id]);
+			await expect(repository.get('team', winner.id)).rejects.toThrow('invalid assignment_attempt_json');
+			expect(await repository.getForCancellation('team', winner.id)).toMatchObject({ id: winner.id,
+				assignmentAttempt: null, explanation: { snapshotValidation: { valid: false, field: 'assignment_attempt_json' } } });
+			// Restore the existing settlement fixture after the independent malformed-JSON read-back assertion.
+			await database.pool.query(`UPDATE capacity_provider_assignments SET assignment_attempt_json='{}' WHERE id=$1`, [winner.id]);
 			const settlement = { settlementKey: `settle:${winner.id}`, teamId: 'team', membershipId: 'membership',
 				reservationId: winner.reservationId, assignmentId: winner.id, activeSeconds: 2, elapsedSeconds: 4,
 				source: 'postgres-admission-test' };

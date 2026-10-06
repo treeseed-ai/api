@@ -1,11 +1,12 @@
-import { appliedWorkdaySchema, selectFairReadyNode, workdayPhase,
+import { appliedWorkdaySchema, selectFairReadyNode,
 } from '@treeseed/sdk/agent-capacity';
 import type { DurableProviderAssignment } from '../../../../../repositories/capacity/assignments/assignment.ts';
 import { CapacityWorkdayRunRepository } from '../../../../../repositories/capacity/workdays/workday-run.ts';
 import { CapacityGovernanceError } from '../../../../../database.ts';
 import type { ProviderLeasePrincipal } from '../../../../accounts/lease-authority-service.ts';
 import type { ProviderSynthesisExecutionProvider } from '../../../providers/provider-synthesis-context-service.ts';
-import { isProposalGovernanceReview, listReadyExecutionNodes } from '../../../../build/ready-execution-node.ts';
+import { listReadyExecutionNodes, runtimeWorkdayPhase } from '../../../../build/ready-execution-node.ts';
+import type { ExecutionNode } from '@treeseed/sdk/agent-capacity';
 import { capacityWorkdayRequestedProjectReferences, resolveCapacityWorkdayProjects } from '../../../workdays/policy/workday-project-policy.ts';
 import { admitLivingExecutionAssignment } from '../../admission/living-execution-admission.ts';
 import { buildAssignmentAttempt } from './assignment-attempt-builder.ts';
@@ -34,14 +35,14 @@ export function prioritizeCommunicationCandidates<T extends { node: { kind: stri
 }
 
 export function isNodeEligibleInWorkdayPhase(
-	node: Parameters<typeof isProposalGovernanceReview>[0], phase: 'planning' | 'acting', closing: boolean,
+	node: Pick<ExecutionNode, 'kind' | 'pairRole'>, phase: 'planning' | 'acting', closing: boolean,
 ): boolean {
 	if (closing) return node.kind === 'reporting';
 	if (node.kind === 'reporting') return false;
 	if (node.kind === 'communication') return true;
-	const governanceReview = isProposalGovernanceReview(node);
 	const planningWork = node.kind === 'planning' || node.kind === 'estimating';
-	return governanceReview || (phase === 'planning' ? planningWork : !planningWork);
+	return phase === 'planning' ? planningWork
+		: node.kind === 'acting' || (node.kind === 'reviewing' && node.pairRole === 'reviewer');
 }
 
 export function reservationFairUsage(rows: Record<string, unknown>[]) {
@@ -170,15 +171,15 @@ export async function assignNextReadyExecutionNode(
 			capacityWorkdayRequestedProjectReferences(run.parameters),
 			await store.listTeamProjects(run.teamId),
 		);
-		const phase = workdayPhase(appliedPlan, now);
+		const phase = await runtimeWorkdayPhase(store, run, now);
 		const ready = (await Promise.all(projects.map((project) => listReadyExecutionNodes(store, run, project)))).flat();
 		selection.readyNodes += ready.length;
 		const inPhase = ready.filter((candidate) => isNodeEligibleInWorkdayPhase(candidate.node, phase, appliedPlan.state === 'closing'));
 		selection.phaseEligible += inPhase.length;
 		const concurrent = inPhase.filter((candidate) => workdayConcurrencyAvailable(candidate.node.kind, activeByKind, appliedPlan.policySnapshot));
 		selection.concurrencyEligible += concurrent.length;
-		const withinWindow = concurrent.filter((candidate) => appliedPlan.state === 'closing'
-			|| Date.parse(appliedPlan.endsAt) - Date.parse(now) >= (candidate.node.estimate?.minimumSeconds ?? 1) * 1_000);
+		const withinWindow = concurrent.filter(() => appliedPlan.state === 'closing'
+			|| Date.parse(appliedPlan.endsAt) - Date.parse(now) >= 1_000);
 		selection.windowEligible += withinWindow.length;
 		const candidates = prioritizeCommunicationCandidates(withinWindow);
 		const prior = await store.all(`SELECT node.project_id,node.agent_class,reservation.active_seconds,

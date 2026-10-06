@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolveProposalReviewDisposition, resolveReviewDisposition } from '../../../../../src/api/capacity/services/capacity/assignments/context/review-result.ts';
+import { resolveReviewDisposition } from '../../../../../src/api/capacity/services/capacity/assignments/context/review-result.ts';
 
 const digest = `sha256:${'a'.repeat(64)}`, candidateCommit = 'b'.repeat(40), decisionCommit = 'c'.repeat(40);
 const result = {
@@ -54,22 +54,4 @@ describe('review result authority', () => {
 			.rejects.toMatchObject({ code: 'review_candidate_reference_missing' });
 	});
 
-	it('accepts proposal review only when the decision binds the exact proposal source', async () => {
-		const proposalRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 2, digest,
-			repository: 'library', commit: candidateCommit, path: 'proposals/proposal.mdx' };
-		const store = { first: vi.fn(async () => ({ kind: 'reviewing', pair_role: null,
-			source_ref_json: proposalRef })) };
-		const proposalDecision = { ...decision, decisionClass: 'proposal', disposition: 'approved', subjectRef: proposalRef };
-		await expect(resolveProposalReviewDisposition(store as never, { id: 'review-assignment', teamId: 'team',
-			projectId: 'project', executionNodeId: 'reviewer', executionNodeRevision: 1 } as never,
-			result, async () => ({ frontmatter: proposalDecision, source: 'exact decision bytes' }))).resolves.toMatchObject({
-				disposition: 'approved', reference: result.references[0],
-				sourceRef: { store: 'treedx', model: 'decision', id: proposalDecision.id,
-					repository: result.references[0].repository, commit: result.references[0].commit },
-			});
-		await expect(resolveProposalReviewDisposition(store as never, { id: 'review-assignment', teamId: 'team',
-			projectId: 'project', executionNodeId: 'reviewer', executionNodeRevision: 1 } as never,
-			result, async () => ({ frontmatter: { ...proposalDecision, subjectRef: { ...proposalRef, revision: 1 } }, source: 'other bytes' })))
-			.rejects.toMatchObject({ code: 'proposal_review_decision_required' });
-	});
 });

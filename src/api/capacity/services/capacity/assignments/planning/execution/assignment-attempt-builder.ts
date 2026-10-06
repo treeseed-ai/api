@@ -5,7 +5,6 @@ import {
 	calculateAssignmentAllocation,
 	remainingCapabilitySeconds,
 	workdayPlanningEndsAt,
-	workdayPhase,
 	type AssignmentAttempt,
 	type ExactEntityReference,
 	type ExactGrant,
@@ -15,10 +14,10 @@ import { assignmentSourceBranch, simulationSourceBranch } from '@treeseed/sdk/ca
 import { CapacityGovernanceError } from '../../../../../database.ts';
 import type { ProviderLeasePrincipal } from '../../../../accounts/lease-authority-service.ts';
 import type { ProviderSynthesisExecutionProvider } from '../../../providers/provider-synthesis-context-service.ts';
-import { isProposalGovernanceReview, type ReadyExecutionNode } from '../../../../build/ready-execution-node.ts';
+import { type ReadyExecutionNode } from '../../../../build/ready-execution-node.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../../repositories/capacity/workdays/workday-run.ts';
 import { workdayTreeDxWorkspaceId } from '../../../workdays/treedx/workday-treedx-workspace-service.ts';
-import { assignmentPreparationSeconds, compileAssignmentTimeBudget } from '../assignment-time-budget.ts';
+import { compileAssignmentTimeBudget } from '../assignment-time-budget.ts';
 import type { LivingAllocationInputs } from '../../admission/living-allocation-inputs.ts';
 
 const stable = (value: unknown): string => {
@@ -78,6 +77,14 @@ function communicationDiscussionReference(candidate: ReadyExecutionNode): ExactE
 	return [{ ...source, id: `${source.id}:discussion`, path: `${match[1]}discussions/${match[2]}.mdx` }];
 }
 
+function projectTreeDxWorkspaceReference(candidate: ReadyExecutionNode): ExactEntityReference | undefined {
+	const source = candidate.node.sourceRef.store === 'treedx' ? candidate.node.sourceRef : undefined;
+	if (source && source.repository !== candidate.projectContentRepositoryId) throw new CapacityGovernanceError(
+		'assignment_content_project_mismatch', 'Writable TreeDX content must belong to the assignment project library.', 409);
+	return source ?? candidate.contextRefs.find((reference) => reference.store === 'treedx'
+		&& reference.repository === candidate.projectContentRepositoryId);
+}
+
 function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant {
 	const requested = candidate.node.requestedPermissions!;
 	const ceiling = candidate.effectiveProfile.permissionCeiling;
@@ -101,7 +108,7 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant 
 			.filter((value): value is string => Boolean(value)))]
 		: [];
 	const contentRefs = candidate.contextRefs.filter((reference) => reference.store === 'treedx');
-	const treeDxBase = candidate.node.sourceRef.store === 'treedx' ? candidate.node.sourceRef : contentRefs[0];
+	const treeDxBase = candidate.node.workspace === 'treedx' ? projectTreeDxWorkspaceReference(candidate) : undefined;
 	const bookRef = contentRefs.find((reference) => reference.model === 'book'
 		&& reference.repository === treeDxBase?.repository && reference.commit && reference.path);
 	if (candidate.node.kind === 'acting' && candidate.node.workspace === 'treedx'
@@ -138,8 +145,9 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant 
 
 function workspace(candidate: ReadyExecutionNode, assignmentId: string, exactGrant: ExactGrant, run: DurableCapacityWorkdayRun) {
 	if (candidate.node.workspace === 'read-only') return { mode: 'read-only' as const };
-	const reference = candidate.node.sourceRef.store === candidate.node.workspace ? candidate.node.sourceRef
-		: candidate.contextRefs.find((item) => item.store === candidate.node.workspace);
+	const reference = candidate.node.workspace === 'treedx' ? projectTreeDxWorkspaceReference(candidate)
+		: candidate.node.sourceRef.store === candidate.node.workspace ? candidate.node.sourceRef
+			: candidate.contextRefs.find((item) => item.store === candidate.node.workspace);
 	if (!reference?.repository || !reference.commit) throw new CapacityGovernanceError(
 		'assignment_workspace_reference_missing', `Node ${candidate.node.id} lacks its exact ${candidate.node.workspace} workspace reference.`, 409);
 	const writablePaths = candidate.node.workspace === 'treedx'
@@ -210,13 +218,14 @@ export function buildAssignmentAttempt(input: {
 	const planningEnd = workdayPlanningEndsAt(appliedPlan);
 	const planningTurn = ['planning', 'estimating'].includes(candidate.node.kind)
 		|| (communication && Date.parse(input.now) < Date.parse(planningEnd));
-	const planningPhase = planningTurn || (isProposalGovernanceReview(candidate.node)
-		&& workdayPhase(appliedPlan, input.now) === 'planning');
-	const windowEnd = planningPhase ? planningEnd : appliedPlan.endsAt;
-	const preparationSeconds = assignmentPreparationSeconds(undefined);
+	const planningPhase = planningTurn;
+	const windowEnd = planningPhase && Date.parse(input.now) < Date.parse(planningEnd) ? planningEnd : appliedPlan.endsAt;
 	const utcDayEnd = Date.parse(`${input.now.slice(0, 10)}T00:00:00.000Z`) + 86_400_000;
+	// Infrastructure has its own watchdog. Reserve active time against authority;
+	// execution start clamps that reservation after actual setup/queueing, without
+	// precharging the entire (usually unspent) preparation ceiling.
 	const availableSeconds = candidate.node.kind === 'reporting' && appliedPlan.state === 'closing'
-		? candidate.node.estimate.maximumSeconds : Math.max(0, (Date.parse(windowEnd) - Date.parse(input.now)) / 1000 - preparationSeconds);
+		? candidate.node.estimate.maximumSeconds : Math.max(0, (Date.parse(windowEnd) - Date.parse(input.now)) / 1000);
 	const capability = candidate.node.requiredCapabilities![0]!;
 	const considered = eligible.flatMap((selected) => {
 		const allocationInputs = input.allocationInputs[selected.provider.id];
@@ -228,24 +237,21 @@ export function buildAssignmentAttempt(input: {
 		const remaining = (dailyLimitSeconds: number, value: typeof observation.modelUsage | undefined) => value
 			? remainingCapabilitySeconds({ now: input.now, maximumObservationAgeSeconds: 90, dailyLimitSeconds,
 				observation: value, ledgerActiveSeconds: 0, ledgerReservedSeconds: 0 }).availableSeconds : 0;
-		// Planning and estimating turns have equal policy-owned ceilings. Historical task
-		// calibration does not shrink them, but constrained supply may shorten a turn as long
-		// as the node's actual viable minimum still fits.
+		// Estimates size a maximum attempt; positive available supply may shorten it.
 		const allocation = calculateAssignmentAllocation({ estimate: allocationEstimate,
 			measurements: planningTurn ? [] : allocationInputs.measurements,
 			observedViabilityFloor: isProposalGovernanceReview(candidate.node),
 			constraints: [{ id: 'execution-window', remainingSeconds: availableSeconds },
-				{ id: 'utc-day-window', remainingSeconds: Math.max(0, (utcDayEnd - Date.parse(input.now)) / 1000 - preparationSeconds) },
+				{ id: 'utc-day-window', remainingSeconds: Math.max(0, (utcDayEnd - Date.parse(input.now)) / 1000) },
 				{ id: 'model-day', remainingSeconds: remaining(limits.dailyActiveSecondsLimit, observation.modelUsage) },
 				{ id: 'capability-day', remainingSeconds: remaining(capabilityLimits.dailyActiveSecondsLimit, observation.capabilityUsage[capability]) }, ...allocationInputs.constraints],
-			providerMinimumSeconds: capabilityLimits.minimumAssignmentSeconds,
 			providerMaximumSeconds: capabilityLimits.maximumAssignmentSeconds,
 			...(planningTurn ? { planningTurnMaximumSeconds: appliedPlan.policySnapshot.planningTurnMaximumSeconds } : {}) });
 		return [{ selected, allocation, allocationInputs }];
 	});
 	const admitted = considered.find(({ allocation }) => allocation.admitted);
 	if (!admitted) throw new CapacityGovernanceError('capacity_assignment_allocation_deferred',
-		'The remaining execution window cannot fit the viable task minimum.', 409,
+		'No positive active-time allocation remains in the execution window or provider supply.', 409,
 		{ nodeId: candidate.node.id, providers: considered.map(({ selected, allocation }) => ({ providerId: selected.provider.id, allocation })) });
 	const { selected, allocation, allocationInputs } = admitted;
 	const limits = selected.provider.accountingLimits!;

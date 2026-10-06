@@ -1,0 +1,8 @@
+schemaVersion: treeseed.scene/v1
+id: api.golden.recovery-isolation
+title: Isolated terminal workday recovery
+scope: local-component-tests
+workflow:
+  - id: recovery-isolation
+    action: { verifier: api.golden.recovery-isolation }
+    expect: { status: passed }

@@ -1,0 +1,23 @@
+schemaVersion: treeseed.scene/v1
+id: api.golden.discussion-binding
+title: Exact discussion admission binding
+scope: local-component-tests
+workflow:
+  - id: admitted-discussion-binding
+    action: { verifier: api.golden.admitted-discussion-binding }
+    expect: { status: passed }
+  - id: discussion-binding-foreign-team
+    action: { verifier: api.golden.discussion-binding-foreign-team }
+    expect: { status: passed }
+  - id: discussion-binding-wrong-reservation
+    action: { verifier: api.golden.discussion-binding-wrong-reservation }
+    expect: { status: passed }
+  - id: discussion-binding-wrong-invocation
+    action: { verifier: api.golden.discussion-binding-wrong-invocation }
+    expect: { status: passed }
+  - id: discussion-binding-terminal
+    action: { verifier: api.golden.discussion-binding-terminal }
+    expect: { status: passed }
+  - id: discussion-binding-bound-other
+    action: { verifier: api.golden.discussion-binding-bound-other }
+    expect: { status: passed }

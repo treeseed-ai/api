@@ -1,9 +1,11 @@
-import { appliedWorkdaySchema, assignmentResultSchema, compilePlanningRounds, workdayPhase, type AppliedWorkday } from '@treeseed/sdk/agent-capacity';
+import { appliedWorkdaySchema, assignmentResultSchema, compilePlanningRounds, workdayPlanningEndsAt, type AppliedWorkday } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import { workdayParticipants } from '../../../../policy/execution/workday-participants.ts';
 import { hasCompleteExecutablePlan, readExactProposal } from '../../../../../governance/executable-proposal.ts';
 import { reconcileAssignmentContent } from '../../assignments/lifecycle/assignment-content-readback.ts';
+import { runtimeWorkdayPhase } from '../../../build/ready-execution-node.ts';
+import { CapacityGovernanceError } from '../../../../database.ts';
 
 type Row = Record<string, unknown>;
 const terminalNodeStates = new Set(['completed', 'failed', 'cancelled', 'stale']);
@@ -27,8 +29,24 @@ async function completedReportRefs(store: CapacityGovernanceDatabase, run: Durab
 }
 
 async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: DurableCapacityWorkdayRun, plan: AppliedWorkday) {
-	const sources = { ...record(run.parameters.planningSourceByProjectId) };
-	const proposalsByProjectId: Record<string, Row> = {};
+	const selectedProposalIds = [...new Set(Array.isArray(run.parameters.proposalIds)
+		? run.parameters.proposalIds.filter((id): id is string => typeof id === 'string' && Boolean(id)) : [])];
+	const decisionIds = [...new Set(Array.isArray(run.parameters.decisionIds)
+		? run.parameters.decisionIds.filter((id): id is string => typeof id === 'string' && Boolean(id)) : [])];
+	const decisions = decisionIds.length ? await store.all(`SELECT id,proposal_id FROM governance_decisions
+		WHERE team_id=? AND id IN (${decisionIds.map(() => '?').join(',')})`, [run.teamId, ...decisionIds]) : [];
+	if (decisions.length !== decisionIds.length || decisions.some(decision => !decision.proposal_id)) {
+		throw new CapacityGovernanceError('workday_planning_decision_scope_invalid',
+			'Every selected decision must resolve to a proposal in this team.', 409);
+	}
+	// Derive scope from the existing decision records, never widen an explicit
+	// decision-only workday into autonomous discovery or copy another authority.
+	const scopedProposalIds = [...new Set([...selectedProposalIds, ...decisions.map(decision => String(decision.proposal_id))])];
+	const selected = new Set(scopedProposalIds);
+	const sources = Object.fromEntries(Object.entries(record(run.parameters.planningSourceByProposalId))
+		.filter(([id]) => !selected.size || selected.has(id)));
+	const proposalsByProjectId: Record<string, Row[]> = {};
+	let hasPlanningProposals = false;
 	const first = plan.planningRounds[0]!;
 	const prefix = `planning:${plan.id}:${first.round}:`;
 	const initialAgentIds = first.assignmentIds.map((id) => id.slice(prefix.length));
@@ -36,46 +54,37 @@ async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: 
 	const projectIds = Array.isArray(run.parameters.scheduledProjectIds) ? run.parameters.scheduledProjectIds : [];
 	for (const projectId of projectIds) {
 		if (typeof projectId !== 'string') continue;
-		const existing = record(sources[projectId]);
-		if (typeof existing.id === 'string') {
-			const proposal = await store.getGovernanceProposal(existing.id);
-			if (!proposal) throw new Error(`planning_proposal_missing:${projectId}`);
-			// The persisted source is the exact authority for the round that just
-			// finished. Successive rounds must advance to the proposal's newly
-			// committed exact ref so completed estimates are not regenerated from
-			// the original draft.
-			const current = await readExactProposal(store, proposal);
-			sources[projectId] = current.ref;
-			proposalsByProjectId[projectId] = current.definition;
-			continue;
-		}
 		const candidates = await store.all(`SELECT * FROM governance_proposals WHERE team_id=? AND project_id=?
-			AND status IN ('draft','submitted','open','voting') ORDER BY id LIMIT 101`, [run.teamId, projectId]);
+			AND status IN ('draft','submitted','open','voting')
+			${selected.size ? `AND id IN (${scopedProposalIds.map(() => '?').join(',')})` : ''}
+			ORDER BY id LIMIT 101`, [run.teamId, projectId, ...scopedProposalIds]);
 		if (candidates.length > 100) throw new Error(`planning_proposal_inventory_too_large:${projectId}`);
-		const executable: Array<Awaited<ReturnType<typeof readExactProposal>>> = [];
+		hasPlanningProposals ||= candidates.length > 0;
+		proposalsByProjectId[projectId] = [];
 		for (const proposal of candidates) {
-			try { executable.push(await readExactProposal(store, proposal)); }
+			try {
+				const exact = await readExactProposal(store, proposal);
+				const proposalId = String(exact.definition.id);
+				sources[proposalId] = exact.ref;
+				proposalsByProjectId[projectId].push(exact.definition);
+			}
 			catch (error) {
 				if ((error as { code?: unknown })?.code !== 'proposal_execution_plan_invalid') throw error;
 			}
 		}
-		if (executable.length > 1) throw new Error(`planning_proposal_ambiguous:${projectId}`);
-		const exact = executable[0];
-		if (!exact) continue;
-		sources[projectId] = exact.ref;
-		proposalsByProjectId[projectId] = exact.definition;
 	}
 	const proposalsNeedingEstimates = Object.fromEntries(Object.entries(proposalsByProjectId)
-		.filter(([, proposal]) => !hasCompleteExecutablePlan(proposal) && proposal.status !== 'withdrawn'));
-	const estimators = Object.keys(proposalsNeedingEstimates).length
+		.map(([projectId, proposals]) => [projectId, proposals.filter((proposal) =>
+			!hasCompleteExecutablePlan(proposal) && proposal.status !== 'withdrawn')]));
+	const estimators = Object.values(proposalsNeedingEstimates).some((proposals) => proposals.length)
 		? workdayParticipants({ ...run.parameters, proposalsByProjectId: proposalsNeedingEstimates })
 			.filter((participant) => participant.activity === 'estimating' && projectIds.includes(participant.projectId))
 			.map((participant) => participant.id) : [];
-	const proposalsReady = Object.keys(proposalsByProjectId).length > 0
-		&& Object.values(proposalsByProjectId).every((proposal) => hasCompleteExecutablePlan(proposal)
-			|| proposal.status === 'withdrawn');
-	return { sources, proposalsReady,
-		agentIds: [...new Set([...(planningAgentIds.length ? planningAgentIds : initialAgentIds), ...estimators])].sort() };
+	return { sources, proposalIds: selectedProposalIds.sort(),
+		// Terminal explicit scope is not autonomous proposal discovery. Keep the
+		// initial phase window, but do not repeat already-decided planning work.
+		agentIds: selected.size && !hasPlanningProposals ? []
+			: [...new Set([...(planningAgentIds.length ? planningAgentIds : initialAgentIds), ...estimators])].sort() };
 }
 
 function advanceRounds(plan: AppliedWorkday, states: Map<string, string>, now: string): AppliedWorkday {
@@ -102,19 +111,21 @@ export async function advanceLivingWorkday(store: CapacityGovernanceDatabase & {
 	const states = new Map(nodeRows.map((row) => [String(row.id), String(row.status)]));
 	let next = advanceRounds(plan, states, now);
 	if (next.state === 'planned') next = { ...next, state: 'active', activatedAt: next.activatedAt ?? now };
-	if (!requestClose && next.state === 'active' && workdayPhase(next, now) === 'planning'
+	// Do not create another full planning turn in the tail of its authority.
+	// After the initial phase, fluid planning uses the unchanged workday end.
+	const planningEnd = Date.parse(workdayPlanningEndsAt(next));
+	const planningWindowEnd = Date.parse(now) < planningEnd ? planningEnd : Date.parse(next.endsAt);
+	if (!requestClose && next.state === 'active' && await runtimeWorkdayPhase(store, run, now) === 'planning'
+		&& planningWindowEnd - Date.parse(now) >= next.policySnapshot.planningTurnMaximumSeconds * 1_000
 		&& next.planningRounds.length && next.planningRounds.every((round) => round.state === 'complete')) {
-		const { sources, proposalsReady, agentIds } = await nextPlanningParticipants(store, run, next);
-		// Two complete cycles prove that every participant saw and could respond to the
-		// first round. Once selected proposals are content-ready, governance review is
-		// the next graph work; opening more planning rounds would compete with that gate.
-		if (next.planningRounds.length < 2 || !proposalsReady) {
+		const { sources, proposalIds, agentIds } = await nextPlanningParticipants(store, run, next);
+		if (agentIds.length) {
 			const round = next.planningRounds.at(-1)!.round + 1;
 			const turns = compilePlanningRounds(next.id, agentIds, next.policySnapshot.planningTurnMaximumSeconds, round);
 			next = { ...next, planningRounds: [...next.planningRounds, { round, state: 'active',
 				assignmentIds: turns.map((turn) => turn.id), startedAt: now }] };
 		}
-		run = { ...run, parameters: { ...run.parameters, planningSourceByProjectId: sources } };
+		run = { ...run, parameters: { ...run.parameters, planningSourceByProposalId: sources, proposalIds } };
 	}
 	if (next.state === 'active' && (requestClose || Date.parse(now) >= Date.parse(next.endsAt))) {
 		next = { ...next, state: 'closing', closingAt: next.closingAt ?? now };
@@ -129,22 +140,10 @@ export async function advanceLivingWorkday(store: CapacityGovernanceDatabase & {
 	}
 	if (next.state === 'closing') {
 		const reports = nodeRows.filter((row) => row.kind === 'reporting');
-		const [reservations, completionPredecessors] = await Promise.all([
-			store.all('SELECT state FROM capacity_reservations WHERE team_id=? AND work_day_id=?', [run.teamId, run.id]),
-			store.all(`SELECT predecessor.status FROM execution_nodes condition
-				JOIN execution_edges edge ON edge.team_id=condition.team_id AND edge.to_node_id=condition.id
-					AND edge.graph_revision_removed IS NULL
-				JOIN execution_nodes predecessor ON predecessor.team_id=edge.team_id AND predecessor.id=edge.from_node_id
-				WHERE condition.team_id=? AND condition.workday_id=? AND condition.kind='condition'`, [run.teamId, run.id]),
-		]);
+		const reservations = await store.all('SELECT state FROM capacity_reservations WHERE team_id=? AND work_day_id=?', [run.teamId, run.id]);
 		const reservationsSettled = reservations.every((row) => terminalReservationStates.has(String(row.state)));
-		const completionIncomplete = completionPredecessors.some((row) => String(row.status) !== 'completed');
-		if (completionIncomplete && reservationsSettled) {
-			next = { ...next, state: 'ended', endedAt: next.endedAt ?? now };
-			status = 'failed'; completedAt = completedAt ?? now;
-		}
 		if (reports.length > 0 && reports.every((row) => terminalNodeStates.has(String(row.status)))
-			&& reservationsSettled && !completionIncomplete) {
+			&& reservationsSettled) {
 			next = { ...next, state: 'ended', endedAt: next.endedAt ?? now };
 			const references = await completedReportRefs(store, run, reports);
 			status = references ? 'completed' : 'failed';

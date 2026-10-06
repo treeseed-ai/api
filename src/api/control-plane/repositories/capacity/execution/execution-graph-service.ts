@@ -1,13 +1,7 @@
 import { applyOperationalState, recoverIncompleteReviewCycles, reviewCycleLimitReached, recoverInterruptedGovernanceReviews,
 	recoverableGovernanceReviewAttemptHistory, stable, digest, record, text, type TeamGraph } from './execution-graph-state.ts';
-import {
-	graphRevisionSchema,
-	validateAgentDefinitionModel,
-	type AgentDefinition,
-	type ExecutionEdge,
-	type ExecutionNode,
-	type GraphRevision,
-} from '@treeseed/sdk/agent-capacity';
+import { graphRevisionSchema, validateAgentDefinitionModel,
+	type AgentDefinition, type ExecutionEdge, type ExecutionNode, type GraphRevision } from '@treeseed/sdk/agent-capacity';
 import { projectTeamExecutionGraph } from '../../../../capacity/policy/execution/execution-graph-projector.ts';
 import { projectActiveWorkdays } from '../../../../capacity/policy/execution/workday-execution-projector.ts';
 import { projectCommunicationInvocations } from '../../../../capacity/policy/execution/communication-execution-projector.ts';
@@ -17,6 +11,7 @@ import { readExactProposal } from '../../../../governance/executable-proposal.ts
 import { authorizeCapacityTeam, type CapacityPrincipal } from '../capacity-authorization.ts';
 import { CapacityOperationError } from '../capacity-operation-error.ts';
 import { decodeExecutionEdge, decodeExecutionNode } from './execution-graph-storage.ts';
+import { workdayContinuationHistory, assignmentBelongsToRun } from '../../../../capacity/services/capacity/workdays/scheduling/workday-continuation.ts';
 
 type Row = Record<string, unknown>;
 const array = (value: unknown): unknown[] => {
@@ -70,22 +65,17 @@ export function simulationRunBySelection(workdays: readonly { id: string; execut
 	}
 	return selected;
 }
-export const simulationRunByDecision = (workdays: readonly { id: string; executionMode?: string; parameters: Row }[]) =>
-	simulationRunBySelection(workdays, 'decisionIds');
+export const simulationRunByDecision = (workdays: readonly { id: string; executionMode?: string; parameters: Row }[]) => simulationRunBySelection(workdays, 'decisionIds');
 export function simulationRunForNode(node: ExecutionNode, byDecision: ReadonlyMap<string, string>, byProposal: ReadonlyMap<string, string>): string {
 	const decisionId = node.authorityRefs?.find((reference) => reference.model === 'decision')?.id;
 	const selectedDecision = decisionId ? byDecision.get(decisionId) ?? '' : '';
-	// A proposal Reviewer runs before a decision exists. Its explicit proposal
-	// selection is already authoritative for this simulation workday.
 	const selectedProposal = byProposal.get(node.sourceRef.id) ?? '';
 	if (selectedDecision && selectedProposal && selectedDecision !== selectedProposal) throw new CapacityOperationError(409,
 		'execution_simulation_selection_overlap', 'The proposal and decision belong to different simultaneous simulations.');
 	return selectedDecision || selectedProposal;
 }
 async function loadGraphSource<T>(source: string, loader: () => Promise<T>): Promise<T> {
-	try {
-		return await loader();
-	} catch (error) {
+	try { return await loader(); } catch (error) {
 		if (error instanceof CapacityOperationError) throw error;
 		const detail = error instanceof Error ? error.message.replace(/\s+/g, ' ').trim().slice(0, 500) : 'unknown source failure';
 		throw new CapacityOperationError(500, `execution_graph_${source}_unavailable`,
@@ -133,23 +123,26 @@ async function loadActiveWorkdays(store: any, teamId: string) {
 			executionMode: text(row.execution_mode) }] : [];
 	});
 	return Promise.all(sources.map(async (source: { id: string; teamId: string; parameters: Row }) => {
-		if (!Object.keys(record(source.parameters.planningSourceByProjectId)).length) return source;
-		const proposalsByProjectId: Record<string, Row> = {};
-		const proposalStatusesByProjectId: Record<string, string> = {};
-		for (const [projectId, value] of Object.entries(record(source.parameters.planningSourceByProjectId))) {
+		if (!Object.keys(record(source.parameters.planningSourceByProposalId)).length) return source;
+		const proposalsByProjectId: Record<string, Row[]> = {};
+		const proposalStatusesByProposalId: Record<string, string> = {};
+		for (const [proposalId, value] of Object.entries(record(source.parameters.planningSourceByProposalId))) {
 			const reference = record(value);
-			const proposal = await store.getGovernanceProposal(text(reference.id));
+			if (text(reference.id) !== proposalId) throw new CapacityOperationError(409,
+				'estimating_proposal_scope_invalid', 'Estimating proposal identity differs from its exact source.');
+			const proposal = await store.getGovernanceProposal(proposalId);
+			const projectId = text(proposal?.projectId ?? proposal?.project_id);
 			if (!proposal || text(proposal.teamId ?? proposal.team_id) !== teamId
-				|| text(proposal.projectId ?? proposal.project_id) !== projectId) throw new CapacityOperationError(
+				|| !array(source.parameters.scheduledProjectIds).includes(projectId)) throw new CapacityOperationError(
 				409, 'estimating_proposal_scope_invalid', 'Estimating requires the selected team and project proposal.');
 			const exact = await readExactProposal(store, proposal, reference as import('@treeseed/sdk/agent-capacity').ExactEntityReference);
 			if (stable(exact.ref) !== stable(reference)) throw new CapacityOperationError(
 				409, 'estimating_proposal_source_moved', 'The frozen estimating proposal revision changed.');
-			proposalsByProjectId[projectId] = exact.definition;
-			proposalStatusesByProjectId[projectId] = text(proposal.status);
+			(proposalsByProjectId[projectId] ??= []).push(exact.definition);
+			proposalStatusesByProposalId[proposalId] = text(proposal.status);
 		}
 		// Transient exact TreeDX reads, never another persisted plan authority.
-		return { ...source, proposalsByProjectId, proposalStatusesByProjectId };
+		return { ...source, proposalsByProjectId, proposalStatusesByProposalId };
 	}));
 }
 
@@ -191,13 +184,10 @@ function graphChanges(current: TeamGraph, desired: TeamGraph) {
 	};
 }
 
-function hasChanges(changes: ReturnType<typeof graphChanges>): boolean {
-	return Object.values(changes).some((ids) => ids.length > 0);
-}
+function hasChanges(changes: ReturnType<typeof graphChanges>): boolean { return Object.values(changes).some((ids) => ids.length > 0); }
 
 function visibleGraph(graph: TeamGraph, query: Row): TeamGraph {
-	const projectId = text(query.projectId);
-	const decisionId = text(query.decisionId);
+	const projectId = text(query.projectId), decisionId = text(query.decisionId);
 	if (!projectId && !decisionId) return graph;
 	const nodes = graph.nodes.filter((node) => (!projectId || node.projectId === projectId)
 		&& (!decisionId || node.authorityRefs?.some((reference) => reference.model === 'decision' && reference.id === decisionId)));
@@ -208,7 +198,8 @@ function visibleGraph(graph: TeamGraph, query: Row): TeamGraph {
 export async function persistExecutionGraph(store: any, graph: TeamGraph, current: TeamGraph, revisionRecord: GraphRevision) {
 	const now = revisionRecord.createdAt;
 	const operations: Array<{ query: string; params: unknown[] }> = [{
-		query: 'SELECT id FROM execution_nodes WHERE team_id=? ORDER BY id FOR UPDATE', params: [graph.teamId],
+		query: 'SELECT id FROM teams WHERE id=? FOR UPDATE', params: [graph.teamId],
+	}, { query: 'SELECT id FROM execution_nodes WHERE team_id=? ORDER BY id FOR UPDATE', params: [graph.teamId],
 	}, {
 		query: `INSERT INTO execution_graph_revisions
 			(team_id,revision,rule_revision,changed_source_refs_json,graph_digest,changes_json,created_at)
@@ -288,17 +279,17 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 		loadGraphSource('assignments', () => store.all(`SELECT DISTINCT execution_node_id,work_day_id FROM capacity_provider_assignments
 			WHERE team_id=? AND execution_node_id IS NOT NULL AND status IN ('pending','leased','running','returned')`, [teamId])),
 		loadGraphSource('assignment_history', () => store.all(`SELECT
-			execution_node_id,execution_node_revision,work_day_id,status,lifecycle_output_json,metadata_json,
+			execution_node_id,execution_node_revision,work_day_id,status,lifecycle_output_json,metadata_json,assignment_attempt_json,
 			COALESCE(completed_at,failed_at,updated_at) AS terminal_at FROM capacity_provider_assignments
 			WHERE team_id=? AND execution_node_id IS NOT NULL AND status IN ('completed','failed','expired','cancelled')
 			ORDER BY execution_node_id,execution_node_revision DESC,
 				CASE WHEN status='completed' THEN 0 ELSE 1 END,
 				COALESCE(completed_at,failed_at,updated_at) DESC,id DESC`, [teamId])),
-		loadGraphSource('review_cycle_history', () => store.all(`SELECT execution_node_id,work_day_id,COUNT(*) AS count
+		loadGraphSource('review_cycle_history', () => store.all(`SELECT execution_node_id,work_day_id,assignment_attempt_json,1 AS count
 			FROM capacity_provider_assignments WHERE team_id=? AND status='completed'
 			AND assignment_result_json IS NOT NULL
 			AND lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='request-changes'
-			AND execution_node_id IS NOT NULL GROUP BY execution_node_id,work_day_id`, [teamId])),
+			AND execution_node_id IS NOT NULL`, [teamId])),
 	]);
 	if (!sources.length && !workdays.length && !communications.length && !current.nodes.length) return body.plan === true
 		? { teamId, baseRevision: current.revision, desiredRevision: current.revision, desiredDigest: current.digest, changes: { added: [], changed: [], completed: [], blocked: [], stale: [], removedEdges: [], addedEdges: [] } }
@@ -310,6 +301,11 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 	const activeSimulationByDecision = simulationRunByDecision(workdays);
 	const activeSimulationByProposal = simulationRunBySelection(workdays, 'proposalIds');
 	const decisionRun = (node: ExecutionNode) => simulationRunForNode(node, activeSimulationByDecision, activeSimulationByProposal);
+	const continuationByRun = new Map<string, Set<string>>();
+	for (const run of workdays) if (text(run.parameters.continueFromWorkdayId)) {
+		const history = await workdayContinuationHistory(store, teamId, text(run.parameters.continueFromWorkdayId), run.executionMode);
+		continuationByRun.set(run.id, new Set(history.map(row => text(row.id))));
+	}
 	if (proposalProjection) proposalProjection.nodes = proposalProjection.nodes.map((node) => {
 		const runId = decisionRun(node);
 		return runId ? { ...node, workdayId: runId } : node;
@@ -333,14 +329,18 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 	const nodeById = new Map(base.nodes.map((node) => [node.id, node]));
 	const belongsToCurrentAttempt = (row: Row) => {
 		const node = nodeById.get(text(row.execution_node_id));
-		return !node?.workdayId || !decisionRun(node) || text(row.work_day_id) === node.workdayId;
+		return assignmentBelongsToRun(row, node, node ? decisionRun(node) : '', continuationByRun.get(node?.workdayId ?? '') ?? new Set());
 	};
 	const eligibleTerminalRows = (terminalAssignmentRows as Row[])
-		.filter((row) => belongsToCurrentAttempt(row) && !terminalAssignmentWasRequeued(row));
+		.filter((row) => belongsToCurrentAttempt(row) && !terminalAssignmentWasRequeued(row)
+			&& (text(row.status) === 'completed' || !continuationByRun.get(nodeById.get(text(row.execution_node_id))?.workdayId ?? '')?.has(text(row.work_day_id))));
 	const effectiveTerminalAssignmentRows = selectTerminalAssignmentRows(eligibleTerminalRows, base.nodes, base.edges);
 	const terminalByNode = new Map(effectiveTerminalAssignmentRows.map((row: Row) => [text(row.execution_node_id), row]));
-	const completedReviewCycles = new Map((reviewCycleRows as Row[]).filter(belongsToCurrentAttempt)
-		.map((row: Row) => [text(row.execution_node_id), integer(row.count)]));
+	const completedReviewCycles = new Map<string, number>();
+	for (const row of (reviewCycleRows as Row[]).filter(belongsToCurrentAttempt)) {
+		const id = text(row.execution_node_id);
+		completedReviewCycles.set(id, (completedReviewCycles.get(id) ?? 0) + integer(row.count));
+	}
 	const latestRequestChangesReviewers = new Set(effectiveTerminalAssignmentRows.filter((row: Row) =>
 		text(row.status) === 'completed'
 		&& text(record(record(row.lifecycle_output_json).activityCompletion).reviewDisposition) === 'request-changes')
@@ -392,7 +392,7 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 		}]];
 	}));
 	const desired = applyOperationalState(current, base, current.revision + 1,
-		new Set((activeAssignmentRows as Row[]).filter(belongsToCurrentAttempt).map((row: Row) => text(row.execution_node_id)).filter(Boolean)), terminalStatuses);
+		new Set((activeAssignmentRows as Row[]).filter(belongsToCurrentAttempt).map((row: Row) => text(row.execution_node_id)).filter(Boolean)), terminalStatuses, continuationByRun);
 	const recoverableReviewers = desired.nodes.filter((node) => node.pairRole === 'reviewer' && node.status === 'failed');
 	if (recoverableReviewers.length) {
 		recoverIncompleteReviewCycles(desired, completedReviewCycles, latestRequestChangesReviewers, revision);

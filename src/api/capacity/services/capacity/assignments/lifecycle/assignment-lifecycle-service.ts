@@ -11,15 +11,15 @@ import { evaluateProviderAssignmentLeaseAuthority,type ProviderLeasePrincipal } 
 import { settleCapacityReservationExactlyOnce } from '../../accounting/settlement-service.ts';
 import { validateAssignmentResultCompletion } from '../context/assignment-result-completion.ts';
 import { verifyAssignmentContent, recordAssignmentContentIntegration } from './assignment-content-readback.ts';
-import { resolveProposalReviewDisposition, resolveReviewDisposition } from '../context/review-result.ts';
-import { livingExecutionLifecycleOperations } from './execution/living-execution-lifecycle.ts';
+import { resolveReviewDisposition } from '../context/review-result.ts';
+import { commitLivingExecutionLifecycle } from './execution/living-execution-lifecycle.ts';
 import type { ProviderAssignmentExplanationWrite } from '../observability/assignment-explanation-service.ts';
 import { integrateAssignmentEstimate } from '../planning/estimates/integration.ts';
 import { normalizeProviderAssignmentLeaseSeconds } from './assignment-lease-service.ts';
 import { terminalAssignmentAuthority } from './assignment-terminal-authority.ts';
 import { composeAssignmentLifecycleOutput } from './assignment-lifecycle-output.ts';
 import { terminalizeOperationHandoff } from '../handoffs/operation-handoff-lifecycle-service.ts';
-import { archivedConversationCancellation } from './assignment-failure-policy.ts';
+import { archivedConversationCancellation, planningBoundaryCancellation } from './assignment-failure-policy.ts';
 import { assertAssignmentCompletionEvidence } from './completion/assignment-completion-evidence.ts';
 import { quarantineContextOverflowOffer } from './context-capacity/overflow.ts';
 import { optionalFiniteNumber,record,terminalPerformance,type ExtendedProviderAssignmentLifecycleRequest,type JsonRecord } from './completion/assignment-terminal-performance.ts';
@@ -35,24 +35,6 @@ export interface ProviderAssignmentLifecycleMutationResult {
 	assignment: DurableProviderAssignment; leaseToken: string | null; leaseSeconds: number | null;
 }
 
-export async function batchAssignmentGraphTransition(input: {
-	operations: Array<{ query: string; params?: unknown[] }>;
-	graphOperationCount: number;
-	batch: (operations: Array<{ query: string; params?: unknown[] }>) => Promise<unknown>;
-	rebuildGraphOperations: () => Promise<Array<{ query: string; params?: unknown[] }>>;
-}): Promise<void> {
-	for (let attempt = 0; ; attempt += 1) {
-		try { await input.batch(input.operations); return; }
-		catch (error) {
-			const conflict = error as { code?: unknown; constraint?: unknown };
-			if (attempt >= 3 || conflict.code !== '23505'
-				|| conflict.constraint !== 'execution_graph_revisions_pkey') throw error;
-			const refreshed = await input.rebuildGraphOperations();
-			input.operations.splice(1, input.graphOperationCount, ...refreshed);
-			input.graphOperationCount = refreshed.length;
-		}
-	}
-}
 async function assertRequiredSignals(database: CapacityGovernanceDatabase, assignment: DurableProviderAssignment) {
 	const required = Array.isArray(record(assignment.allowedOutputs).publishedSignals)
 		? [...new Set((record(assignment.allowedOutputs).publishedSignals as unknown[]).map(String).map((value) => value.replace(/_/gu, '-')).filter(Boolean))] : [];
@@ -286,9 +268,6 @@ export class ProviderAssignmentLifecycleService {
 		const reviewDisposition = assignmentResult
 			? await resolveReviewDisposition(this.store, assignment, assignmentResult)
 			: null;
-		const proposalReview = assignmentResult
-			? await resolveProposalReviewDisposition(this.store, assignment, assignmentResult)
-			: null;
 		const completed = await this.transition(principal, assignment, terminalInput, now, {
 			status: 'completed',
 			timestampColumn: 'completed_at',
@@ -297,31 +276,8 @@ export class ProviderAssignmentLifecycleService {
 			assignmentResult,
 			reviewDisposition,
 		});
-		const reviewedProposalId = assignment.proposalId ?? (assignment.assignmentAttempt?.sourceRef.model === 'proposal'
-			? assignment.assignmentAttempt.sourceRef.id : null);
 		if (completed) await recordAssignmentContentIntegration(this.store, assignment, assignmentResult, contentReferences);
-		if (completed && proposalReview && reviewedProposalId) {
-			await this.store.recordGovernanceEvent({
-				eventType: 'proposal.discussion', actorType: 'agent', actorId: assignment.agentId ?? null,
-				teamId: assignment.teamId, projectId: assignment.projectId, proposalId: reviewedProposalId,
-				proposalVersion: assignment.assignmentAttempt?.sourceRef.revision ?? null,
-				nextState: proposalReview.disposition,
-				message: assignmentResult?.summary ?? null,
-				evidence: {
-					kind: proposalReview.disposition === 'approved' ? 'support' : 'concern',
-					feedbackStatus: proposalReview.disposition === 'approved' ? 'resolved' : 'open',
-					proposalVersion: assignment.assignmentAttempt?.sourceRef.revision,
-					decisionRef: proposalReview.sourceRef,
-				},
-			});
-			if (proposalReview.disposition !== 'deferred') await this.store.evaluateGovernanceProposal(reviewedProposalId, {
-				expectedProposalVersion: assignment.assignmentAttempt?.sourceRef.revision,
-				adminDecision: proposalReview.disposition === 'approved' ? 'approved' : 'rejected',
-				actorType: 'agent', actorId: assignment.agentId ?? null,
-			});
-		}
-		if (completed && assignmentResult && (assignment.assignmentAttempt?.effectiveProfile.activity === 'estimating'
-			|| proposalReview)) await reconcileExecutionGraph(this.store, assignment.teamId, {},
+		if (completed && assignmentResult && assignment.assignmentAttempt?.effectiveProfile.activity === 'estimating') await reconcileExecutionGraph(this.store, assignment.teamId, {},
 			`assignment-result:${assignment.id}:${assignment.stateVersion}`);
 		if (completed && assignment.invocationId) {
 			await this.store.run(`UPDATE agent_invocation_requests SET assignment_id=?,blocking_state_json=?,updated_at=?
@@ -343,6 +299,7 @@ export class ProviderAssignmentLifecycleService {
 		});
 		await this.store.ensureInitialized();
 		return capacityTransaction(this.store, async database => {
+			await database.run('SELECT id FROM teams WHERE id=? FOR UPDATE', [principal.teamId]);
 			await database.run('SELECT id FROM capacity_provider_assignments WHERE id=? AND team_id=? FOR UPDATE', [assignmentId, principal.teamId]);
 			const repository = new ProviderAssignmentRepository(database);
 			const evidence = new CapacityRuntimeEvidenceRepository(database);
@@ -362,7 +319,15 @@ export class ProviderAssignmentLifecycleService {
 		// Expiration ends productive authority, not the current owner's obligation
 		// to report its terminal timeout. The row lock prevents recovery taking it.
 		const timeout = input.code === 'assignment_timeout';
-		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now, timeout)) return null;
+		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now, true)) return null;
+		const phaseCancelled = await planningBoundaryCancellation(this.store, assignment, input, now);
+		if (!timeout && !phaseCancelled && !activeLeaseOwnedBy(assignment, principal, input.leaseToken, now)) return null;
+		if (phaseCancelled) {
+			const reason = 'Unfinished planning turn cancelled at its authoritative phase boundary.';
+			input = { ...input, code: 'planning_boundary_cancelled', reason,
+				...(input.performance ? { performance: { ...input.performance, disposition: 'cancelled', reason } } : {}) };
+			failure = classifyCapacityFailure(input);
+		}
 		if (input.fallbackOutput) await this.persistFallback(assignment, {
 			...input.fallbackOutput,
 			status: record(input.fallbackOutput).status ?? 'suppressed',
@@ -387,13 +352,13 @@ export class ProviderAssignmentLifecycleService {
 		}
 		const archived=archivedConversationCancellation(assignment,input);
 		return this.transition(principal, assignment, input, now, {
-			status: archived?'cancelled':'failed',
+			status: archived || phaseCancelled ? 'cancelled' : 'failed',
 			timestampColumn: 'failed_at',
 			defaultCode: archived?'discussion_archived':'provider_assignment_failed',
 			defaultReason: archived?'The source Discussion was archived.':'Provider assignment failed.',
 			metadata: { ...record(assignment.metadata), failureClassification: failure },
-			allowExpiredLease: timeout,
-		});
+			allowExpiredLease: timeout || phaseCancelled,
+		}, this.store);
 	}
 
 	private async persistFallback(assignment: DurableProviderAssignment, fallbackOutput: JsonRecord): Promise<void> {
@@ -420,6 +385,7 @@ export class ProviderAssignmentLifecycleService {
 			assignmentResult?: AssignmentResult | null;
 			reviewDisposition?: 'approved' | 'request-changes' | null;
 		},
+		transaction?: CapacityGovernanceDatabase,
 	): Promise<ProviderAssignmentLifecycleMutationResult | null> {
 		const transitionMetadata = options.metadata ?? (['completed','failed','cancelled'].includes(options.status)
 			? { ...record(assignment.metadata), operationalState: options.status }
@@ -452,11 +418,6 @@ export class ProviderAssignmentLifecycleService {
 			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ? AND membership_id = ?
 			   AND state_version = ? AND status = 'leased' AND lease_state = 'leased'
 			   AND lease_token = ? ${options.allowExpiredLease ? '' : 'AND (lease_expires_at IS NULL OR lease_expires_at > ?)'} `, params: [options.status, ...params] }];
-		const graphOperations = await livingExecutionLifecycleOperations({ store: this.store, assignment,
-			status: options.status, now, result: options.assignmentResult,
-			returnCode: options.status === 'returned' ? input.code : undefined,
-			reviewDisposition: options.reviewDisposition ?? null });
-		operations.push(...graphOperations);
 		if (['completed','failed','cancelled'].includes(options.status)) {
 			const terminalWorkspace = terminalAssignmentAuthority(assignment, now);
 			operations.push({
@@ -475,16 +436,10 @@ export class ProviderAssignmentLifecycleService {
 				params: [options.status==='cancelled'?'cancelled':'failed',assignment.id, now, JSON.stringify({ code: input.code ?? options.defaultCode, reason: input.reason ?? input.message ?? options.defaultReason }), now, assignment.invocationId, assignment.teamId],
 			});
 		}
-		// Parallel assignment completions can observe the same graph head. The
-		// losing transaction is rolled back by PostgreSQL; recompute its graph
-		// projection against the committed head, preserving the same assignment
-		// transition and exactly-once result.
-		await batchAssignmentGraphTransition({ operations, graphOperationCount: graphOperations.length,
-			batch: (statements) => this.store.batch(statements),
-			rebuildGraphOperations: () => livingExecutionLifecycleOperations({ store: this.store, assignment,
-					status: options.status, now, result: options.assignmentResult,
-					returnCode: options.status === 'returned' ? input.code : undefined,
-					reviewDisposition: options.reviewDisposition ?? null }) });
+		await commitLivingExecutionLifecycle({ store: this.store, assignment,
+			status: options.status, now, result: options.assignmentResult,
+			returnCode: options.status === 'returned' ? input.code : undefined,
+			reviewDisposition: options.reviewDisposition ?? null }, operations, transaction);
 		const transitioned = await this.store.getProviderAssignment(principal.teamId, assignment.id);
 		if (!transitioned || transitioned.stateVersion !== assignment.stateVersion + 1 || transitioned.status !== options.status) return null;
 		if (assignment.operationHandoffId && (options.status === 'completed' || options.status === 'failed')) await terminalizeOperationHandoff(this.store, assignment.operationHandoffId, assignment.id, options.status, now);

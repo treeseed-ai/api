@@ -3,6 +3,225 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: transaction-reprojection
+    action: { verifier: api.golden.transaction-reprojection }
+    expect: { status: passed }
+  - id: transaction-retry-denial
+    action: { verifier: api.golden.transaction-retry-denial }
+    expect: { status: passed }
+  - id: transaction-inherited-denial
+    action: { verifier: api.golden.transaction-inherited-denial }
+    expect: { status: passed }
+  - id: invocation-terminal-returned
+    action: { verifier: api.golden.invocation-terminal-returned }
+    expect: { status: passed }
+  - id: invocation-terminal-failed
+    action: { verifier: api.golden.invocation-terminal-failed }
+    expect: { status: passed }
+  - id: invocation-terminal-cancelled
+    action: { verifier: api.golden.invocation-terminal-cancelled }
+    expect: { status: passed }
+  - id: invocation-terminal-foreign-team
+    action: { verifier: api.golden.invocation-terminal-foreign-team }
+    expect: { status: passed }
+  - id: invocation-terminal-foreign-invocation
+    action: { verifier: api.golden.invocation-terminal-foreign-invocation }
+    expect: { status: passed }
+  - id: invocation-terminal-leased
+    action: { verifier: api.golden.invocation-terminal-leased }
+    expect: { status: passed }
+  - id: progress-postgres-custody
+    action: { verifier: api.golden.progress-postgres-custody }
+    expect: { status: passed }
+  - id: preparation-progress
+    action: { verifier: api.golden.preparation-progress }
+    expect: { status: passed }
+  - id: preparation-no-commit-wait
+    action: { verifier: api.golden.preparation-no-commit-wait }
+    expect: { status: passed }
+  - id: provider-progress-authority
+    action: { verifier: api.golden.provider-progress-authority }
+    expect: { status: passed }
+  - id: provider-terminal-projection
+    action: { verifier: api.golden.provider-terminal-projection }
+    expect: { status: passed }
+  - id: terminal-projection-fatal
+    action: { verifier: api.golden.terminal-projection-fatal }
+    expect: { status: passed }
+  - id: terminal-projection-replay
+    action: { verifier: api.golden.terminal-projection-replay }
+    expect: { status: passed }
+  - id: progress-idempotency
+    action: { verifier: api.golden.progress-idempotency }
+    expect: { status: passed }
+  - id: workday-lifecycle-projection
+    action: { verifier: api.golden.workday-lifecycle-projection }
+    expect: { status: passed }
+  - id: progress-token-denial
+    action: { verifier: api.golden.progress-token-denial }
+    expect: { status: passed }
+  - id: late-planning-round
+    action: { verifier: api.golden.late-planning-round }
+    expect: { status: passed }
+  - id: fluid-planning-window
+    action: { verifier: api.golden.fluid-planning-window }
+    expect: { status: passed }
+  - id: unusable-execution-window
+    action: { verifier: api.golden.unusable-execution-window }
+    expect: { status: passed }
+  - id: short-productive-window
+    action: { verifier: api.golden.short-productive-window }
+    expect: { status: passed }
+  - id: admission-source-custody-leased
+    action: { verifier: api.golden.admission-source-custody-leased }
+    expect: { status: passed }
+  - id: admission-source-custody-pending
+    action: { verifier: api.golden.admission-source-custody-pending }
+    expect: { status: passed }
+  - id: admission-source-custody-completed
+    action: { verifier: api.golden.admission-source-custody-completed }
+    expect: { status: passed }
+  - id: terminal-scoped-planning
+    action: { verifier: api.golden.terminal-scoped-planning }
+    expect: { status: passed }
+  - id: incomplete-scoped-planning
+    action: { verifier: api.golden.incomplete-scoped-planning }
+    expect: { status: passed }
+  - id: reviewed-allocation-history
+    action: { verifier: api.golden.reviewed-allocation-history }
+    expect: { status: passed }
+  - id: expired-allocation-history
+    action: { verifier: api.golden.expired-allocation-history }
+    expect: { status: passed }
+  - id: availability-open-assignment-locks
+    action: { verifier: api.golden.availability-open-assignment-locks }
+    expect: { status: passed }
+  - id: availability-open-reservation-locks
+    action: { verifier: api.golden.availability-open-reservation-locks }
+    expect: { status: passed }
+  - id: availability-assignment-locks
+    action: { verifier: api.golden.availability-assignment-locks }
+    expect: { status: passed }
+  - id: availability-reservation-locks
+    action: { verifier: api.golden.availability-reservation-locks }
+    expect: { status: passed }
+  - id: availability-accounting-serialization
+    action: { verifier: api.golden.availability-accounting-serialization }
+    expect: { status: passed }
+  - id: operator-phase-postgres
+    action: { verifier: api.golden.operator-phase-postgres }
+    expect: { status: passed }
+  - id: operator-phase-closeout
+    action: { verifier: api.golden.operator-phase-closeout }
+    expect: { status: passed }
+  - id: operator-phase-no-fabrication
+    action: { verifier: api.golden.operator-phase-no-fabrication }
+    expect: { status: passed }
+  - id: operator-phase-early-denial
+    action: { verifier: api.golden.operator-phase-early-denial }
+    expect: { status: passed }
+  - id: operator-phase-acting-denial
+    action: { verifier: api.golden.operator-phase-acting-denial }
+    expect: { status: passed }
+  - id: operator-phase-fluid-denial
+    action: { verifier: api.golden.operator-phase-fluid-denial }
+    expect: { status: passed }
+  - id: operator-phase-provider-denial
+    action: { verifier: api.golden.operator-phase-provider-denial }
+    expect: { status: passed }
+  - id: admitted-discussion-binding
+    action: { verifier: api.golden.admitted-discussion-binding }
+    expect: { status: passed }
+  - id: discussion-binding-foreign-team
+    action: { verifier: api.golden.discussion-binding-foreign-team }
+    expect: { status: passed }
+  - id: discussion-binding-wrong-reservation
+    action: { verifier: api.golden.discussion-binding-wrong-reservation }
+    expect: { status: passed }
+  - id: discussion-binding-wrong-invocation
+    action: { verifier: api.golden.discussion-binding-wrong-invocation }
+    expect: { status: passed }
+  - id: discussion-binding-terminal
+    action: { verifier: api.golden.discussion-binding-terminal }
+    expect: { status: passed }
+  - id: discussion-binding-bound-other
+    action: { verifier: api.golden.discussion-binding-bound-other }
+    expect: { status: passed }
+  - id: concurrent-terminal-revisions
+    action: { verifier: api.golden.concurrent-terminal-revisions }
+    expect: { status: passed }
+  - id: phase-before-tick
+    action: { verifier: api.golden.phase-before-tick }
+    expect: { status: passed }
+  - id: phase-after-tick
+    action: { verifier: api.golden.phase-after-tick }
+    expect: { status: passed }
+  - id: phase-task-timeout-denial
+    action: { verifier: api.golden.phase-task-timeout-denial }
+    expect: { status: passed }
+  - id: phase-fluid-planning-denial
+    action: { verifier: api.golden.phase-fluid-planning-denial }
+    expect: { status: passed }
+  - id: phase-authority-denial
+    action: { verifier: api.golden.phase-authority-denial }
+    expect: { status: passed }
+  - id: phase-before-tick-postgres
+    action: { verifier: api.golden.phase-before-tick-postgres }
+    expect: { status: passed }
+  - id: phase-after-tick-postgres
+    action: { verifier: api.golden.phase-after-tick-postgres }
+    expect: { status: passed }
+  - id: phase-real-timeout-postgres
+    action: { verifier: api.golden.phase-real-timeout-postgres }
+    expect: { status: passed }
+  - id: phase-real-overrun-postgres
+    action: { verifier: api.golden.phase-real-overrun-postgres }
+    expect: { status: passed }
+  - id: active-window-production
+    action: { verifier: api.golden.active-window-production }
+    expect: { status: passed }
+  - id: active-window-simulation
+    action: { verifier: api.golden.active-window-simulation }
+    expect: { status: passed }
+  - id: active-window-rollover
+    action: { verifier: api.golden.active-window-rollover }
+    expect: { status: passed }
+  - id: active-window-exhaustion
+    action: { verifier: api.golden.active-window-exhaustion }
+    expect: { status: passed }
+  - id: continuation-history
+    action: { verifier: api.golden.continuation-history }
+    expect: { status: passed }
+  - id: continuation-denial
+    action: { verifier: api.golden.continuation-denial }
+    expect: { status: passed }
+  - id: continuation-freshness
+    action: { verifier: api.golden.continuation-freshness }
+    expect: { status: passed }
+  - id: bounded-planning-node-id
+    action: { verifier: api.golden.bounded-planning-node-id }
+    expect: { status: passed }
+  - id: retired-graph-estimate-migration
+    action: { verifier: api.golden.retired-graph-estimate-migration }
+    expect: { status: passed }
+  - id: early-external-approval
+    action: { verifier: api.golden.early-external-approval }
+    expect: { status: passed }
+  - id: estimate-finalizes-approval
+    action: { verifier: api.golden.estimate-finalizes-approval }
+    expect: { status: passed }
+  - id: fluid-phase
+    action: { verifier: api.golden.fluid-phase }
+    expect: { status: passed }
+  - id: external-approval
+    action: { verifier: api.golden.external-approval }
+    expect: { status: passed }
+  - id: parallel-proposals
+    action: { verifier: api.golden.parallel-proposals }
+    expect: { status: passed }
+  - id: reporter-carry-forward
+    action: { verifier: api.golden.reporter-carry-forward }
+    expect: { status: passed }
   - id: canonical-adapter-headroom
     action: { verifier: api.golden.canonical-adapter-headroom }
     expect: { status: passed }
@@ -26,6 +245,15 @@ workflow:
     expect: { status: passed }
   - id: moving-public-source
     action: { verifier: api.golden.public-moving-source }
+    expect: { status: passed }
+  - id: planning-source-quota
+    action: { verifier: api.golden.planning-source-quota }
+    expect: { status: passed }
+  - id: public-source-custody-failure
+    action: { verifier: api.golden.public-source-custody-failure }
+    expect: { status: passed }
+  - id: public-source-authority-selection
+    action: { verifier: api.golden.public-source-authority-selection }
     expect: { status: passed }
   - id: public-source-pin-denial
     action: { verifier: api.golden.public-source-pin-denial }
@@ -134,6 +362,9 @@ workflow:
     expect: { status: passed }
   - id: restart
     action: { verifier: api.golden.restart }
+    expect: { status: passed }
+  - id: recovery-isolation
+    action: { verifier: api.golden.recovery-isolation }
     expect: { status: passed }
   - id: missing-result
     action: { verifier: api.golden.missing-result }

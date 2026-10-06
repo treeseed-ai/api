@@ -1,7 +1,10 @@
 import {
 	assignmentResultSchema,
 	assignmentAttemptSchema,
+	appliedWorkdaySchema,
 	effectiveActivityProfileSchema,
+	workdayPlanningEndsAt,
+	workdayPhase,
 	validateAgentDefinitionModel,
 	type AssignmentResult,
 	type EffectiveActivityProfile,
@@ -16,6 +19,7 @@ import { CapacityGovernanceError } from '../../database.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
 import { selectAssignmentSourceRepository } from '../capacity/assignments/context/source-repository.ts';
 import { readExactProposal } from '../../../governance/executable-proposal.ts';
+import { workdayLineageSql } from '../capacity/workdays/scheduling/workday-continuation.ts';
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {
@@ -64,6 +68,7 @@ export interface ReadyExecutionNode {
 	graphRevision: number;
 	projectAgentClassId: string;
 	effectiveProfile: EffectiveActivityProfile;
+	projectContentRepositoryId: string;
 	contextRefs: ExactEntityReference[];
 	sourceRepositories: string[];
 	predecessorResults: AssignmentResult[];
@@ -88,13 +93,6 @@ export function executionNodeRunScope(run: Pick<DurableCapacityWorkdayRun, 'id' 
 		return { sql: `node.kind='reporting' AND node.workday_id=?`, parameters: [run.id] };
 	}
 	if (run.parameters.planningOnly === true) {
-		if (proposalIds.length) return {
-			sql: `(node.workday_id=? AND node.kind IN ('planning','estimating','communication','reporting')
-				OR (node.workday_id IS NULL AND node.kind='reviewing' AND node.pair_role IS NULL
-					AND node.source_ref_json::jsonb->>'model'='proposal'
-					AND node.source_ref_json::jsonb->>'id' IN (${proposalIds.map(() => '?').join(',')})))`,
-			parameters: [run.id, ...proposalIds],
-		};
 		return {
 			sql: `node.workday_id=? AND node.kind IN ('planning','estimating','communication','reporting')`,
 			parameters: [run.id],
@@ -105,13 +103,26 @@ export function executionNodeRunScope(run: Pick<DurableCapacityWorkdayRun, 'id' 
 			AND node.source_ref_json::jsonb->>'model'='proposal' AND node.source_ref_json::jsonb->>'id' IN (${proposalIds.map(() => '?').join(',')})))`,
 		parameters: [run.id, ...proposalIds],
 	};
-	return { sql: `(node.workday_id=? OR (node.workday_id IS NULL AND node.kind<>'communication'
-		AND NOT (node.kind='reviewing' AND node.pair_role IS NULL AND node.source_ref_json::jsonb->>'model'='proposal')))`, parameters: [run.id] };
+	return { sql: `(node.workday_id=? OR (node.workday_id IS NULL AND node.kind<>'communication'))`, parameters: [run.id] };
 }
 
-/** Governance review is planning work; paired work-item review is acting work. */
-export function isProposalGovernanceReview(node: Pick<ExecutionNode, 'kind' | 'pairRole' | 'sourceRef'>): boolean {
-	return node.kind === 'reviewing' && node.pairRole === null && node.sourceRef.model === 'proposal';
+/** The phase is derived from current approved graph work, never persisted as a second scheduler state. */
+export async function runtimeWorkdayPhase(store: any, run: DurableCapacityWorkdayRun, now: string) {
+	const plan = appliedWorkdaySchema.parse(run.parameters.appliedPlan);
+	if (Date.parse(now) < Date.parse(workdayPlanningEndsAt(plan)) || Date.parse(now) >= Date.parse(plan.endsAt))
+		return workdayPhase(plan, now, false);
+	const projectIds = array(run.parameters.scheduledProjectIds).map(text).filter(Boolean);
+	if (!projectIds.length || run.parameters.planningOnly === true) return workdayPhase(plan, now, false);
+	const scope = executionNodeRunScope(run);
+	const ready = await store.first(`SELECT node.id FROM execution_nodes node
+		WHERE node.team_id=? AND ${scope.sql} AND node.status IN ('ready','assigned','running')
+		AND node.kind IN ('acting','reviewing') AND node.pair_role IS NOT NULL
+		AND node.project_id IN (${projectIds.map(() => '?').join(',')})
+		AND (node.status IN ('assigned','running') OR NOT EXISTS (SELECT 1 FROM capacity_provider_assignments assignment
+			WHERE assignment.team_id=node.team_id AND assignment.execution_node_id=node.id
+			AND assignment.execution_node_revision=node.node_revision AND assignment.status<>'returned'))
+		LIMIT 1`, [run.teamId, ...scope.parameters, ...projectIds]);
+	return workdayPhase(plan, now, Boolean(ready));
 }
 
 export async function workItemContext(store: any, node: ExecutionNode): Promise<ExactEntityReference[]> {
@@ -181,7 +192,7 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 	const file = record(response.file ?? (Array.isArray(response.files) ? response.files[0] : null));
 	const validation = validatePortableContentData('proposal', record(file.frontmatter));
 	if (!validation.ok) throw new CapacityGovernanceError('execution_node_source_invalid', `Node ${node.id} proposal is no longer valid.`, 409);
-	if ((!node.workItemId && (node.kind === 'planning' || node.kind === 'estimating')) || isProposalGovernanceReview(node)) {
+	if (!node.workItemId && (node.kind === 'planning' || node.kind === 'estimating')) {
 		const proposal = record(validation.data);
 		return [source, ...await canonicalProposalContextRefs(store, node, [
 			...array(proposal.objectiveRefs), ...array(proposal.evidenceRefs),
@@ -250,7 +261,7 @@ async function effectiveProfile(store: any, node: ExecutionNode): Promise<{ proj
 async function predecessorContext(store: any, node: ExecutionNode, sourceRepository?: string): Promise<{ results: AssignmentResult[]; contentRefs: ExactEntityReference[]; lineageSourceCommit?: string; directPredecessorSourceCommit?: string }> {
 	const decisionId = (node.authorityRefs ?? []).find((reference) => reference.model === 'decision')?.id;
 	const decisionFilter = (alias: string) => decisionId ? `AND ${alias}.decision_id=?` : '';
-	const runFilter = (alias: string) => node.workdayId ? `AND ${alias}.work_day_id=?` : '';
+	const runFilter = (alias: string) => node.workdayId ? `AND ${alias}.work_day_id IN ${workdayLineageSql('?', `${alias}.team_id`)}` : '';
 	const candidateParameters = () => [...(decisionId ? [decisionId] : []), ...(node.workdayId ? [node.workdayId] : [])];
 	const rows: Row[] = node.kind === 'reporting' ? await store.all(`SELECT assignment_result_json,assignment_attempt_json
 		FROM capacity_provider_assignments WHERE team_id=? AND work_day_id=?
@@ -397,15 +408,11 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 		ORDER BY node.updated_at,node.id LIMIT 100`, [run.teamId,project.id,...runScope.parameters]);
 	const selectedDecisionIds = new Set(Array.isArray(run.parameters.decisionIds)
 		? run.parameters.decisionIds.map(text).filter(Boolean) : []);
-	const selectedProposalIds = new Set(Array.isArray(run.parameters.proposalIds)
-		? run.parameters.proposalIds.map(text).filter(Boolean) : []);
 	const teamContext = await teamCoreContext(store, run.teamId);
 	const projectContext = await projectCoreContext(store, project);
 	const ready: ReadyExecutionNode[] = [];
 	for (const row of rows) {
 		const node = decodeExecutionNode(row);
-		if (isProposalGovernanceReview(node)
-			&& (!selectedProposalIds.size || !selectedProposalIds.has(node.sourceRef.id))) continue;
 		const decisionIds = (node.authorityRefs ?? []).filter((reference) => reference.model === 'decision').map((reference) => reference.id);
 		// A workday's decision selection constrains only nodes whose authority is a
 		// decision. Cooperative planning and lifecycle reporting are authorized by
@@ -429,6 +436,7 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 			node, graphRevision: Number(row.current_graph_revision),
 			projectAgentClassId: selected.projectAgentClassId,
 			effectiveProfile: selected.profile,
+			projectContentRepositoryId: projectContext[0]!.repository!,
 			sourceRepositories,
 			contextRefs: [...new Map([node.sourceRef, ...(node.authorityRefs ?? []), ...teamContext, ...projectContext, ...candidateRefs, ...predecessor.contentRefs, ...loadedContext]
 				.filter((reference) => reference.store === 'git'

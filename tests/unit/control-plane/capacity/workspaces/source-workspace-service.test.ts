@@ -21,7 +21,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
   const current = { ...row, ...overrides };
   const store = { first: vi.fn(async () => current), run: vi.fn(async (_sql: string, args: unknown[]) => { current.workspace_context_json = String(args[0]); current.state_version++; }) };
   const content = { getProject: vi.fn(async () => ({ id: 'project', teamId: 'team' })), listHubRepositories: vi.fn(async () => [{ id: 'repository', role: 'software', provider: 'github', owner: 'example', name: 'project', defaultBranch: 'staging' }]) };
-  const fetchImpl = vi.fn(async () => new Response(commit));
+  const fetchImpl = vi.fn<typeof fetch>(async () => new Response(commit));
   const service = createSourceWorkspaceService(store as never, content, { controlPlaneId: 'https://api.example.test', now: () => now, fetchImpl });
   const recipient = createSourceCredentialRecipient();
   const request = { runnerId: 'runner', leaseToken: 'synthetic-lease', recipientPublicKey: recipient.publicKey };
@@ -41,7 +41,7 @@ const canonicalAttempt = {
 	contextRefs: [{ store: 'git', model: 'repository', id: 'repository', repository: 'repository', commit }], predecessorResultIds: [],
 	acceptanceCriteria: ['Tests fail first.'], workspace: { mode: 'git', repository: 'repository', baseCommit: commit,
 		branch: 'treeseed/assignments/assignment', writablePaths: ['.'] },
-	estimate: { minimumSeconds: 1, expectedSeconds: 2, maximumSeconds: 3 },
+	estimate: { expectedSeconds: 2, maximumSeconds: 3 },
 	limits: { maximumSeconds: 3, maximumContextBytes: 1, maximumContextTokens: 1, maximumContextItems: 1 },
 	deadline: '2026-09-11T00:00:00.000Z', leaseId: 'lease', reservationId: 'reservation', attempt: 1,
 	status: 'created', createdAt: now.toISOString(),
@@ -162,11 +162,54 @@ describe('provider source workspace authorization', () => {
 		expect(f.fetchImpl).not.toHaveBeenCalled();
 	});
 
-	it('still resolves a public moving ref upstream when no exact assignment source exists', async () => {
+	it('resolves public moving refs with API-only custody and reuses the immutable pin', async () => {
 		const f = fixture({ workday_execution_mode: 'simulation' });
+		const first = await f.service({ principal }, 'assignment', f.request);
+		const second = await f.service({ principal }, 'assignment', f.request);
+		expect(f.fetchImpl).toHaveBeenCalledTimes(1);
+		expect(f.fetchImpl).toHaveBeenCalledWith('https://api.github.com/repos/example/project/commits/staging',
+			expect.objectContaining({ headers: expect.objectContaining({ authorization: 'Bearer synthetic-git-token' }) }));
+		expect(mocks.credential).toHaveBeenCalledTimes(1);
+		expect(mocks.credential).toHaveBeenCalledWith(expect.objectContaining({ teamId: 'team', owner: 'example', repository: 'project', required: false }));
+		for (const response of [first, second]) {
+			expect(response.authorization.source.commit).toBe(commit);
+			expect(response.authorization.credentialBindingId).toBeUndefined();
+			expect(response.credential).toBeNull();
+			expect(JSON.stringify(response)).not.toContain('synthetic-git-token');
+		}
+		expect(JSON.parse(f.current.workspace_context_json).sourceWorkspace.credentialBindingId).toBeNull();
+	});
+
+	it('supports public moving refs without a configured connection, but never retries a failed managed lookup anonymously', async () => {
+		const f = fixture({ workday_execution_mode: 'simulation' });
+		mocks.credential.mockResolvedValueOnce(null);
 		await f.service({ principal }, 'assignment', f.request);
-		expect(f.fetchImpl).toHaveBeenCalledTimes(2);
-		expect(mocks.credential).not.toHaveBeenCalled();
+		expect(f.fetchImpl.mock.calls[0]?.[1]?.headers).not.toHaveProperty('authorization');
+		const failed = fixture({ workday_execution_mode: 'simulation' });
+		mocks.credential.mockRejectedValueOnce(new Error('Managed authority unavailable.'));
+		await expect(failed.service({ principal }, 'assignment', failed.request)).rejects.toThrow('Managed authority unavailable');
+		expect(failed.fetchImpl).not.toHaveBeenCalled();
+		expect(failed.store.run).not.toHaveBeenCalled();
+	});
+
+	it('does not exhaust anonymous quota across repeated planning source authorizations', async () => {
+		const planningAttempt = assignmentAttemptSchema.parse({ ...canonicalAttempt,
+			effectiveProfile: { ...canonicalAttempt.effectiveProfile, activity: 'planning', handler: 'planner' },
+			grant: { ...canonicalAttempt.grant, sourceWrite: [], tools: ['source.read'] },
+			contextRefs: [], workspace: { mode: 'treedx', repository: 'library', baseCommit: commit,
+				workspaceId: 'planning-workspace', writablePaths: ['notes/planning.mdx'] },
+		});
+		for (let turn = 0; turn < 80; turn++) {
+			const f = fixture({ workday_execution_mode: 'simulation', assignment_attempt_json: JSON.stringify(planningAttempt) });
+			f.fetchImpl.mockImplementation(async (_url, request) => new Headers(request?.headers).has('authorization')
+				? new Response(commit) : new Response('', { status: 403, headers: { 'x-ratelimit-remaining': '0' } }));
+			for (let retry = 0; retry < 2; retry++) {
+				const response = await f.service({ principal }, 'assignment', f.request);
+				expect(response.credential).toBeNull();
+				expect(response.authorization.source.commit).toBe(commit);
+			}
+			expect(f.fetchImpl).toHaveBeenCalledTimes(1);
+		}
 	});
 
 	it('reads a reviewed simulation candidate from local custody, not GitHub', async () => {

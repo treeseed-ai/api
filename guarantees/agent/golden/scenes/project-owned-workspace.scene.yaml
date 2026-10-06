@@ -1,0 +1,14 @@
+schemaVersion: treeseed.scene/v1
+id: api.golden.project-owned-workspace
+title: Project-owned planning content custody
+scope: local-component-tests
+workflow:
+  - id: bound-project-library
+    action: { verifier: api.golden.project-library-binding }
+    expect: { status: passed }
+  - id: project-write-team-read
+    action: { verifier: api.golden.project-workspace-write }
+    expect: { status: passed }
+  - id: deny-cross-project-write
+    action: { verifier: api.golden.cross-project-write-denied }
+    expect: { status: passed }

@@ -14,8 +14,8 @@ import type { ExecutionNode } from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../database.ts';
 import { canonicalJson,sha256 } from '../../../../security.ts';
 import { decodeExecutionNode } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-storage.ts';
-import { isProposalGovernanceReview } from '../../../build/ready-execution-node.ts';
 import { readTeamWorkdayProfile } from '../../../../../control-plane/repositories/capacity/workdays/profile-service.ts';
+import { validateWorkdayContinuation } from './workday-continuation.ts';
 
 type JsonRecord = Record<string,unknown>;
 
@@ -34,7 +34,7 @@ function digest(value:unknown):string { return `sha256:${sha256(canonicalJson(va
 function diagnosticsError(code:string,message:string,diagnostics:unknown):never { throw new CapacityGovernanceError(code,message,400,{diagnostics}); }
 
 export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):WorkdayIntent {
-	const allowed=new Set(['schemaVersion','teamId','profileId','projects','executionMode','startsAt','endsAt','durationSeconds','objectiveFilters','planningOnly','proposalIds','decisionIds','operatorConstraints','agentSelection','allocation']);
+	const allowed=new Set(['schemaVersion','teamId','profileId','projects','executionMode','startsAt','endsAt','durationSeconds','objectiveFilters','planningOnly','proposalIds','decisionIds','continueFromWorkdayId','operatorConstraints','agentSelection','allocation']);
 	const forbidden=Object.keys(input).filter((key)=>!allowed.has(key));
 	if(forbidden.length) diagnosticsError('workday_intent_derived_fields_forbidden','Workday preflight accepts high-level intent only.',forbidden.map((path)=>({code:'field_forbidden',path})));
 	if(input.teamId!==undefined&&text(input.teamId)!==teamId) diagnosticsError('workday_intent_team_mismatch','Workday intent team must match the route team.',[{code:'team_mismatch',path:'teamId'}]);
@@ -52,6 +52,7 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 		...(input.durationSeconds!==undefined?{durationSeconds:Number(input.durationSeconds)}:{}),
 		...(Array.isArray(input.objectiveFilters)?{objectiveFilters:input.objectiveFilters.map(text).filter(Boolean)}:{}),
 		...(input.planningOnly!==undefined?{planningOnly:input.planningOnly as boolean}:{}),
+		...(input.continueFromWorkdayId!==undefined?{continueFromWorkdayId:input.continueFromWorkdayId as string}:{}),
 		...(Array.isArray(input.proposalIds)?{proposalIds:[...new Set(input.proposalIds.map(text).filter(Boolean))].sort()}:input.proposalIds!==undefined?{proposalIds:input.proposalIds as string[]}:{}),
 		...(Array.isArray(input.decisionIds)?{decisionIds:[...new Set(input.decisionIds.map(text).filter(Boolean))].sort()}:input.decisionIds!==undefined?{decisionIds:input.decisionIds as string[]}:{}),
 		...(input.agentSelection!==undefined?{agentSelection:input.agentSelection as WorkdayIntent['agentSelection']}:{}),
@@ -86,6 +87,14 @@ export class WorkdayPreflightService {
 		const profile = await readTeamWorkdayProfile(this.store, teamId);
 		if (intent.profileId !== profile.id) throw new CapacityGovernanceError('workday_profile_not_found', 'Select the team default workday policy.', 404);
 		const providerId=await this.providerId(teamId,intent);
+		if (intent.continueFromWorkdayId) {
+			const projects = await this.store.all('SELECT id,slug FROM projects WHERE team_id=?', [teamId]);
+			const selected = intent.projects === 'all' ? projects : projects.filter(row =>
+				(intent.projects as string[]).includes(text(row.id)) || (intent.projects as string[]).includes(text(row.slug)));
+			if (!selected.length) throw new CapacityGovernanceError('workday_continuation_projects_invalid', 'Select existing continuation projects.', 409);
+			await validateWorkdayContinuation(this.store, teamId, intent.continueFromWorkdayId,
+				intent.executionMode ?? 'simulation', providerId, selected.map(row => text(row.id)), intent.decisionIds!);
+		}
 		const startsAt=intent.startsAt;
 		const endsAt=intent.endsAt??new Date(Date.parse(startsAt)+(intent.durationSeconds??profile.policy.durationSeconds)*1000).toISOString();
 		const durationSeconds=Math.floor((Date.parse(endsAt)-Date.parse(startsAt))/1000);
@@ -109,6 +118,7 @@ export class WorkdayPreflightService {
 				...(intent.agentSelection?{agentSelection:intent.agentSelection}:{}),
 				...(intent.proposalIds?.length?{proposalIds:intent.proposalIds}:{}),
 				...(intent.decisionIds?.length?{decisionIds:intent.decisionIds}:{}),
+				...(intent.continueFromWorkdayId?{continueFromWorkdayId:intent.continueFromWorkdayId}:{}),
 				objectiveRefs:intent.objectiveFilters??[],planningOnly:intent.planningOnly===true },
 		};
 		const projection=await this.store.preflightCapacityWorkdayRunRequest(teamId,runInput);
@@ -133,7 +143,7 @@ export class WorkdayPreflightService {
 				WHERE team_id=? AND graph_revision_removed IS NULL`, [teamId]);
 			const graphNodes = new Map(graphRows.map((row) => [text(row.id), decodeExecutionNode(row) as ExecutionNode]));
 			const projectIds = new Set((Array.isArray(projection.projects) ? projection.projects.map(record) : []).map((row) => text(row.id)));
-			const freshRoots = graphRows.filter((row) => {
+			const freshRoots = intent.continueFromWorkdayId ? [] : graphRows.filter((row) => {
 				const node = graphNodes.get(text(row.id));
 				if (!node || !projectIds.has(node.projectId) || !['acting','reviewing'].includes(node.kind)
 					|| !node.authorityRefs.some((ref) => ref.model === 'decision'
@@ -155,11 +165,9 @@ export class WorkdayPreflightService {
 		const selectedDemands=nodeRows.flatMap((entry,index)=>{
 			const node=decodeExecutionNode(entry) as ExecutionNode;
 			const decisionRef=node.authorityRefs.find((reference)=>reference.model==='decision');
-			const proposalReview=isProposalGovernanceReview(node);
-			if(proposalReview&&(!selectedProposals.size||!selectedProposals.has(node.sourceRef.id))) return [];
 			if(selectedProposals.size&&node.sourceRef.model==='proposal'&&!selectedProposals.has(node.sourceRef.id)) return [];
-			if(!node.id||selectedDecisions.size&&!proposalReview&&(!decisionRef||!selectedDecisions.has(decisionRef.id))) return [];
-			const mode=node.kind==='acting'||node.kind==='reviewing'&&!proposalReview?'acting' as const:'planning' as const;
+			if(!node.id||selectedDecisions.size&&(!decisionRef||!selectedDecisions.has(decisionRef.id))) return [];
+			const mode=node.kind==='acting'||node.kind==='reviewing'&&node.pairRole==='reviewer'?'acting' as const:'planning' as const;
 			if(mode==='planning'&&!planningEnabled) return [];
 			if(intent.planningOnly&&mode==='acting') return [];
 			if(mode==='acting'&&!decisionRef) return [];

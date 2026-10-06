@@ -17,18 +17,6 @@ export interface ProviderAvailabilityPrincipal { membershipId: string; teamId: s
 function object(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
 function objects(value: unknown): JsonRecord[] { return Array.isArray(value) ? value.filter((entry): entry is JsonRecord => Boolean(entry && typeof entry === 'object' && !Array.isArray(entry))) : []; }
 function strings(value: unknown): string[] { return Array.isArray(value) ? [...new Set(value.map(String).map((entry) => entry.trim()).filter(Boolean))] : []; }
-function isMinimumAssignmentDuration(value: unknown) {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-	const candidate = value as Record<string, unknown>;
-	if (!Number.isInteger(candidate.amount) || Number(candidate.amount) < 1) return false;
-	if (candidate.unit === 'seconds') return true;
-	if (candidate.unit !== 'business-days' || !candidate.calendar || typeof candidate.calendar !== 'object' || Array.isArray(candidate.calendar)) return false;
-	const calendar = candidate.calendar as Record<string, unknown>;
-	try { new Intl.DateTimeFormat('en', { timeZone: String(calendar.timeZone ?? '') }).format(); } catch { return false; }
-	const weekdays = calendar.weekdays ?? [1, 2, 3, 4, 5]; const holidays = calendar.holidayDates ?? [];
-	return Array.isArray(weekdays) && weekdays.length > 0 && weekdays.every((day) => Number.isInteger(day) && Number(day) >= 1 && Number(day) <= 7)
-		&& new Set(weekdays).size === weekdays.length && Array.isArray(holidays) && holidays.every((date) => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/u.test(date));
-}
 function timestamp(value: unknown, fallback: string): string {
 	if (value == null) return fallback;
 	const text = String(value);
@@ -99,8 +87,9 @@ export class AvailabilitySessionService {
 	private async accountingTransaction<T>(principal: ProviderAvailabilityPrincipal, write: AvailabilitySessionWrite,
 		apply: (database: CapacityGovernanceDatabase) => Promise<T>): Promise<T> {
 		return capacityTransaction(this.database, async database => {
-			// Serialize across memberships and sessions before reading the prior observations.
-			await database.run('SELECT id FROM capacity_providers WHERE id=? FOR UPDATE', [write.providerId]);
+			// Serialize accounting across memberships without blocking unchanged-key FK
+			// checks held by admission/completion while publication waits on their rows.
+			await database.run('SELECT id FROM capacity_providers WHERE id=? FOR NO KEY UPDATE', [write.providerId]);
 			await new AvailabilitySessionService(database).assertMembership(principal);
 			const previous = await database.all(`SELECT id,execution_providers_json FROM capacity_provider_availability_sessions
 				WHERE capacity_provider_id=? ORDER BY refreshed_at DESC,id DESC`, [write.providerId]);
@@ -149,7 +138,6 @@ export class AvailabilitySessionService {
 		const lanes = objects(input.lanes);
 		if (!adapters.length || adapters.some((entry) => typeof entry.id !== 'string' || !entry.id.trim() || !/^sha256:[a-f0-9]{64}$/u.test(String(entry.runtimeBuild ?? '')))) throw new CapacityGovernanceError('provider_adapter_invalid', 'Availability requires at least one adapter with an exact runtime build.', 400);
 		if (lanes.length !== 3 || new Set(lanes.map((entry) => entry.purpose)).size !== 3 || !['communication', 'platform', 'workday'].every((purpose) => lanes.some((entry) => entry.purpose === purpose))) throw new CapacityGovernanceError('provider_lanes_invalid', 'Availability requires exactly the communication, platform, and workday lanes.', 400);
-		if (lanes.some((entry) => entry.minimumAssignmentDuration !== undefined && !isMinimumAssignmentDuration(entry.minimumAssignmentDuration))) throw new CapacityGovernanceError('provider_lane_minimum_duration_invalid', 'Every advertised minimum assignment duration must satisfy the SDK contract.', 400);
 		const executionProviders = adapters.map((adapter) => ({
 			...adapter,
 			status: adapter.status === 'available' ? 'active' : adapter.status,

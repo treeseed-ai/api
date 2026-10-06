@@ -23,7 +23,7 @@ function nodeRow(id = 'node', decisionId = 'decision') {
 		kind: 'acting', pair_role: 'actor', source_ref_json: sourceRef,
 		authority_refs_json: [{ ...decisionRef, id: decisionId }],
 		rule_revision: 1, node_revision: 1, agent_class: 'engineer', status: 'ready',
-		estimate_json: { minimumSeconds: 60, expectedSeconds: 120, maximumSeconds: 180 },
+		estimate_json: { expectedSeconds: 120, maximumSeconds: 180 },
 		required_capabilities_json: ['code-change'], requested_permissions_json: permissions,
 		workspace: 'git', acceptance_criteria_json: ['Tests pass.'], maximum_review_cycles: 2,
 		graph_revision_created: 1, graph_revision_updated: 4, current_graph_revision: 4,
@@ -77,12 +77,11 @@ it('keeps explicit proposal workdays away from unrelated historical decisions', 
 	expect(scope.sql).toContain('node.workday_id IS NULL');
 });
 
-it('keeps decision-only workdays away from unselected proposal-governance reviews', () => {
+it('admits unbound decision work without a separate proposal Reviewer', () => {
 	const scope = executionNodeRunScope({ id: 'run', executionKind: 'workday', parameters: { decisionIds: ['decision'] } });
 	expect(scope.parameters).toEqual(['run']);
-	expect(scope.sql).toContain("node.kind='reviewing'");
-	expect(scope.sql).toContain("node.pair_role IS NULL");
-	expect(scope.sql).toContain("node.source_ref_json::jsonb->>'model'='proposal'");
+	expect(scope.sql).toContain("node.kind<>'communication'");
+	expect(scope.sql).not.toContain("node.pair_role IS NULL");
 });
 const project = { id: projectId, slug: 'sdk' };
 const contextRefs = [{ store: 'git' as const, model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40) }];
@@ -108,7 +107,7 @@ describe('direct ready-node admission input', () => {
 		expect(query).not.toContain('discussion_response_required');
 	});
 
-	it.each(['planning', 'estimating', 'reviewing'])('loads exact proposal and source context for proposal-level %s nodes', async (kind) => {
+	it.each(['planning', 'estimating'])('loads exact proposal and source context for proposal-level %s nodes', async (kind) => {
 		const gitRef = { store: 'git', model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40) };
 		const objectiveRef = { store: 'treedx', model: 'objective', id: 'objective', repository: 'treeseed-ai/sdk-library',
 			commit: 'b'.repeat(40), path: 'objectives/core' };
@@ -117,7 +116,7 @@ describe('direct ready-node admission input', () => {
 			request: 'Plan the exact accepted work.', summary: 'Use exact governed context.', status: 'draft',
 			objectiveRefs: [objectiveRef], executionPlan: { workItems: [{
 				id: 'implementation', activity: 'acting', agentClass: 'engineer', workspace: 'read-only', review: 'none',
-				objective: 'Implement the governed change.', estimate: { minimumSeconds: 60, expectedSeconds: 120, maximumSeconds: 240 },
+				objective: 'Implement the governed change.', estimate: { expectedSeconds: 120, maximumSeconds: 240 },
 				dependsOn: [], contextRefs: [gitRef], requestedPermissions: permissions, requiredCapabilities: ['source.read'],
 				acceptanceCriteria: ['Focused tests pass.'],
 			}] },
@@ -141,7 +140,7 @@ describe('direct ready-node admission input', () => {
 				request: 'Plan the exact accepted work.', summary: 'Use exact governed context.', status: 'draft',
 				executionPlan: { workItems: [{
 					id: 'implementation', activity: 'acting', agentClass: 'engineer', workspace: 'read-only', review: 'none',
-					objective: 'Implement the governed change.', estimate: { minimumSeconds: 60, expectedSeconds: 120, maximumSeconds: 240 },
+					objective: 'Implement the governed change.', estimate: { expectedSeconds: 120, maximumSeconds: 240 },
 					dependsOn: [], contextRefs: [gitRef], requestedPermissions: permissions, requiredCapabilities: ['source.read'],
 					acceptanceCriteria: ['Focused tests pass.'],
 				}] },
@@ -180,8 +179,8 @@ describe('direct ready-node admission input', () => {
 			.mockResolvedValueOnce([{ assignment_result_json: result }]) };
 		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
 		expect(candidate).toMatchObject({
-			graphRevision: 4, projectAgentClassId: 'class-engineer',
-			node: { id: 'node', estimate: { minimumSeconds: 60, expectedSeconds: 120, maximumSeconds: 180 } },
+			graphRevision: 4, projectAgentClassId: 'class-engineer', projectContentRepositoryId: 'team-repository',
+			node: { id: 'node', estimate: { expectedSeconds: 120, maximumSeconds: 180 } },
 			effectiveProfile: { handler: 'actor', activity: 'acting', handlerOrigin: 'agent-package', permissionCeiling: permissions },
 			predecessorResults: [result],
 		});
@@ -198,6 +197,19 @@ describe('direct ready-node admission input', () => {
 			projectId, write: false, readRefs: [agentCommit], workspacePaths: [agentPath],
 		}));
 		expect(JSON.stringify(candidate)).not.toMatch(/capacityPlan|demand|sourceCandidate|artifactManifest/u);
+	});
+	it('keeps the assignment project library binding distinct from Team Library context', async () => {
+		const store = { ...teamContextStore,
+			getProjectTreeDxLibrary: vi.fn(async (id: string) => ({ repositoryId: id === projectId ? 'sdk-library' : 'team-library',
+				contentRepositoryRef: '1'.repeat(40) })),
+			all: vi.fn().mockResolvedValueOnce([nodeRow()]).mockResolvedValueOnce([classRow(definition)])
+				.mockResolvedValueOnce([]) };
+		const [selected] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
+		expect(selected.projectContentRepositoryId).toBe('sdk-library');
+		expect(selected.contextRefs).toEqual(expect.arrayContaining([
+			expect.objectContaining({ repository: 'team-library', model: 'objective' }),
+			expect.objectContaining({ repository: 'sdk-library', model: 'objective' }),
+		]));
 	});
 	it('loads every canonical workday attempt for Reporter instead of stopping at condition nodes', async () => {
 		const reporter = { ...definition, id: 'agent:reporter', name: 'Reporter', agentClass: 'reporter',

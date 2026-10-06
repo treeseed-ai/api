@@ -147,41 +147,6 @@ function workNode(input: {
 	});
 }
 
-function proposalReviewEstimate(proposal: Row) {
-	const items = rows(record(proposal.executionPlan).workItems);
-	const estimates = items.map((item) => record(item.reviewEstimate)).filter((estimate) => Number(estimate.expectedSeconds) > 0);
-	const selected = estimates.length ? estimates : items.map((item) => record(item.estimate));
-	// This is one governance pass over the proposal, not the serial execution
-	// of every future Actor/Reviewer pair. The largest bounded review is the
-	// conservative existing estimate; summing all pairs exhausts planning before
-	// a single proposal can be reviewed.
-	return {
-		minimumSeconds: Math.max(...selected.map((estimate) => Number(estimate.minimumSeconds))),
-		expectedSeconds: Math.max(...selected.map((estimate) => Number(estimate.expectedSeconds))),
-		maximumSeconds: Math.max(...selected.map((estimate) => Number(estimate.maximumSeconds))),
-	};
-}
-
-function proposalReviewNode(source: ExecutableProposalSource, profile: ReturnType<typeof profileFor>, revision: number): ExecutionNode {
-	const sourceRef = proposalRef(source);
-	return executionNodeSchema.parse({
-		schemaVersion: 'treeseed.execution-node/v1',
-		id: deterministicId('node', [source.teamId, source.projectId, sourceRef.id, sourceRef.revision,
-			sourceRef.digest, RULE_REVISION, 'proposal-review', 'reviewer']),
-		teamId: source.teamId, projectId: source.projectId, workItemId: 'proposal-review',
-		kind: 'reviewing', pairRole: null, sourceRef, authorityRefs: [sourceRef],
-		ruleRevision: RULE_REVISION, nodeRevision: 1, agentClass: 'reviewer',
-		status: source.decision?.current ? 'completed' : 'ready',
-		estimate: proposalReviewEstimate(source.frontmatter), requiredCapabilities: ['treeseed.engineering.review'],
-		requestedPermissions: profile.permissions, workspace: 'treedx',
-		acceptanceCriteria: [
-			'Validate the exact proposal and its executable work against current project authority.',
-			'Return one proposal decision bound to the exact proposal reference.',
-		],
-		graphRevisionCreated: revision, graphRevisionUpdated: revision,
-	});
-}
-
 function decisionConditionNode(source: ExecutableProposalSource, revision: number): ExecutionNode {
 	const sourceRef = proposalRef(source);
 	const authorityRef = decisionRef(source);
@@ -237,12 +202,8 @@ export function projectTeamExecutionGraph(input: {
 		const exactSource = { ...source, frontmatter: proposal };
 		const sourceRef = proposalRef(exactSource);
 		changedSourceRefs.push(sourceRef);
-		const review = proposalReviewNode(exactSource,
-			profileFor(input.profiles, source.projectId, 'reviewer', 'reviewing'), input.revision);
 		const authority = decisionConditionNode(exactSource, input.revision);
-		nodes.push(review, authority);
-		edges.push(edge({ teamId: source.teamId, fromNodeId: review.id, toNodeId: authority.id,
-			provenance: 'governance', sourceRef }, input.revision));
+		nodes.push(authority);
 		for (const feedback of source.feedback ?? []) {
 			const condition = feedbackConditionNode(exactSource, feedback, input.revision);
 			nodes.push(condition);

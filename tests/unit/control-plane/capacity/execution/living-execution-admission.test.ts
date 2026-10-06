@@ -95,7 +95,7 @@ describe('living execution admission', () => {
 		expect(reservation.params.slice(-8)).toEqual(['team', 'workday', 'workday', 1, 'team', 'provider', 'lane', 1]);
 		const insertedAssignment = operations.find((operation) => operation.query.includes('INSERT INTO capacity_provider_assignments'))!;
 		expect(reservation.query).toMatch(/prior\.execution_node_revision=node\.node_revision[\s\S]*prior\.status<>'returned'/u);
-		expect(reservation.query).toContain('node.workday_id IS NULL OR review_history.work_day_id=node.workday_id');
+		expect(reservation.query).toContain('node.workday_id IS NULL OR review_history.work_day_id IN (WITH RECURSIVE lineage');
 		expect(insertedAssignment.query).toMatch(/prior\.execution_node_revision=\?[\s\S]*prior\.status<>'returned'/u);
 		expect(reservation.query).not.toContain('discussion_response_required');
 		expect(insertedAssignment.query).not.toContain('discussion_response_required');
@@ -111,7 +111,13 @@ describe('living execution admission', () => {
 			lanePurpose: 'communication', executionKind: 'conversation', workdayConcurrencyLimit: 2, invocationId: 'invocation-1', predecessorResults: [], treedxProxyHandle: { id: 'tdx_assignment', status: 'issued',
 				allowedPaths: [], allowedReadPaths: [], allowedWritePaths: [], scopes: [], allowedOperations: [] }, now: assignment.createdAt });
 		const binding = store.batch.mock.calls[0]![0].find((operation: { query: string }) => operation.query.includes('UPDATE agent_invocation_requests'))!;
-		expect(binding.params).toEqual(['assignment', assignment.createdAt, 'invocation-1', 'team', 'assignment']);
+		expect(binding.params).toEqual(['assignment', assignment.createdAt, 'invocation-1', 'team', 'assignment',
+			'assignment', 'team', 'reservation', 'invocation-1']);
+		expect(binding.query).toContain('prior.team_id=agent_invocation_requests.team_id');
+		expect(binding.query).toContain('prior.invocation_id=agent_invocation_requests.id');
+		expect(binding.query).toContain("prior.status IN ('returned','failed','cancelled')");
+		expect(binding.query).toContain('admitted.reservation_id=?');
+		expect(binding.query).toContain("admitted.invocation_id=? AND admitted.status='pending'");
 		const reservation = store.batch.mock.calls[0]![0].find((operation: { query: string }) => operation.query.includes('INSERT INTO capacity_reservations'))!;
 		expect(reservation.params.slice(-8)).toEqual(['team', 'workday', 'conversation', 2, 'team', 'provider', 'communication', 1]);
 		expect(reservation.query).toContain("invocation.status IN ('admitted','running')");

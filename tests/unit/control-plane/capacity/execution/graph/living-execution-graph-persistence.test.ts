@@ -13,6 +13,7 @@ import {
 	simulationRunForNode,
 	terminalAssignmentWasRequeued,
 } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { assignmentBelongsToRun } from '../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-continuation.ts';
 import { applyOperationalState, recoverIncompleteReviewCycles, recoverInterruptedGovernanceReviews,
 	recoverableGovernanceReviewAttemptHistory, reviewCycleLimitReached,
 } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
@@ -30,7 +31,7 @@ function node(status: ExecutionNode['status']): ExecutionNode {
 			store: 'postgresql', model: 'decision', id: 'decision', revision: 1, digest: `sha256:${'c'.repeat(64)}`,
 		}],
 		ruleRevision: 1, nodeRevision: 1, agentClass: 'engineer', status,
-		estimate: { minimumSeconds: 1, expectedSeconds: 2, maximumSeconds: 3 },
+		estimate: { expectedSeconds: 2, maximumSeconds: 3 },
 		requiredCapabilities: [], requestedPermissions: permissions as never, workspace: 'git',
 		acceptanceCriteria: ['Verified.'], maximumReviewCycles: 1,
 		graphRevisionCreated: 1, graphRevisionUpdated: 1,
@@ -64,6 +65,21 @@ it('keeps an approved review authoritative over a duplicate result until the Act
 		.find((entry) => entry.execution_node_id === 'reviewer')).toBe(duplicate);
 });
 
+it('preserves exact completed history only for explicit continuation, never fresh simulation or changed authority', () => {
+	const current = { ...node('stale'), workdayId: 'old' };
+	const desired = { ...node('ready'), workdayId: 'next' };
+	const row = { work_day_id: 'old', assignment_attempt_json: { sourceRef: desired.sourceRef, authorityRefs: desired.authorityRefs } };
+	expect(assignmentBelongsToRun(row, desired, 'next', new Set())).toBe(false);
+	expect(assignmentBelongsToRun(row, desired, 'next', new Set(['old']))).toBe(true);
+	expect(assignmentBelongsToRun({ ...row, assignment_attempt_json: { ...row.assignment_attempt_json, sourceRef: { ...sourceRef, revision: 2 } } }, desired, 'next', new Set(['old']))).toBe(false);
+	const graph = (entry: ExecutionNode) => ({ teamId: 'team', revision: 1, digest: 'digest', nodes: [entry], edges: [] });
+	const terminal = new Map([[current.id, { status: 'completed' as const, nodeRevision: 1 }]]);
+	expect(applyOperationalState(graph(current), graph(desired), 2, new Set(), terminal).nodes[0]?.status).toBe('ready');
+	const retained = applyOperationalState(graph(current), graph(desired), 2, new Set(), terminal, new Map([['next', new Set(['old'])]]));
+	expect(retained.nodes[0]).toMatchObject({ status: 'completed', workdayId: 'next' });
+	expect(applyOperationalState(retained, graph(desired), 3, new Set(), terminal).nodes[0]?.status).toBe('completed');
+});
+
 it('binds each accepted decision to at most one active simulation workday', () => {
 	expect(simulationRunByDecision([{ id: 'fresh', executionMode: 'simulation', parameters: { decisionIds: ['decision'] } }]).get('decision')).toBe('fresh');
 	expect(simulationRunByDecision([{ id: 'production', executionMode: 'production', parameters: { decisionIds: ['decision'] } }]).size).toBe(0);
@@ -76,13 +92,13 @@ it('binds each accepted decision to at most one active simulation workday', () =
 	} }], 'proposalIds').get('proposal')).toBe('golden');
 });
 
-it('binds the real proposal Reviewer before a decision exists without adopting an unrelated run', () => {
-	const proposalReview = { ...node('ready'), sourceRef: { store: 'treedx', model: 'proposal', id: 'proposal' },
-		workItemId: 'proposal-review', kind: 'reviewing', authorityRefs: [{ store: 'treedx', model: 'proposal', id: 'proposal' }] } as never;
+it('binds selected proposal work and its accepted decision to one simulation', () => {
+	const proposalWork = { ...node('ready'), sourceRef: { store: 'treedx', model: 'proposal', id: 'proposal' },
+		workItemId: 'architecture', kind: 'acting', authorityRefs: [{ store: 'treedx', model: 'proposal', id: 'proposal' }] } as never;
 	const proposalRuns = new Map([['proposal', 'simulation-a']]);
-	expect(simulationRunForNode(proposalReview, new Map(), proposalRuns)).toBe('simulation-a');
-	expect(simulationRunForNode(proposalReview, new Map(), new Map([['other', 'simulation-b']]))).toBe('');
-	const accepted = { ...proposalReview, authorityRefs: [{ store: 'treedx', model: 'decision', id: 'decision' }] } as never;
+	expect(simulationRunForNode(proposalWork, new Map(), proposalRuns)).toBe('simulation-a');
+	expect(simulationRunForNode(proposalWork, new Map(), new Map([['other', 'simulation-b']]))).toBe('');
+	const accepted = { ...proposalWork, authorityRefs: [{ store: 'treedx', model: 'decision', id: 'decision' }] } as never;
 	expect(simulationRunForNode(accepted, new Map([['decision', 'simulation-a']]), proposalRuns)).toBe('simulation-a');
 	expect(() => simulationRunForNode(accepted, new Map([['decision', 'simulation-b']]), proposalRuns))
 		.toThrow('different simultaneous simulations');
@@ -258,7 +274,7 @@ describe('normalized living execution graph persistence', () => {
 
 	it('revises an unassigned node when projected assignment semantics change', () => {
 		const current = graph(1, [node('ready')]);
-		const projected = { ...node('blocked'), estimate: { minimumSeconds: 1, expectedSeconds: 5, maximumSeconds: 30 } };
+		const projected = { ...node('blocked'), estimate: { expectedSeconds: 5, maximumSeconds: 30 } };
 		expect(applyOperationalState(current, graph(2, [projected]), 2, new Set(['node'])).nodes).toEqual([
 			expect.objectContaining({ id: 'node', status: 'ready', nodeRevision: 2, estimate: projected.estimate }),
 		]);
@@ -266,7 +282,7 @@ describe('normalized living execution graph persistence', () => {
 
 	it('preserves all immutable semantics for an in-flight node', () => {
 		const current = graph(1, [node('running')]);
-		const projected = { ...node('blocked'), estimate: { minimumSeconds: 1, expectedSeconds: 5, maximumSeconds: 30 } };
+		const projected = { ...node('blocked'), estimate: { expectedSeconds: 5, maximumSeconds: 30 } };
 		expect(applyOperationalState(current, graph(2, [projected]), 2, new Set(['node'])).nodes).toEqual([
 			expect.objectContaining({ status: 'running', nodeRevision: 1, estimate: node('running').estimate }),
 		]);
@@ -383,11 +399,12 @@ describe('normalized living execution graph persistence', () => {
 		};
 		await persistExecutionGraph(store, next, graph(1), revision(2, next.digest));
 		expect(operations.some((operation) => operation.query.includes('estimate_json=excluded.estimate_json'))).toBe(true);
-		expect(operations[0]?.query).toContain('FOR UPDATE');
-		expect(operations[1]?.query).toContain('COALESCE(MAX(revision),0)');
-		expect(operations[1]?.query).toContain('ON CONFLICT (team_id,revision) DO NOTHING');
-		expect(operations[1]?.params[8]).toBe(1);
-		expect(operations.slice(2).every((operation) => operation.query.includes('created_at=?'))).toBe(true);
+		expect(operations[0]?.query).toBe('SELECT id FROM teams WHERE id=? FOR UPDATE');
+		expect(operations[1]?.query).toContain('FOR UPDATE');
+		expect(operations[2]?.query).toContain('COALESCE(MAX(revision),0)');
+		expect(operations[2]?.query).toContain('ON CONFLICT (team_id,revision) DO NOTHING');
+		expect(operations[2]?.params[8]).toBe(1);
+		expect(operations.slice(3).every((operation) => operation.query.includes('created_at=?'))).toBe(true);
 		expect(operations.some((operation) => /graph_events|reconciliation_receipts/u.test(operation.query))).toBe(false);
 	});
 
@@ -405,7 +422,7 @@ describe('normalized living execution graph persistence', () => {
 		const nodeWrites = operations.filter((operation) => operation.query.includes('INSERT INTO execution_nodes'));
 		expect(nodeWrites).toHaveLength(1);
 		expect(nodeWrites[0]?.params[0]).toBe('changed-node');
-		expect(operations[1]?.params[9]).toContain('other-node');
+		expect(operations[2]?.params[9]).toContain('other-node');
 	});
 
 	it('fails closed when another reconciliation wins the graph revision', async () => {

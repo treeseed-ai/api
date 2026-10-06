@@ -1,0 +1,12 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.golden.recovery-isolation
+journey: Recover terminal workdays independently without hiding invalid history
+ownerPackage: '@treeseed/api'
+type: agent
+subtype: recovery
+status: planned
+gates: [core]
+summary: A corrupt historical assignment remains a failed boundary but cannot suppress later terminal workday recovery.
+scene:
+  required: true
+  manifest: guarantees/agent/golden/scenes/recovery-isolation.scene.yaml

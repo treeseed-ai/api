@@ -42,6 +42,15 @@ describe('assignment source credential custody', () => {
     expect(readServiceCredentials).not.toHaveBeenCalled();
   });
 
+  it('permits anonymous public metadata only when no unpinned managed authority exists', async () => {
+    await expect(resolveGitHubSourceAuthority({ ...input, required: false, store: { all: async () => [] } })).resolves.toBeNull();
+    await expect(resolveGitHubSourceAuthority({ ...input, required: false, bindingId: 'revoked', store: { all: async () => [] } })).rejects.toThrow('pinned');
+    await expect(resolveGitHubSourceAuthority({ ...input, required: false, store: { all: async () => [row, row] } })).rejects.toThrow('unambiguous');
+    expect(readServiceCredentials).not.toHaveBeenCalled();
+    vi.mocked(readServiceCredentials).mockRejectedValueOnce(new Error('Custody unavailable.'));
+    await expect(resolveGitHubSourceAuthority({ ...input, required: false, store: { all: async () => [row] } })).rejects.toThrow('Custody unavailable');
+  });
+
   it('rejects stale credential versions and missing capability', async () => {
     await expect(resolveGitHubSourceAuthority({ ...input, store: { all: async () => [{ ...row, version: 6 }] } })).rejects.toThrow('stale');
     vi.clearAllMocks();

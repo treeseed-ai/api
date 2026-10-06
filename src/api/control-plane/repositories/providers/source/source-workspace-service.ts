@@ -7,7 +7,7 @@ import { CapacityGovernanceError, type CapacityGovernanceDatabase } from '../../
 import { evaluateProviderAssignmentLeaseAuthority } from '../../../../capacity/services/accounts/lease-authority-service.ts';
 import { selectAssignmentSourceRepository } from '../../../../capacity/services/capacity/assignments/context/source-repository.ts';
 import { providerPrincipal, type ProviderPrincipal } from '../provider-runtime-service.ts';
-import { persistAssignmentSourcePin, readAssignmentSourcePin, resolveAuthorizedSourceCommit } from './source-pin.ts';
+import { persistAssignmentSourcePin, readAssignmentSourcePin, resolveAuthorizedSourceCommit, sameAssignmentSourcePin } from './source-pin.ts';
 
 type RecordValue = Record<string, unknown>;
 interface SourceStore {
@@ -142,11 +142,14 @@ export function createSourceWorkspaceService(database: CapacityGovernanceDatabas
 	const credentialRequired = sourceMode.acquisition === 'upstream-authorized';
     let pin = readAssignmentSourcePin(context);
     if (pin && (pin.repository.id !== configured.id || pin.repository.cloneUrl !== configured.cloneUrl)) throw new CapacityGovernanceError('assignment_source_repository_changed', 'The project source repository changed after this assignment was pinned.', 409);
-    const credentialFor = (bindingId?: string) => resolveGitHubSourceAuthority({ store: contentStore, teamId: actor.teamId,
-      owner: configured.owner, repository: configured.name, ...(bindingId ? { bindingId } : {}), ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
+    const credentialFor = (bindingId?: string, required = true) => resolveGitHubSourceAuthority({ store: contentStore, teamId: actor.teamId,
+      owner: configured.owner, repository: configured.name, required, ...(bindingId ? { bindingId } : {}), ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
 	let credential = credentialRequired ? await credentialFor(pin?.credentialBindingId ?? undefined) : null;
     if (!pin) {
-			const exactCommit = exactAttemptCommit ?? await resolveAuthorizedSourceCommit(configured, credential?.token, options.fetchImpl);
+			// Resolve moving refs through existing managed custody in the API only.
+			// Public simulation acquisition never receives this credential/binding.
+			const lookupCredential = !exactAttemptCommit && !credentialRequired ? await credentialFor(undefined, false) : credential;
+			const exactCommit = exactAttemptCommit ?? await resolveAuthorizedSourceCommit(configured, lookupCredential?.token, options.fetchImpl);
       pin = await persistAssignmentSourcePin(database, { assignmentId, teamId: actor.teamId, providerId: actor.capacityProviderId, membershipId: actor.membershipId,
         runnerId: request.runnerId, leaseToken: request.leaseToken, stateVersion: Number(row.state_version), context,
         pin: { schemaVersion: 'treeseed.assignment-source-pin/v1', repository: configured, exactCommit, credentialBindingId: credential?.bindingId ?? null,
@@ -158,18 +161,19 @@ export function createSourceWorkspaceService(database: CapacityGovernanceDatabas
 	// An immutable public-source SHA is already authorized by the assignment's
 	// exact grant and is verified by the broker's Git fetch/object hash. Repeated
 	// anonymous GitHub REST lookups would exhaust its 60-request hourly quota.
-	// Credential-bound source and moving refs still require upstream validation.
+	// Credential-bound source still requires upstream validation. A public pin
+	// resolved from a moving ref is now immutable too; retries must reuse it.
 	if (exactAttemptCommit && pin.exactCommit !== exactAttemptCommit) throw new CapacityGovernanceError(
 		'assignment_source_pin_changed', 'The source pin differs from the immutable assignment revision.', 409);
-	if (sourceMode.acquisition !== 'simulation-local'
-		&& !(sourceMode.acquisition === 'upstream-public' && exactAttemptCommit)) {
+	if (credentialRequired) {
 		await resolveAuthorizedSourceCommit({ ...pin.repository, ref: pin.exactCommit }, credential?.token, options.fetchImpl);
 	}
     await checkAuthority();
     const issued = now();
     row = assertSourceAssignmentLease(await load(assignmentId, actor), actor, assignmentId, request.runnerId, request.leaseToken, issued);
 	const accepted = readAssignmentSourcePin(record(row.workspace_context_json));
-    if (JSON.stringify(accepted) !== JSON.stringify(pin)) throw new CapacityGovernanceError('assignment_source_pin_changed', 'Assignment source identity changed during authorization.', 409);
+	if (!sameAssignmentSourcePin(accepted, pin)) throw new CapacityGovernanceError('assignment_source_pin_changed',
+		accepted ? 'Assignment source identity changed during authorization.' : 'Assignment source pin disappeared during authorization.', 409);
 	const additionalCommits = assignmentPredecessorSourceCommits(row, [configured.id, configuredRepository], pin.exactCommit);
 	const credentialExpiry = credential?.expiresAt ? Date.parse(credential.expiresAt) : issued.getTime() + 300_000;
     const expiry = Math.min(Date.parse(String(row.lease_expires_at)), credentialExpiry, issued.getTime() + 300_000);
