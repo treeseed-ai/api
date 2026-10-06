@@ -3,6 +3,18 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-profile-cutover-unit
+    action: { verifier: api.golden.execution-profile-cutover-unit }
+    expect: { status: passed }
+  - id: execution-chat-permissions-unit
+    action: { verifier: api.golden.execution-chat-permissions-unit }
+    expect: { status: passed }
+  - id: execution-chat-parameters-unit
+    action: { verifier: api.golden.execution-chat-parameters-unit }
+    expect: { status: passed }
+  - id: execution-chat-profile-native
+    action: { verifier: api.golden.execution-chat-profile-native }
+    expect: { status: passed }
   - id: execution-agent-selection-unit
     action: { verifier: api.golden.execution-agent-selection-unit }
     expect: { status: passed }

@@ -2,12 +2,6 @@ import type { CapacityGovernanceDatabase } from "../../../../database.ts";
 import { CapacityGovernanceError } from "../../../../database.ts";
 import { canonicalArtifactManifestReferences } from "../../../../domain/artifact-manifest-evidence.ts";
 import type { DurableCapacityWorkdayRun } from "../../../../repositories/capacity/workdays/workday-run.ts";
-import {
-compileCapacityWorkdayAssignmentIntent,
-type CapacityWorkdayAgent,
-type CapacityWorkdayAssignmentIntent,
-} from "../policy/workday-agent-policy.ts";
-import type { WorkdayProject } from "../policy/workday-project-policy.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -19,52 +13,14 @@ export interface CapacityWorkdayArtifactRef extends JsonRecord {
   producedByAgent: string;
 }
 
-export interface CapacityWorkdayResolvedIntent extends CapacityWorkdayAssignmentIntent {
-  relatedArtifact?: CapacityWorkdayArtifactRef | null;
-  relatedArtifacts?: CapacityWorkdayArtifactRef[];
-  upstreamEvidence?: CapacityWorkdayGraphInput[];
-  subjectPath?: string | null;
-}
-
-export interface CapacityWorkdayGraphInput extends JsonRecord {
-  producerNodeId: string;
-  kind: 'signal';
-  contractId: string;
-  recordId: string;
-  metadata: JsonRecord;
-}
-
 function record(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as JsonRecord)
     : {};
 }
 
-function array(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
-
 function text(value: unknown, fallback = ""): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
-function signalArtifactModel(input: CapacityWorkdayGraphInput,value: JsonRecord) {
-	const explicit = text(value.model);
-	if (explicit) return explicit;
-	const subjectId = text(value.subjectId ?? input.subjectId);
-	if (subjectId.startsWith('proposal:') || input.contractId === 'proposal-ready') return 'proposal';
-	return '';
-}
-
-function signalArtifactKind(input: CapacityWorkdayGraphInput,value: JsonRecord) {
-	const explicit = text(value.artifactKind ?? value.kind);
-	if (explicit) return explicit;
-	return input.contractId === 'proposal-ready' ? 'planning_proposal' : '';
-}
-
-function selectedObjective(run: DurableCapacityWorkdayRun): string {
-  const refs = Array.isArray(run.parameters.objectiveRefs) ? run.parameters.objectiveRefs : [];
-  return text(refs[0]);
 }
 
 function persistedObject(value: unknown, owner: string): JsonRecord {
@@ -150,65 +106,4 @@ export async function listCapacityWorkdayContentArtifactRefs(
     seen.add(key);
     return true;
   });
-}
-
-export async function resolveCapacityWorkdayAssignmentIntent(
-  store: CapacityGovernanceDatabase,
-  run: DurableCapacityWorkdayRun,
-  project: WorkdayProject,
-  agent: CapacityWorkdayAgent,
-  graphInputs: CapacityWorkdayGraphInput[] = [],
-): Promise<CapacityWorkdayResolvedIntent> {
-  const configuredIntent = compileCapacityWorkdayAssignmentIntent(agent);
-  const workdayPurpose = text(run.scenarioId);
-  const objectiveRef = selectedObjective(run);
-  const intent: CapacityWorkdayResolvedIntent = {
-    ...configuredIntent,
-	...(configuredIntent.subjectModel === "objective" && objectiveRef ? { subjectId: objectiveRef.replace(/^objective:/u, "") } : {}),
-    objective: workdayPurpose
-      ? `Workday purpose: ${workdayPurpose}\n\nAgent responsibility: ${configuredIntent.objective}`
-      : configuredIntent.objective,
-  };
-  const needsArtifacts = intent.includeWorkdayArtifacts
-    || (intent.subjectModel === "proposal" && !intent.subjectId);
-  const signalArtifacts = graphInputs.flatMap((input) => {
-    const value = { ...record(input.payload), ...record(input.metadata) };
-    const paths = [value.contentPath, ...array(value.changedPaths), ...array(value.evidenceRefs).map((entry) => typeof entry === 'string' ? entry : record(entry).contentPath)].map((entry) => text(entry)).filter(Boolean);
-    return paths.map((contentPath) => ({
-      ...value, contentPath, model: signalArtifactModel(input,value), artifactKind: signalArtifactKind(input,value),
-      subjectId: text(value.subjectId ?? input.subjectId), producedByAgent: text(value.producedByAgent ?? value.agentId),
-    } satisfies CapacityWorkdayArtifactRef));
-  });
-  const artifacts = signalArtifacts.length ? signalArtifacts : needsArtifacts
-    ? await listCapacityWorkdayContentArtifactRefs(
-      store,
-      run,
-      project.id,
-    )
-    : [];
-  if (intent.includeWorkdayArtifacts || signalArtifacts.length) {
-    const relatedArtifacts = artifacts.slice(0, 24);
-    if (intent.subjectModel !== "proposal" || intent.subjectId) return { ...intent, relatedArtifacts, upstreamEvidence: graphInputs };
-  }
-  if (intent.subjectModel !== "proposal" || intent.subjectId) return { ...intent, upstreamEvidence: graphInputs };
-  const proposal =
-    artifacts.find((artifact) => artifact.model === "proposal") ??
-    artifacts.find((artifact) => artifact.artifactKind === "planning_proposal");
-  if (!proposal) {
-    // Existing library proposals are selected by the subsequent source resolver.
-    // An empty current workday artifact list does not establish their absence.
-    return { ...intent, upstreamEvidence: graphInputs };
-  }
-  const proposalId = proposal.contentPath.replace(
-    /^.*\/([^/]+)\.(md|mdx)$/u,
-    "$1",
-  );
-  return {
-    ...intent,
-    subjectId: proposalId,
-    subjectPath: proposal.contentPath,
-    relatedArtifact: proposal,
-    relatedArtifacts: signalArtifacts.length ? signalArtifacts.slice(0, 24) : [proposal],
-    upstreamEvidence: graphInputs,
-  };
 }

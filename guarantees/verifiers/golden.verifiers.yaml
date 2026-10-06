@@ -1,6 +1,26 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-profile-cutover-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/policy/chat-activity-profile-policy.test.ts
+    testName: "uses only governed canonical activity profiles rather than retired default prompts authority presets and assignment intent reconstruction"
+  api.golden.execution-chat-permissions-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/policy/chat-activity-profile-policy.test.ts
+    testName: "never grants retired TreeDX assignment content or operational tools"
+  api.golden.execution-chat-parameters-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/policy/chat-activity-profile-policy.test.ts
+    testName: "preserves provider-neutral execution and capability settings from the agent profile"
+  api.golden.execution-chat-profile-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/profile-inventory.test.ts
+    testName: "native public profile query retains renamed governed chat instructions permissions and execution parameters without a runtime default or authority preset"
   api.golden.execution-agent-selection-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

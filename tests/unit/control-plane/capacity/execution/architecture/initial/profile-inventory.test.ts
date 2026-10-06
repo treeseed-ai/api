@@ -38,6 +38,34 @@ async function inventory() {
 	} catch (error) { await f.db.close(); throw error; }
 }
 describe('actual owning profile inventory and public query', () => {
+	it('native public profile query retains renamed governed chat instructions permissions and execution parameters without a runtime default or authority preset', async () => {
+		const f = await inventory(); try {
+			const supplied = definition();
+			const parameters = { task: 'Inspect the exact project sources.',
+				capabilityRequirements: [{ capabilityId: 'treeseed.coordination.conversation', versionRange: '^1.0.0', requirement: 'required' }],
+				execution: { reasoningEffort: 'medium', maxRuntimeSeconds: 180, maxTotalTokens: 32_000,
+					warningTokens: 24_000, maxCostAmount: 5, costCurrency: 'USD' } };
+			const chat = { ...supplied, activityProfiles: { chat: {
+				handler: 'configured/native-project-handler',
+				prompt: { system: 'Return the final reply; the provider publishes it under the assignment lease. Do not search for or invoke a discussion-write tool in the guest.' },
+				permissions: { content: { read: ['knowledge'], write: ['discussion'] }, tools: ['source.read'] }, parameters,
+			} } };
+			const beforeInput = structuredClone(chat); await f.seed(0, chat);
+			const before = await f.inventorySnapshot();
+			const response = await f.service.show(f.principal, 'project', 'portable-0');
+			expect(response.agent.definition).toEqual(chat);
+			expect(response.agent.effectiveActivities).toEqual({ chat: {
+				handler: 'configured/native-project-handler', origin: 'project-runtime',
+				prompt: chat.activityProfiles.chat.prompt, context: ['assignment-subject'],
+				permissions: chat.activityProfiles.chat.permissions, dependsOn: null,
+			} });
+			const parsed = validateAgentDefinitionModel(response.agent.definition); expect(parsed.ok).toBe(true);
+			expect(parsed.data?.activityProfiles.chat?.parameters).toEqual(parameters);
+			expect(await f.service.handler(f.principal, 'project', 'configured/native-project-handler'))
+				.toMatchObject({ handler: { id: 'configured/native-project-handler', origin: 'project-runtime' } });
+			expect(await f.inventorySnapshot()).toEqual(before); expect(chat).toEqual(beforeInput);
+		} finally { await f.db.close(); }
+	});
 	it('reads arbitrary complete stored profiles and compiled-handler selections through owning SQL without runtime role configuration', async () => {
 		const f = await inventory(); try {
 			await f.seed(); const before = await f.inventorySnapshot(), response = await f.service.show(f.principal, 'project', 'portable-0');
