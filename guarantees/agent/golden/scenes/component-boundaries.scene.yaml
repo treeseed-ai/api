@@ -2156,3 +2156,12 @@ workflow:
   - id: execution-project-inventory-native
     action: { verifier: api.golden.execution-project-inventory-native }
     expect: { status: passed }
+  - id: execution-runner-close-unit
+    action: { verifier: api.golden.execution-runner-close-unit }
+    expect: { status: passed }
+  - id: execution-runner-close-native
+    action: { verifier: api.golden.execution-runner-close-native }
+    expect: { status: passed }
+  - id: execution-runner-close-failure-unit
+    action: { verifier: api.golden.execution-runner-close-failure-unit }
+    expect: { status: passed }

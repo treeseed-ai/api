@@ -90,7 +90,11 @@ export async function runLoop() {
             if (client?.close) {
                 await client.close().catch(() => { });
             }
-            await controlPlaneStore?.db?.close?.().catch?.(() => { });
+            try { await controlPlaneStore?.db?.close?.(); }
+            catch (closeError) {
+                console.error(JSON.stringify({ ok: false, event: 'runner.store.close.failed',
+                    error: closeError instanceof Error ? closeError.message : String(closeError) }));
+            }
             client = null;
             controlPlaneStore = null;
             capacityWorkdayMaintenance = null;

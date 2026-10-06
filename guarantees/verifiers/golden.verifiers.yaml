@@ -3701,3 +3701,18 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
     testName: "native owning workday project inventory retains exact team rows excludes completed deletion and remains immutable across concurrent reads"
+  api.golden.execution-runner-close-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/runner-drain.test.ts
+    testName: "retains the original runner failure while draining a store whose supported close returns void"
+  api.golden.execution-runner-close-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/runner-drain.test.ts
+    testName: "native runner failure closes its actual PostgreSQL pool without replacing the failed registration or changing retained database truth"
+  api.golden.execution-runner-close-failure-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/runner-drain.test.ts
+    testName: "preserves runner failure and listener drain with missing asynchronous or throwing store close without repairing supplied custody"
