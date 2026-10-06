@@ -1,6 +1,6 @@
 import { governanceVotingProvider } from '../../../../governance/voting.ts';
 import { isoNow,ControlPlaneStore,serializeGovernancePolicy } from "../../../../persistence/store.ts";
-export async function ensureDefaultTeamGovernancePolicyMethod(this: ControlPlaneStore, teamId, scope = 'team') {
+export async function ensureDefaultTeamGovernancePolicyMethod(this: ControlPlaneStore, teamId: string, scope = 'team') {
     await this.ensureInitialized();
     const existing = await this.first(`SELECT * FROM team_governance_policies
 			 WHERE team_id = ? AND scope = ? AND active = 1

@@ -1,5 +1,5 @@
 import { ControlPlaneStore,serializeGovernancePolicy } from "../../../../../persistence/store.ts";
-export async function getTeamGovernancePolicyMethod(this: ControlPlaneStore, teamId, scope = 'team') {
+export async function getTeamGovernancePolicyMethod(this: ControlPlaneStore, teamId: string, scope = 'team') {
     await this.ensureInitialized();
     const row = await this.first(`SELECT * FROM team_governance_policies
 			 WHERE team_id = ? AND scope = ? AND active = 1

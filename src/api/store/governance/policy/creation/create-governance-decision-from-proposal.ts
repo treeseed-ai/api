@@ -3,7 +3,7 @@ import { isoNow,ControlPlaneStore,serializeGovernanceDecision } from "../../../.
 import { resolveDecisionDependencySnapshots, validateDecisionAuthority } from '../../../../governance/decision-authority.ts';
 import { reconcileExecutionGraph } from '../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { hasCompleteExecutablePlan, publishProposalDecision, readExactProposal } from '../../../../governance/executable-proposal.ts';
-export async function createGovernanceDecisionFromProposalMethod(this: ControlPlaneStore, proposalId, input: any = {}) {
+export async function createGovernanceDecisionFromProposalMethod(this: ControlPlaneStore, proposalId: string, input: any = {}) {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
     if (!proposal)

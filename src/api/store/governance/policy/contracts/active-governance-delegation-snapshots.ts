@@ -1,5 +1,5 @@
 import { ControlPlaneStore,serializeGovernanceDelegation } from "../../../../persistence/store.ts";
-export async function activeGovernanceDelegationSnapshotsMethod(this: ControlPlaneStore, teamId, scope = 'team') {
+export async function activeGovernanceDelegationSnapshotsMethod(this: ControlPlaneStore, teamId: string, scope = 'team') {
     const rows = await this.all(`SELECT * FROM governance_delegations
 			 WHERE team_id = ? AND status = 'active' AND (scope = ? OR scope = 'team')
 			 ORDER BY created_at ASC`, [teamId, scope]);

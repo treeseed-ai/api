@@ -1,7 +1,7 @@
 import { governanceVotingProvider } from '../../../../governance/voting.ts';
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,serializeGovernanceElectorateSnapshot } from "../../../../persistence/store.ts";
-export async function snapshotGovernanceElectorateMethod(this: ControlPlaneStore, proposalId) {
+export async function snapshotGovernanceElectorateMethod(this: ControlPlaneStore, proposalId: string) {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
     if (!proposal)

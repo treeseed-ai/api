@@ -1,5 +1,5 @@
 import { ControlPlaneStore,serializeGovernanceDecision } from "../../../../../persistence/store.ts";
-export async function getGovernanceDecisionMethod(this: ControlPlaneStore, decisionId) {
+export async function getGovernanceDecisionMethod(this: ControlPlaneStore, decisionId: string) {
     await this.ensureInitialized();
     return serializeGovernanceDecision(await this.first(`SELECT * FROM governance_decisions WHERE id = ? LIMIT 1`, [decisionId]));
 }

@@ -2,7 +2,7 @@ import { governanceVotingProvider } from '../../../../governance/voting.ts';
 import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
 import { assertExpectedProposalVersion, simulationEvidence } from '../support/simulation-evidence.ts';
 import { assertGovernanceProposalReady } from './governance-proposal-readiness.ts';
-export async function evaluateGovernanceProposalMethod(this: ControlPlaneStore, proposalId, input: any = {}) {
+export async function evaluateGovernanceProposalMethod(this: ControlPlaneStore, proposalId: string, input: any = {}) {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
     if (!proposal)
