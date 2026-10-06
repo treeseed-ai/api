@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { assignmentAttemptSchema, usageSettlementSchema } from '@treeseed/sdk/agent-capacity';
 import { isUniqueConstraintViolation } from '../../../database-errors.ts';
 import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
+import { serializeCapacityLedgerEntryRow } from '../../../repositories/capacity/accounting/ledger.ts';
 import { durableRealEquals } from '../../support/durable-number.ts';
 import type { CapacityUsageActualInput } from './usage-actual-input.ts';
 import {
@@ -70,6 +72,7 @@ function assertSettlementMatches(entry: Record<string, unknown>, input: Capacity
 			{ settlementKey: input.settlementKey, reservationId: input.reservationId },
 		);
 	}
+	serializeCapacityLedgerEntryRow(entry);
 	if (input.existingSettlementPolicy === 'replay') return;
 	const usageMatches = durableRealEquals(entry.active_seconds ?? 0, input.activeSeconds)
 		&& durableRealEquals(entry.elapsed_seconds ?? 0, input.elapsedSeconds)
@@ -83,11 +86,6 @@ function assertSettlementMatches(entry: Record<string, unknown>, input: Capacity
 			{ settlementKey: String(entry.settlement_key ?? ''), reservationId: input.reservationId },
 		);
 	}
-}
-
-function replayedSettlement(entry: Record<string, unknown>, input: CapacitySettlementRequest, usageActualId: string) {
-	assertSettlementMatches(entry, input);
-	return { replayed: true, entry, usageActualId };
 }
 
 interface CounterSettlement {
@@ -141,6 +139,20 @@ interface PreparedCapacitySettlement {
 	operations: CapacityDatabaseOperation[];
 }
 
+function incrementalUsageBounds(input: CapacitySettlementRequest, attempt: number) {
+	const limits = { active_seconds: input.activeSeconds, input_tokens: input.usageActual?.inputTokens ?? 0,
+		output_tokens: input.usageActual?.outputTokens ?? 0, cached_input_tokens: input.usageActual?.cachedInputTokens ?? 0,
+		reasoning_tokens: input.usageActual?.reasoningTokens ?? 0 };
+	const columns = Object.keys(limits);
+	const query = `SELECT ${columns.map(column => `COALESCE(SUM(${column}),0) AS ${column}`).join(',')}
+		FROM capacity_usage_actuals WHERE assignment_id = ? AND assignment_attempt = ? AND accounting_mode = 'incremental'`;
+	const params = [input.assignmentId, attempt];
+	return { query, params, exceeds: (row: Record<string, unknown> | null) =>
+		Object.entries(limits).some(([column, amount]) => Number(row?.[column] ?? 0) > amount),
+		guard: `EXISTS (SELECT 1 FROM (${query}) incremental_total WHERE ${columns.map(column => `incremental_total.${column} > CAST(? AS REAL)`).join(' OR ')})`,
+		guardParams: [...params, ...Object.values(limits)] };
+}
+
 function prepareCapacitySettlement(
 	input: CapacitySettlementRequest,
 	reservation: Record<string, unknown>,
@@ -157,6 +169,18 @@ function prepareCapacitySettlement(
 	const usageActualId = usageIdentityValue.id;
 	const now = new Date().toISOString();
 	const entryId = randomUUID();
+	const attempt = assignmentAttemptSchema.parse(JSON.parse(String(reservation.assignment_attempt_json)));
+	if (attempt.id !== input.assignmentId || attempt.reservationId !== input.reservationId || attempt.teamId !== input.teamId
+		|| attempt.projectId !== reservation.project_id || attempt.workdayId !== reservation.work_day_id
+		|| attempt.provider.providerId !== reservation.capacity_provider_id) throw new CapacityGovernanceError(
+		'capacity_settlement_authority_conflict', 'Settlement must retain the original frozen assignment and reservation authority.', 409);
+	// Persist the required canonical authority in the SAME exactly-once ledger
+	// transaction. Read-back never guesses it from legacy rows or a moved attempt.
+	const usageSettlement = usageSettlementSchema.parse({ schemaVersion: 'treeseed.usage-settlement/v1', id: entryId,
+		idempotencyKey: input.settlementKey, assignmentId: attempt.id, reservationId: attempt.reservationId,
+		workdayId: attempt.workdayId, teamId: attempt.teamId, projectId: attempt.projectId, agentClass: attempt.agentClass,
+		providerId: attempt.provider.providerId, actualSeconds: activeSeconds, nativeUsage: input.usageActual?.nativeUsage ?? {},
+		...(input.usd == null ? {} : { cost: input.usd, currency: 'USD' }), settledAt: now });
 	const operations: CapacityDatabaseOperation[] = [{
 		query: `UPDATE capacity_reservations
 		 SET settlement_token = ?, updated_at = ?
@@ -165,13 +189,14 @@ function prepareCapacitySettlement(
 		params: [settlementToken, now, input.reservationId, input.teamId, input.reservationId, ACTUAL_SETTLEMENT_PHASE],
 	}];
 	operations.push(capacityUsageInsertOperation(usageInput, reservation, usageIdentityValue, { column: 'settlement_token', token: settlementToken }, now));
+	const incremental = incrementalUsageBounds(input, usageIdentityValue.assignmentAttempt);
 	operations.push({
-		query: `DELETE FROM capacity_usage_actuals WHERE id = ? AND EXISTS (SELECT 1 FROM capacity_reservations WHERE id = ? AND team_id = ? AND settlement_token = ?) AND EXISTS (SELECT 1 FROM (SELECT COALESCE(SUM(active_seconds), 0) AS seconds FROM capacity_usage_actuals WHERE assignment_id = ? AND assignment_attempt = ? AND accounting_mode = 'incremental') incremental_total WHERE incremental_total.seconds > CAST(? AS REAL))`,
-		params: [usageActualId, input.reservationId, input.teamId, settlementToken, input.assignmentId, usageIdentityValue.assignmentAttempt, activeSeconds],
+		query: `DELETE FROM capacity_usage_actuals WHERE id = ? AND EXISTS (SELECT 1 FROM capacity_reservations WHERE id = ? AND team_id = ? AND settlement_token = ?) AND ${incremental.guard}`,
+		params: [usageActualId, input.reservationId, input.teamId, settlementToken, ...incremental.guardParams],
 	});
 	operations.push({
-		query: `UPDATE capacity_reservations SET settlement_token = NULL, updated_at = ? WHERE id = ? AND team_id = ? AND settlement_token = ? AND EXISTS (SELECT 1 FROM (SELECT COALESCE(SUM(active_seconds), 0) AS seconds FROM capacity_usage_actuals WHERE assignment_id = ? AND assignment_attempt = ? AND accounting_mode = 'incremental') incremental_total WHERE incremental_total.seconds > CAST(? AS REAL))`,
-		params: [now, input.reservationId, input.teamId, settlementToken, input.assignmentId, usageIdentityValue.assignmentAttempt, activeSeconds],
+		query: `UPDATE capacity_reservations SET settlement_token = NULL, updated_at = ? WHERE id = ? AND team_id = ? AND settlement_token = ? AND ${incremental.guard}`,
+		params: [now, input.reservationId, input.teamId, settlementToken, ...incremental.guardParams],
 	});
 	const tokenActual = Number(input.usageActual?.inputTokens ?? 0) + Number(input.usageActual?.outputTokens ?? 0) + Number(input.usageActual?.reasoningTokens ?? 0);
 	const nativeUsage = input.usageActual?.nativeUsage ?? {};
@@ -190,7 +215,7 @@ function prepareCapacitySettlement(
 	operations.push(...counterSettlementOperations(input, settlementToken, now, counterSettlements));
 	operations.push({
 		query: `INSERT INTO capacity_ledger_entries (id, settlement_key, membership_id, capacity_provider_id, execution_provider_id, lane_id, lane_purpose, communication_overflow, execution_kind, trigger_kind, invocation_id, operation_handoff_id, reservation_id, assignment_id, mode, team_id, project_id, work_day_id, task_id, phase, active_seconds, elapsed_seconds, provider_units, usd, source, metadata_json, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'task_completed_actual_settlement', CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS REAL), CAST(? AS REAL), ?, ?, ? WHERE EXISTS (SELECT 1 FROM capacity_reservations WHERE id = ? AND team_id = ? AND settlement_token = ?) ON CONFLICT (reservation_id, phase) DO NOTHING`,
-		params: [entryId, input.settlementKey, input.membershipId, reservation.capacity_provider_id, reservation.execution_provider_id ?? null, reservation.lane_id ?? null, reservation.lane_purpose ?? null, reservation.communication_overflow ?? 0, reservation.execution_kind ?? 'workday', reservation.trigger_kind ?? 'scheduled', reservation.invocation_id ?? null, reservation.operation_handoff_id ?? null, input.reservationId, input.assignmentId, reservation.mode ?? null, input.teamId, reservation.project_id ?? null, reservation.work_day_id ?? null, reservation.task_id ?? null, activeSeconds, elapsedSeconds, input.providerUnits ?? null, input.usd ?? null, input.source, JSON.stringify({ ...(input.metadata ?? {}), reservedSeconds, activeSeconds, elapsedSeconds, releasedSeconds: Math.max(0, reservedSeconds - activeSeconds), overrunSeconds: Math.max(0, activeSeconds - reservedSeconds) }), now, input.reservationId, input.teamId, settlementToken],
+		params: [entryId, input.settlementKey, input.membershipId, reservation.capacity_provider_id, reservation.execution_provider_id ?? null, reservation.lane_id ?? null, reservation.lane_purpose ?? null, reservation.communication_overflow ?? 0, reservation.execution_kind ?? 'workday', reservation.trigger_kind ?? 'scheduled', reservation.invocation_id ?? null, reservation.operation_handoff_id ?? null, input.reservationId, input.assignmentId, reservation.mode ?? null, input.teamId, reservation.project_id ?? null, reservation.work_day_id ?? null, reservation.task_id ?? null, activeSeconds, elapsedSeconds, input.providerUnits ?? null, input.usd ?? null, input.source, JSON.stringify({ ...(input.metadata ?? {}), reservedSeconds, activeSeconds, elapsedSeconds, releasedSeconds: Math.max(0, reservedSeconds - activeSeconds), overrunSeconds: Math.max(0, activeSeconds - reservedSeconds), usageSettlement }), now, input.reservationId, input.teamId, settlementToken],
 	});
 	operations.push({
 		query: `UPDATE capacity_reservations SET active_seconds = ?, elapsed_seconds = ?, released_seconds = ?, overrun_seconds = ?, consumed_provider_units = ?, consumed_usd = ?, state = 'consumed', updated_at = ? WHERE id = ? AND team_id = ? AND settlement_token = ? AND EXISTS (SELECT 1 FROM capacity_ledger_entries WHERE reservation_id = ? AND phase = ? AND id = ?)`,
@@ -241,6 +266,9 @@ export async function settleCapacityReservationExactlyOnce(database: CapacityGov
 			? `usage:${input.assignmentId}:${usageIdentityValue.assignmentAttempt}:aggregate`
 			: usageActualId };
 	}
+	const incremental = incrementalUsageBounds(input, usageIdentityValue.assignmentAttempt);
+	if (incremental.exceeds(await database.first(incremental.query, incremental.params))) throw new CapacityGovernanceError(
+		'capacity_usage_aggregate_underreported', 'Terminal aggregate cannot discard accepted incremental time or token measurements.', 409, { assignmentId: input.assignmentId });
 	const claims = await database.all(`SELECT claim.*, counter.scope FROM capacity_reservation_counter_claims claim JOIN capacity_admission_counters counter ON counter.id = claim.counter_id WHERE claim.reservation_id = ? ORDER BY claim.counter_id ASC`, [input.reservationId]);
 	const prepared = prepareCapacitySettlement(input, reservation, claims);
 	const { activeSeconds, elapsedSeconds, reservedSeconds, now, entryId, operations } = prepared;
@@ -265,8 +293,8 @@ export async function settleCapacityReservationExactlyOnce(database: CapacityGov
 		[input.reservationId, ACTUAL_SETTLEMENT_PHASE],
 	);
 	if (!entry) {
-		const incremental = await database.first(`SELECT COALESCE(SUM(active_seconds), 0) AS seconds FROM capacity_usage_actuals WHERE assignment_id = ? AND assignment_attempt = ? AND accounting_mode = 'incremental'`, [input.assignmentId, usageIdentityValue.assignmentAttempt]);
-		if (Number(incremental?.seconds ?? 0) > input.activeSeconds) throw new CapacityGovernanceError('capacity_usage_aggregate_underreported', 'Terminal aggregate agent time cannot be less than accepted incremental usage.', 409, { assignmentId: input.assignmentId, incrementalSeconds: Number(incremental?.seconds ?? 0), aggregateSeconds: input.activeSeconds });
+		if (incremental.exceeds(await database.first(incremental.query, incremental.params))) throw new CapacityGovernanceError(
+			'capacity_usage_aggregate_underreported', 'Terminal aggregate cannot discard accepted incremental time or token measurements.', 409, { assignmentId: input.assignmentId });
 		throw new CapacityGovernanceError('capacity_settlement_not_committed', 'Capacity settlement was not committed.', 500);
 	}
 	const usageRow = await database.first(`SELECT * FROM capacity_usage_actuals WHERE id = ? OR idempotency_key = ? LIMIT 1`, [usageActualId, usageIdentityValue.idempotencyKey]);

@@ -7,6 +7,7 @@ export default defineConfig({
 	resolve: { alias: sdkSource ? {
 		'@treeseed/sdk/agent-capacity': resolve(sdkSource, 'src/capacity/agents/agent-capacity.ts'),
 		'@treeseed/sdk/operator-contracts': resolve(sdkSource, 'src/operator-contracts/index.ts'),
+		'@treeseed/sdk/content-validation': resolve(sdkSource, 'src/content/validation/index.ts'),
 	} : {} },
 	test: {
 		fileParallelism: true,

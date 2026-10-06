@@ -8,7 +8,8 @@ import { TreeDxRemoteHeadReconciliationScheduler } from '../../treedx/remote-hea
 import { createClient,createControlPlaneStore,createExecutorsForOptions,loadConfig,packageVersion,registerAndHeartbeat } from '../index.js';
 import { runPlatformOperationOnce } from './operation-execution.js';
 
-export async function runOnceWithClient(config, client, version, options: any = {}) {
+export async function runOnceWithClient(config: Parameters<typeof registerAndHeartbeat>[1],
+    client: Pick<Awaited<ReturnType<typeof createClient>>, keyof Awaited<ReturnType<typeof createClient>>>, version: string, options: any = {}) {
     const controlPlaneStore = options.controlPlaneStore ?? options.store ?? null;
     await registerAndHeartbeat(client, config, version, { ...options, controlPlaneStore, config });
 	const result = await runPlatformOperationOnce({

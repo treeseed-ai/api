@@ -6,6 +6,7 @@ export type SeedPlanActionType = 'create' | 'update' | 'unchanged' | 'skip' | 'd
 export type SeedResourceKind =
 	| 'team'
 	| 'teamMembership'
+	| 'servicePrincipalMembership'
 	| 'project'
 	| 'hubRepository';
 
@@ -203,19 +204,34 @@ export type SeedOperationRecipePlan = SeedOperationRecipe & {
 	orderedSteps: SeedOperationRecipeStep[];
 };
 
+type NormalizedSeedMetadata = Record<string, unknown> & { seed: { name: string; version: number; resourceKey: string } };
+type NormalizedSeedRepository = Omit<SeedProjectRepository, 'submodulePath'> & { submodulePath?: string | null };
 export type NormalizedSeedResource = {
-	kind: SeedResourceKind;
 	key: string;
 	label: string;
-	environments: SeedEnvironment[];
-	payload: Record<string, unknown>;
+	environments: string[];
 	parentKey?: string;
-};
+} & (
+	| { kind: 'team'; payload: Record<string, unknown> & Pick<SeedTeamResource, 'slug' | 'name' | 'displayName'> & {
+		logoUrl?: string | null; profileSummary?: string | null; metadata: NormalizedSeedMetadata } }
+	| { kind: 'teamMembership'; payload: Record<string, unknown> & Pick<SeedTeamMembershipResource, 'email' | 'roles' | 'missingUser'> & {
+		teamKey: string; metadata: NormalizedSeedMetadata } }
+	| { kind: 'servicePrincipalMembership'; payload: Record<string, unknown> & {
+		teamKey: string; principalKey: string; displayName: string; roles: string[]; interactiveLogin: false; metadata: NormalizedSeedMetadata } }
+	| { kind: 'project'; payload: Record<string, unknown> & Pick<SeedProjectResource, 'slug' | 'name'> & {
+		teamKey: string; description?: string | null; kind?: string | null;
+		repository?: NormalizedSeedRepository | null; library?: NormalizedSeedRepository | null;
+		architecture?: SeedProjectArchitecture | Record<string, unknown>; metadata: NormalizedSeedMetadata } }
+	| { kind: 'hubRepository'; payload: Record<string, unknown> & Pick<SeedHubRepositoryResource, 'role' | 'provider' | 'owner' | 'name' | 'gitUrl'> & {
+		projectKey: string; defaultBranch?: string | null; currentBranch?: string | null; submodulePath?: string | null;
+		status?: string; accessPolicy?: Record<string, unknown> | null; releasePolicy?: Record<string, unknown> | null;
+		publishPolicy?: Record<string, unknown> | null; repositoryPolicy?: SeedRepositoryPolicy | null; metadata: NormalizedSeedMetadata } }
+);
 
 export type SeedPlanAction = NormalizedSeedResource & {
 	action: SeedPlanActionType;
 	reason?: string;
-	existing?: Record<string, unknown> | null;
+	existing?: (Record<string, unknown> & { id: string; currentBranch?: string | null }) | null;
 };
 
 export type SeedPlanSummary = Record<SeedPlanActionType, number>;

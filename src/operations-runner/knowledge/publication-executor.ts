@@ -99,7 +99,7 @@ export function createKnowledgePublicationExecutor(options: any) {
 			if (publication.status === 'completed') {
 				if (!workspace || !review) throw new Error('Completed publication workflow records are missing.');
 				const current = await publicationStorage.readCurrent(workspace.teamId);
-				if (workspace.status !== 'published' || review.status !== 'approved'
+				if (!current || workspace.status !== 'published' || review.status !== 'approved'
 					|| publication.published_revision !== current?.revision || !containsPublicationCommit(current, publication, workspace)) {
 					throw new Error('Completed publication state does not match the current immutable manifest.');
 				}
@@ -120,7 +120,7 @@ export function createKnowledgePublicationExecutor(options: any) {
 				throw new Error('Production library promotion requires the protected main pull-request boundary.');
 			}
 			const connection = await resolveConnection(store, { projectId: workspace.projectId,
-				write: false, publishRefs: [workspace.branchName, publication.published_ref, publication.commit_sha,
+				write: false, authoringPaths: true, publishRefs: [workspace.branchName, publication.published_ref, publication.commit_sha,
 					`refs/treedx/commits/${publication.commit_sha}`] });
 			if (!connection) throw new Error('The project TreeDX repository is unavailable.');
 			if (/^(?:refs\/heads\/)?main$/.test(connection.publicationRef)) throw new Error('Direct main publication is prohibited.');
@@ -168,6 +168,19 @@ export function createKnowledgePublicationExecutor(options: any) {
 				ref: publication.commit_sha, paths: workspace.allowedPaths }), 'index');
 			if (!publicationAlreadyApplied) requireIndexedSourceClosure({ projectId: workspace.projectId,
 				commitSha: publication.commit_sha, graph, search });
+			if (!publicationAlreadyApplied) {
+				// Scheduling consumes the published ref, whose native index is distinct
+				// from the exact-commit index. Both must resolve to the reviewed commit.
+				const publishedGraph = await completedGraphRefresh(connection.client, {
+					repoId: connection.repositoryId, ref: publication.published_ref, paths: workspace.allowedPaths,
+					changedPaths: Array.isArray(review.changedPaths) ? review.changedPaths : [],
+				});
+				const publishedSearch = treeDxResult(await connection.client.refreshSearchIndex({
+					repoId: connection.repositoryId, ref: publication.published_ref, paths: workspace.allowedPaths,
+				}), 'index');
+				requireIndexedSourceClosure({ projectId: workspace.projectId, commitSha: publication.commit_sha,
+					graph: publishedGraph, search: publishedSearch });
+			}
 			const previous = recoveredManifest;
 			let auditPrevious = previous;
 			let manifest = previous;

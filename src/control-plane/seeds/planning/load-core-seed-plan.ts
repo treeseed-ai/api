@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { validateSeedSource, type SeedDiagnostic, type SeedEnvironment, type SeedPlan, type SeedPlanAction } from '../contracts/index.ts';
+import { validateSeedSource, type SeedDiagnostic, type SeedEnvironment, type SeedPlan, type SeedPlanAction, type NormalizedSeedResource } from '../contracts/index.ts';
 
 const error = (code: string, message: string, path?: string): SeedDiagnostic => ({ severity: 'error', code, message, path });
 const hasErrors = (diagnostics: SeedDiagnostic[]) => diagnostics.some((diagnostic) => diagnostic.severity === 'error');
@@ -13,7 +13,7 @@ function selectedEnvironments(resource: any, manifest: any, selected: SeedEnviro
 }
 
 function normalizeCoreResources(manifest: any, selected: SeedEnvironment[]) {
-	const resources: Array<Omit<SeedPlanAction, 'action'>> = [];
+	const resources: NormalizedSeedResource[] = [];
 	for (const team of manifest.resources.teams) {
 		resources.push({
 			kind: 'team', key: team.key, label: team.displayName ?? team.name ?? team.slug,

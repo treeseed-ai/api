@@ -19,9 +19,9 @@ export function isProviderAssignmentLeasable(assignment: Pick<ProviderAssignment
 const CAPACITY_RUNTIME_REASON_DETAILS: Record<string, {
 	title: string;
 	message: string;
-	owner: CapacityRuntimeBlockerOwner;
+	owner: CapacityRuntimeBlockerVm['owner'];
 	nextAction: string;
-	severity: CapacityRuntimeBlockerSeverity;
+	severity: CapacityRuntimeBlockerVm['severity'];
 }> = {
 	provider_inactive: {
 		title: 'Provider is inactive',

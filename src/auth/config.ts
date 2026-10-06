@@ -1,5 +1,7 @@
-import type { CloudflareRuntime } from '@treeseed/core/types/cloudflare';
-import type { APIContext } from 'astro';
+export interface AuthContext {
+	locals: { runtime?: { env?: Record<string, unknown> } };
+	url?: URL;
+}
 
 export const WEB_SESSION_COOKIE = 'ts_session';
 export const WEB_CSRF_COOKIE = 'ts_csrf';
@@ -13,10 +15,10 @@ const AUTH_MODES = new Set(['internal-first', 'internal-only', 'providers-only']
 const INTERNAL_SIGNUP_MODES = new Set(['open', 'invite', 'admin']);
 const LOCAL_AUTH_HOSTNAMES = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]']);
 
-type RuntimeEnv = CloudflareRuntime['env'];
+type RuntimeEnv = Record<string, unknown>;
 
-function runtimeEnv(context?: Pick<APIContext, 'locals'>) {
-	return ((context?.locals as { runtime?: CloudflareRuntime } | undefined)?.runtime)?.env;
+function runtimeEnv(context?: Pick<AuthContext, 'locals'>) {
+	return context?.locals.runtime?.env;
 }
 
 function envValue(name: string, env?: RuntimeEnv) {
@@ -108,7 +110,7 @@ export function localAuthCanonicalRedirectUrl(requestUrl: URL, configuredSiteBas
 	return redirectUrl;
 }
 
-export function getSiteAuthConfig(context?: Pick<APIContext, 'locals'> & Partial<Pick<APIContext, 'url'>>) {
+export function getSiteAuthConfig(context?: AuthContext) {
 	const env = runtimeEnv(context);
 	const authMode = parseEnumEnv('TREESEED_AUTH_MODE', AUTH_MODES, 'internal-first', env);
 	const internalSignup = parseEnumEnv('TREESEED_AUTH_INTERNAL_SIGNUP', INTERNAL_SIGNUP_MODES, 'open', env);

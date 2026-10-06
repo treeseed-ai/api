@@ -1,4 +1,4 @@
-import type { APIContext } from 'astro';
+import type { AuthContext } from './config.ts';
 import { getSiteAuthConfig } from './config.ts';
 
 interface AuthEmailMessage {
@@ -313,7 +313,7 @@ function isLocalSmtpHost(value: string) {
 	return value === 'localhost' || value === '127.0.0.1' || value === '0.0.0.0';
 }
 
-export function canDeliverAuthEmail(context: Pick<APIContext, 'locals'> | undefined) {
+export function canDeliverAuthEmail(context: Pick<AuthContext, 'locals'> | undefined) {
 	const config = getSiteAuthConfig(context);
 	const smtp = config.authEmail;
 	return Boolean(smtp.host && smtp.port && smtp.from) || isLocalAuthUrl(config.betterAuthBaseUrl);
@@ -323,7 +323,7 @@ export function authEmailConfigurationMessage() {
 	return 'Configure SMTP email before using registration, email verification, or password reset.';
 }
 
-export async function sendAuthEmail(context: Pick<APIContext, 'locals'> | undefined, message: AuthEmailMessage) {
+export async function sendAuthEmail(context: Pick<AuthContext, 'locals'> | undefined, message: AuthEmailMessage) {
 	const config = getSiteAuthConfig(context);
 	const smtp = config.authEmail;
 

@@ -67,15 +67,19 @@ export async function loadTeamExactDependencyLinks(store: any, sources: Executab
 					ref: commit, path, encoding: 'utf8', parseFrontmatter: true, allowProtected: true }));
 				if (text(reply.resolvedRef) !== commit) throw new Error('TreeDX dependency note moved during read.');
 				const value = record(reply.file ?? (Array.isArray(reply.files) ? reply.files[0] : null));
-				const content = text(value.content);
+				if (value.path !== path || typeof value.content !== 'string' || !value.content.trim()) {
+					throw new Error('TreeDX dependency note path or readable content is missing or changed.');
+				}
+				const content = value.content;
 				const validated = validatePortableContentData('note', record(value.frontmatter));
-				if (!validated.ok || !validated.data || validated.data.projectId !== project.projectId) {
+				const note = record(validated.data);
+				if (!validated.ok || !validated.data || note.projectId !== project.projectId) {
 					throw new Error('TreeDX dependency note failed content and project validation.');
 				}
-				file = { sourceRef: { store: 'treedx', model: 'note', id: validated.data.id,
+				file = { sourceRef: { store: 'treedx', model: 'note', id: text(note.id),
 					repository: project.repository, commit, path,
 					digest: `sha256:${createHash('sha256').update(content).digest('hex')}` },
-					links: validated.data.links ?? [] };
+					links: Array.isArray(note.links) ? note.links : [] };
 				files.set(path, file);
 			}
 			if (!file.links.some((candidate) => JSON.stringify(candidate) === JSON.stringify(link))) {

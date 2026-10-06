@@ -5,8 +5,48 @@ import { createFeedbackOperations } from '../../../../src/api/control-plane/cata
 import { OperationRegistry } from '../../../../src/api/control-plane/catalog/operation-registry.ts';
 import { createFeedbackOperationService } from '../../../../src/api/control-plane/feedback/feedback-operation-service.ts';
 import { installControlPlaneProtocolRoutes } from '../../../../src/api/control-plane/http/protocol-routes.ts';
+import { ControlPlaneStore } from '../../../../src/api/persistence/store.ts';
+import { postgresGraph } from '../capacity/execution/graph/architecture/living/living-postgres-fixture.ts';
+import { vi } from 'vitest';
+import { createLocalPrivateObjectStorage } from '../../../../src/api/storage/private-object-storage.ts';
 
 describe('feedback catalog operations', () => {
+	it('retains only canonical runtime environment values without deriving authority from caller context',async()=>{
+		const prior=process.env.TREESEED_ENVIRONMENT,observations:Array<{actual:unknown;expected:unknown}>=[];
+		try{
+			for(const [value,expected] of [['local','local'],[' staging ','staging'],['production','production'],['preview',undefined],['development',undefined],['test',undefined]] as const){
+				process.env.TREESEED_ENVIRONMENT=value;
+				const store=new ControlPlaneStore({}, {prepare(){throw new Error('Unexpected unit SQL');}});
+				vi.spyOn(store,'first').mockResolvedValue(null);const run=vi.spyOn(store,'run').mockResolvedValue({});vi.spyOn(store,'recordAuditEvent').mockResolvedValue(undefined);
+				const body={type:'bug',message:'Original message',context:{environment:'production'}},held=structuredClone(body);
+				await createFeedbackOperationService(store,{feedbackStorage:createLocalPrivateObjectStorage()}).create({id:'user'},body,'environment-request');
+				const insert=run.mock.calls.find(([sql])=>sql.startsWith('INSERT INTO feedback_submissions'));
+				if(!insert?.[1])throw new Error('Original submission insert missing');
+				observations.push({actual:JSON.parse(String(insert[1][12])).environment,expected});expect(body).toEqual(held);
+			}
+			for(const observation of observations)expect(observation.actual).toBe(observation.expected);
+		}finally{if(prior===undefined)delete process.env.TREESEED_ENVIRONMENT;else process.env.TREESEED_ENVIRONMENT=prior;}
+	});
+	it('native submission persistence reads back canonical environment omission and preserves exact replay without extra audit',async()=>{
+		const f=await postgresGraph(),prior=process.env.TREESEED_ENVIRONMENT;
+		try{
+			const store=new ControlPlaneStore({TREESEED_ENVIRONMENT:'test'},f.left);store.initializationPromise=Promise.resolve();
+			await f.left.pool.query("INSERT INTO users(id,status,created_at,updated_at) VALUES('user','active',$1,$1)",['2026-10-06T00:00:00.000Z']);
+			const observations:Array<{actual:unknown;expected:unknown}>=[];
+			for(const [value,expected] of [['staging','staging'],['preview',undefined]] as const){
+				process.env.TREESEED_ENVIRONMENT=value;const body={type:'bug',message:'Original message',context:{environment:'production'}},held=structuredClone(body),key=`environment-${value}`;
+				const service=createFeedbackOperationService(store,{feedbackStorage:createLocalPrivateObjectStorage()}),result=await service.create({id:'user'},body,key);
+				const rows=(await f.right.pool.query('SELECT * FROM feedback_submissions WHERE id=$1',[result.id])).rows;
+				expect(rows).toHaveLength(1);observations.push({actual:JSON.parse(rows[0].context_json).environment,expected});
+				observations.push({actual:rows[0].environment,expected:expected??null});
+				const audits=(await f.right.pool.query('SELECT * FROM audit_events ORDER BY id')).rows;
+				expect(await service.create({id:'user'},body,key)).toEqual({id:result.id,status:'new',replayed:true});
+				expect((await f.right.pool.query('SELECT * FROM feedback_submissions WHERE id=$1',[result.id])).rows).toEqual(rows);
+				expect((await f.right.pool.query('SELECT * FROM audit_events ORDER BY id')).rows).toEqual(audits);expect(body).toEqual(held);
+			}
+			for(const observation of observations)expect(observation.actual).toBe(observation.expected);
+		}finally{if(prior===undefined)delete process.env.TREESEED_ENVIRONMENT;else process.env.TREESEED_ENVIRONMENT=prior;await f.close();}
+	});
 	it('binds the four retained SDK-owned feedback operations', () => {
 		const operations = createFeedbackOperations({ feedback: {} as any });
 		expect(operations.map((operation) => operation.binding)).toEqual([

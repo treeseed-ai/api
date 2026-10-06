@@ -1,6 +1,6 @@
 import { TREEAI_CONTROL_PLANE_OPERATION_LIST, type TreeAiOperationId } from '@treeseed/sdk/treeai';
 import type { TreeAiProxyService } from '../../treeai/proxy-service.ts';
-import { ControlPlaneOperationError, type BoundOperation } from '../operation-registry.ts';
+import { ControlPlaneOperationError, controlPlaneErrorStatus, type BoundOperation } from '../operation-registry.ts';
 
 export interface TreeAiOperationDependencies { treeAiProxy: TreeAiProxyService }
 
@@ -14,7 +14,8 @@ export function createTreeAiOperations({ treeAiProxy }: TreeAiOperationDependenc
 					{ path, query: input.query as Record<string, string>, body: input.body }, context) as never;
 			} catch (error) {
 				const failure = error as { status?: number; code?: string; message?: string };
-				throw new ControlPlaneOperationError((failure.status && [400, 401, 403, 404, 409, 412, 413, 422, 429, 500, 503].includes(failure.status) ? failure.status : 503) as 503,
+				const status = controlPlaneErrorStatus(failure.status);
+				throw new ControlPlaneOperationError(status === 500 && failure.status !== 500 ? 503 : status,
 					failure.code ?? 'treeai_unavailable', failure.message ?? 'TreeAI is unavailable.');
 			}
 		},

@@ -1,0 +1,14 @@
+schemaVersion: treeseed.scene/v1
+id: api.golden.execution-schema
+title: Actual managed clean execution storage and canonical readback
+scope: local-integrated-runtime
+workflow:
+  - id: execution-unfinished-handoff-live-1
+    action: { verifier: api.golden.execution-unfinished-handoff-live-1 }
+    expect: { status: passed }
+  - id: execution-protected-observation-live-1
+    action: { verifier: api.golden.execution-protected-observation-live-1 }
+    expect: { status: passed }
+  - id: execution-clean-schema-live-1
+    action: { verifier: api.golden.execution-clean-schema-live-1 }
+    expect: { status: passed }

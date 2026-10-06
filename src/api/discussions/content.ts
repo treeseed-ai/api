@@ -10,6 +10,7 @@ import { persistSessionEvent } from '../realtime/session-events.ts';
 import { validateContentRecord, type ContentModel } from '../content/content-validation.ts';
 import { discussionWorkspaceOperationKey,openDiscussionWorkspace } from './discussion-workspace.ts';
 import { parseCommunicationAddresses } from '@treeseed/sdk/operator-contracts';
+import type { OperationInvocationContext } from '../control-plane/catalog/operation-registry.ts';
 
 type Row = Record<string, unknown>;
 function text(value: unknown, fallback = '') { return typeof value === 'string' && value.trim() ? value.trim() : fallback; }
@@ -91,7 +92,7 @@ export async function loadDiscussions(input: {
 	const listed = exactPaths.length ? { entries: exactPaths.map((path) => ({ path })), resolvedRef: discussionRef }
 		: await connection.client.listRepositoryPaths({ repoId: connection.repositoryId, ref: discussionRef, paths: patterns, kinds: ['blob'], extensions: ['.md', '.mdx'], limit: 1_000, allowProtected: true });
 	const readableAuthoring = await listReadableTreeDxAuthoringState(input.store, input.projectId);
-	const branchPaths = (listed.entries ?? []).map((entry: unknown) => text((entry as Row)?.path)).filter(Boolean);
+	const branchPaths: string[] = (listed.entries ?? []).map((entry: unknown) => text((entry as Row)?.path)).filter(Boolean);
 	const journalPaths = readableAuthoring.flatMap((state) => Array.isArray(state.changedPaths)
 		? state.changedPaths.map((path) => text(path)).filter(Boolean) : []);
 	const query = text(input.query).toLowerCase();
@@ -172,14 +173,14 @@ export async function loadDiscussions(input: {
 		return text(left.createdAt, text(left.occurredAt)).localeCompare(text(right.createdAt, text(right.occurredAt)));
 	}).at(-1);
 	return {
-		ref: text((read as Row).resolvedRef, listed.resolvedRef, discussionRef),
+		ref: text((read as Row).resolvedRef, listed.resolvedRef),
 		discussions, messages, events,
 		cursor: last ? text(record(last.frontmatter).createdAt, text(record(last.frontmatter).occurredAt)) : after,
 	};
 }
 
 export async function commitDiscussionMessage(input: {
-	store: any; projectId: string; teamId: string; principal: Row; body: string;
+	store: any; projectId: string; teamId: string; principal: Row & { name?: string }; body: string;
 	lookupWorkday?: (teamId: string, workdayId: string) => Promise<{ executionMode: string } | null>;
 	intent: 'discuss' | 'propose'; discussionId?: string; topic?: string; fileRefs?: unknown[]; contextRefs?: AgentAtlasContextReference[];
 	authorType?: 'user' | 'agent' | 'system'; messageId?: string;
@@ -222,7 +223,7 @@ export async function commitDiscussionMessage(input: {
 	const messagePath = projectLibraryPath(root, 'discussion-messages', slug(discussionId), `${messageId}.mdx`);
 	const eventPath = projectLibraryPath(root, 'discussion-events', slug(discussionId), `${now.replace(/[^0-9]/gu, '')}-${messageId}.mdx`);
 	const authorId = text(input.principal.id, 'unknown-user');
-	const authorName = text(input.principal.displayName, input.principal.name, authorId);
+	const authorName = text(input.principal.displayName, input.principal.name);
 	const discussion = serializeFrontmatterDocument({ schemaVersion: 'treeseed.discussion/v1', id: discussionId,
 		projectId: input.projectId, subjectRef: { store: 'postgresql', model: 'project', id: input.projectId },
 		status: 'open', participantClasses: [], title: topic, topic, teamId: input.teamId,
@@ -294,7 +295,7 @@ export async function commitDiscussionMessage(input: {
 		}
 		// Only integrated content enters the shared replication and graph signal path.
 		// Simulation/assignment messages remain readable from their exact journaled commit.
-		if (authoring.state === 'integrated') await projectTreeDxCommitSignals(input.store, { projectId: input.projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: `Discussion message: ${topic}`, actorType: input.authorType === 'agent' ? 'agent' : input.authorType === 'system' ? 'service' : 'user', actorId: authorId });
+	if (authoring.state === 'integrated') await projectTreeDxCommitSignals(input.store, { projectId: input.projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: `Discussion message: ${topic}`, actorType: input.authorType === 'system' ? 'service' : 'user', actorId: authorId });
 		await session.close();
 		return { discussion: { id: discussionId, topic, path: discussionPath }, message: { id: messageId, authorLabel: authorName, body: input.body, path: messagePath }, event: { path: eventPath }, mentions, commitSha: commit.commitSha, changeset: { ...changeset, resultCommitSha: commit.commitSha }, snapshotDigest: createHash('sha256').update(commit.commitSha).digest('hex') };
 	} catch (error) {
@@ -349,13 +350,13 @@ export async function validateDiscussionContextRefs(input: { store: any; teamId:
 }
 
 export async function appendDiscussionEvent(input: {
-	store: any; projectId: string; teamId: string; discussionId: string; event: Row;
+	store: any; projectId: string; teamId: string; discussionId: string; event: Row & { type?: string };
 }) {
 	const connection = await resolveKnowledgeGatewayConnection(input.store, { projectId: input.projectId, write: true, communicationPaths: true });
 	if (!connection) throw new Error('The project TreeDX repository is unavailable for Discussion event projection.');
 	const occurredAt = text(input.event.createdAt, new Date().toISOString());
 	const eventId = text(input.event.id, randomUUID());
-	const phase = text(input.event.eventType, input.event.type, 'assignment.event');
+	const phase = text(input.event.eventType, input.event.type);
 	const path = projectLibraryPath(connection.contentPath, 'discussion-events', slug(input.discussionId), `${occurredAt.replace(/[^0-9]/gu, '')}-${discussionEventPathIdentity(eventId)}.mdx`);
 	const eventRefs = (input.event.refs && typeof input.event.refs === 'object') ? input.event.refs as Row : {};
 	const refs = Object.values(eventRefs).flatMap((value) => Array.isArray(value) ? value : [value]).map(String).filter(Boolean);
@@ -431,7 +432,7 @@ export async function appendDiscussionEvent(input: {
 	}
 }
 
-export async function changeDiscussionStatus(input:{store:any;projectId:string;teamId:string;discussionId:string;status:'open'|'resolved'|'closed';principal:Row}){
+export async function changeDiscussionStatus(input:{store:any;projectId:string;teamId:string;discussionId:string;status:'open'|'resolved'|'closed';principal:NonNullable<OperationInvocationContext['principal']> & { displayName?: unknown; email?: unknown }}){
 	const connection=await resolveKnowledgeGatewayConnection(input.store,{projectId:input.projectId,write:true,communicationPaths:true});
 	if(!connection)throw new Error('The project TreeDX repository is unavailable for Discussion lifecycle changes.');
 	const path=projectLibraryPath(connection.contentPath,'discussions',`${slug(input.discussionId)}.mdx`); const branchName=`refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u,'')}`;
@@ -443,7 +444,7 @@ export async function changeDiscussionStatus(input:{store:any;projectId:string;t
 	const session=await openDiscussionWorkspace({store:input.store,connection,projectId:input.projectId,baseRef:connection.baseRef,branchName,
 		operationKey:discussionWorkspaceOperationKey('status',`${input.discussionId}\n${input.status}`)}); const workspace=session.workspace;
 	try{
-		await applyTextChangeset({client:connection.client,workspace,changes:[{path,before,after}]}); const actor=text(input.principal.displayName,input.principal.id,'Discussion operator');
+		await applyTextChangeset({client:connection.client,workspace,changes:[{path,before,after}]}); const actor=text(input.principal.displayName,input.principal.id);
 		const commit=await connection.client.commit({workspaceId:workspace.workspaceId,message:`discussion: ${input.status} ${input.discussionId}`,author:{name:actor,email:text(input.principal.email,'discussion@users.treeseed.local')}});
 		await recordTreeDxAuthoringState(input.store,'unpublished',{projectId:input.projectId,repositoryId:connection.repositoryId,commitSha:commit.commitSha,ref:commit.branchName,changedPaths:commit.changedPaths,actorType:'user',actorId:text(input.principal.id)});
 		await projectTreeDxCommitSignals(input.store,{projectId:input.projectId,commitSha:commit.commitSha,immutableRef:commit.branchName,changedPaths:commit.changedPaths,changeSummary:`Discussion ${input.status}`,actorType:'user',actorId:text(input.principal.id)});

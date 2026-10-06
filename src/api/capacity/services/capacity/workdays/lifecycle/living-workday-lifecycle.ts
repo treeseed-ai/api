@@ -1,4 +1,4 @@
-import { appliedWorkdaySchema, assignmentResultSchema, compilePlanningRounds, workdayPlanningEndsAt, type AppliedWorkday } from '@treeseed/sdk/agent-capacity';
+import { appliedWorkdaySchema, assignmentResultSchema, compilePlanningRounds, workdayPlanningEndsAt, type AppliedWorkday, type AssignmentResult } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import { workdayParticipants } from '../../../../policy/execution/workday-participants.ts';
@@ -13,7 +13,7 @@ const terminalReservationStates = new Set(['consumed', 'released', 'expired', 'f
 const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
 
-async function completedReportRefs(store: CapacityGovernanceDatabase, run: DurableCapacityWorkdayRun, reports: Row[]): Promise<Row | null> {
+async function completedReportRef(store: CapacityGovernanceDatabase, run: DurableCapacityWorkdayRun, reports: Row[], now: string): Promise<Extract<AssignmentResult['references'][number], { kind: 'treedx' }> | null> {
 	if (reports.length !== 1 || reports[0]!.status !== 'completed') return null;
 	const rows = await store.all(`SELECT id,assignment_result_json FROM capacity_provider_assignments
 		WHERE team_id=? AND work_day_id=? AND execution_node_id=? AND status='completed'
@@ -22,10 +22,11 @@ async function completedReportRefs(store: CapacityGovernanceDatabase, run: Durab
 	let value: unknown = rows[0]!.assignment_result_json;
 	if (typeof value === 'string') try { value = JSON.parse(value); } catch { return null; }
 	const parsed = assignmentResultSchema.safeParse(value);
-	if (!parsed.success || parsed.data.status !== 'completed' || parsed.data.assignmentId !== rows[0]!.id) return null;
+	if (!parsed.success || parsed.data.status !== 'completed' || parsed.data.assignmentId !== rows[0]!.id
+		|| !Number.isFinite(Date.parse(now)) || Date.parse(parsed.data.completedAt) > Date.parse(now)) return null;
 	const references = parsed.data.references;
 	if (references.length !== 1 || references[0]!.kind !== 'treedx') return null;
-	return { [String(reports[0]!.id)]: references[0] };
+	return references[0]!;
 }
 
 async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: DurableCapacityWorkdayRun, plan: AppliedWorkday) {
@@ -131,7 +132,6 @@ export async function advanceLivingWorkday(store: CapacityGovernanceDatabase & {
 		next = { ...next, state: 'closing', closingAt: next.closingAt ?? now };
 	}
 	let status = run.status, completedAt = run.completedAt;
-	let reportRefs = run.reportRefs;
 	if (requestClose && run.executionKind === 'conversation') {
 		// Conversations settle through their durable response, not a Reporter.
 		// Explicit stop is cancellation and must not fabricate successful output.
@@ -144,16 +144,15 @@ export async function advanceLivingWorkday(store: CapacityGovernanceDatabase & {
 		const reservationsSettled = reservations.every((row) => terminalReservationStates.has(String(row.state)));
 		if (reports.length > 0 && reports.every((row) => terminalNodeStates.has(String(row.status)))
 			&& reservationsSettled) {
-			next = { ...next, state: 'ended', endedAt: next.endedAt ?? now };
-			const references = await completedReportRefs(store, run, reports);
-			status = references ? 'completed' : 'failed';
-			if (references) reportRefs = references;
+			const reference = await completedReportRef(store, run, reports, now);
+			status = reference ? 'completed' : 'failed';
+			if (reference) next = { ...next, state: 'ended', endedAt: next.endedAt ?? now, reportRef: reference };
 			completedAt = completedAt ?? now;
 		}
 	}
-	if (same(next, plan) && status === run.status && same(reportRefs, run.reportRefs)) return { changed: false, plan: next, status };
+	if (same(next, plan) && status === run.status) return { changed: false, plan: next, status };
 	const updated = await store.updateCapacityWorkdayRun(run.teamId, run.id, {
-		status, completedAt, reportRefs, parameters: { ...run.parameters, appliedPlan: next },
+		status, completedAt, parameters: { ...run.parameters, appliedPlan: next },
 	});
 	if (!updated) throw new Error('living_workday_update_failed');
 	return { changed: true, plan: next, status };

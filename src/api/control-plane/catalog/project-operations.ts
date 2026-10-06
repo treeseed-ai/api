@@ -2,12 +2,10 @@ import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { projectCreatePlanSchema, type ProjectCreateTarget } from '@treeseed/sdk/platform';
 import type { TreeDxProxyOperationService } from '../repositories/treedx/proxy-operation-service.ts';
 import { ControlPlaneOperationError, type BoundOperation } from './operation-registry.ts';
+import type { createPlatformProjectCreationService } from '../projects/platform-project-creation-service.ts';
 
 export interface ProjectOperationDependencies {
-	platformProjectCreation?: {
-		plan(target: Partial<ProjectCreateTarget>): Promise<unknown>;
-		apply(plan: ReturnType<typeof projectCreatePlanSchema.parse>, idempotencyKey: string): Promise<unknown>;
-	};
+	platformProjectCreation?: ReturnType<typeof createPlatformProjectCreationService>;
 	treeDxProxy: TreeDxProxyOperationService;
 	capacity: {
 		evaluateProjectDeletionBlockers(projectId: string): Promise<Array<Record<string, unknown>>>;
@@ -198,7 +196,7 @@ export function createProjectUpdateOperation(dependencies: ProjectOperationDepen
 function projectInventoryOperation(
 	binding: typeof CONTROL_PLANE_OPERATIONS.projects.archive | typeof CONTROL_PLANE_OPERATIONS.projects.restore,
 	status: 'active' | 'archived',
-): (dependencies: ProjectOperationDependencies) => BoundOperation<any> {
+): (dependencies: ProjectOperationDependencies) => BoundOperation<typeof binding> {
 	return (dependencies) => ({
 		binding,
 		async handler(input, context) {

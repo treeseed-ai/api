@@ -17,7 +17,7 @@ export function createExecutorsForOptions(options: any = {}) {
 	const workflowConfigurationExecutor = createGitHubConfigurationExecutor({ controlPlaneStore: options.controlPlaneStore, fetchImpl: options.fetchImpl });
 	const noop = {
 		namespace: 'control-plane', operation: 'noop',
-		async run(_input, context) {
+		async run(_input: unknown, context: { checkpoint(output: unknown, event: unknown): Promise<unknown> }) {
 			await context.checkpoint({ phase: 'diagnostic' }, { kind: 'control-plane.noop', data: { runnerId: process.env.TREESEED_PLATFORM_RUNNER_ID ?? null } });
 			return { ok: true, message: 'Treeseed operations runner diagnostic completed.' };
 		},

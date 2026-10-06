@@ -1,5 +1,5 @@
 import { ControlPlaneStore,normalizeProjectArchitecture } from "../../../../persistence/store.ts";
-export async function getProjectArchitectureMethod(this: ControlPlaneStore, projectId) {
+export async function getProjectArchitectureMethod(this: ControlPlaneStore, projectId: string) {
     await this.ensureInitialized();
     const project = await this.getProject(projectId);
     if (!project)

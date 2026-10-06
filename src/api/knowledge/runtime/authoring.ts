@@ -7,7 +7,9 @@ import { validateKnowledgeMarkdown } from './markdown.ts';
 
 const safeSlug = /^[a-z0-9]+(?:[/-][a-z0-9]+)*$/u;
 
-function pageFrontmatter(input: Omit<KnowledgePageDefinition, 'schemaVersion' | 'bodyHtml' | 'revision' | 'sourcePackage'>) {
+type KnowledgePageDraft = Omit<KnowledgePageDefinition, 'schemaVersion' | 'bodyHtml' | 'revision' | 'sourcePackage' | 'visibility' | 'audiences'> & { visibility: unknown; audiences: unknown };
+
+function pageFrontmatter(input: KnowledgePageDraft) {
 	return {
 		schemaVersion: KNOWLEDGE_PAGE_SCHEMA_VERSION, id: input.id, projectId: input.projectId,
 		bookRef: input.bookRef, slug: input.slug,
@@ -26,15 +28,14 @@ function pageFrontmatter(input: Omit<KnowledgePageDefinition, 'schemaVersion' | 
 	};
 }
 
-export function serializeKnowledgePageDraft(input: Omit<KnowledgePageDefinition,
-	'schemaVersion' | 'bodyHtml' | 'revision' | 'sourcePackage'>): string {
+export function serializeKnowledgePageDraft(input: KnowledgePageDraft): string {
 	if (!safeSlug.test(input.slug)) throw new Error('The knowledge page slug is invalid.');
 	const raw = serializeFrontmatterDocument(pageFrontmatter(input), `\n${validateKnowledgeMarkdown(input.bodyMarkdown)}\n`);
 	parseKnowledgePage({ path: `${input.slug}.md`, raw });
 	return raw;
 }
 
-export function serializeBookDraft(input: Omit<BookDefinition, 'schemaVersion'>): string {
+export function serializeBookDraft(input: Omit<BookDefinition, 'schemaVersion' | 'visibility' | 'packPolicy'> & { visibility: unknown; packPolicy: unknown }): string {
 	if (!safeSlug.test(input.slug)) throw new Error('The book slug is invalid.');
 	const coverImage = input.cover?.image?.trim();
 	if (coverImage && (!coverImage.startsWith('/') || coverImage.includes('..') || /[?#]/u.test(coverImage))) {

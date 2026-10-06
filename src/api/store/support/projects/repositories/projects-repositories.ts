@@ -1,6 +1,45 @@
 import { parseJson } from '../../foundation.ts';
 
-export function serializeHubRepository(row) {
+// Columns of the existing hub_repositories table, not a new repository model.
+export interface HubRepositoryRow extends Record<string, unknown> {
+    id: string;
+    hub_id: string;
+    team_id: string;
+    role: string;
+    provider: string;
+    owner: string;
+    name: string;
+    url: string | null;
+    default_branch: string | null;
+    current_branch: string | null;
+    status: string;
+    access_policy_json: string;
+    release_policy_json: string;
+    publish_policy_json: string;
+    submodule_path: string | null;
+    metadata_json: string;
+    created_at: string;
+    updated_at: string;
+}
+
+type SerializedHubRepository = Pick<HubRepositoryRow, 'id' | 'role' | 'provider' | 'owner' | 'name' | 'url' | 'status'> & {
+    hubId: string;
+    teamId: string;
+    defaultBranch: string | null;
+    currentBranch: string | null;
+    submodulePath: string | null;
+    accessPolicy: ReturnType<typeof parseJson>;
+    releasePolicy: ReturnType<typeof parseJson>;
+    publishPolicy: ReturnType<typeof parseJson>;
+    metadata: ReturnType<typeof parseJson>;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export function serializeHubRepository(row: HubRepositoryRow): SerializedHubRepository;
+export function serializeHubRepository(row: null | undefined): null;
+export function serializeHubRepository(row: HubRepositoryRow | null | undefined): SerializedHubRepository | null;
+export function serializeHubRepository(row: HubRepositoryRow | null | undefined) {
     if (!row)
         return null;
     return {

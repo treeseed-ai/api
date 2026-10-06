@@ -8,7 +8,7 @@ export async function loadKnowledgeContentEntries() {
     const loader = getCollection;
     const groups = await Promise.all(operationalCollections.map(async (collection) => {
         try {
-            const entries = await loader(collection, ({ data }) => !data?.draft);
+            const entries: Array<Record<string, unknown> & { id?: unknown; slug?: unknown }> = await loader(collection, ({ data }: { data?: Record<string, unknown> }) => !data?.draft);
             return entries.map((entry) => ({
                 ...entry,
                 collection,
@@ -22,6 +22,6 @@ export async function loadKnowledgeContentEntries() {
     }));
     return groups.flat();
 }
-function slugFromId(id) {
+function slugFromId(id: unknown) {
     return String(id ?? 'entry').replace(/^.*\//u, '').replace(/[^a-zA-Z0-9_-]+/gu, '-').toLowerCase();
 }

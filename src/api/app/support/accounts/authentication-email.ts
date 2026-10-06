@@ -3,14 +3,34 @@ import { getSiteAuthConfig } from '../../../../auth/config.ts';
 import { sendEmailConfirmation } from '../../../../auth/email-confirmation.ts';
 import { sendAuthEmail } from '../../../../auth/email.ts';
 import { authTokenTimestampSeconds,confirmationUrlFor,teamInviteAcceptUrlFor } from '../index.ts';
-export function normalizeEmail(value) {
+import type { AuthContext } from '../../../../auth/config.ts';
+import type { ControlPlaneStore } from '../../../persistence/store.ts';
+import type { TeamOperationDependencies } from '../../../control-plane/catalog/team-operations.ts';
+
+type EmailStore = Pick<ControlPlaneStore, 'first' | 'all' | 'run'>;
+// The existing user_email_addresses SQL row, including its nullable timestamps.
+type EmailAddressRow = Record<string, unknown> & {
+    id: string; user_id: string; email: string; normalized_email: string; status: string;
+    is_primary: number; verification_requested_at: string | null; verified_at: string | null;
+    created_at: string; updated_at: string;
+};
+type SerializedEmailAddress = Pick<EmailAddressRow, 'id' | 'email' | 'status'> & {
+    userId: EmailAddressRow['user_id']; verified: boolean; isPrimary: boolean;
+    verificationRequestedAt: EmailAddressRow['verification_requested_at']; verifiedAt: EmailAddressRow['verified_at'];
+    createdAt: EmailAddressRow['created_at']; updatedAt: EmailAddressRow['updated_at'];
+};
+type EmailConfirmationInput = Pick<Parameters<typeof sendEmailConfirmation>[1], 'email' | 'displayName'> & {
+    emailAddressId?: string; returnTo?: unknown; skipDelivery?: boolean;
+};
+
+export function normalizeEmail(value: unknown) {
     return String(value ?? '').trim().toLowerCase();
 }
 export const CONTROL_PLANE_EMAIL_CONFIRMATION_PREFIX = 'control_plane_email_confirmation:';
-export function controlPlaneEmailTokenHash(token) {
+export function controlPlaneEmailTokenHash(token: unknown) {
     return createHash('sha256').update(String(token)).digest('hex');
 }
-export async function sendTeamInviteEmail(context, input) {
+export async function sendTeamInviteEmail(context: AuthContext, input: Parameters<TeamOperationDependencies['deliverTeamInvite']>[0]) {
     const teamName = String(input.team?.displayName ?? input.team?.name ?? 'TreeSeed').trim() || 'TreeSeed';
     const role = String(input.invite?.roleKey ?? input.invite?.role ?? 'member').replace(/_/gu, ' ');
     const acceptUrl = teamInviteAcceptUrlFor(context, input.token);
@@ -37,7 +57,7 @@ export async function sendTeamInviteEmail(context, input) {
         html,
     });
 }
-export async function createControlPlaneEmailConfirmation(store, context, input) {
+export async function createControlPlaneEmailConfirmation(store: Pick<EmailStore, 'run'>, context: AuthContext, input: EmailConfirmationInput) {
     const authConfig = getSiteAuthConfig(context);
     const token = `confirm_${randomBytes(24).toString('base64url')}`;
     const now = Date.now();
@@ -76,7 +96,10 @@ export async function createControlPlaneEmailConfirmation(store, context, input)
         token,
     };
 }
-export function serializeUserEmailAddress(row) {
+export function serializeUserEmailAddress(row: EmailAddressRow): SerializedEmailAddress;
+export function serializeUserEmailAddress(row: null | undefined): null;
+export function serializeUserEmailAddress(row: EmailAddressRow | null | undefined): SerializedEmailAddress | null;
+export function serializeUserEmailAddress(row: EmailAddressRow | null | undefined) {
     if (!row)
         return null;
     return {
@@ -92,7 +115,7 @@ export function serializeUserEmailAddress(row) {
         updatedAt: row.updated_at,
     };
 }
-export async function backfillUserEmailAddresses(store) {
+export async function backfillUserEmailAddresses(store: Pick<EmailStore, 'run'>) {
     const now = new Date().toISOString();
     await store.run(`INSERT INTO user_email_addresses (
 			id, user_id, email, normalized_email, status, is_primary, verification_requested_at, verified_at, created_at, updated_at
@@ -108,23 +131,23 @@ export async function backfillUserEmailAddresses(store) {
 		  WHERE is_primary = 1
 		    AND status != 'verified'`, [now]).catch(() => null);
 }
-export async function listUserEmailAddresses(store, userId) {
+export async function listUserEmailAddresses(store: EmailStore, userId: string) {
     await backfillUserEmailAddresses(store);
-    const rows = await store.all(`SELECT * FROM user_email_addresses
+    const rows = await store.all<EmailAddressRow>(`SELECT * FROM user_email_addresses
 		 WHERE user_id = ?
 		 ORDER BY is_primary DESC, status DESC, verified_at ASC, created_at ASC`, [userId]).catch(() => []);
-    return rows.map(serializeUserEmailAddress);
+    return rows.map((row) => serializeUserEmailAddress(row));
 }
-export async function getUserEmailAddress(store, userId, emailId) {
+export async function getUserEmailAddress(store: EmailStore, userId: string, emailId: string) {
     await backfillUserEmailAddresses(store);
-    const row = await store.first(`SELECT * FROM user_email_addresses WHERE id = ? AND user_id = ? LIMIT 1`, [emailId, userId]);
+    const row = await store.first<EmailAddressRow>(`SELECT * FROM user_email_addresses WHERE id = ? AND user_id = ? LIMIT 1`, [emailId, userId]);
     return row ?? null;
 }
-export async function verifiedEmailCount(store, userId) {
+export async function verifiedEmailCount(store: Pick<EmailStore, 'first'>, userId: string) {
     const row = await store.first(`SELECT COUNT(*) AS count FROM user_email_addresses WHERE user_id = ? AND status = 'verified'`, [userId]);
     return Number(row?.count ?? 0);
 }
-export async function setPrimaryEmailAddress(store, userId, emailId) {
+export async function setPrimaryEmailAddress(store: EmailStore, userId: string, emailId: string) {
     const email = await getUserEmailAddress(store, userId, emailId);
     if (!email)
         return { ok: false, status: 404, error: 'Email address was not found.' };
@@ -136,8 +159,8 @@ export async function setPrimaryEmailAddress(store, userId, emailId) {
     await syncPrimaryEmailCaches(store, userId);
     return { ok: true, emailAddress: serializeUserEmailAddress(await getUserEmailAddress(store, userId, emailId)) };
 }
-export async function syncPrimaryEmailCaches(store, userId) {
-    const primary = await store.first(`SELECT * FROM user_email_addresses
+export async function syncPrimaryEmailCaches(store: EmailStore, userId: string) {
+    const primary = await store.first<EmailAddressRow>(`SELECT * FROM user_email_addresses
 		 WHERE user_id = ? AND status = 'verified'
 		 ORDER BY is_primary DESC, verified_at ASC, created_at ASC
 		 LIMIT 1`, [userId]);
@@ -153,12 +176,12 @@ export async function syncPrimaryEmailCaches(store, userId) {
     await store.run(`UPDATE control_plane_auth_credentials SET email = ?, updated_at = ? WHERE user_id = ?`, [primary.email, now, userId]).catch(() => null);
     return serializeUserEmailAddress(await getUserEmailAddress(store, userId, primary.id));
 }
-export async function createOrResendUserEmailAddress(store, context, userId, input) {
+export async function createOrResendUserEmailAddress(store: EmailStore, context: AuthContext, userId: string, input: Omit<EmailConfirmationInput, 'emailAddressId' | 'email'> & { email: unknown }) {
     const email = normalizeEmail(input.email);
     if (!email || !email.includes('@'))
         return { ok: false, status: 400, error: 'A valid email is required.' };
     const now = new Date().toISOString();
-    const existing = await store.first(`SELECT * FROM user_email_addresses WHERE normalized_email = ? LIMIT 1`, [email]);
+    const existing = await store.first<EmailAddressRow>(`SELECT * FROM user_email_addresses WHERE normalized_email = ? LIMIT 1`, [email]);
     if (existing?.id && existing.user_id !== userId) {
         return { ok: false, status: 409, error: 'Email is already in use.' };
     }
@@ -171,8 +194,9 @@ export async function createOrResendUserEmailAddress(store, context, userId, inp
 			) VALUES (?, ?, ?, ?, 'pending', ?, NULL, NULL, ?, ?)`, [id, userId, email, email, primary, now, now]);
         row = await getUserEmailAddress(store, userId, id);
     }
+    if (!row) throw new Error('Email address could not be read back.');
     let confirmation = null;
-    if (row?.status !== 'verified') {
+    if (row.status !== 'verified') {
         confirmation = await createControlPlaneEmailConfirmation(store, context, {
             email: row.email,
             emailAddressId: row.id,
@@ -182,6 +206,7 @@ export async function createOrResendUserEmailAddress(store, context, userId, inp
         });
         row = await getUserEmailAddress(store, userId, row.id);
     }
+    if (!row) throw new Error('Email address could not be read back.');
     return {
         ok: true,
         emailAddress: serializeUserEmailAddress(row),

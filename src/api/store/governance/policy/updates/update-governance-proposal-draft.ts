@@ -8,7 +8,7 @@ async function ensureVersionEvidence(store: ControlPlaneStore,input: { proposal:
 	const event=await store.first(`SELECT id FROM governance_events WHERE proposal_id = ? AND proposal_version = ? AND event_type = ? LIMIT 1`,[proposalId,input.version,eventType]);
 	if(!event)await store.recordGovernanceEvent({eventType,actorType:input.createdByType,actorId:input.createdById,teamId:input.proposal.teamId,projectId:input.proposal.projectId,proposalId,proposalVersion:input.version,priorState:input.priorState,nextState:input.nextState,evidence:{priorHash:input.priorHash,nextHash:input.hash}});
 }
-export async function updateGovernanceProposalDraftMethod(this: ControlPlaneStore, principal, proposalId, input: any = {}) {
+export async function updateGovernanceProposalDraftMethod(this: ControlPlaneStore, principal: ApiPrincipal | null | undefined, proposalId: string, input: any = {}) {
     await this.ensureInitialized();
     const existing = await this.getGovernanceProposal(proposalId);
     if (!existing)
@@ -29,7 +29,7 @@ export async function updateGovernanceProposalDraftMethod(this: ControlPlaneStor
 	}
 	const changeReason = optionalStringValue(input.changeReason);
 	if (!changeReason) { const error: Error & Record<string, any> = new Error('A change summary is required to publish a proposal version.'); error.status = 422; error.code = 'governance_proposal_change_reason_required'; throw error; }
-	const proposalTypes = [...new Set((Array.isArray(input.proposalTypes) ? input.proposalTypes : existing.proposalTypes ?? [proposalType]).map(String).map((value) => value.trim()).filter(Boolean))]; metadata.proposalTypes = proposalTypes;
+	const proposalTypes = [...new Set<string>((Array.isArray(input.proposalTypes) ? input.proposalTypes : existing.proposalTypes ?? [proposalType]).map(String).map((value: string) => value.trim()).filter(Boolean))]; metadata.proposalTypes = proposalTypes;
     if (input.relatedObjectives !== undefined) metadata.relatedObjectives = input.relatedObjectives;
     if (input.evidenceRefs !== undefined) metadata.evidenceRefs = input.evidenceRefs;
 	const rawDecisionDependencies = input.decisionDependencies ?? input.metadata?.decisionDependencies ?? existing.metadata?.decisionDependencies ?? [];
@@ -69,3 +69,4 @@ export async function updateGovernanceProposalDraftMethod(this: ControlPlaneStor
 	await ensureVersionEvidence(this,{proposal:updated,version:nextVersion,hash:nextHash,metadata,proposalTypes,changeReason,createdById,createdByType,priorState:existing.status,nextState:nextStatus,priorHash:existing.activeContentHash});
 	return updated;
 }
+import type { ApiPrincipal } from '../../../../types.ts';

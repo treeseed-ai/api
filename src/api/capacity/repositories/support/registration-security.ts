@@ -1,4 +1,5 @@
 import { isUniqueConstraintViolation } from '../../database-errors.ts';
+import { CapacityGovernanceError } from '../../database.ts';
 import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../database.ts';
 
 export interface RegistrationRateBucket {
@@ -46,12 +47,16 @@ export class CapacityRegistrationSecurityRepository {
 				params: [bucket.dimension, bucket.key],
 			})),
 		];
-		const results = await this.database.batch(operations) as Array<{ results?: Array<Record<string, unknown>> }>;
+		const results: unknown = await this.database.batch(operations);
+		const invalid = () => new CapacityGovernanceError('provider_registration_rate_observation_invalid', 'Registration rate transaction returned incomplete or malformed counters.', 500);
+		if (!Array.isArray(results) || results.length !== operations.length) throw invalid();
 		const exceeded: RegistrationRateBucket['dimension'][] = [];
-		const counterResults = results.slice(-input.buckets.length);
 		for (const [index, bucket] of input.buckets.entries()) {
-			const row = counterResults[index]?.results?.[0];
-			if (Number(row?.count ?? 0) > input.limit) exceeded.push(bucket.dimension);
+			const entry: unknown = results[1 + input.buckets.length + index];
+			if (!entry || typeof entry !== 'object' || !('results' in entry) || !Array.isArray(entry.results) || entry.results.length !== 1) throw invalid();
+			const row: unknown = entry.results[0];
+			if (!row || typeof row !== 'object' || !('count' in row) || typeof row.count !== 'number' || !Number.isSafeInteger(row.count) || row.count < 1) throw invalid();
+			if (row.count > input.limit) exceeded.push(bucket.dimension);
 		}
 		return exceeded;
 	}

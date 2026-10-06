@@ -1,5 +1,5 @@
 import { ControlPlaneStore,parseJson } from "../../../persistence/store.ts";
-export async function evaluateTeamDeletionBlockersMethod(this: ControlPlaneStore, teamId) {
+export async function evaluateTeamDeletionBlockersMethod(this: ControlPlaneStore, teamId: string) {
     await this.ensureInitialized();
     const [
         projectRows,

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore } from "../../../persistence/store.ts";
-export async function createSeedRunMethod(this: ControlPlaneStore, input) {
+export async function createSeedRunMethod(this: ControlPlaneStore, input: Record<string, unknown> & { id?: string }) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const id = input.id ?? randomUUID();

@@ -1,14 +1,14 @@
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
 import { observeWorkflowRun, queueRun, serializeWorkflowOperation, serializeWorkflowOperationRun } from '../workflow-service.ts';
 import { providerPrincipal, type ProviderPrincipal } from './provider-runtime-service.ts';
-import { assignmentRecord as record, assertProviderOwnsAssignment, type ProviderAssignmentStore } from './provider-assignment-support.ts';
+import { assignmentRecord as record, assertProviderOwnsAssignment, type AssignmentObservation, type ProviderAssignmentStore } from './provider-assignment-support.ts';
 
-function workflowHandles(assignment: Record<string, unknown>) {
+function workflowHandles(assignment: AssignmentObservation) {
 	const value = record(assignment.capabilityHandles).workflowOperations;
 	return Array.isArray(value) ? value.map(record) : [];
 }
 
-function authorizedHandle(assignment: Record<string, unknown>, principal: ProviderPrincipal, body: Record<string, unknown>, operationId: string) {
+function authorizedHandle(assignment: AssignmentObservation, principal: ProviderPrincipal, body: Record<string, unknown>, operationId: string) {
 	const now = Date.now();
 	if (assignment.membershipId !== principal.membershipId || assignment.status !== 'leased' || assignment.leaseState !== 'leased'
 		|| assignment.leaseToken !== body.leaseToken || !assignment.leaseExpiresAt || Date.parse(String(assignment.leaseExpiresAt)) <= now) {

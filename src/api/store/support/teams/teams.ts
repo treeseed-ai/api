@@ -1,6 +1,27 @@
 import { parseJson } from '../index.ts';
 
-export const TEAM_ROLE_CAPABILITIES = {
+// Native SQL rows from the original teams/memberships DDL, not another public model.
+export interface NativeTeamRow extends Record<string, unknown> {
+    id: string; slug: string; name: string; metadata_json: string | null;
+    created_at: string; updated_at: string; display_name: string | null;
+    logo_url: string | null; profile_summary: string | null; status: string;
+    archived_at: string | null; archived_by_user_id: string | null;
+    restore_deadline_at: string | null; lifecycle_version: number;
+}
+export interface NativeTeamMemberRow extends Record<string, unknown> {
+    id: string; team_id: string; user_id: string; status: string;
+    created_at: string; updated_at: string;
+    display_name?: string | null; email?: string | null;
+}
+export interface NativeTeamInviteRow extends Record<string, unknown> {
+    id: string; team_id: string; email: string; role_key: string;
+    token_prefix: string; token_hash: string; status: string;
+    invited_by_user_id: string | null; accepted_by_user_id: string | null;
+    accepted_at: string | null; expires_at: string; created_at: string; updated_at: string;
+    invited_by_display_name?: string | null; invited_by_email?: string | null;
+}
+
+export const TEAM_ROLE_CAPABILITIES: Record<string, string[]> = {
     team_owner: [
         'manage_projects',
         'edit_direct',
@@ -22,7 +43,7 @@ export const TEAM_ROLE_CAPABILITIES = {
 	viewer: ['knowledge_read'],
 };
 
-export const TEAM_ROLE_DESCRIPTIONS = {
+export const TEAM_ROLE_DESCRIPTIONS: Record<string, string> = {
     team_owner: 'Own the team portfolio and all project capabilities.',
     project_lead: 'Lead projects, workstreams, and release promotion.',
     service_admin: 'Manage provider connections, protected credentials, and authorized service operations.',
@@ -37,7 +58,7 @@ export const TEAM_ROLE_DESCRIPTIONS = {
 
 export const ALL_TEAM_CAPABILITIES = [...new Set(Object.values(TEAM_ROLE_CAPABILITIES).flat())];
 
-export const CAPABILITY_PERMISSIONS = {
+export const CAPABILITY_PERMISSIONS: Record<string, string> = {
     manage_projects: 'project:manage',
     edit_direct: 'project:edit',
     manage_workstreams: 'project:workstream:manage',
@@ -80,11 +101,11 @@ export const TEAM_RESERVED_NAMES = new Set([
     'signup',
 ]);
 
-export function normalizeTeamName(value) {
+export function normalizeTeamName(value: unknown) {
     return String(value ?? '').trim().toLowerCase();
 }
 
-export function validateTeamName(value) {
+export function validateTeamName(value: unknown) {
     const name = normalizeTeamName(value);
     if (!name) {
         return { ok: false, code: 'missing', message: 'Team name is required.' };
@@ -106,23 +127,23 @@ export function validateTeamName(value) {
     return { ok: true, name };
 }
 
-export function teamDeletionConfirmationMatches(value, teamName) {
+export function teamDeletionConfirmationMatches(value: unknown, teamName: unknown) {
     return String(value ?? '') === `${TEAM_DELETION_CONFIRMATION_PREFIX}${normalizeTeamName(teamName)}`;
 }
 
-export function normalizeTeamRoleKey(value, fallback = 'contributor') {
+export function normalizeTeamRoleKey(value: unknown, fallback = 'contributor') {
     const key = String(value ?? '').trim();
     if (key === 'owner')
         return 'team_owner';
     return TEAM_ROLE_CAPABILITIES[key] ? key : fallback;
 }
 
-export function primaryTeamRole(roles: any = []) {
+export function primaryTeamRole(roles: readonly string[] = []) {
 	const preferredOrder = ['team_owner', 'project_lead', 'knowledge_admin', 'service_admin', 'knowledge_author', 'contributor', 'knowledge_reviewer', 'reviewer', 'finance', 'viewer'];
     return preferredOrder.find((role) => roles.includes(role)) ?? roles[0] ?? null;
 }
 
-export function serializeTeam(row) {
+export function serializeTeam(row: NativeTeamRow | null | undefined) {
     if (!row)
         return null;
     const metadata = parseJson(row.metadata_json, {});
@@ -145,12 +166,12 @@ export function serializeTeam(row) {
     };
 }
 
-export function teamIsPrivate(team) {
+export function teamIsPrivate(team: { metadata?: Record<string, unknown> } | null | undefined) {
     const visibility = String(team?.metadata?.visibility ?? team?.metadata?.access ?? 'private').toLowerCase();
     return team?.metadata?.privateTreeDx !== false && visibility !== 'public' && team?.metadata?.publicTeam !== true;
 }
 
-export function serializeTeamMember(row, roles: any = []) {
+export function serializeTeamMember(row: NativeTeamMemberRow | null | undefined, roles: readonly string[] = []) {
     if (!row)
         return null;
     const roleKey = primaryTeamRole(roles);
@@ -171,7 +192,7 @@ export function serializeTeamMember(row, roles: any = []) {
 
 export const SUPPORTED_TEAM_HOST_PROVIDERS = new Set(['cloudflare', 'railway', 'smtp', 'openai', 'github_copilot', 'openrouter', 'custom']);
 
-export function serializeTeamInvite(row) {
+export function serializeTeamInvite(row: NativeTeamInviteRow | null | undefined) {
     if (!row)
         return null;
     return {
@@ -191,7 +212,7 @@ export function serializeTeamInvite(row) {
     };
 }
 
-export function serializeCapability(row) {
+export function serializeCapability(row: Record<string, unknown> | null | undefined) {
     if (!row)
         return null;
     return {
@@ -212,7 +233,7 @@ export function serializeCapability(row) {
     };
 }
 
-export function serializeTeamStorageLocator(row) {
+export function serializeTeamStorageLocator(row: Record<string, unknown> | null | undefined) {
     if (!row)
         return null;
     return {
@@ -228,7 +249,7 @@ export function serializeTeamStorageLocator(row) {
     };
 }
 
-export function serializeTeamInboxItem(row) {
+export function serializeTeamInboxItem(row: Record<string, unknown> | null) {
     if (!row)
         return null;
     return {

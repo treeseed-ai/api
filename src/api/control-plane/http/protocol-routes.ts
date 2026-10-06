@@ -1,4 +1,4 @@
-import type { Hono } from 'hono';
+import type { Env, Hono } from 'hono';
 import type { ServerEventBus } from '@modelcontextprotocol/server';
 import { controlPlaneOperations } from '../catalog/index.ts';
 import type { OperationRegistry } from '../catalog/operation-registry.ts';
@@ -8,8 +8,8 @@ import { installControlPlaneResourceRoutes, type AuthenticatedPrincipal } from '
 
 /** Existing app composition only, removed with the coordinated issuer cutover.
  * The Identity composition never calls this or installs a fallback issuer. */
-export function installControlPlaneProtocolRoutes(
-  app: Hono,
+export function installControlPlaneProtocolRoutes<E extends Env>(
+  app: Hono<E>,
   authenticateBearerToken: (token: string) => Promise<AuthenticatedPrincipal | null>,
   oauthProvider?: OAuthRuntimeProvider,
   registry: OperationRegistry = controlPlaneOperations,

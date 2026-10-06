@@ -1,7 +1,8 @@
 import { governanceVotingProvider } from '../../../../governance/voting.ts';
 import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
 import { assertExpectedProposalVersion, simulationEvidence } from '../support/simulation-evidence.ts';
-export async function evaluateGovernanceProposalMethod(this: ControlPlaneStore, proposalId, input: any = {}) {
+import { assertGovernanceProposalReady } from './governance-proposal-readiness.ts';
+export async function evaluateGovernanceProposalMethod(this: ControlPlaneStore, proposalId: string, input: any = {}) {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
     if (!proposal)
@@ -15,12 +16,21 @@ export async function evaluateGovernanceProposalMethod(this: ControlPlaneStore, 
         await this.createGovernanceDecisionFromProposal(proposal.id, {
             electorateSnapshotId: snapshot?.id ?? null,
             actorType: input.actorType ?? 'system', actorId: input.actorId ?? null,
+            reason: input.reason,
         });
         return this.getGovernanceProposal(proposal.id);
     }
     if (!['voting', 'open', 'draft'].includes(proposal.status))
         return proposal;
+    if (input.adminDecision !== 'rejected' && input.adminDecision !== 'request_changes') {
+        await assertGovernanceProposalReady.call(this, proposalId, 'voting');
+    }
     const snapshot = await this.latestGovernanceElectorateSnapshot(proposal.id, proposal.activeVersion) ?? await this.snapshotGovernanceElectorate(proposal.id);
+    if (!snapshot) {
+        throw Object.assign(new Error('Proposal evaluation requires a readable persisted electorate snapshot.'), {
+            status: 409, code: 'governance_electorate_required',
+        });
+    }
     const provider = governanceVotingProvider(proposal.governanceProviderId);
     const effectiveVotes = await this.effectiveGovernanceVotes(proposal) as Array<{
         userId: string;
@@ -67,6 +77,7 @@ export async function evaluateGovernanceProposalMethod(this: ControlPlaneStore, 
             electorateSnapshotId: snapshot.id,
             actorType: input.actorType ?? 'system',
             actorId: input.actorId ?? null,
+            reason: input.reason,
         });
     }
     return { ...(await this.getGovernanceProposal(proposal.id)), outcome, votes };

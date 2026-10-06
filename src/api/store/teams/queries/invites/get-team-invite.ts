@@ -1,5 +1,6 @@
 import { ControlPlaneStore,serializeTeamInvite } from "../../../../persistence/store.ts";
-export async function getTeamInviteMethod(this: ControlPlaneStore, inviteId) {
+import type { NativeTeamInviteRow } from '../../../support/teams/teams.ts';
+export async function getTeamInviteMethod(this: ControlPlaneStore, inviteId: string) {
     await this.ensureInitialized();
-    return serializeTeamInvite(await this.first(`SELECT * FROM team_invites WHERE id = ? LIMIT 1`, [inviteId]));
+    return serializeTeamInvite(await this.first<NativeTeamInviteRow>(`SELECT * FROM team_invites WHERE id = ? LIMIT 1`, [inviteId]));
 }

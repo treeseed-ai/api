@@ -1,5 +1,6 @@
 import { ControlPlaneStore,serializePlatformOperation } from "../../../../persistence/store.ts";
-export async function findPlatformOperationByIdMethod(this: ControlPlaneStore, operationId) {
+import type { PlatformOperationRow } from "../../../support/operations/operations.ts";
+export async function findPlatformOperationByIdMethod(this: ControlPlaneStore, operationId: string) {
     await this.ensureInitialized();
-    return serializePlatformOperation(await this.first(`SELECT * FROM platform_operations WHERE id = ?`, [operationId]));
+    return serializePlatformOperation(await this.first<PlatformOperationRow>(`SELECT * FROM platform_operations WHERE id = ?`, [operationId]));
 }

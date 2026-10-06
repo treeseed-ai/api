@@ -1,5 +1,6 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
+import type { AppVariables } from '../types.ts';
 import { PostgresAuthProvider } from '../auth/postgres-provider.ts';
 import { installApiIdentityRoutes } from '../auth/browser/api-routes.ts';
 import { identityResourceCatalog } from '../auth/browser/resource-catalog.ts';
@@ -38,7 +39,6 @@ import { createExecutionGraphService } from '../control-plane/repositories/capac
 import { createOperationService } from '../control-plane/repositories/operations/operation-service.ts';
 import { createProviderRuntimeService } from '../control-plane/repositories/providers/provider-runtime-service.ts';
 import { createProviderAssignmentService } from '../control-plane/repositories/providers/provider-assignment-service.ts';
-import { createProviderSignalService } from '../control-plane/repositories/providers/provider-signal-service.ts';
 import { createProviderWorkflowService } from '../control-plane/repositories/providers/provider-workflow-service.ts';
 import { createTreeDxProxyOperationService } from '../control-plane/repositories/treedx/proxy-operation-service.ts';
 import { TreeAiProxyService } from '../control-plane/treeai/proxy-service.ts';
@@ -146,7 +146,7 @@ export function createPlatformApiApp(options: any = {}) {
 		fetchImpl: options.fetchImpl ?? fetch,
 		internalPrefix: options.internalPrefix ?? '/internal/core',
 	};
-	const app = new Hono();
+	const app = new Hono<{ Variables: AppVariables }>();
 	app.get('/.well-known/treedx-jwks.json', (context) => context.json(delegationAuthority.jwks(), 200, {
 		'cache-control': 'public, max-age=60, stale-while-revalidate=300',
 	}));
@@ -221,7 +221,6 @@ export function createPlatformApiApp(options: any = {}) {
 	const capabilityOntology = createCapabilityOntologyService(capacity);
 	const diagnosticEnvelopes = createDiagnosticEnvelopeService({ ...config, ...runtime.resolved.config });
 	const providerAssignments = createProviderAssignmentService(capacity, sessionEvents, store, diagnosticEnvelopes, { controlPlaneId: config.baseUrl });
-	const providerSignals = createProviderSignalService(capacity);
 	const providerWorkflows = createProviderWorkflowService(capacity);
 	const treeDxProxy = createTreeDxProxyOperationService(capacity, runtime);
 	const registeredAiNodes = createRegisteredAiNodes(store, delegationAuthority, process.env, options.fetchImpl ?? fetch);
@@ -257,7 +256,6 @@ export function createPlatformApiApp(options: any = {}) {
 			platformOperations: createOperationService(store),
 			providers,
 			providerAssignments,
-			providerSignals,
 			providerWorkflows,
 			treeDxProxy,
 			treeAiProxy,
@@ -283,7 +281,7 @@ export function createPlatformApiApp(options: any = {}) {
 			workflowConfiguration: createWorkflowConfigurationService(store),
 		});
 	const mcpBusForPrincipal = async (principal: { id: string }) => {
-			const teams = await store.listTeamsForPrincipal(principal);
+			const teams: Awaited<ReturnType<ControlPlaneStore['listTeamsForPrincipal']>> = await store.listTeamsForPrincipal(principal);
 			return new SessionEventMcpBus(sessionEvents, teams.map((team) => String(team.id)).filter(Boolean));
 	};
 	if (identityRuntime) installApiIdentityRoutes(app, identityRuntime, {

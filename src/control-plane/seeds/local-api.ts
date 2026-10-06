@@ -1,7 +1,14 @@
 import { createPlatformApiApp } from '../../api/support/app.js';
 import { resolveLocalSeedEnv } from './apply.js';
+import type { ControlPlaneStore } from '../../api/persistence/store.ts';
 
-function localApiConfig(projectRoot, env = process.env) {
+type LocalSeedApiInput = {
+	projectRoot: string; seedName: string; env?: NodeJS.ProcessEnv; db?: ControlPlaneStore['db'];
+	environments?: string; approvalRequestId?: string; accessToken?: string;
+};
+type LocalSeedExportInput = LocalSeedApiInput & { team: string; includePrivate?: boolean; includeArtifacts?: boolean };
+
+function localApiConfig(projectRoot: string, env = process.env) {
 	const localEnv = resolveLocalSeedEnv(projectRoot, env);
 	return {
 		repoRoot: projectRoot,
@@ -20,7 +27,7 @@ function localApiConfig(projectRoot, env = process.env) {
 	};
 }
 
-function seedRequestBody(input) {
+function seedRequestBody(input: Pick<LocalSeedApiInput, 'environments' | 'approvalRequestId'>) {
 	return {
 		...(typeof input.environments === 'string' && input.environments.trim()
 			? { environments: input.environments.split(',').map((entry) => entry.trim()).filter(Boolean) }
@@ -31,7 +38,7 @@ function seedRequestBody(input) {
 	};
 }
 
-async function jsonRequest(app, path, input, body: any = {}) {
+async function jsonRequest(app: ReturnType<typeof createPlatformApiApp>, path: string, input: Pick<LocalSeedApiInput, 'accessToken'>, body: unknown = {}) {
 	const headers: Record<string, string> = {
 		accept: 'application/json',
 		'content-type': 'application/json',
@@ -47,7 +54,7 @@ async function jsonRequest(app, path, input, body: any = {}) {
 	const payload = await response.json().catch(() => null);
 	if (!response.ok || !payload?.ok) {
 		const message = payload?.error ?? payload?.diagnostics?.[0]?.message ?? `Local seed API request failed with HTTP ${response.status}.`;
-		const error: Error & Record<string, any> = new Error(message);
+		const error: Error & { status?: number; payload?: unknown } = new Error(message);
 		error.status = response.status;
 		error.payload = payload;
 		throw error;
@@ -55,7 +62,7 @@ async function jsonRequest(app, path, input, body: any = {}) {
 	return payload;
 }
 
-async function requestLocalSeedApi(input, endpoint) {
+async function requestLocalSeedApi(input: LocalSeedApiInput, endpoint: string) {
 	const localEnv = resolveLocalSeedEnv(input.projectRoot, input.env);
 	const db = input.db;
 	try {
@@ -67,7 +74,7 @@ async function requestLocalSeedApi(input, endpoint) {
 	}
 }
 
-async function requestLocalSeedExport(input) {
+async function requestLocalSeedExport(input: LocalSeedExportInput) {
 	const localEnv = resolveLocalSeedEnv(input.projectRoot, input.env);
 	const db = input.db;
 	try {
@@ -82,7 +89,7 @@ async function requestLocalSeedExport(input) {
 		});
 		const teamsPayload = await teamsResponse.json().catch(() => null);
 		if (teamsResponse.ok && Array.isArray(teamsPayload?.payload)) {
-			const match = teamsPayload.payload.find((team) =>
+			const match = teamsPayload.payload.find((team: { id?: string; slug?: string; name?: string } | null) =>
 				team?.id === input.team || team?.slug === input.team || team?.name === input.team,
 			);
 			if (match?.id) teamId = match.id;
@@ -100,7 +107,7 @@ async function requestLocalSeedExport(input) {
 	}
 }
 
-function planFromPayload(payload) {
+function planFromPayload(payload: Record<string, unknown>) {
 	return {
 		ok: payload.ok !== false,
 		seed: payload.seed,
@@ -116,7 +123,7 @@ function planFromPayload(payload) {
 	};
 }
 
-export async function planLocalSeedViaApiFromCli(input) {
+export async function planLocalSeedViaApiFromCli(input: LocalSeedApiInput) {
 	const payload = await requestLocalSeedApi(input, 'plan');
 	return {
 		plan: planFromPayload(payload),
@@ -126,7 +133,7 @@ export async function planLocalSeedViaApiFromCli(input) {
 	};
 }
 
-export async function applyLocalSeedViaApiFromCli(input) {
+export async function applyLocalSeedViaApiFromCli(input: LocalSeedApiInput) {
 	const payload = await requestLocalSeedApi(input, 'apply');
 	return {
 		plan: planFromPayload(payload),
@@ -135,6 +142,6 @@ export async function applyLocalSeedViaApiFromCli(input) {
 	};
 }
 
-export async function exportLocalSeedViaApiFromCli(input) {
+export async function exportLocalSeedViaApiFromCli(input: LocalSeedExportInput) {
 	return requestLocalSeedExport(input);
 }

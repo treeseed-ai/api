@@ -1,5 +1,7 @@
 import type { AssignmentAttempt, CapabilityAccountingLimits, calculateAssignmentAllocation, allocateWorkdayCapacity, selectFairReadyNode } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { capabilityCounterClaims, initializeCapabilityCounters, commitCapabilityCounters } from './capability-counter-claims.ts';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
@@ -8,6 +10,7 @@ import type { ProviderLeasePrincipal } from '../../../accounts/lease-authority-s
 import { compileAssignmentTimeBudget } from '../planning/assignment-time-budget.ts';
 import { workdayReportContext } from './workday-report-context.ts';
 import { workdayLineageSql } from '../../workdays/scheduling/workday-continuation.ts';
+import { buildProviderAssignmentExplanation } from '../observability/assignment-explanation-service.ts';
 
 interface Store extends CapacityGovernanceDatabase {
 	getProviderAssignment(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null>;
@@ -60,14 +63,42 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 	now: string;
 }): Promise<DurableProviderAssignment> {
 	const { assignment, principal } = input;
+	if (!assignmentAttemptSchema.safeParse(assignment).success) {
+		throw new CapacityGovernanceError('execution_assignment_authority_mismatch',
+			'Assignment admission requires a canonical immutable assignment attempt.', 409);
+	}
+	const boundIds = [principal.teamId, principal.capacityProviderId, principal.membershipId,
+		input.projectAgentClassId, input.providerSessionId, input.executionProviderId, input.laneId];
+	if (boundIds.some(value => typeof value !== 'string' || !value.trim() || value !== value.trim())
+		|| principal.teamId !== assignment.teamId || principal.capacityProviderId !== assignment.provider.providerId
+		|| input.executionProviderId !== assignment.provider.executionProviderId
+		|| input.accountingLimits.modelConfigurationId !== assignment.provider.modelConfigurationId) {
+		throw new CapacityGovernanceError('execution_assignment_authority_mismatch',
+			'Assignment admission requires its exact team and capacity-provider authority.', 409);
+	}
+	const predecessorResults = assignmentPredecessors(assignment, input.predecessorResults);
+	const reporting = assignment.effectiveProfile.activity === 'reporting';
+	const requireExactReplay = (stored: DurableProviderAssignment) => {
+		const metadata = stored.explanation.metadata;
+		const retainedAllocation = metadata && typeof metadata === 'object' && !Array.isArray(metadata) && 'allocation' in metadata
+			? metadata.allocation : undefined;
+		if (stored.teamId !== assignment.teamId || stored.capacityProviderId !== principal.capacityProviderId
+			|| stored.executionNodeId !== assignment.nodeId || stored.executionNodeRevision !== assignment.nodeRevision
+			|| !isDeepStrictEqual(stored.assignmentAttempt, assignment)
+			|| (input.allocation.selection !== undefined && !isDeepStrictEqual(
+				retainedAllocation, input.allocation))) {
+			throw new CapacityGovernanceError('execution_assignment_idempotency_conflict',
+				'Assignment identity is already bound to different immutable execution authority.', 409);
+		}
+		return stored;
+	};
 	const replay = await store.getProviderAssignment(assignment.teamId, assignment.id);
 	if (replay) {
-		if (replay.executionNodeId !== assignment.nodeId || replay.executionNodeRevision !== assignment.nodeRevision) {
-			throw new CapacityGovernanceError('execution_assignment_idempotency_conflict',
-				'Assignment identity is already bound to another execution-node revision.', 409);
-		}
-		return replay;
+		return requireExactReplay(replay);
 	}
+	if (!Number.isFinite(Date.parse(input.now)) || Date.parse(input.now) < Date.parse(assignment.createdAt)
+		|| Date.parse(input.now) >= Date.parse(assignment.deadline)) throw new CapacityGovernanceError(
+		'assignment_authority_expired', 'New admission must remain inside its original productive authority.', 409);
 	if (!input.allocation.admitted || input.allocation.allocatedSeconds !== assignment.limits.maximumSeconds) {
 		throw new CapacityGovernanceError('assignment_allocation_mismatch', 'Assignment limits must match the allocator-issued duration.', 409);
 	}
@@ -91,7 +122,31 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		requestedSeconds: assignment.limits.maximumSeconds, reservedSeconds: assignment.limits.maximumSeconds,
 		limits: assignment.limits, budget: timing.capacityBudget,
 	};
-	const common = [assignment.teamId,assignment.nodeId,assignment.nodeRevision];
+	const predecessorFence = reporting ? '' : predecessorResults.map(() => `AND EXISTS (
+		SELECT 1 FROM capacity_provider_assignments prior
+		JOIN execution_nodes predecessor ON predecessor.team_id=prior.team_id AND predecessor.id=prior.execution_node_id
+		WHERE prior.team_id=node.team_id AND prior.id=? AND prior.status='completed'
+		AND prior.assignment_result_json::jsonb=?::jsonb
+		AND prior.execution_node_revision=predecessor.node_revision AND predecessor.status='completed'
+		AND (predecessor.pair_role IS DISTINCT FROM 'reviewer'
+			OR prior.lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='approved')
+	)`).join('\n');
+	const nodeAuthority = `node.project_id=? AND (node.workday_id IS NULL OR node.workday_id=?)
+		AND node.agent_class=? AND node.graph_revision_updated<=?
+		AND node.source_ref_json::jsonb=?::jsonb AND node.authority_refs_json::jsonb=?::jsonb ${predecessorFence}`;
+	const common = [assignment.teamId,assignment.nodeId,assignment.nodeRevision, assignment.projectId,assignment.workdayId,
+		assignment.agentClass,assignment.graphRevision,JSON.stringify(assignment.sourceRef),JSON.stringify(assignment.authorityRefs),
+		...(reporting ? [] : predecessorResults.flatMap(result => [result.assignmentId, JSON.stringify(result)]))];
+	const current = await store.first(`SELECT node.id FROM execution_nodes node
+		WHERE node.team_id=? AND node.id=? AND node.node_revision=? AND node.status='ready' AND ${nodeAuthority}`, common);
+	if (!current) {
+		// Another admission may have committed after the first absence read and
+		// moved its node out of ready. That is replay, never new claim authority.
+		const committed = await store.getProviderAssignment(assignment.teamId, assignment.id);
+		if (committed) return requireExactReplay(committed);
+		throw new CapacityGovernanceError('execution_assignment_authority_mismatch',
+			'The ready node or its exact completed predecessor authority changed before admission.', 409);
+	}
 	const authorizedContext = await workdayReportContext(store, assignment);
 	const claims = capabilityCounterClaims(assignment, input.accountingLimits, input.now);
 	const admissionToken = randomUUID();
@@ -105,6 +160,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		...initializeCapabilityCounters(assignment, claims, input.now),
 		{ query: `SELECT node.id FROM execution_nodes node
 			WHERE node.team_id=? AND node.id=? AND node.node_revision=? AND node.status='ready'
+			AND ${nodeAuthority}
 			AND ${reviewCycleAdmissionFence}
 			AND NOT EXISTS (
 				SELECT 1 FROM capacity_provider_assignments prior
@@ -122,6 +178,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 			WHERE EXISTS (
 				SELECT 1 FROM execution_nodes node
 				WHERE node.team_id=? AND node.id=? AND node.node_revision=? AND node.status='ready'
+				AND ${nodeAuthority}
 				AND ${reviewCycleAdmissionFence}
 				AND NOT EXISTS (
 					SELECT 1 FROM capacity_provider_assignments prior
@@ -162,7 +219,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 			 project_agent_class_id,reservation_id,work_day_id,mode,execution_kind,invocation_id,status,lease_state,state_version,agent_id,handler_id,
 			 capacity_envelope_json,workspace_context_json,allowed_outputs_json,explanation_json,
 			 attempt_count,assigned_at,lifecycle_output_json,synthesized_from,synthesis_key,decision_id,proposal_id,metadata_json,created_at,updated_at)
-			SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending','unleased',1,?,?,?::jsonb,?::jsonb,'{}','{}',0,?,'{}',
+			SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending','unleased',1,?,?,?::jsonb,?::jsonb,'{}','{}',?,?,'{}',
 				 'living_execution_graph',?,?,?,?::jsonb,?,?
 			WHERE EXISTS (SELECT 1 FROM capacity_reservations WHERE id=? AND team_id=? AND assignment_id=?)
 			AND NOT EXISTS (
@@ -175,7 +232,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 				assignment.reservationId,assignment.workdayId,mode,input.executionKind,input.invocationId ?? null,
 				assignment.effectiveProfile.profileRef.id,assignment.effectiveProfile.handler,
 			JSON.stringify(capacityEnvelope),
-				JSON.stringify({ assignmentAttempt: assignment, predecessorResults: input.predecessorResults, authorizedContext }),input.now,
+				JSON.stringify({ assignmentAttempt: assignment, predecessorResults: input.predecessorResults, authorizedContext }),assignment.attempt,input.now,
 				assignment.idempotencyKey,decisionId,proposalId,JSON.stringify({ requiredCapabilities: assignment.requiredCapabilities }),input.now,input.now,
 				assignment.reservationId,assignment.teamId,assignment.id,
 				assignment.teamId,assignment.nodeId,assignment.nodeRevision] },
@@ -185,7 +242,10 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 			AND EXISTS (SELECT 1 FROM capacity_reservations owned WHERE owned.id=capacity_provider_assignments.reservation_id
 				AND owned.team_id=capacity_provider_assignments.team_id AND owned.assignment_id=capacity_provider_assignments.id
 				AND owned.admission_token=?)`,
-			params: [JSON.stringify({ metadata: { allocation: input.allocation } }),assignment.graphRevision,assignment.nodeId,assignment.nodeRevision,JSON.stringify(assignment),
+			params: [JSON.stringify(buildProviderAssignmentExplanation({ id: assignment.id, explanation: {},
+				synthesizedFrom: null, synthesisKey: assignment.idempotencyKey, assignedAt: null }, assignment.teamId,
+				{ source: 'living_execution_admission', sourceId: assignment.nodeId, eligible: true,
+					metadata: { allocation: input.allocation } }, input.now)),assignment.graphRevision,assignment.nodeId,assignment.nodeRevision,JSON.stringify(assignment),
 				JSON.stringify(input.treedxProxyHandle),JSON.stringify({ assignmentAttempt: assignment,
 					predecessorResults: input.predecessorResults, authorizedContext, treedxProxyHandle: input.treedxProxyHandle }),input.now,
 				assignment.id,assignment.teamId,assignment.reservationId,admissionToken] },
@@ -261,5 +321,33 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 					hardLimit: Number(counter.hard_limit) })),
 				requestedSeconds: assignment.limits.maximumSeconds });
 	}
-	return committed;
+	return requireExactReplay(committed);
+}
+
+/** One canonical predecessor contract, shared by compilation and final admission. */
+export function assignmentPredecessors(assignment: AssignmentAttempt, values: unknown[]) {
+	const predecessorIds = new Set(assignment.predecessorResultIds), predecessorAttempts = new Set<string>();
+	const results: Array<ReturnType<typeof assignmentResultSchema.parse>> = [];
+	const reporting = assignment.effectiveProfile.activity === 'reporting';
+	if (!Array.isArray(values) || predecessorIds.size !== assignment.predecessorResultIds.length
+		|| values.length !== predecessorIds.size) throw new CapacityGovernanceError(
+		'assignment_predecessor_authority_mismatch', 'Admission requires every exact assigned predecessor result once.', 409);
+	for (const value of values) {
+		const parsed = assignmentResultSchema.safeParse(value);
+		if (!parsed.success || (!reporting && parsed.data.status !== 'completed') || !predecessorIds.delete(parsed.data.id)
+			|| parsed.data.assignmentId === assignment.id || predecessorAttempts.has(parsed.data.assignmentId)) throw new CapacityGovernanceError(
+			'assignment_predecessor_authority_mismatch', 'Admission requires distinct completed canonical predecessor results.', 409);
+		predecessorAttempts.add(parsed.data.assignmentId); results.push(parsed.data);
+		for (const reference of parsed.data.references) {
+			if (reference.kind !== 'git' && reference.kind !== 'treedx') continue;
+			const matches = (ref: AssignmentAttempt['contextRefs'][number]) => ref.store === reference.kind
+				&& ref.repository === reference.repository && ref.commit === reference.commit
+				&& (reference.kind === 'git' || ref.path === reference.path);
+			if (!assignment.contextRefs.some(matches)
+				|| (reference.kind === 'git' ? !assignment.grant.sourceRead.includes(reference.repository)
+					: !assignment.grant.contentRead.some(matches))) throw new CapacityGovernanceError(
+				'assignment_predecessor_authority_mismatch', 'Every predecessor artifact requires its exact context and read grant.', 409);
+		}
+	}
+	return results;
 }

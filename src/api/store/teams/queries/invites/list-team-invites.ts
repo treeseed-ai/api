@@ -1,7 +1,8 @@
 import { ControlPlaneStore,serializeTeamInvite } from "../../../../persistence/store.ts";
-export async function listTeamInvitesMethod(this: ControlPlaneStore, teamId) {
+import type { NativeTeamInviteRow } from '../../../support/teams/teams.ts';
+export async function listTeamInvitesMethod(this: ControlPlaneStore, teamId: string) {
     await this.ensureInitialized();
-    const rows = await this.all(`SELECT team_invites.*,
+    const rows = await this.all<NativeTeamInviteRow>(`SELECT team_invites.*,
             inviter.display_name AS invited_by_display_name,
             inviter.email AS invited_by_email
         FROM team_invites

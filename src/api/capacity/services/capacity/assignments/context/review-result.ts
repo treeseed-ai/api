@@ -1,5 +1,6 @@
 import { assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
+import { isDeepStrictEqual } from 'node:util';
 import { CapacityGovernanceError, type CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../knowledge/gateway-treedx-connection.ts';
@@ -60,14 +61,27 @@ export async function resolveReviewDisposition(store: CapacityGovernanceDatabase
 	if (!candidates.length) throw new CapacityGovernanceError('review_candidate_reference_missing',
 		'Reviewer completion requires the exact immutable actor candidate.', 409, { assignmentId: assignment.id });
 	const decisions = result.references.filter((reference) => reference.kind === 'treedx');
+	const dispositions: Array<'approved' | 'request-changes'> = [];
+	let invalidDecision = false;
+	const reviewStart = Date.parse(assignment.assignedAt ?? assignment.createdAt);
+	const reviewEnd = Date.parse(result.completedAt);
 	for (const reference of decisions) {
 		const parsed = validatePortableContentData('decision', await readDecision(reference));
 		if (!parsed.ok) continue;
 		const decision = record(parsed.data);
-		if (decision.decisionClass !== 'work-review' || decision.projectId !== assignment.projectId
-			|| !candidates.some((candidate) => sameCandidate(record(decision.subjectRef), record(candidate)))) continue;
-		return decision.disposition === 'approved' ? 'approved' : 'request-changes';
+		if (decision.decisionClass !== 'work-review') continue;
+		if (decision.projectId !== assignment.projectId
+			|| !candidates.some((candidate) => sameCandidate(record(decision.subjectRef), record(candidate)))) {
+			invalidDecision = true; break;
+		}
+		const makers = decision.decidedByRefs, decidedAt = Date.parse(text(decision.decidedAt));
+		if (!Array.isArray(makers) || makers.length !== 1
+			|| !isDeepStrictEqual(makers[0], assignment.assignmentAttempt?.effectiveProfile.profileRef)
+			|| !Number.isFinite(reviewStart) || !Number.isFinite(reviewEnd) || !Number.isFinite(decidedAt)
+			|| decidedAt < reviewStart || decidedAt > reviewEnd) { invalidDecision = true; break; }
+		dispositions.push(decision.disposition === 'approved' ? 'approved' : 'request-changes');
 	}
+	if (!invalidDecision && dispositions.length === 1) return dispositions[0]!;
 	throw new CapacityGovernanceError('review_decision_required',
 		'Reviewer completion requires an exact work-review decision bound to the actor candidate.', 409,
 		{ assignmentId: assignment.id });

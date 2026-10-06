@@ -1,6 +1,9 @@
 import { createHmac,timingSafeEqual } from 'node:crypto';
 import { bearerTokenFromRequest } from '../../../accounts/request-auth.ts';
 import { base64urlJson,jsonError,normalizeBaseUrl,optionalTrimmedString,parseBase64urlJson,requireTeamAccess,safeTokenEquals } from '../index.ts';
+import type { Context } from 'hono';
+import type { ApiPrincipal, AppVariables } from '../../../types.ts';
+import type { ControlPlaneStore } from '../../../persistence/store.ts';
 export const PLATFORM_OPERATION_SCOPES = [
     'platform:runners:register',
     'platform:runners:claim',
@@ -12,17 +15,17 @@ export const PLATFORM_OPERATION_SCOPES = [
     'platform:deploy:write',
     'platform:database:migrate',
 ];
-const operationRecord = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : null;
-const operationString = (...values) => values.find((value) => typeof value === 'string' && value.trim())?.trim() ?? null;
-const operationStrings = (value) => Array.isArray(value) ? value.map((entry) => String(entry).trim()).filter(Boolean) : [];
-const nestedOperationRecord = (value, keys) => {
+const operationRecord = (value: unknown) => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+const operationString = (...values: unknown[]) => values.find((value): value is string => typeof value === 'string' && Boolean(value.trim()))?.trim() ?? null;
+const operationStrings = (value: unknown) => Array.isArray(value) ? value.map((entry) => String(entry).trim()).filter(Boolean) : [];
+const nestedOperationRecord = (value: unknown, keys: readonly string[]) => {
     let current = value;
     for (const key of keys) {
         current = operationRecord(current)?.[key];
     }
     return operationRecord(current);
 };
-export function derivePlatformOperationNavigation(operation) {
+export function derivePlatformOperationNavigation(operation: { output?: unknown } | null | undefined) {
     const output = operationRecord(operation?.output) ?? {};
     const nestedOutput = nestedOperationRecord(output, ['output']) ?? {};
     const record = nestedOperationRecord(output, ['record']) ?? nestedOperationRecord(nestedOutput, ['record']);
@@ -35,21 +38,21 @@ export function derivePlatformOperationNavigation(operation) {
         commitSha: operationString(output.commitSha, nestedOutput.commitSha),
     };
 }
-export function isPlatformOperationTerminal(operation) {
+export function isPlatformOperationTerminal(operation: { status?: unknown } | null | undefined) {
     return ['succeeded', 'failed', 'cancelled'].includes(String(operation?.status ?? ''));
 }
-export function operationTokenSecret(runtime) {
+export function operationTokenSecret(runtime: { resolved?: { config?: { assertionSecret?: string; authSecret?: string } } } | null | undefined) {
     return runtime?.resolved?.config?.assertionSecret
         ?? runtime?.resolved?.config?.authSecret
         ?? process.env.TREESEED_AUTH_SECRET
         ?? 'treeseed-local-operation-token-secret';
 }
-export function signOperationToken(runtime, payload) {
+export function signOperationToken(runtime: Parameters<typeof operationTokenSecret>[0], payload: Record<string, unknown>) {
     const body = base64urlJson(payload);
     const signature = createHmac('sha256', operationTokenSecret(runtime)).update(body).digest('base64url');
     return `${body}.${signature}`;
 }
-export function verifyOperationToken(runtime, token) {
+export function verifyOperationToken(runtime: Parameters<typeof operationTokenSecret>[0], token: unknown) {
     const [body, signature] = String(token ?? '').split('.');
     if (!body || !signature) {
         throw new Error('Invalid operation token.');
@@ -66,11 +69,11 @@ export function verifyOperationToken(runtime, token) {
     }
     return payload;
 }
-export function normalizeCiEnvironment(value) {
+export function normalizeCiEnvironment(value: unknown) {
     const normalized = String(value ?? '').trim().toLowerCase();
     return normalized === 'prod' || normalized === 'production' ? 'prod' : 'staging';
 }
-export function ciOperationForAction(actionKind) {
+export function ciOperationForAction(actionKind: unknown) {
     switch (String(actionKind ?? 'deploy_web')) {
         case 'publish_content':
             return { namespace: 'content', operation: 'publish' };
@@ -81,38 +84,38 @@ export function ciOperationForAction(actionKind) {
             return { namespace: 'workflow', operation: 'deploy_runtime' };
     }
 }
-export function validateCiRefForEnvironment(environment, claims) {
+export function validateCiRefForEnvironment(environment: string, claims: { ref?: unknown }) {
     const ref = String(claims.ref ?? '');
     if (environment === 'prod') {
         return ref === 'refs/heads/main' || ref.startsWith('refs/tags/');
     }
     return ref === 'refs/heads/staging';
 }
-export function principalHasPermission(principal, permission) {
+export function principalHasPermission(principal: ApiPrincipal | null | undefined, permission: string) {
     return Boolean(principal
         && (principal.permissions?.includes?.('*:*:*')
             || principal.permissions?.includes?.(permission)));
 }
-export function principalIsSeedAdmin(principal) {
+export function principalIsSeedAdmin(principal: ApiPrincipal | null | undefined) {
     return Boolean(principal
         && (principal.permissions?.includes?.('*:*:*')
             || principal.permissions?.includes?.('seeds:apply:global')
             || principal.roles?.includes?.('platform_admin')
             || principal.roles?.includes?.('platform_admin')));
 }
-export function isTeamApiPrincipal(principal) {
+export function isTeamApiPrincipal(principal: ApiPrincipal | null | undefined) {
     return Boolean(principal?.roles?.includes?.('team_api_key'));
 }
-export function safePlatformOperationOutput(value) {
+export function safePlatformOperationOutput(value: unknown) {
     if (!value || typeof value !== 'object' || Array.isArray(value))
         return value ?? null;
-    const output = { ...value };
+    const output: Record<string, unknown> = { ...value };
     if (typeof output.workspacePath === 'string') {
         output.workspacePath = output.workspacePath.includes('/data') ? '/data' : '<runner-workspace>';
     }
     return output;
 }
-export function decoratePlatformOperation(baseUrl, operation) {
+export function decoratePlatformOperation(baseUrl: unknown, operation: ({ id: unknown; output?: unknown; status?: unknown } & Record<string, unknown>) | null | undefined) {
     if (!operation)
         return null;
     const normalizedBaseUrl = normalizeBaseUrl(baseUrl ?? '');
@@ -131,19 +134,20 @@ export function decoratePlatformOperation(baseUrl, operation) {
         commitSha: navigation.commitSha,
     };
 }
-export function resolvePlatformRunnerSecret(config) {
+export function resolvePlatformRunnerSecret(config: { platformRunnerSecret?: unknown; operationsRunnerSecret?: unknown }) {
     return optionalTrimmedString(config.platformRunnerSecret)
         ?? optionalTrimmedString(config.operationsRunnerSecret)
         ?? optionalTrimmedString(process.env.TREESEED_PLATFORM_RUNNER_SECRET)
         ?? optionalTrimmedString(process.env.TREESEED_PLATFORM_RUNNER_SECRET);
 }
-export function platformOperationMutationError(c, error) {
-    const status = Number(error?.status ?? 500);
+export function platformOperationMutationError(c: Context, error: unknown) {
+    const details = error && (typeof error === 'object' || typeof error === 'function') ? error as Record<string, unknown> : null;
+    const status = Number(details?.status ?? 500);
     if (![400, 404, 409].includes(status))
         throw error;
-    return jsonError(c, status, error instanceof Error ? error.message : String(error), error?.details ?? {});
+    return jsonError(c, status, error instanceof Error ? error.message : String(error), details?.details ?? {});
 }
-export async function requirePlatformRunner(c, config) {
+export async function requirePlatformRunner(c: Context, config: Parameters<typeof resolvePlatformRunnerSecret>[0]) {
     const token = bearerTokenFromRequest(c.req.raw);
     const secret = resolvePlatformRunnerSecret(config);
     if (!token || !secret) {
@@ -165,7 +169,7 @@ export async function requirePlatformRunner(c, config) {
         },
     };
 }
-export async function ensurePrincipal(c) {
+export async function ensurePrincipal(c: Context<{ Variables: AppVariables }>): Promise<{ response: Response; principal?: undefined } | { principal: ApiPrincipal; response?: undefined }> {
     const principal = c.get('principal');
     if (!principal) {
         return {
@@ -174,12 +178,12 @@ export async function ensurePrincipal(c) {
     }
     return { principal };
 }
-export function principalHasGlobalPlatformRole(principal) {
+export function principalHasGlobalPlatformRole(principal: ApiPrincipal | null | undefined) {
     return Boolean(principal?.roles?.includes?.('platform_admin')
         || principal?.roles?.includes?.('platform_admin')
         || principal?.permissions?.includes?.('*:*:*'));
 }
-export async function requireServiceParticipantAccess(c, store, request, sellerPermission = 'projects:read:team') {
+export async function requireServiceParticipantAccess(c: Context<{ Variables: AppVariables }>, store: ControlPlaneStore, request: { id?: unknown; sellerTeamId?: string; buyerTeamId?: string; buyerUserId?: string } | null | undefined, sellerPermission = 'projects:read:team') {
     const auth = await ensurePrincipal(c);
     if (auth.response)
         return auth;
@@ -199,10 +203,10 @@ export async function requireServiceParticipantAccess(c, store, request, sellerP
         return auth;
     return { response: jsonError(c, 403, 'Permission denied.', { requestId: request?.id ?? null }) };
 }
-export function unwrapOperationPayload(output) {
+export function unwrapOperationPayload(output: unknown) {
     if (!output || typeof output !== 'object')
         return null;
-    if (output.payload && typeof output.payload === 'object')
+    if ('payload' in output && output.payload && typeof output.payload === 'object')
         return output.payload;
     return output;
 }

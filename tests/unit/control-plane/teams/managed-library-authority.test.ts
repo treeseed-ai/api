@@ -6,6 +6,8 @@ vi.mock('../../../../src/control-plane/seeds/apply-support/projects/projects-cor
 vi.mock('../../../../src/api/capacity/services/treedx/repositories/treedx-commit-replication.ts', () => ({ enqueueTreeDxCommitReplication: mocks.replication }));
 import { reconcileManagedTeamLibrary } from '../../../../src/api/teams/managed-team-library-service.ts';
 import { managedTeamLibraryRepositoryName } from '../../../../src/api/store/teams/contracts/managed-library/ensure-managed-team-library-project.ts';
+import { ControlPlaneStore } from '../../../../src/api/persistence/store.ts';
+import { postgresGraph } from '../capacity/execution/graph/architecture/living/living-postgres-fixture.ts';
 
 const authority = { token: 'synthetic-pat', authorityId: 'authority-1', serviceConnectionId: 'connection-1', capabilityBindingId: 'binding-1' };
 function store() { return { getTeam: vi.fn(async () => ({ metadata: { githubOwner: 'example' } })),
@@ -16,6 +18,14 @@ beforeEach(() => {
 	mocks.binding.mockResolvedValue({ resolvedRef: 'a'.repeat(40), sourceRef: 'refs/remotes/origin/staging', repositoryId: 'repository-1' });
 });
 describe('Team Library managed credential custody', () => {
+	it('managed execution context denies malformed repository visibility or lifecycle before resolving credentials',async()=>{
+		for(const policy of [{visibility:'preview'},{visibility:null},{visibility:[]},{lifecycle:'overwrite'},{lifecycle:null},{lifecycle:7}]){
+			mocks.authority.mockClear();mocks.provider.mockClear();mocks.binding.mockClear();
+			const input=store();input.ensureManagedTeamLibraryProject.mockResolvedValue({id:'project-1',metadata:{library:Object.assign({repositoryName:managedTeamLibraryRepositoryName('team-1')},{repositoryPolicy:policy})}});
+			await expect(reconcileManagedTeamLibrary(input,'team-1',{})).rejects.toThrow('Managed Team Library repository policy is invalid.');
+			expect(mocks.authority).not.toHaveBeenCalled();expect(mocks.provider).not.toHaveBeenCalled();expect(mocks.binding).not.toHaveBeenCalled();
+		}
+	});
 	it('passes resolved team authority without an environment token and remains replicating until R2 is verified', async () => {
 		const result = await reconcileManagedTeamLibrary(store(), 'team-1', {});
 		expect(mocks.authority).toHaveBeenCalledWith(expect.objectContaining({ teamId: 'team-1', owner: 'example', env: {} }));

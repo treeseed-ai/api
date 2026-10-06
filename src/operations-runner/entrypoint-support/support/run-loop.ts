@@ -20,7 +20,7 @@ export function startWorkdayMaintenanceClock(scheduler: Pick<CapacityWorkdayMain
 }
 
 export async function runLoop() {
-    const healthState = { ready: false, status: 'booting', error: null };
+    const healthState: { ready: boolean; status: string; error: string | null } = { ready: false, status: 'booting', error: null };
     const healthServer = startHealthServer(loadHealthConfig(), healthState);
     const version = await packageVersion();
     const options = parseRunnerOptions();
@@ -90,7 +90,11 @@ export async function runLoop() {
             if (client?.close) {
                 await client.close().catch(() => { });
             }
-            await controlPlaneStore?.db?.close?.().catch?.(() => { });
+            try { await controlPlaneStore?.db?.close?.(); }
+            catch (closeError) {
+                console.error(JSON.stringify({ ok: false, event: 'runner.store.close.failed',
+                    error: closeError instanceof Error ? closeError.message : String(closeError) }));
+            }
             client = null;
             controlPlaneStore = null;
             capacityWorkdayMaintenance = null;

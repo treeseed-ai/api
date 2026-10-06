@@ -1,8 +1,9 @@
 import { equalHash,isoNow,ControlPlaneStore,serializeTeamInvite,stableHash,tokenPrefix } from "../../../../persistence/store.ts";
-export async function getTeamInviteByTokenMethod(this: ControlPlaneStore, token) {
+import type { NativeTeamInviteRow } from '../../../support/teams/teams.ts';
+export async function getTeamInviteByTokenMethod(this: ControlPlaneStore, token: string) {
     await this.ensureInitialized();
     const prefix = tokenPrefix(String(token ?? ''));
-    const rows = await this.all(`SELECT * FROM team_invites WHERE token_prefix = ? ORDER BY created_at DESC`, [prefix]);
+    const rows = await this.all<NativeTeamInviteRow>(`SELECT * FROM team_invites WHERE token_prefix = ? ORDER BY created_at DESC`, [prefix]);
     for (const row of rows) {
         if (!equalHash(stableHash(token, String(this.config.authSecret ?? '')), String(row.token_hash ?? '')))
             continue;

@@ -207,7 +207,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 					const currentDefinition = input.kind === 'book' ? parseBook({ path: sourcePath, raw: current.content })
 						: parseKnowledgePage({ path: sourcePath, raw: current.content });
 					status = currentDefinition.status === 'archived' ? 'archived' : 'published';
-					if (input.kind === 'book' && 'revision' in currentDefinition) bookRevision = currentDefinition.revision;
+					if (input.kind === 'book' && typeof currentDefinition.revision === 'number') bookRevision = currentDefinition.revision;
 				} catch {
 					// Invalid historical documents may only be replaced by a complete draft
 					// that passes the current serializer below. No compatibility projection

@@ -1,6 +1,6 @@
 import { applyOperationalState, recoverIncompleteReviewCycles, reviewCycleLimitReached, recoverInterruptedGovernanceReviews,
 	recoverableGovernanceReviewAttemptHistory, stable, digest, record, text, type TeamGraph } from './execution-graph-state.ts';
-import { graphRevisionSchema, validateAgentDefinitionModel,
+import { graphRevisionSchema, validateExecutionGraph, validateAgentDefinitionModel,
 	type AgentDefinition, type ExecutionEdge, type ExecutionNode, type GraphRevision } from '@treeseed/sdk/agent-capacity';
 import { projectTeamExecutionGraph } from '../../../../capacity/policy/execution/execution-graph-projector.ts';
 import { projectActiveWorkdays } from '../../../../capacity/policy/execution/workday-execution-projector.ts';
@@ -10,7 +10,7 @@ import { loadTeamExactDependencyLinks } from '../../../../capacity/services/capa
 import { readExactProposal } from '../../../../governance/executable-proposal.ts';
 import { authorizeCapacityTeam, type CapacityPrincipal } from '../capacity-authorization.ts';
 import { CapacityOperationError } from '../capacity-operation-error.ts';
-import { decodeExecutionEdge, decodeExecutionNode } from './execution-graph-storage.ts';
+import { decodeExecutionEdge, decodeExecutionNode, decodeGraphWatchCursor } from './execution-graph-storage.ts';
 import { workdayContinuationHistory, assignmentBelongsToRun } from '../../../../capacity/services/capacity/workdays/scheduling/workday-continuation.ts';
 
 type Row = Record<string, unknown>;
@@ -18,8 +18,7 @@ const array = (value: unknown): unknown[] => {
 	if (Array.isArray(value)) return value;
 	if (typeof value === 'string') try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
 	return [];
-};
-const integer = (value: unknown): number => Number.isInteger(Number(value)) ? Number(value) : 0;
+}; const integer = (value: unknown): number => Number.isInteger(Number(value)) ? Number(value) : 0;
 export const isRevisionRequiredReviewDisposition = (value: unknown): boolean => value === 'request-changes';
 export const terminalAssignmentWasRequeued = (row: Row): boolean => {
 	const requestedAt = Date.parse(text(record(record(row.metadata_json).operatorRetry).requestedAt));
@@ -91,7 +90,8 @@ async function readGraph(store: any, teamId: string): Promise<TeamGraph> {
 	]);
 	return {
 		teamId, revision: integer(revisionRow?.revision), digest: text(revisionRow?.graph_digest),
-		nodes: nodeRows.map(decodeExecutionNode), edges: edgeRows.map(decodeExecutionEdge),
+		nodes: nodeRows.map(decodeExecutionNode).sort((left: ExecutionNode, right: ExecutionNode) => left.id.localeCompare(right.id)),
+		edges: edgeRows.map(decodeExecutionEdge).sort((left: ExecutionEdge, right: ExecutionEdge) => left.id.localeCompare(right.id)),
 	};
 }
 
@@ -194,8 +194,8 @@ function visibleGraph(graph: TeamGraph, query: Row): TeamGraph {
 	const ids = new Set(nodes.map((node) => node.id));
 	return { ...graph, nodes, edges: graph.edges.filter((edge) => ids.has(edge.fromNodeId) && ids.has(edge.toNodeId)) };
 }
-
 export async function persistExecutionGraph(store: any, graph: TeamGraph, current: TeamGraph, revisionRecord: GraphRevision) {
+	if (!validateExecutionGraph(graph.nodes, graph.edges).ok) throw new CapacityOperationError(422, 'execution_graph_invalid', 'Only canonical execution graphs can be persisted.');
 	const now = revisionRecord.createdAt;
 	const operations: Array<{ query: string; params: unknown[] }> = [{
 		query: 'SELECT id FROM teams WHERE id=? FOR UPDATE', params: [graph.teamId],
@@ -216,14 +216,14 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 			JSON.stringify(current.nodes.map(node => ({ id: node.id, node_revision: node.nodeRevision, status: node.status }))),graph.teamId],
 	}];
 	const revisionGuard = `EXISTS (SELECT 1 FROM execution_graph_revisions
-		WHERE team_id=? AND revision=? AND created_at=?)`;
+		WHERE team_id=? AND revision=? AND created_at=? AND graph_digest=?)`;
 	const currentNodes = new Map(current.nodes.map((node) => [node.id, node]));
 	for (const node of graph.nodes.filter((candidate) => stable(currentNodes.get(candidate.id)) !== stable(candidate))) operations.push({
 		query: `INSERT INTO execution_nodes (
 			id,team_id,project_id,workday_id,work_item_id,kind,pair_role,source_ref_json,authority_refs_json,
 			rule_revision,node_revision,agent_class,status,estimate_json,required_capabilities_json,
-			requested_permissions_json,output_json,workspace,acceptance_criteria_json,maximum_review_cycles,condition_json,
-			graph_revision_created,graph_revision_updated,created_at,updated_at
+			requested_permissions_json,workspace,acceptance_criteria_json,maximum_review_cycles,condition_json,
+			graph_revision_created,graph_revision_updated,created_at,updated_at,priority
 		) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE ${revisionGuard}
 		ON CONFLICT (id) DO UPDATE SET
 			project_id=excluded.project_id,workday_id=excluded.workday_id,work_item_id=excluded.work_item_id,
@@ -231,18 +231,18 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 			authority_refs_json=excluded.authority_refs_json,rule_revision=excluded.rule_revision,
 			node_revision=excluded.node_revision,agent_class=excluded.agent_class,status=excluded.status,
 			estimate_json=excluded.estimate_json,required_capabilities_json=excluded.required_capabilities_json,
-			requested_permissions_json=excluded.requested_permissions_json,output_json=excluded.output_json,workspace=excluded.workspace,
+			requested_permissions_json=excluded.requested_permissions_json,workspace=excluded.workspace,
 			acceptance_criteria_json=excluded.acceptance_criteria_json,maximum_review_cycles=excluded.maximum_review_cycles,
-			condition_json=excluded.condition_json,
+			condition_json=excluded.condition_json,priority=excluded.priority,
 			graph_revision_updated=excluded.graph_revision_updated,updated_at=excluded.updated_at`,
 		params: [node.id,node.teamId,node.projectId,node.workdayId ?? null,node.workItemId ?? null,node.kind,node.pairRole,
 			JSON.stringify(node.sourceRef),JSON.stringify(node.authorityRefs ?? []),node.ruleRevision,node.nodeRevision,
 			node.agentClass ?? null,node.status,node.estimate ? JSON.stringify(node.estimate) : null,
 			node.requiredCapabilities ? JSON.stringify(node.requiredCapabilities) : null,
-			node.requestedPermissions ? JSON.stringify(node.requestedPermissions) : null,node.output ? JSON.stringify(node.output) : null,node.workspace ?? null,
+			node.requestedPermissions ? JSON.stringify(node.requestedPermissions) : null,node.workspace ?? null,
 			node.acceptanceCriteria ? JSON.stringify(node.acceptanceCriteria) : null,node.maximumReviewCycles ?? null,
-			node.condition ? JSON.stringify(node.condition) : null,node.graphRevisionCreated,node.graphRevisionUpdated,now,now,
-			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt],
+			node.condition ? JSON.stringify(node.condition) : null,node.graphRevisionCreated,node.graphRevisionUpdated,now,now,node.priority ?? null,
+			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt,revisionRecord.graphDigest],
 	});
 	const currentEdges = new Map(current.edges.map((edge) => [edge.id, edge]));
 	const desiredEdges = new Set(graph.edges.map((edge) => edge.id));
@@ -250,7 +250,7 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 		query: `UPDATE execution_edges SET graph_revision_removed = ?
 			WHERE team_id = ? AND id = ? AND graph_revision_removed IS NULL AND ${revisionGuard}`,
 		params: [graph.revision, graph.teamId, prior.id,
-			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt],
+			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt,revisionRecord.graphDigest],
 	});
 	for (const edge of graph.edges.filter((candidate) => stable(currentEdges.get(candidate.id)) !== stable(candidate))) operations.push({
 		query: `INSERT INTO execution_edges (id,team_id,from_node_id,to_node_id,provenance,source_ref_json,graph_revision_created,graph_revision_removed,created_at)
@@ -258,7 +258,7 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 			ON CONFLICT (id) DO UPDATE SET graph_revision_removed=NULL`,
 		params: [edge.id,edge.teamId,edge.fromNodeId,edge.toNodeId,edge.provenance,
 			edge.sourceRef ? JSON.stringify(edge.sourceRef) : null,edge.graphRevisionCreated,null,now,
-			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt],
+			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt,revisionRecord.graphDigest],
 	});
 	await store.batch(operations);
 	const committed = await store.first('SELECT revision,graph_digest FROM execution_graph_revisions WHERE team_id=? ORDER BY revision DESC LIMIT 1', [graph.teamId]);
@@ -454,7 +454,7 @@ export function createExecutionGraphService(store: any) {
 		},
 		async watch(principal: CapacityPrincipal, teamId: string, query: Row) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
-			const cursor = Math.max(integer(query.cursor), 0);
+			const cursor = decodeGraphWatchCursor(query.cursor);
 			const limit = Math.min(Math.max(integer(query.limit) || 100, 1), 500);
 			const rows = await store.all(`SELECT * FROM execution_graph_revisions
 				WHERE team_id=? AND revision>? ORDER BY revision LIMIT ?`, [teamId,cursor,limit]);

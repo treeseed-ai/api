@@ -1,7 +1,8 @@
 import { createPublicKey,createVerify } from 'node:crypto';
+import type { JsonWebKey } from 'node:crypto';
 import { parseBase64urlJson } from '../index.ts';
 export const GITHUB_ACTIONS_OIDC_ISSUER = 'https://token.actions.githubusercontent.com';
-export let githubOidcJwksCache = { fetchedAt: 0, keys: [] };
+export let githubOidcJwksCache: { fetchedAt: number; keys: Array<JsonWebKey & { kid?: string }> } = { fetchedAt: 0, keys: [] };
 export async function loadGitHubOidcJwks(fetchImpl = fetch) {
     if (githubOidcJwksCache.keys.length > 0 && Date.now() - githubOidcJwksCache.fetchedAt < 10 * 60 * 1000) {
         return githubOidcJwksCache.keys;
@@ -17,7 +18,7 @@ export async function loadGitHubOidcJwks(fetchImpl = fetch) {
     };
     return githubOidcJwksCache.keys;
 }
-export async function verifyGitHubOidcToken(token, expectedAudience, fetchImpl = fetch) {
+export async function verifyGitHubOidcToken(token: unknown, expectedAudience: string, fetchImpl = fetch) {
     const parts = String(token ?? '').split('.');
     if (parts.length !== 3) {
         throw new Error('GitHub OIDC token must be a JWT.');

@@ -18,7 +18,7 @@ const parseRoles = (value: unknown) => {
 
 export async function getSeedServicePrincipalMembershipMethod(this: ControlPlaneStore, seedName: string, resourceKey: string) {
 	await this.ensureInitialized();
-	return this.first(`SELECT memberships.*, principals.principal_key, principals.display_name, principals.interactive_login
+	return this.first<Record<string, unknown> & { id: string; roles_json: string | null }>(`SELECT memberships.*, principals.principal_key, principals.display_name, principals.interactive_login
 		FROM team_service_principal_memberships memberships
 		INNER JOIN service_principals principals ON principals.id = memberships.service_principal_id
 		WHERE memberships.seed_name = ? AND memberships.resource_key = ? LIMIT 1`, [seedName, resourceKey]);

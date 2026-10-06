@@ -1,15 +1,17 @@
 import { ControlPlaneStore,primaryTeamRole,serializeTeam } from "../../../../persistence/store.ts";
-export async function listTeamsForPrincipalMethod(this: ControlPlaneStore, principal) {
+import type { NativeTeamRow } from '../../../support/teams/teams.ts';
+import type { OperationInvocationContext } from '../../../../control-plane/catalog/operation-registry.ts';
+export async function listTeamsForPrincipalMethod(this: ControlPlaneStore, principal: OperationInvocationContext['principal'] | null) {
     await this.ensureInitialized();
     const teamIds = await this.teamIdsForPrincipal(principal);
     if (teamIds.length === 0) {
         return [];
     }
     const placeholders = teamIds.map(() => '?').join(', ');
-    const rows = await this.all(`SELECT * FROM teams WHERE id IN (${placeholders})
+    const rows = await this.all<NativeTeamRow>(`SELECT * FROM teams WHERE id IN (${placeholders})
         ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, created_at ASC`, teamIds);
     return Promise.all(rows.map(async (row) => {
-        const team = serializeTeam(row);
+        const team = serializeTeam(row)!;
         const [context, memberCount, ownerCount, pendingInviteCount, projectCount, capacityProviderCount] = await Promise.all([
             this.resolvePrincipalTeamContext(team.id, principal),
             this.first(`SELECT COUNT(*) AS count FROM team_memberships WHERE team_id = ? AND status = 'active'`, [team.id]),

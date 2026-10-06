@@ -1,5 +1,7 @@
 import { isLoopbackUrl,normalizeBaseUrl,optionalTrimmedString,requestClientIp,trimmedHeaderValue } from '../index.ts';
-export function shouldExposeNonProductionAuthDiagnostics(c, runtime) {
+import type { Context } from 'hono';
+import type { TokenRefreshResponse } from '../../../types.ts';
+export function shouldExposeNonProductionAuthDiagnostics(c: Context, runtime: { resolved?: { config?: { environment?: unknown } } } | null | undefined) {
     const environment = String(runtime?.resolved?.config?.environment ?? process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? '').trim().toLowerCase();
     if (environment && !['prod', 'production'].includes(environment))
         return true;
@@ -11,7 +13,7 @@ export function shouldExposeNonProductionAuthDiagnostics(c, runtime) {
         return false;
     }
 }
-export function requestSessionMetadata(c) {
+export function requestSessionMetadata(c: Context) {
     const userAgent = trimmedHeaderValue(c, 'user-agent');
     const ipAddress = requestClientIp(c);
     return {
@@ -19,13 +21,13 @@ export function requestSessionMetadata(c) {
         userAgent: userAgent ? userAgent.slice(0, 512) : null,
     };
 }
-export function webSessionData(c, source) {
+export function webSessionData(c: Context, source: unknown) {
     return {
         source,
         ...requestSessionMetadata(c),
     };
 }
-export function controlPlaneAuthContext(c, config: any = {}) {
+export function controlPlaneAuthContext(c: Context, config: { siteUrl?: unknown; authApprovalBaseUrl?: unknown } = {}) {
     const configuredSiteUrl = String(config.siteUrl ?? config.authApprovalBaseUrl ?? '').trim();
     return {
         locals: {
@@ -43,13 +45,13 @@ export function controlPlaneAuthContext(c, config: any = {}) {
 export function authTokenTimestampSeconds(value = Date.now()) {
     return Math.floor(Number(value) / 1000);
 }
-export function authTokenTimestampMillis(value) {
+export function authTokenTimestampMillis(value: unknown) {
     const number = Number(value ?? 0);
     if (!Number.isFinite(number) || number <= 0)
         return 0;
     return number < 10000000000 ? number * 1000 : number;
 }
-export function webAuthPayload(session) {
+export function webAuthPayload(session: TokenRefreshResponse) {
     return {
         accessToken: session.accessToken,
         refreshToken: session.refreshToken,
@@ -76,7 +78,7 @@ export function normalizeAppearancePreference(input: any = {}) {
         },
     };
 }
-export function resolveAuthApprovalBaseUrl(config) {
+export function resolveAuthApprovalBaseUrl(config: { baseUrl?: unknown; authApprovalBaseUrl?: unknown; siteUrl?: unknown }) {
     const baseUrl = normalizeBaseUrl(config.baseUrl);
     const configured = normalizeBaseUrl(config.authApprovalBaseUrl ?? config.siteUrl ?? '');
     const remoteApi = baseUrl && !isLoopbackUrl(baseUrl);

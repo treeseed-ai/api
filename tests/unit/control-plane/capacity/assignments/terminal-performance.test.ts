@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { DurableProviderAssignment } from '../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { terminalPerformance } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/completion/assignment-terminal-performance.ts';
 import { capacityUsageInsertOperation } from '../../../../../src/api/capacity/services/capacity/accounting/usage-report-service.ts';
+import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
+import { assignment as originalAttempt } from '../execution/fixtures/assignment.ts';
 
 describe('terminal assignment performance', () => {
 	it('uses the committed aggregate usage rather than an empty completion payload', () => {
@@ -33,13 +35,16 @@ describe('terminal assignment performance', () => {
 		expect(performance.taskSignature).toBe('project-1:reviewer:reviewing');
 	});
 	it('commits the same exact activity into usage history despite a provider-supplied signature', () => {
+		const attempt = assignmentAttemptSchema.parse({ ...originalAttempt, id: 'review-1', idempotencyKey: 'review-1',
+			teamId: 'team-1', projectId: 'project-1', workdayId: 'workday-1',
+			effectiveProfile: { ...originalAttempt.effectiveProfile, activity: 'reviewing' } });
 		const operation = capacityUsageInsertOperation({ teamId: 'team-1', membershipId: 'member-1',
 			reservationId: 'reservation-1', assignmentId: 'review-1', idempotencyKey: 'usage-1',
 			usageDimension: 'aggregate', accountingMode: 'aggregate', activeSeconds: 56, elapsedSeconds: 56,
 			source: 'provider_assignment_complete', usageActual: { taskSignature: 'incorrect:planning' } },
 		{ project_agent_class_id: 'project-1:reviewer', mode: 'planning',
-			assignment_attempt_json: JSON.stringify({ effectiveProfile: { activity: 'reviewing' } }) },
-		{ id: 'usage:review-1:0:aggregate', idempotencyKey: 'usage-1', assignmentAttempt: 0,
+			assignment_attempt_json: JSON.stringify(attempt) },
+		{ id: 'usage:review-1:1:aggregate', idempotencyKey: 'usage-1', assignmentAttempt: attempt.attempt,
 			usageDimension: 'aggregate' }, { column: 'settlement_token', token: 'token-1' }, '2026-09-22T00:00:00.000Z');
 		expect(operation.params?.[5]).toBe('project-1:reviewer:reviewing');
 	});

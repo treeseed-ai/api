@@ -1,11 +1,12 @@
 import { ControlPlaneStore,projectArchitectureContentSource } from "../../../../persistence/store.ts";
-export async function projectArchitectureContentBindingsMethod(this: ControlPlaneStore, projectId, architecture) {
+import type { ProjectArchitecture, ProjectContentPublishTarget } from '../../../support/projects/projects-core/projects-records.ts';
+export async function projectArchitectureContentBindingsMethod(this: ControlPlaneStore, projectId: string, architecture: ProjectArchitecture | null | undefined) {
     const project = await this.getProject(projectId);
     if (!project || !architecture)
         return null;
     const repositories = await this.listHubRepositories(projectId);
     const contentRepository = repositories.find((entry) => entry.role === 'content') ?? null;
-    const publishTarget = architecture.contentPublishTarget ?? {};
+    const publishTarget: Partial<ProjectContentPublishTarget> = architecture.contentPublishTarget ?? {};
     await this.upsertHubContentSource(projectId, {
         teamId: project.teamId,
         contentRepositoryId: contentRepository?.id ?? null,

@@ -66,7 +66,7 @@ export function createControlPlaneMcpHandler(registry: OperationRegistry, confir
 				mimeType: resource.mimeType,
 				cacheHint: { ttlMs: (resource.cacheTtlSeconds ?? 0) * 1000, cacheScope: operation.binding.descriptor.cacheScope === 'public' ? 'public' : 'private' },
 			} as const;
-			const read = async (uri: URL, variables: Record<string, string> = {}) => {
+			const read = async (uri: URL, variables: Record<string, string | string[]> = {}) => {
 				enforceOperationAuthorization(operation.binding.descriptor, requestContext.authInfo);
 				const output = await operation.handler({ path: operation.binding.schema.path.parse(variables), query: operation.binding.schema.query.parse({}), body: operation.binding.schema.body.parse(undefined) }, {
 					interface: 'mcp', requestId: crypto.randomUUID(), authInfo: requestContext.authInfo,

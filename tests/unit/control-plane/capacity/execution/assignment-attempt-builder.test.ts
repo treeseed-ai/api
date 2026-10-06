@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { buildAssignmentAttempt } from '../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
-import { candidate, permissions, provider, run, sourceRef } from './fixtures/assignment-attempt-fixtures.ts';
+import { candidate, permissions, provider, run, sourceRef, gitRef, canonicalOfferBuildInput, invalidCanonicalOffers,
+	conversationCapability, executionCapability, suppliedCapabilityOffer } from './fixtures/assignment-attempt-fixtures.ts';
+import { capabilityOfferDigest } from '@treeseed/sdk/capacity-provider';
+import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 
 describe('immutable assignment-attempt construction', () => {
 	it('calibrates exact review history without inventing a minimum allocation floor', () => {
@@ -20,21 +23,19 @@ describe('immutable assignment-attempt construction', () => {
 	});
 	it('gives planning discussion the policy turn ceiling without changing acting chat allocation', () => {
 		const discussion = structuredClone(candidate);
-		discussion.node.kind = 'communication';
-		discussion.node.pairRole = null as never;
+		discussion.node.kind = 'communication'; discussion.node.pairRole = null as never;
 		discussion.node.estimate = { expectedSeconds: 180, maximumSeconds: 180 };
-		discussion.node.requiredCapabilities = ['conversation'];
+		discussion.node.requiredCapabilities = [conversationCapability];
 		discussion.node.workspace = 'treedx';
 		discussion.node.sourceRef = { ...sourceRef, model: 'discussion', path: 'discussion-messages/one.mdx' } as never;
 		discussion.node.requestedPermissions = { content: { read: ['discussion'], write: ['discussion'] }, tools: ['discussion'] } as never;
-		discussion.effectiveProfile.permissionCeiling = discussion.node.requestedPermissions;
-		discussion.effectiveProfile.activity = 'chat';
-		const offered = { ...provider, capabilities: ['conversation'],
-			accountingLimits: { ...provider.accountingLimits, capabilityLimits: { conversation: { dailyActiveSecondsLimit: 28800 } } },
+		discussion.effectiveProfile.permissionCeiling = discussion.node.requestedPermissions; discussion.effectiveProfile.activity = 'chat';
+		const offered = { ...provider, capabilities: [conversationCapability],
+			accountingLimits: { ...provider.accountingLimits, capabilityLimits: { [conversationCapability]: { dailyActiveSecondsLimit: 28800 } } },
 			accountingObservation: { ...provider.accountingObservation,
-				capabilityUsage: { conversation: provider.accountingObservation.modelUsage } },
-			lanes: [{ ...provider.lanes[0]!, purpose: 'communication', capabilities: ['conversation'] }],
-			offers: [{ offerId: 'codex-conversation', capabilities: [{ id: 'conversation' }] }] };
+				capabilityUsage: { [conversationCapability]: provider.accountingObservation.modelUsage } },
+			lanes: [{ ...provider.lanes[0]!, purpose: 'communication', capabilities: [conversationCapability] }],
+			offers: [suppliedCapabilityOffer('2026-09-13T12:00:00.000Z', conversationCapability, 'codex-conversation')] };
 		const measurements = [{ id: 'successful-short-chat', completedAt: '2026-09-13T11:59:00.000Z',
 			expectedSeconds: 180, allocatedSeconds: 90, activeSeconds: 45, outcome: 'completed' }];
 		const chatRun = structuredClone(run) as { parameters: { appliedPlan: { policySnapshot: { planningTurnMaximumSeconds: number } } } };
@@ -44,11 +45,10 @@ describe('immutable assignment-attempt construction', () => {
 			allocationInputs: { codex: { measurements, constraints: [] } } as never, providerSessionId: 'session',
 			providers: [{ ...offered, accountingObservation: { ...offered.accountingObservation,
 				modelUsage: { ...offered.accountingObservation.modelUsage, observedAt: now },
-				capabilityUsage: { conversation: { ...offered.accountingObservation.modelUsage, observedAt: now } } } }] as never,
+				capabilityUsage: { [conversationCapability]: { ...offered.accountingObservation.modelUsage, observedAt: now } } } }] as never,
 			attempt: 1, now });
 		const planning = build('2026-09-13T12:01:00.000Z');
-		expect(planning.assignment.limits.maximumSeconds).toBe(180);
-		expect(planning.allocation.calibration.measurementIds).toEqual([]);
+		expect(planning.assignment.limits.maximumSeconds).toBe(180); expect(planning.allocation.calibration.measurementIds).toEqual([]);
 		expect(build('2026-09-13T12:11:30.000Z').assignment.limits.maximumSeconds).toBe(30);
 		const acting = build('2026-09-13T12:30:00.000Z');
 		expect(acting.allocation.calibration.measurementIds).toEqual(['successful-short-chat']);
@@ -78,9 +78,7 @@ describe('immutable assignment-attempt construction', () => {
 		};
 		const architect = structuredClone(candidate);
 		architect.contextRefs = [architecture] as never;
-		architect.node.agentClass = 'architect';
-		architect.node.workItemId = 'architecture-contract';
-		architect.node.workspace = 'treedx';
+		architect.node.agentClass = 'architect'; architect.node.workItemId = 'architecture-contract'; architect.node.workspace = 'treedx';
 		architect.node.requestedPermissions = { content: { read: ['proposal', 'book'], write: ['knowledge'] },
 			tools: ['source.read'] } as never;
 		architect.effectiveProfile.permissionCeiling = architect.node.requestedPermissions;
@@ -88,8 +86,7 @@ describe('immutable assignment-attempt construction', () => {
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
 			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
-		expect(result.assignment.contextRefs).toContainEqual(architecture);
-		expect(result.assignment.grant.contentRead).toContainEqual(architecture);
+		expect(result.assignment.contextRefs).toContainEqual(architecture); expect(result.assignment.grant.contentRead).toContainEqual(architecture);
 		const target = result.assignment.grant.contentWrite[0]!;
 		expect(target).toMatchObject({ model: 'knowledge', repository: 'library', commit: 'b'.repeat(40) });
 		expect(target.id).toMatch(/^knowledge-[a-f0-9]+$/u);
@@ -134,20 +131,22 @@ describe('immutable assignment-attempt construction', () => {
 			.toThrow('Writable TreeDX content must belong to the assignment project library.');
 	});
 
-	it('preserves a proposal-owned exact Knowledge identity in the assignment grant', () => {
+	it('uses the exact Book and frozen grant without admitting a retired node output selector', () => {
 		const exact = structuredClone(candidate);
 		exact.contextRefs = [{ store: 'treedx', model: 'book', id: 'sdk-core', repository: 'library', commit: '9'.repeat(40), path: 'books/sdk-core.md', revision: 1, digest: `sha256:${'1'.repeat(64)}` }] as never;
 		exact.node.workspace = 'treedx';
-		exact.node.output = { model: 'knowledge', id: 'sdk-workday-contract-inventory-v1' };
 		exact.node.requestedPermissions = { content: { read: ['proposal', 'book'], write: ['knowledge'] }, tools: ['source.read'] } as never;
 		exact.effectiveProfile.permissionCeiling = exact.node.requestedPermissions;
-		const result = buildAssignmentAttempt({ candidate: { ...exact, lineageSourceCommit: '9'.repeat(40) } as never, run,
+		const input = { candidate: { ...exact, lineageSourceCommit: '9'.repeat(40) } as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
-			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
-		expect(result.assignment.grant.contentWrite[0]).toMatchObject({
-			id: 'sdk-workday-contract-inventory-v1', path: 'knowledge/sdk-core/sdk-workday-contract-inventory-v1.md',
-		});
+			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' };
+		const held = structuredClone(input), result = buildAssignmentAttempt(input), target = result.assignment.grant.contentWrite[0]!;
+		expect(target.id).toMatch(/^knowledge-[a-f0-9]+$/u); expect(target.path).toBe(`knowledge/sdk-core/${target.id}.md`);
+		for (const output of [undefined, null, '', {}, [], { model: 'knowledge', id: 'sdk-workday-contract-inventory-v1' }]) {
+			const supplied = structuredClone(input); Object.assign(supplied.candidate.node, { output }); const before = structuredClone(supplied);
+			expect(() => buildAssignmentAttempt(supplied)).toThrow(); expect(supplied).toEqual(before);
+		} expect(buildAssignmentAttempt(input)).toEqual(result); expect(input).toEqual(held);
 	});
 
 	it('rejects an acting Knowledge writer without an exact Book reference before consuming capacity', () => {
@@ -202,6 +201,7 @@ describe('immutable assignment-attempt construction', () => {
 
 	it('continues a revised Actor from its prior candidate commit', () => {
 		const revised = structuredClone(candidate);
+		revised.contextRefs.push({ ...gitRef, id: 'prior-candidate', commit: '9'.repeat(40) });
 		revised.node.nodeRevision = 2;
 		revised.predecessorResults = [{
 			schemaVersion: 'treeseed.assignment-result/v1', id: 'prior', assignmentId: 'prior-assignment',
@@ -218,6 +218,7 @@ describe('immutable assignment-attempt construction', () => {
 
 	it('continues a reviewed revision from its own candidate when the original Tester commit is also a predecessor', () => {
 		const revised = structuredClone(candidate);
+		revised.contextRefs.push(...['8', '9'].map(digit => ({ ...gitRef, id: `prior-candidate-${digit}`, commit: digit.repeat(40) })));
 		revised.node.nodeRevision = 3;
 		revised.predecessorResults = [
 			{ schemaVersion: 'treeseed.assignment-result/v1', id: 'tester-result', assignmentId: 'tester-assignment',
@@ -236,6 +237,7 @@ describe('immutable assignment-attempt construction', () => {
 
 	it('rebases a revised Actor on its sole current upstream while retaining its earlier candidate as context', () => {
 		const revised = structuredClone(candidate);
+		revised.contextRefs.push(...['8', '9'].map(digit => ({ ...gitRef, id: `prior-candidate-${digit}`, commit: digit.repeat(40) })));
 		revised.node.nodeRevision = 3;
 		revised.predecessorResults = ['8', '9'].map((digit) => ({
 			schemaVersion: 'treeseed.assignment-result/v1', id: `result-${digit}`, assignmentId: `assignment-${digit}`,
@@ -254,6 +256,7 @@ describe('immutable assignment-attempt construction', () => {
 
 	it('uses the sole Git predecessor as the base for an initial acting node', () => {
 		const following = structuredClone(candidate);
+		following.contextRefs.push({ ...gitRef, id: 'prior-candidate', commit: '9'.repeat(40) });
 		following.predecessorResults = [{
 			schemaVersion: 'treeseed.assignment-result/v1', id: 'predecessor', assignmentId: 'previous-assignment',
 			status: 'completed', summary: 'Reviewed predecessor.',
@@ -283,6 +286,7 @@ describe('immutable assignment-attempt construction', () => {
 
 	it('gives an authorized Releaser one exact base and every divergent predecessor for integration', () => {
 		const integration = structuredClone(candidate);
+		integration.contextRefs.push(...['8', '9'].map(digit => ({ ...gitRef, id: `prior-candidate-${digit}`, commit: digit.repeat(40) })));
 		integration.node.agentClass = 'releaser';
 		integration.node.workItemId = 'simulate-release';
 		integration.node.requestedPermissions.tools = [...permissions.tools, 'release'];
@@ -313,8 +317,11 @@ describe('immutable assignment-attempt construction', () => {
 	});
 
 	it('selects the least-privileged offer satisfying the compiled node demand', () => {
-		const broad = { ...provider.offers[0]!, offerId: 'broad', capabilities: [{ id: 'code-change' }, { id: 'release' }] };
-		const narrow = { ...provider.offers[0]!, offerId: 'narrow', capabilities: [{ id: 'code-change' }] };
+		const narrow = suppliedCapabilityOffer('2026-09-13T12:00:00.000Z', executionCapability, 'narrow');
+		const release = suppliedCapabilityOffer('2026-09-13T12:00:00.000Z', 'treeseed.engineering.release', 'release-input');
+		const broad = { ...narrow, offerId: 'broad', capabilities: [...narrow.capabilities, ...release.capabilities],
+			conformance: [...narrow.conformance, ...release.conformance] };
+		const { offerDigest: _broadDigest, ...broadMaterial } = broad; broad.offerDigest = capabilityOfferDigest(broadMaterial);
 		const result = buildAssignmentAttempt({
 			candidate: candidate as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
@@ -325,8 +332,8 @@ describe('immutable assignment-attempt construction', () => {
 	});
 
 	it('selects another eligible provider when the first has no workday allocation left', () => {
-		const exhausted = { ...provider, id: 'a-exhausted', offers: [{ ...provider.offers[0]!, offerId: 'exhausted-offer' }] };
-		const available = { ...provider, id: 'b-available', offers: [{ ...provider.offers[0]!, offerId: 'available-offer' }] };
+		const exhausted = { ...provider, id: 'a-exhausted', offers: [suppliedCapabilityOffer('2026-09-13T12:00:00.000Z', executionCapability, 'exhausted-offer')] };
+		const available = { ...provider, id: 'b-available', offers: [suppliedCapabilityOffer('2026-09-13T12:00:00.000Z', executionCapability, 'available-offer')] };
 		const result = buildAssignmentAttempt({ candidate: candidate as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: {
@@ -397,19 +404,15 @@ describe('immutable assignment-attempt construction', () => {
 
 	it('allocates a paired work review from the acting window without a minimum floor', () => {
 		const review = structuredClone(candidate);
-		review.node.kind = 'reviewing' as never;
-		review.node.pairRole = 'reviewer';
-		review.node.workItemId = 'architecture';
-		review.node.sourceRef = sourceRef;
-		review.node.workspace = 'treedx';
+		review.node.kind = 'reviewing' as never; review.node.pairRole = 'reviewer';
+		review.node.workItemId = 'architecture'; review.node.sourceRef = sourceRef; review.node.workspace = 'treedx';
 		review.node.estimate = { expectedSeconds: 1320, maximumSeconds: 1980 };
 		review.node.requestedPermissions = { content: { read: ['proposal'], write: ['decision'] },
 			tools: ['source.read', 'verification'] } as never;
-		review.effectiveProfile.activity = 'reviewing';
-		review.effectiveProfile.permissionCeiling = review.node.requestedPermissions;
+		review.effectiveProfile.activity = 'reviewing'; review.effectiveProfile.permissionCeiling = review.node.requestedPermissions;
 		const currentObservation = { ...provider.accountingObservation.modelUsage, observedAt: '2026-09-13T12:30:00.000Z' };
 		const reviewProvider = { ...provider, accountingObservation: { modelUsage: currentObservation,
-			capabilityUsage: { 'code-change': currentObservation } } };
+			capabilityUsage: { [executionCapability]: currentObservation } } };
 		const result = buildAssignmentAttempt({ candidate: review as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { measurements: [], constraints: [],
@@ -423,8 +426,7 @@ describe('immutable assignment-attempt construction', () => {
 	});
 
 	it('rejects executable nodes whose capability demand was not compiled', () => {
-		const missing = structuredClone(candidate);
-		missing.node.requiredCapabilities = [];
+		const missing = structuredClone(candidate); missing.node.requiredCapabilities = [];
 		expect(() => buildAssignmentAttempt({
 			candidate: missing as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
@@ -470,15 +472,13 @@ describe('immutable assignment-attempt construction', () => {
 
 	it('uses the independent communication lane for chat nodes', () => {
 		const chat = structuredClone(candidate);
-		chat.node.kind = 'communication' as never;
-		chat.node.pairRole = null;
+		chat.node.kind = 'communication' as never; chat.node.pairRole = null;
 		chat.node.sourceRef = { ...sourceRef, model: 'discussion', id: 'message', path: 'discussion-messages/thread/message.mdx' } as never;
 		chat.node.workspace = 'treedx';
 		chat.node.requestedPermissions = { content: { read: ['discussion'], write: ['discussion'] }, tools: ['source.read'] } as never;
 		chat.effectiveProfile = { ...chat.effectiveProfile, activity: 'chat', handler: 'writer',
 			permissionCeiling: chat.node.requestedPermissions } as never;
-		chat.contextRefs = [];
-		chat.sourceRepositories = ['repository-sdk'];
+		chat.contextRefs = []; chat.sourceRepositories = ['repository-sdk'];
 		const communicationProvider = { ...provider, lanes: [{ ...provider.lanes[0]!, id: 'chat', purpose: 'communication' }] };
 		const result = buildAssignmentAttempt({ candidate: chat as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,

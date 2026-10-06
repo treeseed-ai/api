@@ -132,7 +132,7 @@ export async function createConfiguredWorkdayTreeDxWorkspace(
 	input: ConfiguredWorkspaceInput,
 ) {
 	const connection = await resolveWorkdayTreeDxConnection(store, {
-		projectId: project.id, repositoryId: input.repositoryId, runId: run.id,
+		projectId: project.id, repositoryId: input.repositoryId,
 		capabilities: ['repos:read', 'repos:write', 'workspace:create', 'workspaces:create', 'files:read', 'files:write', 'git:commit'],
 	});
 	if (!connection) throw new CapacityGovernanceError('capacity_workday_workspace_auth_unavailable', 'TreeDX connected authentication and a repository binding are required for local and hosted workdays.', 503);

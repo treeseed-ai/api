@@ -1,5 +1,5 @@
 import { isoNow,ControlPlaneStore } from "../../../persistence/store.ts";
-export async function decideApprovalRequestMethod(this: ControlPlaneStore, id, input) {
+export async function decideApprovalRequestMethod(this: ControlPlaneStore, id: string, input: Record<string, unknown>) {
     await this.ensureInitialized();
     const existing = await this.getApprovalRequest(id);
     if (!existing)

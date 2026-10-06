@@ -8,13 +8,14 @@ afterEach(() => rmSync('release-assets', { recursive: true, force: true }));
 
 describe('managed API release publication', () => {
 	it('declares exact recursive source custody and real PostgreSQL for the complete prerequisite suite before capacity scenes',()=>{
-		const workflow=parse(readFileSync('.github/workflows/verify.yml','utf8')) as {jobs:{verify:{services:Record<string,unknown>;steps:Array<{
+		const workflow=parse(readFileSync('.github/workflows/verify.yml','utf8')) as {jobs:{verify:{env:Record<string,string>;services:Record<string,unknown>;steps:Array<{
 			name?:string;uses?:string;run?:string;with?:Record<string,unknown>;env?:Record<string,string>}>}}};
 		const steps=workflow.jobs.verify.steps, checkout=steps.find(step=>step.uses==='actions/checkout@v4');
 		expect(checkout?.with?.submodules).toBe('recursive');
 		const verify=steps.find(step=>step.run==='npm run verify:direct'), scene=steps.find(step=>step.name==='Execute coded golden component scenes');
-		expect(verify?.env?.TREESEED_TEST_POSTGRES_URL).toBe('postgres://postgres:migration-test-only@127.0.0.1:5432/postgres');
-		expect(scene?.env?.TREESEED_TEST_POSTGRES_URL).toBe(verify?.env?.TREESEED_TEST_POSTGRES_URL);
+		expect(workflow.jobs.verify.env.TREESEED_TEST_POSTGRES_URL).toBe('postgres://postgres:migration-test-only@127.0.0.1:5432/postgres');
+		expect(verify?.env?.TREESEED_TEST_POSTGRES_URL).toBeUndefined();
+		expect(scene?.env?.TREESEED_TEST_POSTGRES_URL).toBeUndefined();
 		expect(workflow.jobs.verify.services.postgres).toBeDefined();expect(scene?.uses).toMatch(/^treeseed-ai\/reviewer\/\.github\/actions\/run-scenes@[a-f0-9]{40}$/u);
 		expect(steps.indexOf(verify!)).toBeLessThan(steps.indexOf(scene!));
 		const manifest=JSON.parse(readFileSync('package.json','utf8')) as {scripts:Record<string,string>};

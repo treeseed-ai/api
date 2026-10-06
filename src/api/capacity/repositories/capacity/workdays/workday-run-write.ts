@@ -2,6 +2,8 @@ import type { CapacityWorkdayRunRecord,CapacityWorkdayRunStatus } from '@treesee
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityWorkdayRunRepository } from './workday-run.ts';
 
+type Row = Record<string, unknown>;
+
 export class CapacityWorkdayRunWriteRepository {
 	private readonly reads: CapacityWorkdayRunRepository;
 	constructor(private readonly database: CapacityGovernanceDatabase) { this.reads = new CapacityWorkdayRunRepository(database); }

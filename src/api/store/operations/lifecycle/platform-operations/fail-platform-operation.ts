@@ -1,5 +1,5 @@
 import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
-export async function failPlatformOperationMethod(this: ControlPlaneStore, operationId, input: any = {}) {
+export async function failPlatformOperationMethod(this: ControlPlaneStore, operationId: string, input: any = {}) {
     await this.ensureInitialized();
     await this.assertPlatformOperationRunnerUpdate(operationId, input.runnerId);
     const timestamp = isoNow();

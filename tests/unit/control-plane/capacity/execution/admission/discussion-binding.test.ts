@@ -1,24 +1,34 @@
 import { PGlite } from '@electric-sql/pglite';
 import { describe, expect, it, vi } from 'vitest';
-import { calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
 import { admitLivingExecutionAssignment } from '../../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts';
+import { serializeProviderAssignmentRow } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { assignment } from '../fixtures/assignment.ts';
 
 async function admissionOperations(attemptId: string = assignment.id) {
-	const attempt = { ...assignment, id: attemptId };
+	const attempt = assignmentAttemptSchema.parse({ ...structuredClone(assignment), id: attemptId });
 	let operations: Array<{ query: string; params: unknown[] }> = [];
-	const committed = { id: attempt.id, executionNodeId: attempt.nodeId, executionNodeRevision: attempt.nodeRevision };
+	const committed = serializeProviderAssignmentRow({ id: attempt.id, membership_id: 'membership', team_id: attempt.teamId,
+		project_id: attempt.projectId, capacity_provider_id: attempt.provider.providerId, project_agent_class_id: 'class',
+		mode: 'acting', status: 'pending', lease_state: 'unleased', work_day_id: attempt.workdayId,
+		execution_provider_id: attempt.provider.executionProviderId, reservation_id: attempt.reservationId,
+		attempt_count: attempt.attempt, graph_revision: attempt.graphRevision, agent_id: attempt.agentClass,
+		execution_node_id: attempt.nodeId, execution_node_revision: attempt.nodeRevision, assignment_attempt_json: attempt,
+		capacity_envelope_json: { teamId: attempt.teamId, projectId: attempt.projectId, mode: 'acting',
+			requestedSeconds: 3, reservedSeconds: 3, workDayId: attempt.workdayId, capacityProviderId: attempt.provider.providerId,
+			executionProviderId: attempt.provider.executionProviderId, reservationId: attempt.reservationId, projectAgentClassId: 'class' },
+		created_at: attempt.createdAt, updated_at: attempt.createdAt });
 	const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed),
 		batch: async (batch: typeof operations) => { operations = batch; },
-		first: vi.fn(async () => ({ status: 'running', assignment_id: attempt.id })) };
+		first: vi.fn(async () => ({ id: attempt.nodeId, status: 'running', assignment_id: attempt.id })) };
 	await admitLivingExecutionAssignment(store as never, {
 		principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
-		assignment: attempt as never,
+		assignment: attempt,
 		allocation: { ...calculateAssignmentAllocation({ estimate: assignment.estimate, measurements: [],
 			constraints: [{ id: 'execution-window', remainingSeconds: 180 }] }), opportunity: { phase: 'planning' } } as never,
 		accountingLimits: { modelConfigurationId: 'terra-medium', dailyActiveSecondsLimit: 28800,
 			capabilityLimits: { 'code-change': { dailyActiveSecondsLimit: 28800 } } },
-		projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'runtime',
+		projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: attempt.provider.executionProviderId,
 		laneId: 'communication', lanePurpose: 'communication', executionKind: 'conversation',
 		workdayConcurrencyLimit: 5, invocationId: 'invocation', predecessorResults: [],
 		treedxProxyHandle: { id: 'tdx_assignment' }, now: assignment.createdAt,
@@ -81,7 +91,7 @@ describe('conversation admission binding in PostgreSQL', () => {
 				await db.query('UPDATE capacity_reservations SET admission_token=$1', [token]);
 				index = 0;
 				await db.query(update.query.replace(/\?/gu, () => `$${++index}`), update.params);
-				expect((await db.query('SELECT workspace_context_json FROM capacity_provider_assignments')).rows[0]?.workspace_context_json)
+				expect((await db.query<{ workspace_context_json: unknown }>('SELECT workspace_context_json FROM capacity_provider_assignments')).rows[0]?.workspace_context_json)
 					.toMatchObject({ assignmentAttempt: { id: assignment.id }, predecessorResults: [] });
 			}
 		} finally { await db.close(); }

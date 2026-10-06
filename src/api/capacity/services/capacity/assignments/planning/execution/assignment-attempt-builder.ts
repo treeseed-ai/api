@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
 	appliedWorkdaySchema,
+	executionNodeSchema,
 	assignmentAttemptSchema,
 	calculateAssignmentAllocation,
 	remainingCapabilitySeconds,
@@ -11,6 +12,7 @@ import {
 	type CapabilityAccountingLimits,
 } from '@treeseed/sdk/agent-capacity';
 import { assignmentSourceBranch, simulationSourceBranch } from '@treeseed/sdk/capacity-provider/sandbox';
+import { capabilityOfferSchema, validateCapabilityOfferQualification } from '@treeseed/sdk/capacity-provider/contracts';
 import { CapacityGovernanceError } from '../../../../../database.ts';
 import type { ProviderLeasePrincipal } from '../../../../accounts/lease-authority-service.ts';
 import type { ProviderSynthesisExecutionProvider } from '../../../providers/provider-synthesis-context-service.ts';
@@ -19,6 +21,7 @@ import type { DurableCapacityWorkdayRun } from '../../../../../repositories/capa
 import { workdayTreeDxWorkspaceId } from '../../../workdays/treedx/workday-treedx-workspace-service.ts';
 import { compileAssignmentTimeBudget } from '../assignment-time-budget.ts';
 import type { LivingAllocationInputs } from '../../admission/living-allocation-inputs.ts';
+import { assignmentPredecessors } from '../../admission/living-execution-admission.ts';
 
 const stable = (value: unknown): string => {
 	if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
@@ -29,7 +32,8 @@ const stable = (value: unknown): string => {
 const id = (prefix: string, values: unknown[]) => `${prefix}_${createHash('sha256').update(stable(values)).digest('base64url').slice(0, 32)}`;
 const knowledgeId = (nodeId: string) => `knowledge-${createHash('sha256').update(nodeId).digest('hex').slice(0, 24)}`;
 
-function eligibleProviders(requiredCapabilities: string[], providers: ProviderSynthesisExecutionProvider[], lanePurpose: 'workday' | 'communication') {
+function eligibleProviders(requiredCapabilities: string[], providers: ProviderSynthesisExecutionProvider[], lanePurpose: 'workday' | 'communication',
+	qualification: { now: Date; providerId: string }) {
 	if (!requiredCapabilities.length) throw new CapacityGovernanceError(
 		'capacity_execution_capabilities_required',
 		'An executable node must declare its provider capability demand before admission.', 409,
@@ -44,7 +48,10 @@ function eligibleProviders(requiredCapabilities: string[], providers: ProviderSy
 		const lane = [...provider.lanes].filter((candidate) => candidate.purpose === lanePurpose
 			&& requiredCapabilities.every((capability) => !candidate.capabilities.length || candidate.capabilities.includes(capability)))
 			.sort((left, right) => right.priority - left.priority || left.id.localeCompare(right.id))[0];
-		const offer = [...provider.offers].filter((candidate) => {
+		const offer = (Array.isArray(provider.offers) ? provider.offers : []).flatMap(value => {
+			const parsed = capabilityOfferSchema.safeParse(value);
+			return parsed.success && validateCapabilityOfferQualification(parsed.data, qualification).ok ? [parsed.data] : [];
+		}).filter((candidate) => {
 			const capabilities = candidate.capabilities.map((capability) => capability.id);
 			return requiredCapabilities.every((capability) => capabilities.includes(capability));
 		}).sort((left, right) => left.capabilities.length - right.capabilities.length || left.offerId.localeCompare(right.offerId))[0];
@@ -85,6 +92,19 @@ function projectTreeDxWorkspaceReference(candidate: ReadyExecutionNode): ExactEn
 		&& reference.repository === candidate.projectContentRepositoryId);
 }
 
+function primaryGitReference(candidate: ReadyExecutionNode): ExactEntityReference {
+	const source = candidate.node.sourceRef.store === 'git' ? candidate.node.sourceRef : undefined;
+	const references = [...(source ? [source] : []), ...candidate.contextRefs.filter(reference => reference.store === 'git')];
+	// The verified project source owns writes. Foreign predecessor citations
+	// remain readable evidence; neither their order nor their commits select it.
+	const repositories = candidate.sourceRepositories.length ? candidate.sourceRepositories
+		: [...new Set(references.map(reference => reference.repository))];
+	const reference = repositories.length === 1 ? references.find(item => item.repository === repositories[0]) : undefined;
+	if (!reference?.repository || !reference.commit || (source && source.repository !== reference.repository)) throw new CapacityGovernanceError(
+		'assignment_source_repository_required', 'A Git assignment requires one exact primary source repository consistent with its project authority.', 409);
+	return reference;
+}
+
 function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant {
 	const requested = candidate.node.requestedPermissions!;
 	const ceiling = candidate.effectiveProfile.permissionCeiling;
@@ -108,6 +128,7 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant 
 			.filter((value): value is string => Boolean(value)))]
 		: [];
 	const contentRefs = candidate.contextRefs.filter((reference) => reference.store === 'treedx');
+	const readableModels = new Set<string>(requested.content.read);
 	const treeDxBase = candidate.node.workspace === 'treedx' ? projectTreeDxWorkspaceReference(candidate) : undefined;
 	const bookRef = contentRefs.find((reference) => reference.model === 'book'
 		&& reference.repository === treeDxBase?.repository && reference.commit && reference.path);
@@ -115,30 +136,28 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant 
 		&& requested.content.write.includes('knowledge') && !bookRef) throw new CapacityGovernanceError(
 		'assignment_knowledge_book_reference_missing',
 		`Node ${candidate.node.id} needs an exact Book reference before it can write a Knowledge page.`, 409);
-	const requestedOutput = candidate.node.output;
-	const outputId = (model: string) => requestedOutput?.model === model ? requestedOutput.id : undefined;
 	const contentWrite = candidate.node.workspace === 'treedx' && treeDxBase?.repository && treeDxBase.commit
 		? requested.content.write.flatMap((model) => candidate.node.kind === 'communication' && model === 'discussion'
 			? communicationWritePaths(candidate.node.sourceRef.path).map((path, index) => ({ store: 'treedx' as const, model,
 				id: `${candidate.node.id}:${model}:${index + 1}`, repository: treeDxBase.repository, commit: treeDxBase.commit, path }))
 			: model === 'knowledge'
-				? bookRef ? [{ store: 'treedx' as const, model, id: outputId(model) ?? knowledgeId(candidate.node.id),
+				? bookRef ? [{ store: 'treedx' as const, model, id: knowledgeId(candidate.node.id),
 					repository: treeDxBase.repository, commit: treeDxBase.commit,
-					path: `knowledge/${bookRef.id}/${outputId(model) ?? knowledgeId(candidate.node.id)}.md` }]
+					path: `knowledge/${bookRef.id}/${knowledgeId(candidate.node.id)}.md` }]
 					: []
 				: [model === candidate.node.sourceRef.model && candidate.node.sourceRef.path
 				? candidate.node.sourceRef
-				: ({ store: 'treedx' as const, model, id: outputId(model) ?? `${assignmentId}:${model}`,
+				: ({ store: 'treedx' as const, model, id: `${assignmentId}:${model}`,
 					repository: treeDxBase.repository, commit: treeDxBase.commit,
-					path: `${model}s/${outputId(model) ?? assignmentId}.mdx` })]) : [];
+					path: `${model}s/${assignmentId}.mdx` })]) : [];
 	return {
 		contentRead: uniqueReferences([candidate.node.sourceRef, ...communicationDiscussionReference(candidate),
 			...(candidate.node.authorityRefs ?? []), ...contentRefs]
-			.filter((reference) => reference.store === 'treedx' && requested.content.read.includes(reference.model))),
+			.filter((reference) => reference.store === 'treedx' && readableModels.has(reference.model))),
 		contentWrite,
 		sourceRead,
 		sourceWrite: candidate.node.workspace === 'git' && requested.tools.includes('source.write')
-			? [...new Set(sourceRefs.map((reference) => reference.repository).filter((value): value is string => Boolean(value)))] : [],
+			? [primaryGitReference(candidate).repository!] : [],
 		tools: [...requested.tools],
 	};
 }
@@ -146,8 +165,7 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant 
 function workspace(candidate: ReadyExecutionNode, assignmentId: string, exactGrant: ExactGrant, run: DurableCapacityWorkdayRun) {
 	if (candidate.node.workspace === 'read-only') return { mode: 'read-only' as const };
 	const reference = candidate.node.workspace === 'treedx' ? projectTreeDxWorkspaceReference(candidate)
-		: candidate.node.sourceRef.store === candidate.node.workspace ? candidate.node.sourceRef
-			: candidate.contextRefs.find((item) => item.store === candidate.node.workspace);
+		: primaryGitReference(candidate);
 	if (!reference?.repository || !reference.commit) throw new CapacityGovernanceError(
 		'assignment_workspace_reference_missing', `Node ${candidate.node.id} lacks its exact ${candidate.node.workspace} workspace reference.`, 409);
 	const writablePaths = candidate.node.workspace === 'treedx'
@@ -157,8 +175,7 @@ function workspace(candidate: ReadyExecutionNode, assignmentId: string, exactGra
 		`Node ${candidate.node.id} has no exact writable paths for its ${candidate.node.workspace} workspace.`, 409);
 	const predecessorCommits = candidate.node.workspace === 'git'
 		? [...new Set(candidate.predecessorResults.flatMap((result) => result.references)
-			.filter((item) => item.kind === 'git' && item.repository === reference.repository)
-			.map((item) => item.commit))]
+			.flatMap((item) => item.kind === 'git' && item.repository === reference.repository ? [item.commit] : []))]
 		: [];
 	const lineageBase = candidate.node.workspace === 'git' ? candidate.lineageSourceCommit : undefined;
 	// A revision may have one current upstream commit plus the Actor's own older
@@ -173,14 +190,13 @@ function workspace(candidate: ReadyExecutionNode, assignmentId: string, exactGra
 		'assignment_source_lineage_mismatch', 'The direct predecessor commit is absent from exact predecessor results.', 409);
 	const explicitIntegration = predecessorCommits.length > 1
 		&& candidate.node.kind === 'acting' && candidate.node.pairRole === 'actor'
-		&& candidate.node.agentClass === 'releaser' && exactGrant.tools.includes('release');
+		&& exactGrant.tools.includes('release');
 	if (predecessorCommits.length > 1 && !explicitIntegration && !lineageBase && !revisionBase) throw new CapacityGovernanceError(
 		'assignment_git_integration_required',
-		`Node ${candidate.node.id} has multiple Git predecessor commits; an explicit integration assignment by a Releaser must establish one base.`,
+		`Node ${candidate.node.id} has multiple Git predecessor commits; an explicit integration assignment authorized for release must establish one base.`,
 		409, { nodeId: candidate.node.id, predecessorCommits,
 			predecessorResults: candidate.predecessorResults.flatMap((result) => result.references
-				.filter((item) => item.kind === 'git' && item.repository === reference.repository)
-				.map((item) => ({ resultId: result.id, commit: item.commit }))) });
+				.flatMap((item) => item.kind === 'git' && item.repository === reference.repository ? [{ resultId: result.id, commit: item.commit }] : [])) });
 	return candidate.node.workspace === 'git'
 		? { mode: 'git' as const, repository: reference.repository,
 			baseCommit: explicitIntegration ? reference.commit : lineageBase ?? revisionBase ?? predecessorCommits[0] ?? reference.commit,
@@ -204,9 +220,12 @@ export function buildAssignmentAttempt(input: {
 	opportunity: LivingAllocationInputs[string]['opportunity'] }; accountingLimits: CapabilityAccountingLimits;
 	executionProviderId: string; laneId: string; lanePurpose: 'workday' | 'communication'; providerConcurrencyLimit: number } {
 	const { candidate } = input;
-	if (!candidate.node.estimate) throw new CapacityGovernanceError('execution_node_estimate_missing', 'Ready execution nodes require an estimate.', 409);
+	executionNodeSchema.parse(candidate.node);
+	const estimate = candidate.node.estimate;
+	if (!estimate) throw new CapacityGovernanceError('execution_node_estimate_missing', 'Ready execution nodes require an estimate.', 409);
 	const communication = candidate.node.kind === 'communication';
-	const eligible = eligibleProviders(candidate.node.requiredCapabilities ?? [], input.providers, communication ? 'communication' : 'workday');
+	const eligible = eligibleProviders(candidate.node.requiredCapabilities ?? [], input.providers, communication ? 'communication' : 'workday',
+		{ now: new Date(input.now), providerId: input.principal.capacityProviderId });
 	const assignmentId = id('assignment', [candidate.node.teamId,candidate.node.id,candidate.node.nodeRevision,
 		candidate.node.sourceRef.digest,candidate.node.sourceRef.commit,input.attempt]);
 	const appliedPlan = appliedWorkdaySchema.parse(input.run.parameters.appliedPlan);
@@ -225,7 +244,7 @@ export function buildAssignmentAttempt(input: {
 	// execution start clamps that reservation after actual setup/queueing, without
 	// precharging the entire (usually unspent) preparation ceiling.
 	const availableSeconds = candidate.node.kind === 'reporting' && appliedPlan.state === 'closing'
-		? candidate.node.estimate.maximumSeconds : Math.max(0, (Date.parse(windowEnd) - Date.parse(input.now)) / 1000);
+		? estimate.maximumSeconds : Math.max(0, (Date.parse(windowEnd) - Date.parse(input.now)) / 1000);
 	const capability = candidate.node.requiredCapabilities![0]!;
 	const considered = eligible.flatMap((selected) => {
 		const allocationInputs = input.allocationInputs[selected.provider.id];
@@ -233,7 +252,7 @@ export function buildAssignmentAttempt(input: {
 		const limits = selected.provider.accountingLimits!;
 		const observation = selected.provider.accountingObservation!;
 		const capabilityLimits = limits.capabilityLimits[capability]!;
-		const allocationEstimate = candidate.node.estimate;
+		const allocationEstimate = estimate;
 		const remaining = (dailyLimitSeconds: number, value: typeof observation.modelUsage | undefined) => value
 			? remainingCapabilitySeconds({ now: input.now, maximumObservationAgeSeconds: 90, dailyLimitSeconds,
 				observation: value, ledgerActiveSeconds: 0, ledgerReservedSeconds: 0 }).availableSeconds : 0;
@@ -287,6 +306,7 @@ export function buildAssignmentAttempt(input: {
 		deadline, leaseId: id('lease', [assignmentId]), reservationId: id('reservation', [assignmentId]),
 		attempt: input.attempt, status: 'created', createdAt: input.now,
 	});
+	assignmentPredecessors(assignment, candidate.predecessorResults);
 	return { assignment, allocation: { ...allocation, opportunity: allocationInputs.opportunity }, accountingLimits: limits, executionProviderId: selected.provider.id, laneId: selected.lane.id,
 		lanePurpose: communication ? 'communication' : 'workday',
 		// Admission counts existing assignments against a total ceiling, not remaining headroom.

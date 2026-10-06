@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,normalizeTeamRoleKey } from "../../../persistence/store.ts";
-export async function updateTeamMemberRoleMethod(this: ControlPlaneStore, teamId, membershipId, roleKey, expectedVersion) {
+export async function updateTeamMemberRoleMethod(this: ControlPlaneStore, teamId: string, membershipId: string, roleKey: unknown, expectedVersion?: unknown) {
     await this.ensureInitialized();
     const role = normalizeTeamRoleKey(roleKey);
     const membership = await this.first(`SELECT * FROM team_memberships WHERE id = ? AND team_id = ? LIMIT 1`, [membershipId, teamId]);

@@ -1,11 +1,16 @@
 import { governanceVotingProvider } from '../../../../governance/voting.ts';
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,serializeGovernanceElectorateSnapshot } from "../../../../persistence/store.ts";
-export async function snapshotGovernanceElectorateMethod(this: ControlPlaneStore, proposalId) {
+export async function snapshotGovernanceElectorateMethod(this: ControlPlaneStore, proposalId: string) {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
     if (!proposal)
         return null;
+    if (proposal.scope !== 'project' && proposal.scope !== 'team') {
+        throw Object.assign(new Error('A persisted proposal requires exact project or team governance scope.'), {
+            status: 409, code: 'governance_proposal_scope_invalid',
+        });
+    }
     const provider = governanceVotingProvider(proposal.governanceProviderId);
     const policy = proposal.projectId ? await this.getProjectGovernancePolicy(proposal.projectId) : await this.getTeamGovernancePolicy(proposal.teamId, 'team');
     const eligibleVoters = await this.governanceEligibleVoters(proposal.teamId, provider.id);
@@ -47,5 +52,6 @@ export async function snapshotGovernanceElectorateMethod(this: ControlPlaneStore
         proposalVersion: proposal.activeVersion,
         evidence: { snapshotId: id, providerId: provider.id },
     });
-    return serializeGovernanceElectorateSnapshot(await this.first(`SELECT * FROM governance_electorate_snapshots WHERE id = ? LIMIT 1`, [id]));
+    return serializeGovernanceElectorateSnapshot(await this.first<GovernanceElectorateSnapshotRow>(`SELECT * FROM governance_electorate_snapshots WHERE id = ? LIMIT 1`, [id]));
 }
+import type { GovernanceElectorateSnapshotRow } from "../../../support/governance/policy/governance.ts";

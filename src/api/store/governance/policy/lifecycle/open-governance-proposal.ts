@@ -1,7 +1,7 @@
 import { ControlPlaneStore,optionalStringValue } from "../../../../persistence/store.ts";
 import { assertExpectedProposalVersion,simulationEvidence } from '../support/simulation-evidence.ts';
 import { assertGovernanceProposalReady } from '../contracts/governance-proposal-readiness.ts';
-export async function openGovernanceProposalMethod(this: ControlPlaneStore, principal, proposalId, input: any = {}) {
+export async function openGovernanceProposalMethod(this: ControlPlaneStore, principal: ApiPrincipal | null | undefined, proposalId: string, input: any = {}) {
 	const proposal = await this.getGovernanceProposal(proposalId);
 	if (!proposal) return null;
 	assertExpectedProposalVersion(input, proposal.activeVersion);
@@ -13,3 +13,4 @@ export async function openGovernanceProposalMethod(this: ControlPlaneStore, prin
 		evidence: simulationEvidence(input, principal?.id),
     });
 }
+import type { ApiPrincipal } from '../../../../types.ts';

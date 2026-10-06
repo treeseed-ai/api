@@ -11,9 +11,50 @@ vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => (
 	} }),
 }));
 
-describe.skipIf(!process.env.TREESEED_TEST_POSTGRES_URL)('discussion publication SQL authority', () => {
+describe('discussion publication SQL authority', () => {
+	it('real PostgreSQL terminal reconciliation preserves exact failed actor attribution and one unchanged event across replay', async () => {
+		const binding = process.env.TREESEED_TEST_POSTGRES_URL;
+		if (!binding) throw new Error('TREESEED_TEST_POSTGRES_URL is required; native failure attribution cannot be skipped.');
+		const url = new URL(binding);
+		if (url.hostname !== '127.0.0.1' || url.pathname !== '/postgres') throw new Error('Disposable loopback PostgreSQL required.');
+		const pool = new pg.Pool({ connectionString: url.href }), client = await pool.connect();
+		try {
+			await client.query('BEGIN');
+			await client.query(`CREATE TEMP TABLE capacity_provider_assignments (id text,team_id text,project_id text,assignment_result_json jsonb,status text,invocation_id text,updated_at text,lifecycle_code text,lifecycle_reason text);
+				CREATE TEMP TABLE agent_invocation_requests (id text,team_id text,project_id text,agent_id text,assignment_id text,status text,final_message_ref text,updated_at text,execution_kind text,requested_at text,completed_at text,blocking_state_json jsonb,metadata_json jsonb);
+				CREATE TEMP TABLE audit_events (id text,target_type text,target_id text,event_type text);
+				CREATE TEMP TABLE projects (id text,slug text);
+				CREATE TEMP TABLE communication_topic_events (id text PRIMARY KEY,topic_id text,team_id text,event_type text,occurred_at text,send_id text,invocation_id text,assignment_id text,actor_kind text,actor_id text,actor_handle text,summary text,payload_json jsonb);`);
+			const store = { first: async (sql: string, values: unknown[] = []) => (await client.query(translateControlPlaneSqlToPostgres(sql), values)).rows[0] ?? null,
+				all: async (sql: string, values: unknown[] = []) => (await client.query(translateControlPlaneSqlToPostgres(sql), values)).rows,
+				run: async (sql: string, values: unknown[] = []) => client.query(translateControlPlaneSqlToPostgres(sql), values),
+				createCapacityWorkdayRun: async () => { throw new Error('Failure reconciliation must not create a run'); },
+				tickCapacityWorkdayRun: async () => { throw new Error('Failure reconciliation must not tick a run'); },
+				updateCapacityWorkdayRun: async () => { throw new Error('Failure reconciliation must not change a run'); } };
+			for (const [id, agent, slug, expected] of [['missing-project', 'renamed-agent', null, '@missing-project/renamed-agent'],
+				['blank-agent', ' ', 'sdk', '@sdk/agent'], ['named', 'renamed-agent', 'sdk', '@sdk/renamed-agent']] as const) {
+				if (slug) await client.query('INSERT INTO projects VALUES ($1,$2)', [id, slug]);
+				await client.query("INSERT INTO capacity_provider_assignments (id,team_id,status,invocation_id,lifecycle_code) VALUES ($1,'team','failed',$2,'original_failure')", [`assignment-${id}`, `invocation-${id}`]);
+				await client.query("INSERT INTO agent_invocation_requests (id,team_id,project_id,agent_id,status,execution_kind,metadata_json) VALUES ($1,'team',$2,$3,'running','conversation',$4)",
+					[`invocation-${id}`, id, agent, JSON.stringify({ communication: { topicId: 'topic', sendId: 'send' } })]);
+				const assignments = (await client.query('SELECT * FROM capacity_provider_assignments ORDER BY id')).rows;
+				expect(await reconcileTerminalConversationInvocations(store, 'team')).toEqual({ reconciled: 1 });
+				const events = (await client.query('SELECT * FROM communication_topic_events ORDER BY id')).rows;
+				expect(events.filter(row => row.invocation_id === `invocation-${id}`)).toMatchObject([{ actor_handle: expected, actor_id: agent,
+					actor_kind: 'agent', event_type: 'agent.failed', payload_json: { code: 'terminal_assignment_without_final_response', assignmentStatus: 'failed', lifecycleCode: 'original_failure' } }]);
+				const invocations = (await client.query('SELECT * FROM agent_invocation_requests ORDER BY id')).rows;
+				expect(invocations.find(row => row.id === `invocation-${id}`)?.status).toBe('failed');
+				expect(await reconcileTerminalConversationInvocations(store, 'team')).toEqual({ reconciled: 0 });
+				expect((await client.query('SELECT * FROM communication_topic_events ORDER BY id')).rows).toEqual(events);
+				expect((await client.query('SELECT * FROM agent_invocation_requests ORDER BY id')).rows).toEqual(invocations);
+				expect((await client.query('SELECT * FROM capacity_provider_assignments ORDER BY id')).rows).toEqual(assignments);
+			}
+		} finally { await client.query('ROLLBACK'); client.release(); await pool.end(); }
+	});
 	it('retains the exact live lease and blocks stale or cross-team response attribution in PostgreSQL', async () => {
-		const url = new URL(process.env.TREESEED_TEST_POSTGRES_URL!);
+		const binding = process.env.TREESEED_TEST_POSTGRES_URL;
+		if (!binding) throw new Error('TREESEED_TEST_POSTGRES_URL is required; native discussion publication cannot be skipped.');
+		const url = new URL(binding);
 		if (url.hostname !== '127.0.0.1' || url.pathname !== '/postgres') throw new Error('Disposable loopback PostgreSQL required.');
 		const pool = new pg.Pool({ connectionString: url.href });
 		const client = await pool.connect();

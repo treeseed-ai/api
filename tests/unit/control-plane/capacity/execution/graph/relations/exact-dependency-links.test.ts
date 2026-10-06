@@ -5,6 +5,8 @@ vi.mock('../../../../../../../src/api/knowledge/gateway-treedx-connection.ts', (
 	resolveKnowledgeGatewayConnection: resolve,
 }));
 import { loadTeamExactDependencyLinks } from '../../../../../../../src/api/capacity/services/capacity/execution/exact-dependency-links.ts';
+import { stringify } from 'yaml';
+import { createHash } from 'node:crypto';
 
 const proposal = (id: string) => ({ teamId: 'team', projectId: id, repository: `${id}-library`,
 	path: `proposals/${id}.md`, commit: 'a'.repeat(40), digest: `sha256:${'b'.repeat(64)}`,
@@ -23,6 +25,7 @@ const graph = { resolvedRef: 'c'.repeat(40), nodes: [
 const note = { schemaVersion: 'treeseed.note/v1', id: 'dependency', projectId: 'sdk',
 	classification: 'general', subjectRefs: [link.from, link.to], body: 'API follows the SDK candidate.',
 	createdAt: '2026-09-20T00:00:00Z', links: [link] };
+const noteBytes = `---\n${stringify(note)}---\n\n${note.body}\n`;
 
 beforeEach(() => { resolve.mockReset(); });
 
@@ -30,14 +33,15 @@ describe('exact TreeDX dependency intake', () => {
 	it('requires a scoped grant, exact graph commit, and matching note bytes', async () => {
 		const client = { queryGraph: vi.fn(async () => graph),
 			readRepositoryFile: vi.fn(async () => ({ resolvedRef: 'c'.repeat(40),
-				file: { content: 'content', frontmatter: note } })) };
+				file: { path: 'notes/dependency.md', content: noteBytes, frontmatter: note } })) };
 		resolve.mockImplementation(async (_store, input) => ({ repositoryId: `${input.projectId}-library`,
 			publicationRef: 'refs/heads/staging', allowedPaths: ['proposals/**', 'notes/**'], client: input.projectId === 'sdk' ? client : {
 				queryGraph: async () => ({ resolvedRef: 'd'.repeat(40), nodes: [], edges: [] }) } }));
 		const result = await loadTeamExactDependencyLinks({}, [sdk, api] as never);
 		expect(result).toHaveLength(1);
 		expect(result[0]).toMatchObject({ from: link.from, to: link.to,
-			sourceRef: { model: 'note', repository: 'sdk-library', commit: 'c'.repeat(40), path: 'notes/dependency.md' } });
+			sourceRef: { model: 'note', repository: 'sdk-library', commit: 'c'.repeat(40), path: 'notes/dependency.md',
+				digest: `sha256:${createHash('sha256').update(noteBytes).digest('hex')}` } });
 		expect(client.readRepositoryFile).toHaveBeenCalledWith(expect.objectContaining({ ref: 'c'.repeat(40) }));
 		expect(resolve).toHaveBeenCalledWith({}, expect.objectContaining({ projectId: 'sdk', readRefs: ['c'.repeat(40)] }));
 		expect(resolve).toHaveBeenCalledWith({}, expect.objectContaining({ projectId: 'api', readRefs: ['a'.repeat(40)] }));

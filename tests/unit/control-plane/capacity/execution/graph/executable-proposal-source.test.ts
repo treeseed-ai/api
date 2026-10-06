@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 
 const exactProposal = vi.hoisted(() => vi.fn());
+const exactDecision = vi.hoisted(() => vi.fn());
 vi.mock('../../../../../../src/api/governance/executable-proposal.ts', async (importOriginal) => ({
 	...await importOriginal<typeof import('../../../../../../src/api/governance/executable-proposal.ts')>(),
 	readExactProposal: exactProposal,
+	readExactDecision: exactDecision,
 }));
 
 import { loadTeamExecutableProposalSources } from '../../../../../../src/api/capacity/services/capacity/execution/executable-proposal-source.ts';
 import { loadProposalBlockingFeedback } from '../../../../../../src/api/capacity/services/capacity/execution/proposal-planning-source.ts';
+import { readyProposal } from '../../../governance/proposals/architecture/ready-proposal-fixture.ts';
 import { reconcileExecutionGraph } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 
 const questionRef = { store: 'treedx', model: 'question', id: 'question', revision: 1,
@@ -47,10 +50,7 @@ describe('executable proposal source selection', () => {
 		}] : [{ proposal_id: 'proposal', project_id: 'project', active_version: 1,
 			active_content_hash: 'a'.repeat(64), metadata_json: {}, decision_id: null }]);
 		exactProposal.mockResolvedValueOnce({ ref: { repository: 'treeseed-ai/sdk', path: 'proposals/one.md',
-			commit: 'b'.repeat(40), digest: `sha256:${'a'.repeat(64)}` }, definition: {
-			status: 'draft', executionPlan: { workItems: [{ estimate: { expectedSeconds: 30, maximumSeconds: 60 },
-				review: 'required', reviewEstimate: { expectedSeconds: 10, maximumSeconds: 20 } }] },
-		} });
+			commit: 'b'.repeat(40), digest: `sha256:${'a'.repeat(64)}` }, definition: readyProposal() });
 		const sources = await loadTeamExecutableProposalSources({ all }, 'team', 'project');
 		expect(sources).toHaveLength(1);
 		expect(sources[0]).toMatchObject({ decision: null, feedback: [{ id: 'question-1', resolved: false }] });
@@ -98,13 +98,33 @@ describe('executable proposal source selection', () => {
 			accepted_decision_id: 'decision', proposal_version: 2,
 			decision_record_json: { proposalRef },
 		}]);
-		exactProposal.mockResolvedValueOnce({ ref: proposalRef, definition: {
-			status: 'accepted', executionPlan: { workItems: [{ estimate: { expectedSeconds: 30, maximumSeconds: 60 },
-				review: 'required', reviewEstimate: { expectedSeconds: 10, maximumSeconds: 20 } }] },
-		} });
+		exactProposal.mockResolvedValueOnce({ ref: proposalRef, definition: { ...readyProposal(), status: 'decided' } });
+		const decisionRef = { store: 'treedx', model: 'decision', id: 'decision', revision: 1,
+			digest: `sha256:${'d'.repeat(64)}`, repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40), path: 'decisions/decision.mdx' };
+		exactDecision.mockResolvedValueOnce({ ref: decisionRef, definition: { id: 'decision' } });
 		await expect(loadTeamExecutableProposalSources({ all }, 'team', 'project')).resolves.toMatchObject([{
-			projectId: 'project', decision: { id: 'decision' },
+			projectId: 'project', decision: { id: decisionRef.id, revision: decisionRef.revision, digest: decisionRef.digest,
+				repository: decisionRef.repository, commit: decisionRef.commit, path: decisionRef.path, current: true },
 		}]);
+	});
+	it('denies accepted demand without native Decision authority while retaining the failed revision and supplied bytes', async () => {
+		const proposalRef = { id: 'revision-proposal', repository: 'treeseed-ai/sdk', path: 'proposals/revision.md',
+			commit: 'b'.repeat(40), digest: `sha256:${'a'.repeat(64)}` };
+		const row = { proposal_id: proposalRef.id, project_id: 'project', active_version: 2,
+			active_content_hash: 'a'.repeat(64), metadata_json: {}, decision_id: 'decision',
+			accepted_decision_id: 'decision', proposal_version: 2, decision_record_json: { proposalRef } };
+		const graph = [{ source_ref_json: { model: 'proposal', id: proposalRef.id, digest: proposalRef.digest }, status: 'failed' }];
+		const baseline = JSON.stringify({ row, graph });
+		const all = vi.fn(async (query: string) => query.includes('FROM execution_nodes') ? graph : [row]);
+		exactProposal.mockResolvedValueOnce({ ref: proposalRef, definition: { ...readyProposal(), status: 'decided' } });
+		exactDecision.mockRejectedValueOnce(Object.assign(new Error('Native Decision content is required.'), {
+			status: 409, code: 'governance_decision_content_missing',
+		}));
+		await expect(loadTeamExecutableProposalSources({ all }, 'team', 'project')).rejects.toMatchObject({
+			status: 409, code: 'governance_decision_content_missing',
+		});
+		expect(JSON.stringify({ row, graph })).toBe(baseline);
+		expect(exactDecision).toHaveBeenLastCalledWith({ all }, { ...row, id: 'decision' });
 	});
 
 	it('fails closed on an invalid accepted execution plan without mutating its graph', async () => {

@@ -3,19 +3,19 @@ id: guarantee.agent.graph.freeze-group-proposal-participation.912
 journeyIndex: 912
 type: agent
 subtype: graph
-journey: Freeze group proposal participation
+journey: Decide one exact proposal-owned execution plan
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
-summary: Group-scoped proposals freeze every enabled effective member and require exact-version, author-independent proposal-ready participation.
+summary: One exact ready proposal revision owns its work items, genuine estimates, workspace, permissions, criteria and work-specific relations; the decision binds that same authority without reconstructing another plan.
 status: planned
 dependencies: { journeys: [], guarantees: [guarantee.agent.graph.filter-signals-through-groups.757] }
 actors: { allowed: [authenticated_user, capacity_provider], forbidden: [unauthorized_user] }
 devices: { required: [], optional: [] }
 gates: [future]
-preconditions: { fixtures: [integrated_treeseed_project], notes: ["The workday contains a frozen group topology and proposal contract."] }
+preconditions: { fixtures: [integrated_treeseed_project], notes: ["Use the unchanged golden proposal and genuine owner/Reviewer estimates, not operator-prescribed allocations or a frozen group topology."] }
 api: { required: true, verifierRefs: [] }
 content: { required: true, verifierRefs: [] }
 audit: { required: true, verifierRefs: [] }
-negativeCases: ["Stale proposal-version participation cannot satisfy readiness.", "The proposal author cannot independently review their own artifact.", "A disabled or outside-scope member cannot be injected after the freeze."]
+negativeCases: ["Stale proposal-version evidence cannot satisfy readiness.", "The proposal author cannot independently review their own artifact.", "A disabled or outside-scope agent cannot supply assignment authority.", "Missing estimates, review bounds, workspace, permission ceiling, source refs or acceptance criteria block decision.", "Unresolved blocking questions and stale decision authority block readiness.", "External approval alone cannot admit unestimated work.", "Agents cannot accept their own proposal or author graph state."]
 evidence: { required: [guarantee_report, verifier_evidence] }
-notes: ["Keep planned until repeated group-scoped workdays prove interruption and revision behavior."]
+notes: ["Several estimating contributions may refine the same proposal work items. Alternative estimates remain ordinary TreeDX history, not separate operational scheduling authority.", "Preserve prior candidates and reviews across interruption, request changes and later attempts. Planning and addressed chat remain independent of acting admission.", "BLOCKED: complete exact proposal-to-decision-to-graph CLI and managed evidence is required; no operational estimate table, separate plan, group-based readiness or fixed signal path may substitute."]

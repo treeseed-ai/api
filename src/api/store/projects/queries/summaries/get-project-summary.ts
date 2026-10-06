@@ -1,5 +1,6 @@
 import { ControlPlaneStore } from "../../../../persistence/store.ts";
-export async function getProjectSummaryMethod(this: ControlPlaneStore, projectId, principal = null) {
+import type { OperationInvocationContext } from '../../../../control-plane/catalog/operation-registry.ts';
+export async function getProjectSummaryMethod(this: ControlPlaneStore, projectId: string, principal: OperationInvocationContext['principal'] | null = null) {
     const details = await this.getProjectDetails(projectId);
     if (!details) {
         return null;

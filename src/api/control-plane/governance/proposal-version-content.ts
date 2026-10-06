@@ -71,7 +71,7 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 	const contracts = new Map((Array.isArray(contractRead.files) ? contractRead.files : []).map((file: unknown) => [text(object(file).path), text(object(file).content)]));
 	const invalid = contractPaths.filter((contractPath,index) => { try { const validation = validateProposalTypeContract(parseYaml(contracts.get(contractPath) ?? '')); return !validation.ok || validation.value?.id !== types[index]; } catch { return true; } });
 	if (invalid.length) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw Object.assign(new Error('One or more proposal types are missing or invalid at the authoring commit.'), { status: 422, code: 'proposal_type_contract_invalid', paths: invalid }); }
-	const nextMetadata = { ...metadata, ...(object(input.update.metadata)), proposalTypes: types };
+	const nextMetadata: Row = { ...metadata, ...(object(input.update.metadata)), proposalTypes: types };
 	delete nextMetadata.plan;
 	delete nextMetadata.executionPlan;
 	let source: string;

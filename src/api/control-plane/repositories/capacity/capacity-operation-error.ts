@@ -1,6 +1,15 @@
+import { controlPlaneErrorStatus } from '../../catalog/operation-registry.ts';
+
 export class CapacityOperationError extends Error {
-	constructor(readonly status: number, readonly code: string, message: string) {
+	readonly status: ReturnType<typeof controlPlaneErrorStatus>;
+	constructor(
+		status: number,
+		readonly code: string,
+		message: string,
+		readonly details?: Record<string, unknown>,
+	) {
 		super(message);
+		this.status = controlPlaneErrorStatus(status);
 		this.name = 'CapacityOperationError';
 	}
 }

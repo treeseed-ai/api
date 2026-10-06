@@ -43,16 +43,11 @@ fi
 
 [[ "${mode}" == "download" ]] && exit 0
 [[ "${mode}" == "install" ]]
-for target in node_modules/@treeseed/sdk node_modules/@treeseed/deployment/node_modules/@treeseed/sdk; do
-  if [[ "${target}" == node_modules/@treeseed/sdk || -d "${target}" ]]; then
-    # npm ci has already materialized the exact transitive dependency tree from
-    # package-lock.json. Replace only the SDK package payload; deleting its
-    # node_modules directory makes Node fall through to incompatible top-level
-    # dependencies and also invalidates release SBOM generation.
-    find "${target}" -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf -- {} +
-    mkdir -p "${target}"
-    tar -xzf "${sdk_archive}" --strip-components=1 -C "${target}"
-    test -d "${target}/dist"
-  fi
-done
+# The root override selects this one SDK for all consumers. Preserve the exact
+# transitive tree materialized by npm ci and replace only its package payload.
+target=node_modules/@treeseed/sdk
+find "${target}" -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf -- {} +
+mkdir -p "${target}"
+tar -xzf "${sdk_archive}" --strip-components=1 -C "${target}"
+test -d "${target}/dist"
 npm ls --all --omit=dev >/dev/null

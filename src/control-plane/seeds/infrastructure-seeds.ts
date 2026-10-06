@@ -1,12 +1,18 @@
 import { existsSync,readdirSync } from 'node:fs';
 import { basename,resolve } from 'node:path';
 import { planSeedWithStore } from './apply.js';
+import type { AuthContext } from '../../auth/config.ts';
+import type { ApiConfig } from '../../api/types.ts';
+
+type SeedRuntimeLocals = AuthContext['locals'] & {
+	runtime?: { resolved?: { config?: Pick<ApiConfig, 'repoRoot'> } };
+};
 
 export interface InfrastructureSeedInput {
 	store: any;
 	team: any | null;
 	principal?: any;
-	locals?: App.Locals;
+	locals?: SeedRuntimeLocals;
 	url?: URL;
 }
 
@@ -76,22 +82,22 @@ function emptySeedState(error: string) {
 	};
 }
 
-function runtimeEnvValue(locals: App.Locals | undefined, name: string) {
-	const runtimeValue = (locals as any)?.runtime?.env?.[name];
+function runtimeEnvValue(locals: SeedRuntimeLocals | undefined, name: string) {
+	const runtimeValue = locals?.runtime?.env?.[name];
 	if (typeof runtimeValue === 'string' && runtimeValue.trim()) return runtimeValue.trim();
 	const processValue = typeof process !== 'undefined' ? process.env?.[name] : undefined;
 	return typeof processValue === 'string' && processValue.trim() ? processValue.trim() : '';
 }
 
-function isLocalRuntime(locals: App.Locals | undefined) {
+function isLocalRuntime(locals: SeedRuntimeLocals | undefined) {
 	return runtimeEnvValue(locals, 'TREESEED_ENVIRONMENT') === 'local'
 		|| runtimeEnvValue(locals, 'TREESEED_LOCAL_DEV_MODE') === 'cloudflare';
 }
 
-function seedRootFor(locals: App.Locals | undefined) {
+function seedRootFor(locals: SeedRuntimeLocals | undefined) {
 	const configuredRoot = runtimeEnvValue(locals, 'TREESEED_SEED_ROOT');
 	if (configuredRoot) return resolve(configuredRoot);
-	const repoRoot = (locals as any)?.runtime?.resolved?.config?.repoRoot;
+	const repoRoot = locals?.runtime?.resolved?.config?.repoRoot;
 	return typeof repoRoot === 'string' && repoRoot.trim() ? repoRoot : process.cwd();
 }
 
@@ -109,7 +115,7 @@ function discoverSeedNames(projectRoot: string) {
 	});
 }
 
-function selectedSeedEnvironment(url: URL | undefined, locals: App.Locals | undefined) {
+function selectedSeedEnvironment(url: URL | undefined, locals: SeedRuntimeLocals | undefined) {
 	const requested = url?.searchParams.get('environments') ?? url?.searchParams.get('environment') ?? '';
 	if (requested.trim()) return requested;
 	return isLocalRuntime(locals) ? 'local' : 'staging';

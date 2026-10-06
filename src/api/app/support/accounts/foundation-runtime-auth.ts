@@ -1,6 +1,10 @@
 import { verifyProviderIdToken } from '../index.ts';
-export const providerJwksCache = new Map();
-export async function exchangeProviderIdentity(provider, configured, code, redirectUri, verifier, expectedNonce) {
+import type { JsonWebKey } from 'node:crypto';
+import type { providerConfigFor } from '../configuration/foundation-configuration.ts';
+export const providerJwksCache = new Map<string, { keys: Array<JsonWebKey & { kid?: string }>; expiresAt: number }>();
+export async function exchangeProviderIdentity(...[provider, configured, code, redirectUri, verifier, expectedNonce]:
+    | [provider: 'github', configured: NonNullable<ReturnType<typeof providerConfigFor>>, code: string, redirectUri: string, verifier: string | null | undefined, expectedNonce: string]
+    | [provider: 'google' | 'microsoft' | 'apple', configured: Extract<NonNullable<ReturnType<typeof providerConfigFor>>, { jwksUrl: string }>, code: string, redirectUri: string, verifier: string | null | undefined, expectedNonce: string]) {
     const body = new URLSearchParams({ code, client_id: configured.clientId, client_secret: configured.clientSecret, redirect_uri: redirectUri, grant_type: 'authorization_code' });
     if (verifier)
         body.set('code_verifier', verifier);
@@ -14,7 +18,7 @@ export async function exchangeProviderIdentity(provider, configured, code, redir
         const [userResponse, emailsResponse] = await Promise.all([fetch('https://api.github.com/user', { headers }), fetch('https://api.github.com/user/emails', { headers })]);
         const user = await userResponse.json();
         const emails = await emailsResponse.json().catch(() => []);
-        const email = emails.find?.((entry) => entry.primary && entry.verified)?.email ?? user.email;
+        const email = emails.find?.((entry: { primary?: boolean; verified?: boolean; email?: string }) => entry.primary && entry.verified)?.email ?? user.email;
         return { subject: String(user.id), email, emailVerified: Boolean(email), displayName: user.name ?? user.login, profile: { image: user.avatar_url } };
     }
     if (provider === 'microsoft') {

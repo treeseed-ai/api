@@ -1,5 +1,5 @@
 import { artifactStorageRoot,getNodeBuiltin,ControlPlaneStore,safeStoragePathSegment } from "../../../persistence/store.ts";
-export async function readRuntimeArtifactContentMethod(this: ControlPlaneStore, projectId, outputRef) {
+export async function readRuntimeArtifactContentMethod(this: ControlPlaneStore, projectId: string, outputRef: unknown) {
     const fs = getNodeBuiltin('fs');
     const path = getNodeBuiltin('path');
     const root = artifactStorageRoot(this.config);

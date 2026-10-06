@@ -1,6 +1,9 @@
 import { createExecutorsForOptions } from '../index.js';
+import type { DirectControlPlaneRunnerClient } from '../../client/direct-control-plane-runner-client.ts';
+import type { loadConfig } from '../configuration/runtime-config.ts';
 
-export async function registerAndHeartbeat(client, config, version, options: any = {}) {
+export async function registerAndHeartbeat(client: Pick<DirectControlPlaneRunnerClient, 'register' | 'heartbeat'>,
+    config: Pick<Awaited<ReturnType<typeof loadConfig>>, 'runnerId' | 'environment' | 'dataDir'>, version: string, options: any = {}) {
     const executors = createExecutorsForOptions({ ...options, config });
     const payload = {
         runnerId: config.runnerId,

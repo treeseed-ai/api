@@ -78,9 +78,31 @@ export interface ReadyExecutionNode {
 }
 
 export function linearPredecessorSourceCommit(entries: Array<{ resultId: string; commit: string; predecessorResultIds: string[] }>) {
-	const distinct = [...new Map(entries.map((entry) => [entry.resultId, entry])).values()];
-	const terminal = distinct.filter((entry) => distinct.every((other) =>
-		other.resultId === entry.resultId || entry.predecessorResultIds.includes(other.resultId)));
+	const distinct = new Map<string, (typeof entries)[number]>();
+	for (const entry of entries) {
+		if (!entry.resultId || !/^[a-f0-9]{40}$/u.test(entry.commit)
+			|| entry.predecessorResultIds.some(id => !id || id === entry.resultId)
+			|| new Set(entry.predecessorResultIds).size !== entry.predecessorResultIds.length) return undefined;
+		const prior = distinct.get(entry.resultId);
+		if (prior && (prior.commit !== entry.commit || prior.predecessorResultIds.length !== entry.predecessorResultIds.length
+			|| prior.predecessorResultIds.some(id => !entry.predecessorResultIds.includes(id)))) return undefined;
+		distinct.set(entry.resultId, entry);
+	}
+	const ancestors = new Map<string, Set<string>>(), visiting = new Set<string>();
+	const lineage = (id: string): Set<string> | undefined => {
+		if (visiting.has(id)) return undefined;
+		const cached = ancestors.get(id); if (cached) return cached;
+		visiting.add(id); const found = new Set<string>();
+		for (const predecessor of distinct.get(id)!.predecessorResultIds) {
+			// Read-only results need not contribute a source commit to this inventory.
+			if (!distinct.has(predecessor)) continue;
+			const earlier = lineage(predecessor); if (!earlier) return undefined;
+			found.add(predecessor); for (const ancestor of earlier) found.add(ancestor);
+		}
+		visiting.delete(id); ancestors.set(id, found); return found;
+	};
+	for (const id of distinct.keys()) if (!lineage(id)) return undefined;
+	const terminal = [...distinct.values()].filter(entry => ancestors.get(entry.resultId)!.size === distinct.size - 1);
 	return terminal.length === 1 ? terminal[0]!.commit : undefined;
 }
 
@@ -263,23 +285,27 @@ async function predecessorContext(store: any, node: ExecutionNode, sourceReposit
 	const decisionFilter = (alias: string) => decisionId ? `AND ${alias}.decision_id=?` : '';
 	const runFilter = (alias: string) => node.workdayId ? `AND ${alias}.work_day_id IN ${workdayLineageSql('?', `${alias}.team_id`)}` : '';
 	const candidateParameters = () => [...(decisionId ? [decisionId] : []), ...(node.workdayId ? [node.workdayId] : [])];
+	const predecessorParameters = () => node.workdayId ? [node.workdayId] : [];
 	const rows: Row[] = node.kind === 'reporting' ? await store.all(`SELECT assignment_result_json,assignment_attempt_json
 		FROM capacity_provider_assignments WHERE team_id=? AND work_day_id=?
 			AND status IN ('completed','failed','cancelled','expired','returned') AND assignment_result_json IS NOT NULL
-		ORDER BY created_at,id`, [node.teamId, node.workdayId]) : await store.all(`SELECT result.assignment_result_json,result.assignment_attempt_json
+		ORDER BY created_at,id`, [node.teamId, node.workdayId]) : await store.all(`SELECT predecessor.id AS predecessor_node_id,result.assignment_result_json,result.assignment_attempt_json
 		FROM execution_edges edge
 		JOIN execution_nodes predecessor ON predecessor.team_id=edge.team_id AND predecessor.id=edge.from_node_id
-		JOIN LATERAL (
+		LEFT JOIN LATERAL (
 			SELECT assignment_result_json,assignment_attempt_json FROM capacity_provider_assignments candidate
 			WHERE candidate.team_id=edge.team_id AND candidate.execution_node_id=predecessor.id
 				AND candidate.status='completed' AND candidate.assignment_result_json IS NOT NULL
-				${decisionFilter('candidate')}
+				AND candidate.execution_node_revision=predecessor.node_revision
+				AND candidate.decision_id IS NOT DISTINCT FROM (
+					SELECT authority->>'id' FROM jsonb_array_elements(predecessor.authority_refs_json::jsonb) authority
+					WHERE authority->>'model'='decision' LIMIT 1)
 				${runFilter('candidate')}
 			ORDER BY candidate.execution_node_revision DESC,candidate.completed_at DESC,candidate.id DESC LIMIT 1
 		) result ON true
-		WHERE edge.team_id=? AND edge.to_node_id=? AND edge.graph_revision_removed IS NULL
+		WHERE edge.team_id=? AND edge.to_node_id=? AND edge.graph_revision_removed IS NULL AND predecessor.kind<>'condition'
 		UNION ALL
-		SELECT actor_result.assignment_result_json,actor_result.assignment_attempt_json
+		SELECT actor.id AS predecessor_node_id,actor_result.assignment_result_json,actor_result.assignment_attempt_json
 		FROM execution_edges downstream
 		JOIN execution_nodes reviewer ON reviewer.team_id=downstream.team_id AND reviewer.id=downstream.from_node_id
 			AND reviewer.kind='reviewing' AND reviewer.pair_role='reviewer' AND reviewer.status='completed'
@@ -287,16 +313,26 @@ async function predecessorContext(store: any, node: ExecutionNode, sourceReposit
 			AND pair.provenance='review-pair' AND pair.graph_revision_removed IS NULL
 		JOIN execution_nodes actor ON actor.team_id=pair.team_id AND actor.id=pair.from_node_id
 			AND actor.pair_role='actor' AND actor.work_item_id=reviewer.work_item_id
-		JOIN LATERAL (
+		LEFT JOIN LATERAL (
 			SELECT assignment_result_json,assignment_attempt_json FROM capacity_provider_assignments candidate
 			WHERE candidate.team_id=actor.team_id AND candidate.execution_node_id=actor.id
 				AND candidate.status='completed' AND candidate.assignment_result_json IS NOT NULL
-				${decisionFilter('candidate')}
+				AND candidate.execution_node_revision=actor.node_revision
+				AND candidate.decision_id IS NOT DISTINCT FROM (
+					SELECT authority->>'id' FROM jsonb_array_elements(actor.authority_refs_json::jsonb) authority
+					WHERE authority->>'model'='decision' LIMIT 1)
 				${runFilter('candidate')}
 			ORDER BY candidate.execution_node_revision DESC,candidate.completed_at DESC,candidate.id DESC LIMIT 1
 		) actor_result ON true
 		WHERE downstream.team_id=? AND downstream.to_node_id=? AND downstream.graph_revision_removed IS NULL`,
-		[...candidateParameters(),node.teamId,node.id,...candidateParameters(),node.teamId,node.id]);
+		[...predecessorParameters(),node.teamId,node.id,...predecessorParameters(),node.teamId,node.id]);
+	if (rows.some(row => {
+		const result = assignmentResultSchema.safeParse(record(row.assignment_result_json));
+		return text(row.predecessor_node_id) && (!result.success || result.data.status !== 'completed');
+	})) {
+		throw new CapacityGovernanceError('execution_node_predecessor_result_missing',
+			'Every required predecessor must retain a canonical result from its own current Decision and node revision.', 409);
+	}
 	const directCommits = [...new Set(rows.flatMap((row: Row) => {
 		const result = assignmentResultSchema.safeParse(record(row.assignment_result_json));
 		return result.success ? result.data.references.filter((reference): reference is Extract<typeof reference, { kind: 'git' }> => reference.kind === 'git'
@@ -344,7 +380,8 @@ async function predecessorContext(store: any, node: ExecutionNode, sourceReposit
 		const result = assignmentResultSchema.safeParse(record(row.assignment_result_json));
 		const attempt = assignmentAttemptSchema.safeParse(record(row.assignment_attempt_json));
 		if (!result.success || !attempt.success) return [];
-		return result.data.references.filter((reference) => reference.kind === 'git')
+		return result.data.references.filter((reference): reference is Extract<typeof reference, { kind: 'git' }> => reference.kind === 'git'
+			&& (!sourceRepository || reference.repository === sourceRepository))
 			.map((reference) => ({ resultId: result.data.id, commit: reference.commit,
 				predecessorResultIds: attempt.data.predecessorResultIds }));
 	});
@@ -419,12 +456,12 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 		// the workday itself and must remain eligible in that same run.
 		if (selectedDecisionIds.size && decisionIds.length && !decisionIds.some((id) => selectedDecisionIds.has(id))) continue;
 		const selected = await effectiveProfile(store, node);
-		const sourceRepositories = node.requestedPermissions?.tools.includes('source.read')
-			? [selectAssignmentSourceRepository(await store.listHubRepositories(node.projectId)).id]
-			: [];
+		const sourceRepository = node.requestedPermissions?.tools.includes('source.read')
+			? selectAssignmentSourceRepository(await store.listHubRepositories(node.projectId)) : undefined;
+		const sourceRepositories = sourceRepository ? [`${sourceRepository.owner}/${sourceRepository.name}`] : [];
 		const loadedContext = await loadContext(store, node);
 		const predecessor = await predecessorContext(store, node,
-			loadedContext.find((item) => item.store === 'git')?.repository);
+			sourceRepositories[0] ?? loadedContext.find((item) => item.store === 'git')?.repository);
 		const predecessors = predecessor.results;
 		const candidateRefs = predecessors.flatMap((result) => result.references).flatMap((reference) => {
 			if (reference.kind !== 'git') return [];

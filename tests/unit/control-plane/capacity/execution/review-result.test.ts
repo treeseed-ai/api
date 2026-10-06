@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { resolveReviewDisposition } from '../../../../../src/api/capacity/services/capacity/assignments/context/review-result.ts';
+import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
+import { reviewAssignment } from './architecture/review-decision-fixture.ts';
 
 const digest = `sha256:${'a'.repeat(64)}`, candidateCommit = 'b'.repeat(40), decisionCommit = 'c'.repeat(40);
 const result = {
@@ -18,17 +20,27 @@ const decision = {
 	decidedAt: '2026-09-13T12:00:00.000Z',
 };
 
+function assignedReviewer() {
+	const assignment = reviewAssignment();
+	assignment.executionNodeId = 'reviewer';
+	assignment.assignedAt = '2026-09-13T11:59:00.000Z';
+	assignment.createdAt = assignment.assignedAt;
+	assignment.assignmentAttempt = assignmentAttemptSchema.parse({ ...assignment.assignmentAttempt,
+		nodeId: 'reviewer', createdAt: assignment.assignedAt, deadline: '2026-09-13T12:01:00.000Z',
+		effectiveProfile: { ...assignment.assignmentAttempt!.effectiveProfile, profileRef: decision.decidedByRefs[0] },
+	});
+	return assignment;
+}
+
 describe('review result authority', () => {
 	it('accepts only an exact classed decision bound to the actor candidate', async () => {
 		const store = { first: vi.fn(async () => ({ pair_role: 'reviewer' })), all: vi.fn(async () => [{
 			assignment_result_json: { ...result, id: 'actor-result', assignmentId: 'actor-assignment',
 				references: [{ kind: 'git', repository: 'treeseed-ai/sdk', commit: candidateCommit }] },
 		}]) };
-		await expect(resolveReviewDisposition(store as never, { id: 'review-assignment', teamId: 'team', projectId: 'project',
-			executionNodeId: 'reviewer', executionNodeRevision: 1, assignedAt: '2026-09-13T11:59:00.000Z' } as never, result, async () => decision))
+		await expect(resolveReviewDisposition(store as never, assignedReviewer(), result, async () => decision))
 			.resolves.toBe('request-changes');
-		await expect(resolveReviewDisposition(store as never, { id: 'review-assignment', teamId: 'team', projectId: 'project',
-			executionNodeId: 'reviewer', executionNodeRevision: 1, assignedAt: '2026-09-13T11:59:00.000Z' } as never, result, async () => ({ ...decision,
+		await expect(resolveReviewDisposition(store as never, assignedReviewer(), result, async () => ({ ...decision,
 				subjectRef: { ...decision.subjectRef, commit: 'd'.repeat(40) } }))).rejects.toMatchObject({ code: 'review_decision_required' });
 		expect(store.all).toHaveBeenCalledWith(expect.stringContaining('candidate.completed_at<=?'),
 			['2026-09-13T11:59:00.000Z', 'team', 'reviewer']);
@@ -37,8 +49,7 @@ describe('review result authority', () => {
 	it('accepts the exact source only for a read-only actor with no produced candidate', async () => {
 		const sourceRef = { store: 'git', model: 'repository', id: 'sdk-source', repository: 'treeseed-ai/sdk', commit: candidateCommit };
 		const reviewed = { ...decision, disposition: 'approved', subjectRef: sourceRef };
-		const assignment = { id: 'review-assignment', teamId: 'team', projectId: 'project',
-			executionNodeId: 'reviewer', executionNodeRevision: 1 } as never;
+		const assignment = assignedReviewer();
 		const readOnlyStore = { first: vi.fn(async () => ({ pair_role: 'reviewer' })), all: vi.fn(async () => [{
 			assignment_result_json: { ...result, id: 'actor-result', assignmentId: 'actor-assignment', references: [] },
 			workspace: 'read-only', source_ref_json: sourceRef,

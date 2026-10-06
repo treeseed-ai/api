@@ -2,6 +2,22 @@ import { describe, expect, it, vi } from 'vitest';
 import { reconcileTerminalConversationInvocations } from '../../../../../src/api/capacity/services/capacity/invocations/discussion-invocation-service.ts';
 
 describe('terminal conversation invocation reconciliation', () => {
+	it('retains exact terminal failure attribution with readable project and agent fallbacks without replacing failed inputs', async () => {
+		for (const [project, agentId, expected] of [[null, 'renamed-agent', '@project-1/renamed-agent'], [{ slug: '' }, ' ', '@project-1/agent'],
+			[{ slug: ' sdk ' }, ' renamed-agent ', '@sdk/renamed-agent'], [{ slug: ' ' }, null, '@project-1/agent']] as const) {
+			const invocation = { id: 'invocation', team_id: 'team-1', project_id: 'project-1', agent_id: agentId, status: 'running',
+				execution_kind: 'conversation', final_message_ref: null, metadata_json: { communication: { topicId: 'topic', sendId: 'send' } } };
+			const held = structuredClone({ invocation, project }), run = vi.fn(async () => ({ changes: 1 }));
+			const store = { all: vi.fn(async (sql: string) => sql.includes('FROM capacity_provider_assignments assignment') ? [] : [invocation]),
+				first: vi.fn(async (sql: string) => sql.includes('capacity_provider_assignments') ? { id: 'assignment', status: 'failed', lifecycle_code: 'original_failure' }
+					: sql.includes('FROM projects') ? project : null), run,
+				createCapacityWorkdayRun: vi.fn(), tickCapacityWorkdayRun: vi.fn(), updateCapacityWorkdayRun: vi.fn() };
+			expect(await reconcileTerminalConversationInvocations(store, 'team-1')).toEqual({ reconciled: 1 });
+			expect(run).toHaveBeenCalledWith(expect.stringContaining("'agent.failed'"), expect.arrayContaining([expected]));
+			expect(run).toHaveBeenCalledWith(expect.stringContaining('UPDATE agent_invocation_requests'), expect.arrayContaining(['failed', 'assignment']));
+			expect({ invocation, project }).toEqual(held);
+		}
+	});
 	it('waits for content integration after canonical completion, then delivers the durable response', async () => {
 		const invocation = { id: 'invocation-response', team_id: 'team-1', status: 'running', execution_kind: 'conversation', final_message_ref: 'discussion-messages/topic/response.mdx' };
 		let integrated = false;

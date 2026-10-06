@@ -6,7 +6,7 @@ import { CapacityOperationError } from './capacity-operation-error.ts';
 import { loadDiscussions } from '../../../discussions/content.ts';
 import { resolveTeamCommunicationTargets } from '../../../capacity/services/capacity/invocations/communication-target-resolution.ts';
 import { reconcileBlockedDiscussionInvocations } from '../../../capacity/services/capacity/invocations/discussion-invocation-service.ts';
-import type { DiagnosticEnvelopeService } from '../../../security/diagnostic-envelope.ts';
+import type { DiagnosticEnvelopeService } from '../../../../security/diagnostic-envelope.ts';
 import { communicationSchedulingDiagnostics } from './communication/scheduling-diagnostics.ts';
 import { communicationFailure } from './communication/failure.ts';
 import { readExactProposal } from '../../../governance/executable-proposal.ts';
@@ -178,7 +178,7 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 	async function diagnosticsFor(assignment: Row, invocation: Row, full: boolean) {
 		await store.run(`UPDATE communication_execution_trace_events SET protected_payload_json=NULL,protected_payload_envelope_json=NULL
 			WHERE assignment_id=? AND protected_payload_expires_at IS NOT NULL AND protected_payload_expires_at<=?`, [assignment.id, new Date().toISOString()]);
-		const traces = text(assignment.id) ? await store.all('SELECT * FROM communication_execution_trace_events WHERE assignment_id=? ORDER BY sequence', [assignment.id]) : [];
+		const traces: Row[] = text(assignment.id) ? await store.all('SELECT * FROM communication_execution_trace_events WHERE assignment_id=? ORDER BY sequence', [assignment.id]) : [];
 		const metadata = record(invocation.metadata_json); const capacity = record(assignment.capacity_envelope_json);
 		const traceEvents = traces.map((trace: Row) => ({ sequence: Number(trace.sequence), type: text(trace.event_type), occurredAt: timestamp(trace.occurred_at), summary: text(trace.summary), payload: record(trace.payload_json),
 			...(full && trace.protected_payload_envelope_json ? { protectedPayload: diagnosticEnvelopes?.decrypt(record(trace.protected_payload_envelope_json)) ?? { unavailable: 'diagnostics_encryption_key_unavailable' } }
@@ -196,7 +196,7 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 	}
 
 	async function sendReceipt(teamId: string, sendId: string, replayed = false, diagnostics: 'metadata' | 'full' = 'metadata') {
-		const invocations = await store.all(`SELECT * FROM agent_invocation_requests WHERE team_id=? AND execution_kind='conversation'
+		const invocations: Row[] = await store.all(`SELECT * FROM agent_invocation_requests WHERE team_id=? AND execution_kind='conversation'
 			AND metadata_json::jsonb->'communication'->>'sendId'=? ORDER BY requested_at,id`, [teamId, sendId]);
 		if (!invocations.length) throw new CapacityOperationError(404, 'communication_send_not_found', 'Communication send not found.');
 		const assignments = await store.all(`SELECT assignment.* FROM capacity_provider_assignments assignment
@@ -205,13 +205,13 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 			AND invocation.metadata_json::jsonb->'communication'->>'sendId'=? ORDER BY assignment.updated_at DESC`, [teamId, sendId]);
 		const assignmentByInvocation = new Map<string, Row>();
 		for (const assignment of assignments) if (!assignmentByInvocation.has(text(assignment.invocation_id))) assignmentByInvocation.set(text(assignment.invocation_id), assignment);
-		const projectIds = [...new Set(invocations.map((row: Row) => text(row.project_id)))];
+		const projectIds = [...new Set<string>(invocations.map((row: Row) => text(row.project_id)))];
 		const projects = new Map<string, { slug: string; discussionId: string; messages: Row[]; source: Row | undefined; topic: Row; stream: Row }>();
 		for (const projectId of projectIds) {
 			const invocation = invocations.find((row: Row) => text(row.project_id) === projectId)!;
 			const metadata = record(invocation.metadata_json); const communication = record(metadata.communication);
 			const discussionId = text(metadata.discussionId); const details = await contentStore.getProjectDetails(projectId);
-			const exactPaths = [...new Set(invocations.filter((row: Row) => text(row.project_id) === projectId).flatMap((row: Row) => [
+			const exactPaths = [...new Set<string>(invocations.filter((row: Row) => text(row.project_id) === projectId).flatMap((row: Row) => [
 				strings(row.content_refs_json)[0], text(row.final_message_ref),
 			]).filter(Boolean))];
 			const history = await loadDiscussions({ store: contentStore, projectId, discussionId,

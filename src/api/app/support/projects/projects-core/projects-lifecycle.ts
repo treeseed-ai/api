@@ -1,9 +1,10 @@
 import { ensurePrincipal,jsonError,requireTeamAccess } from '../../index.ts';
-function normalizeRepositorySlug(value) {
+import type { ControlPlaneStore } from '../../../../persistence/store.ts';
+function normalizeRepositorySlug(value: unknown) {
     const text = String(value ?? '').trim().toLowerCase();
     return text.includes('/') ? text : null;
 }
-export function markdownToPlainProjectSummary(markdown, fallback = null) {
+export function markdownToPlainProjectSummary(markdown: unknown, fallback: string | null = null) {
     const text = String(markdown ?? '')
         .replace(/^---[\s\S]*?---/u, ' ')
         .replace(/```[\s\S]*?```/gu, ' ')
@@ -20,7 +21,7 @@ export function markdownToPlainProjectSummary(markdown, fallback = null) {
         return fallback;
     return text.length > 240 ? `${text.slice(0, 237).trimEnd()}...` : text;
 }
-export function projectAllowedCiRepositories(projectDetails) {
+export function projectAllowedCiRepositories(projectDetails: Pick<NonNullable<Awaited<ReturnType<ControlPlaneStore['getProjectDetails']>>>, 'repositories'>) {
     const slugs = new Set();
     for (const repository of projectDetails.repositories ?? []) {
         if (repository.role !== 'software')
@@ -31,7 +32,7 @@ export function projectAllowedCiRepositories(projectDetails) {
     }
     return slugs;
 }
-export async function resolveUiProjectionContext(c, store) {
+export async function resolveUiProjectionContext(c: Parameters<typeof ensurePrincipal>[0], store: Pick<ControlPlaneStore, 'listTeamsForPrincipal' | 'listTeamProjects'>) {
     const auth = await ensurePrincipal(c);
     if (auth.response)
         return auth;
@@ -45,7 +46,7 @@ export async function resolveUiProjectionContext(c, store) {
         projects,
     };
 }
-export async function requireProjectAccess(c, store, projectId, permission = null) {
+export async function requireProjectAccess(c: Parameters<typeof ensurePrincipal>[0], store: ControlPlaneStore, projectId: string, permission: string | null = null) {
     const auth = await ensurePrincipal(c);
     if (auth.response) {
         return auth;
@@ -65,7 +66,7 @@ export async function requireProjectAccess(c, store, projectId, permission = nul
         details,
     };
 }
-export async function projectAppHref(_store, _teamId, _projectSlug, section) {
+export async function projectAppHref(_store: unknown, _teamId: unknown, _projectSlug: string | null | undefined, section: unknown) {
     if (section === 'share')
         return '/app/knowledge/artifacts';
     return _projectSlug ? `/app/projects/${encodeURIComponent(_projectSlug)}` : '/app/projects';

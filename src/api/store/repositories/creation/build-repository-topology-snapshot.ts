@@ -1,11 +1,20 @@
-import { ControlPlaneStore } from "../../../persistence/store.ts";
+import { ControlPlaneStore, serializeTreeDxInstance, serializeTreeDxProjectLibrary, serializeHubRepository } from "../../../persistence/store.ts";
 interface RepositoryTopologyMetadata {
     contentRepository?: Record<string, unknown>;
     siteRepository?: Record<string, unknown>;
     projectRepository?: Record<string, unknown>;
 }
 
-export function buildRepositoryTopologySnapshotMethod(this: ControlPlaneStore, { project, instance, binding, softwareRepository, workspaceLink, metadata = {} as RepositoryTopologyMetadata }) {
+export function buildRepositoryTopologySnapshotMethod(this: ControlPlaneStore, { project, instance, binding, softwareRepository, workspaceLink, metadata = {} }: {
+    project: Pick<NonNullable<Awaited<ReturnType<ControlPlaneStore['getProject']>>>, 'slug'>;
+    instance: Pick<NonNullable<ReturnType<typeof serializeTreeDxInstance>>, 'id' | 'baseUrl'>;
+    binding: Pick<NonNullable<ReturnType<typeof serializeTreeDxProjectLibrary>>, 'libraryId' | 'repositoryId' | 'contentPath'
+        | 'contentRepositoryUrl' | 'contentRepositoryDefaultBranch' | 'contentRepositoryRef' | 'r2BucketName' | 'r2ManifestKey'>;
+    softwareRepository: ReturnType<typeof serializeHubRepository>;
+    workspaceLink: { parentName?: string | null; parentOwner?: string | null; parentUrl?: string | null;
+        parentBranch?: string | null; softwareSubmodulePath?: string | null } | null;
+    metadata?: RepositoryTopologyMetadata;
+}) {
     const siteCheckoutBase = `/data/projects/${project.slug}/site`;
     const projectCheckoutBase = workspaceLink?.parentName ? `/data/projects/${project.slug}/project` : null;
     return {

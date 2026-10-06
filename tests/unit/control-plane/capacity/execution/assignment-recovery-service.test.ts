@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { decideAssignmentRecovery, recoverableLeaseSql, recoverExpiredProviderAssignments } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-recovery-service.ts';
+import { recoveryAssignment } from '../../providers/assignments/architecture/cancellation-fixture.ts';
 
 describe('assignment recovery eligibility', () => {
 	it('retries only a graph-admitted attempt, and never equates an assignment result with graph completion', () => {
-		const assignment = { id: 'assignment', executionKind: 'work', attemptCount: 0 } as never;
+		const assignment = recoveryAssignment(false), original = structuredClone(assignment);
 		const observed = { reservation: null, settlement: null, usageCount: 0, hasAssignmentResult: false,
 			proxyEvents: 0, fallbackOutputs: 0, node: { id: 'node', status: 'assigned' },
 			failoverAllowed: true, failoverCount: 1, invocationFinalMessageRef: null };
@@ -13,6 +14,7 @@ describe('assignment recovery eligibility', () => {
 			.toMatchObject({ disposition: 'terminal-failure', reasonCode: 'expired_lease_retry_exhausted' });
 		expect(decideAssignmentRecovery(assignment, { ...observed, settlement: { source: 'task_completed_actual_settlement' }, hasAssignmentResult: true }))
 			.toMatchObject({ disposition: 'operator-action', reasonCode: 'expired_lease_completion_requires_graph_reconciliation' });
+		expect(assignment).toEqual(original);
 	});
 	it('keeps productive expiry distinct from bounded provider timeout reporting', () => {
 		const predicate = recoverableLeaseSql('assignment');

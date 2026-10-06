@@ -1,5 +1,6 @@
 import { ControlPlaneStore } from "../../../persistence/store.ts";
-export async function teamIdsForPrincipalMethod(this: ControlPlaneStore, principal) {
+import type { OperationInvocationContext } from '../../../control-plane/catalog/operation-registry.ts';
+export async function teamIdsForPrincipalMethod(this: ControlPlaneStore, principal: OperationInvocationContext['principal'] | null) {
     await this.ensureInitialized();
     if (!principal)
         return [];
@@ -10,7 +11,7 @@ export async function teamIdsForPrincipalMethod(this: ControlPlaneStore, princip
     const userId = typeof principal.id === 'string' ? principal.id : '';
     if (!userId)
         return [];
-    const memberships = await this.all(`SELECT team_id
+    const memberships = await this.all<{ team_id: string }>(`SELECT team_id
 			 FROM team_memberships
 			 WHERE user_id = ? AND status = 'active'
 			 ORDER BY created_at ASC`, [userId]);

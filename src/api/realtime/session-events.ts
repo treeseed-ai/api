@@ -48,6 +48,8 @@ export class SessionEventService {
 	private readonly listeners = new Map<string, Set<Listener>>();
 	private listenerClient: PoolClient | null = null;
 	private listenerPromise: Promise<void> | null = null;
+	private listenerCleanup: (() => void) | null = null;
+	private closingListener: Promise<void> | null = null;
 	private readonly recent = new Set<number>();
 
 	constructor(private readonly store: SessionEventStore, private readonly pool?: Pool) {}
@@ -69,12 +71,18 @@ export class SessionEventService {
 	async subscribe(teamId: string, listener: Listener) {
 		let teamListeners = this.listeners.get(teamId);
 		if (!teamListeners) { teamListeners = new Set(); this.listeners.set(teamId, teamListeners); }
-		teamListeners.add(listener);
-		await this.ensureDatabaseListener();
-		return () => {
-			teamListeners?.delete(listener);
-			if (!teamListeners?.size) this.listeners.delete(teamId);
+		const registration: Listener = event => listener(event);
+		teamListeners.add(registration);
+		let released = false;
+		const release = () => {
+			if (released) return;
+			released = true;
+			teamListeners.delete(registration);
+			if (!teamListeners.size && this.listeners.get(teamId) === teamListeners) this.listeners.delete(teamId);
+			if (!this.listeners.size) this.closeDatabaseListener();
 		};
+		try { await this.ensureDatabaseListener(); } catch (error) { release(); throw error; }
+		return release;
 	}
 
 	private emit(event: SessionEvent) {
@@ -85,26 +93,59 @@ export class SessionEventService {
 	}
 
 	private async ensureDatabaseListener() {
+		if (this.closingListener) await this.closingListener;
 		if (!this.pool || this.listenerClient) return;
-		if (!this.listenerPromise) this.listenerPromise = this.openDatabaseListener();
+		if (!this.listenerPromise) {
+			const opening = this.openDatabaseListener();
+			this.listenerPromise = opening;
+			void opening.then(() => { if (this.listenerPromise === opening) this.listenerPromise = null; },
+				() => { if (this.listenerPromise === opening) this.listenerPromise = null; });
+		}
 		await this.listenerPromise;
 	}
 
 	private async openDatabaseListener() {
+		const client = await this.pool!.connect();
+		// A native connection error also rejects the activation query. Handle the
+		// emitter during activation without replacing that original rejection.
+		const activatingError = () => undefined;
+		client.on('error', activatingError);
 		try {
-			const client = await this.pool!.connect();
 			await client.query(`LISTEN ${channel}`);
-			client.on('notification', (notice) => {
+		} catch (error) { client.release(true); throw error; }
+		finally { client.removeListener('error', activatingError); }
+		const onNotification = (notice: { channel: string; payload?: string }) => {
+			if (this.listenerClient !== client || notice.channel !== channel) return;
 				const sequence = Number(notice.payload);
-				if (!Number.isSafeInteger(sequence) || this.recent.has(sequence)) return;
+				if (!Number.isSafeInteger(sequence) || sequence <= 0 || this.recent.has(sequence)) return;
 				void this.store.first<Record<string, unknown>>(`SELECT * FROM session_events WHERE sequence = ? LIMIT 1`, [sequence])
-					.then((row) => { if (row) this.emit(deserialize(row)); });
-			});
-			client.on('error', () => { this.listenerClient = null; this.listenerPromise = null; });
-			this.listenerClient = client;
-		} catch {
-			// Local adapters without LISTEN support still receive same-process events.
-			this.listenerPromise = null;
-		}
+					.then((row) => { if (row && this.listenerClient === client) this.emit(deserialize(row)); })
+					.catch(error => this.reportListenerFailure(error));
+		};
+		const cleanup = () => { client.removeListener('notification', onNotification); client.removeListener('error', onError); };
+		const onError = () => {
+			if (this.listenerClient !== client) return;
+			this.listenerClient = null; this.listenerCleanup = null; cleanup();
+			// This failed client is discarded, never returned for another generation.
+			client.on('error', () => undefined); client.release(true);
+			if (this.listeners.size) void this.ensureDatabaseListener().catch(error => this.reportListenerFailure(error));
+		};
+		client.on('notification', onNotification); client.on('error', onError);
+		this.listenerClient = client; this.listenerCleanup = cleanup;
+	}
+
+	private closeDatabaseListener() {
+		const client = this.listenerClient, cleanup = this.listenerCleanup;
+		if (!client) return;
+		this.listenerClient = null; this.listenerCleanup = null;
+		const closing = client.query(`UNLISTEN ${channel}`).then(() => { cleanup?.(); client.release(); }, error => {
+			cleanup?.(); client.on('error', () => undefined); client.release(true); this.reportListenerFailure(error);
+		});
+		this.closingListener = closing;
+		void closing.then(() => { if (this.closingListener === closing) this.closingListener = null; });
+	}
+
+	private reportListenerFailure(error: unknown) {
+		console.error('Session event listener failed.', error);
 	}
 }

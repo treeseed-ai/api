@@ -1,6 +1,39 @@
 import { redactSensitiveValue } from '../../../../../security/redact-sensitive-value.ts';
 import { normalizeBaseUrl,parseJson } from '../../index.ts';
 
+export type TreeDxInstanceRow = {
+    id: string; team_id: string; kind: string; provider: string; name: string;
+    base_url: string | null; registry_url: string | null; public_read: number; primary: number;
+    status: string; image_ref: string | null; railway_project_id: string | null;
+    railway_service_id: string | null; railway_environment_id: string | null;
+    volume_mount_path: string | null; metadata_json: string; created_at: string; updated_at: string;
+};
+export type TreeDxProjectLibraryRow = {
+    id: string; team_id: string; project_id: string; instance_id: string; library_id: string;
+    repository_id: string | null; content_path: string; content_repository_url: string | null;
+    content_repository_default_branch: string | null; content_repository_ref: string | null;
+    r2_bucket_name: string | null; r2_manifest_key: string | null; topology_json: string;
+    metadata_json: string; created_at: string; updated_at: string;
+};
+export type TreeDxMirrorRow = {
+    id: string; team_id: string; instance_id: string; name: string; direction: string; target_kind: string;
+    target_url: string | null; status: string; instructions: string | null; last_sync_at: string | null;
+    last_sync_status: string | null; last_sync_metadata_json: string; metadata_json: string;
+    created_at: string; updated_at: string;
+};
+export type TreeDxShareRow = {
+    id: string; team_id: string; instance_id: string | null; project_id: string | null;
+    library_id: string | null; scope: string; target_team_id: string | null; trust_grant_json: string;
+    public_read: number; status: string; expires_at: string | null; metadata_json: string;
+    created_at: string; updated_at: string; revoked_at: string | null;
+};
+export type TreeDxDeploymentRow = {
+    id: string; team_id: string; instance_id: string | null; provider: string; status: string;
+    image_ref: string | null; volume_mount_path: string | null; service_refs_json: string;
+    result_json: string; error_json: string | null; created_at: string; updated_at: string;
+    completed_at: string | null;
+};
+
 export function centralTreeDxRegistryUrl(config: any = {}) {
     return normalizeBaseUrl(process.env.TREESEED_PUBLIC_TREEDX_REGISTRY_URL
         ?? process.env.TREESEED_CENTRAL_TREEDX_REGISTRY_URL
@@ -9,7 +42,7 @@ export function centralTreeDxRegistryUrl(config: any = {}) {
         ?? 'https://api.treeseed.dev/treedx');
 }
 
-export function serializeTreeDxInstance(row) {
+export function serializeTreeDxInstance(row: TreeDxInstanceRow | null | undefined) {
     if (!row)
         return null;
     return {
@@ -34,7 +67,7 @@ export function serializeTreeDxInstance(row) {
     };
 }
 
-export function serializeTreeDxProjectLibrary(row) {
+export function serializeTreeDxProjectLibrary(row: TreeDxProjectLibraryRow | null | undefined) {
     if (!row)
         return null;
     return {
@@ -57,7 +90,7 @@ export function serializeTreeDxProjectLibrary(row) {
     };
 }
 
-export function serializeTreeDxMirror(row) {
+export function serializeTreeDxMirror(row: TreeDxMirrorRow | null | undefined) {
     if (!row)
         return null;
     return {
@@ -79,7 +112,7 @@ export function serializeTreeDxMirror(row) {
     };
 }
 
-export function serializeTreeDxShare(row) {
+export function serializeTreeDxShare(row: TreeDxShareRow | null | undefined) {
     if (!row)
         return null;
     return {
@@ -101,7 +134,7 @@ export function serializeTreeDxShare(row) {
     };
 }
 
-export function serializeTreeDxDeployment(row) {
+export function serializeTreeDxDeployment(row: TreeDxDeploymentRow | null | undefined) {
     if (!row)
         return null;
     return {
@@ -121,7 +154,7 @@ export function serializeTreeDxDeployment(row) {
     };
 }
 
-export function serializeTreeDxCredentialIssuanceRecord(row) {
+export function serializeTreeDxCredentialIssuanceRecord(row: Record<string, unknown> | null | undefined) {
     if (!row)
         return null;
     return {

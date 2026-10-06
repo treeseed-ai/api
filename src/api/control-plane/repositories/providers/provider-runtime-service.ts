@@ -2,6 +2,7 @@ import type {
 	CapacityProviderIdentityRotationRequest,
 	CapacityProviderSignedProof,
 	ProviderRegistrationSubmission,
+	TeamCapacityRegistrationKeyMetadata,
 } from '@treeseed/sdk/capacity-provider/contracts';
 import type { CapacityGovernanceDatabase } from '../../../capacity/database.ts';
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
@@ -16,6 +17,7 @@ import { CapacityRegistrationService } from '../../../capacity/services/support/
 import { createProviderEnvironmentService } from './provider-environment-service.ts';
 
 export interface ProviderPrincipal {
+	accessTokenId?: string;
 	membershipId: string;
 	teamId: string;
 	capacityProviderId: string;
@@ -74,12 +76,14 @@ export function providerAccountingStatus(value: unknown): Array<{
 	});
 }
 
-export function registrationCodeStatus(metadata: { teamId: string; generation: number; keyPrefix: string; createdAt: string; rotatedAt: string | null }) {
+type RegistrationCodeMetadata = Pick<TeamCapacityRegistrationKeyMetadata, 'teamId' | 'generation' | 'keyPrefix' | 'createdAt' | 'rotatedAt'>;
+
+export function registrationCodeStatus(metadata: RegistrationCodeMetadata) {
 	return { schemaVersion: 'treeseed.provider-registration-code-status/v1' as const, teamId: metadata.teamId,
 		generation: metadata.generation, codePrefix: metadata.keyPrefix, rotatedAt: metadata.rotatedAt ?? metadata.createdAt };
 }
 
-export function registrationCodeReceipt(metadata: { teamId: string; generation: number; keyPrefix: string; registrationKey: string; createdAt: string; rotatedAt: string | null }) {
+export function registrationCodeReceipt(metadata: RegistrationCodeMetadata & { registrationKey: string }) {
 	return { schemaVersion: 'treeseed.provider-registration-code-receipt/v1' as const, teamId: metadata.teamId,
 		generation: metadata.generation, codePrefix: metadata.keyPrefix, registrationCode: metadata.registrationKey,
 		rotatedAt: metadata.rotatedAt ?? metadata.createdAt };
@@ -157,7 +161,7 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 			const actor = await requireManage(principal, teamId);
 			return registrationCodeReceipt(await registration.revealRegistrationKey(teamId, actor.id));
 		},
-		async rotateRegistrationCode(principal: UserPrincipal | null | undefined, teamId: string, idempotencyKey: string, ifMatch?: string) {
+		async rotateRegistrationCode(principal: UserPrincipal | null | undefined, teamId: string, idempotencyKey: string | undefined, ifMatch?: string) {
 			const actor = await requireManage(principal, teamId);
 			const current = registrationCodeStatus(await registration.registrationKey(teamId, actor.id));
 			if (ifMatch !== etag(current)) throw new CapacityGovernanceError('provider_registration_code_precondition_failed', 'The registration code changed after it was loaded.', 412);
@@ -197,7 +201,7 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 			const synthesisEvent = await store.first(`SELECT action, metadata_json, created_at FROM capacity_audit_events
 				WHERE team_id = ? AND capacity_provider_id = ? AND action IN ('provider-assignment.synthesis-failed', 'provider-assignment.synthesis-completed')
 				ORDER BY created_at DESC, id DESC LIMIT 1`, [teamId, providerId]);
-			const synthesisFailure = synthesisEvent?.action === 'provider-assignment.synthesis-failed' ? {
+			const synthesisFailure: Record<string, unknown> | null = synthesisEvent?.action === 'provider-assignment.synthesis-failed' ? {
 				...jsonObject(synthesisEvent.metadata_json),
 				observedAt: String(synthesisEvent.created_at ?? ''),
 			} : null;
@@ -218,11 +222,11 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 				offers: rows.map((row) => ({ executionProviderId: row.execution_provider_id, offerId: row.offer_id,
 					offerDigest: row.offer_digest, offer: jsonObject(row.offer_json), status: row.status, observedAt: row.last_seen_at })) };
 		},
-		async connect(principal: UserPrincipal | null | undefined, teamId: string, _idempotencyKey: string) {
+		async connect(principal: UserPrincipal | null | undefined, teamId: string, _idempotencyKey: string | undefined) {
 			const actor = await requireManage(principal, teamId);
 			return revealReusableRegistrationCode(registration, teamId, actor.id);
 		},
-		async disconnect(principal: UserPrincipal | null | undefined, teamId: string, connectionId: string, idempotencyKey: string) {
+		async disconnect(principal: UserPrincipal | null | undefined, teamId: string, connectionId: string, idempotencyKey: string | undefined) {
 			const actor = await requireManage(principal, teamId);
 			return registration.updateMembership(teamId, connectionId, actor.id, 'revoked', idempotencyKey);
 		},
@@ -234,11 +238,11 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 			await requireRead(principal, teamId);
 			return registration.registrationRequest(teamId, requestId);
 		},
-		async approve(principal: UserPrincipal | null | undefined, teamId: string, requestId: string, body: Record<string, unknown>, idempotencyKey: string) {
+		async approve(principal: UserPrincipal | null | undefined, teamId: string, requestId: string, body: Record<string, unknown>, idempotencyKey: string | undefined) {
 			const actor = await requireManage(principal, teamId);
 			return registration.approve(teamId, requestId, actor.id, idempotencyKey, typeof body.teamAlias === 'string' ? body.teamAlias : null);
 		},
-		async reject(principal: UserPrincipal | null | undefined, teamId: string, requestId: string, body: Record<string, unknown>, idempotencyKey: string) {
+		async reject(principal: UserPrincipal | null | undefined, teamId: string, requestId: string, body: Record<string, unknown>, idempotencyKey: string | undefined) {
 			const actor = await requireManage(principal, teamId);
 			return registration.reject(teamId, requestId, actor.id, String(body.reason ?? ''), idempotencyKey);
 		},
@@ -246,11 +250,11 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 			await requireRead(principal, teamId); await membership(teamId, connectionId);
 			return registration.listCredentialsPage(teamId, connectionId, { limit: 20 });
 		},
-		async rotateCredentials(principal: UserPrincipal | null | undefined, teamId: string, connectionId: string, idempotencyKey: string) {
+		async rotateCredentials(principal: UserPrincipal | null | undefined, teamId: string, connectionId: string, idempotencyKey: string | undefined) {
 			const actor = await requireManage(principal, teamId);
 			return registration.authorizeTeamCredentialRotation(teamId, connectionId, actor.id, idempotencyKey);
 		},
-		async revokeCredentials(principal: UserPrincipal | null | undefined, teamId: string, connectionId: string, idempotencyKey: string) {
+		async revokeCredentials(principal: UserPrincipal | null | undefined, teamId: string, connectionId: string, idempotencyKey: string | undefined) {
 			const actor = await requireManage(principal, teamId);
 			const credentials = await registration.listCredentialsPage(teamId, connectionId, { status: 'active', limit: 100 });
 			const revoked = [];

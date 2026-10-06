@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { FEEDBACK_CAPTURE_VERSION, isFeedbackType, type FeedbackClientContext, type FeedbackSubmissionContext } from '@treeseed/sdk/feedback';
+import { FEEDBACK_CAPTURE_VERSION, isFeedbackType, type FeedbackClientContext, type FeedbackSubmissionContext, type FeedbackSubmissionRequest } from '@treeseed/sdk/feedback';
 
 export const MAX_FEEDBACK_MESSAGE_LENGTH = 4000;
 export const MAX_FEEDBACK_SCREENSHOT_BYTES = 8 * 1024 * 1024;
@@ -8,7 +8,7 @@ export function cleanString(value: unknown, maxLength = 500) {
 	return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
 }
 
-export function parseFeedbackBody(body: any) {
+export function parseFeedbackBody(body: any): { error: string; field: 'type' | 'message' } | { value: FeedbackSubmissionRequest } {
 	const type = body?.type;
 	if (!isFeedbackType(type)) return { error: 'Choose a supported feedback type.', field: 'type' } as const;
 	const message = cleanString(body?.message, MAX_FEEDBACK_MESSAGE_LENGTH);
@@ -42,7 +42,7 @@ export function parseFeedbackBody(body: any) {
 	return { value: { type, message, allowContact: body?.allowContact === true, context, client, screenshot: body?.screenshot } } as const;
 }
 
-export function parseScreenshot(value: any) {
+export function parseScreenshot(value: any): { error: string } | { value: null | { bytes: Buffer; width: number; height: number; digest: string; redactionVersion: typeof FEEDBACK_CAPTURE_VERSION; maskedRegionCount: number } } {
 	if (!value) return { value: null } as const;
 	if (value.redacted !== true || value.redactionVersion !== FEEDBACK_CAPTURE_VERSION) return { error: 'Capture redaction evidence is invalid.' } as const;
 	const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/u.exec(cleanString(value.dataUrl, 12_000_000));

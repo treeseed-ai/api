@@ -1,4 +1,7 @@
 import type { CapacityLedgerEntry,CapacityLedgerPhase } from '@treeseed/sdk/agent-capacity';
+import { usageSettlementSchema } from '@treeseed/sdk/agent-capacity';
+import { isDeepStrictEqual } from 'node:util';
+import { durableRealEquals } from '../../../services/support/durable-number.ts';
 import { encodeCapacityPageCursor,normalizeCapacityPageLimit,type CapacityPage,type CapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
@@ -39,14 +42,27 @@ export function serializeCapacityLedgerEntryRow(row: Row | null): CapacityLedger
 	if (!PHASES.has(phase)) corrupt(row, 'phase');
 	const mode = nullableText(row, 'mode');
 	if (mode !== null && mode !== 'planning' && mode !== 'acting') corrupt(row, 'mode');
+	const metadata = object(row, 'metadata_json'), parsed = phase === 'task_completed_actual_settlement'
+		? usageSettlementSchema.safeParse(metadata.usageSettlement) : undefined;
+	if (parsed && (!parsed.success || !isDeepStrictEqual(parsed.data, metadata.usageSettlement))) corrupt(row, 'usageSettlement');
+	const usageSettlement = parsed?.success ? parsed.data : undefined;
+	if (usageSettlement && (usageSettlement.id !== row.id || usageSettlement.idempotencyKey !== row.settlement_key
+		|| usageSettlement.assignmentId !== row.assignment_id || usageSettlement.reservationId !== row.reservation_id
+		|| usageSettlement.teamId !== row.team_id || usageSettlement.projectId !== row.project_id
+		|| usageSettlement.workdayId !== row.work_day_id || usageSettlement.providerId !== row.capacity_provider_id
+		|| usageSettlement.actualSeconds !== number(row, 'active_seconds') || usageSettlement.settledAt !== row.created_at
+		|| !durableRealEquals(usageSettlement.cost, row.usd))) corrupt(row, 'usageSettlement');
+	// Return one public canonical child, not a second copy inside metadata.
+	const publicMetadata = { ...metadata }; delete publicMetadata.usageSettlement;
 	return {
+		...(usageSettlement ? { usageSettlement } : {}),
 		id: requiredText(row, 'id'), settlementKey: requiredText(row, 'settlement_key'), membershipId: requiredText(row, 'membership_id'),
 		capacityProviderId: requiredText(row, 'capacity_provider_id'), reservationId: nullableText(row, 'reservation_id'), assignmentId: nullableText(row, 'assignment_id'),
 		mode: mode as 'planning' | 'acting' | null, teamId: requiredText(row, 'team_id'), projectId: nullableText(row, 'project_id'),
 		workDayId: nullableText(row, 'work_day_id'), taskId: nullableText(row, 'task_id'), phase,
 		activeSeconds: number(row, 'active_seconds')!, elapsedSeconds: number(row, 'elapsed_seconds')!,
 		providerUnits: number(row, 'provider_units', true), usd: number(row, 'usd', true), source: requiredText(row, 'source'),
-		metadata: object(row, 'metadata_json'), createdAt: requiredText(row, 'created_at'),
+		metadata: publicMetadata, createdAt: requiredText(row, 'created_at'),
 	};
 }
 

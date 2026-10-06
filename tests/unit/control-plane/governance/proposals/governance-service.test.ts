@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createGovernanceService, GovernanceServiceError } from '../../../../../src/api/control-plane/governance/governance-service.ts';
 import { commitProposalVersionContent } from '../../../../../src/api/control-plane/governance/proposal-version-content.ts';
+import type { GovernanceProposalReadiness } from '../../../../../src/api/governance/proposal-readiness.ts';
 
 vi.mock('../../../../../src/api/control-plane/governance/proposal-version-content.ts', () => ({ commitProposalVersionContent: vi.fn() }));
 vi.mock('../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts', () => ({ reconcileExecutionGraph: vi.fn(async () => ({ replayed: false })) }));
@@ -15,12 +16,16 @@ function fixture(proposalProjectId = 'project-1') {
 		getProjectDetails: vi.fn(async () => ({ project: { id: 'project-1', teamId: 'team-1' } })),
 		principalCanAccessTeam: vi.fn(async () => true),
 		getTeamAccessSummary: vi.fn(async () => ({ permissions: ['projects:read:team', 'projects:manage:team'] })),
-		getGovernanceProposal: vi.fn(async () => ({ id: 'proposal-1', teamId: 'team-1', projectId: proposalProjectId, activeVersion: 3,
+		getGovernanceProposal: vi.fn(async () => ({ id: 'proposal-1', teamId: 'team-1', projectId: proposalProjectId, status: 'open', activeVersion: 3,
 			activeContentHash: 'digest-3', metadata: { contentProvenance: { contentPath: 'proposals/test.mdx', commitSha: 'a'.repeat(40), digest: 'digest-3' } } })),
 		updateGovernanceProposalDraft: vi.fn(async () => ({ id: 'proposal-1', activeVersion: 3 })),
 		listGovernanceEvents: vi.fn(async () => [{ id: 'feedback-1', eventType: 'proposal.discussion', evidence: { kind: 'concern' } }]),
 		recordGovernanceEvent: vi.fn(async (input) => ({ ...input, createdAt: '2026-09-13T00:00:00.000Z' })),
-		governanceProposalReadiness: vi.fn(async () => ({ readyForVoting: true })),
+		governanceProposalReadiness: vi.fn(async (): Promise<GovernanceProposalReadiness | null> => ({
+			contentReady: true, votingReady: true, missingContent: [], missingVoting: [], independentReviewCount: 1,
+			estimateCount: 1, unresolvedBlockerCount: 0, missingParticipantEstimates: [], missingReviewerClasses: [],
+			participationVersionReady: true, authorIndependent: true, executionPlanReady: true,
+		})),
 		getApprovalRequest: vi.fn(async () => ({ id: 'approval-1', projectId: 'project-1', updatedAt: '2026-08-22T12:00:00.000Z' })),
 		listApprovalRequestsForProject: vi.fn(async () => []),
 		decideApprovalRequest: vi.fn(async (_id, input) => ({ id: 'approval-1', state: input.state, decision: input.decision })),
@@ -31,6 +36,51 @@ function fixture(proposalProjectId = 'project-1') {
 }
 
 describe('governance service mutation boundaries', () => {
+	it('denies proposal evaluation with unresolved exact blockers or an unready executable plan before the owning decision mutation without repairing supplied readiness', async () => {
+		for (const readiness of [
+			{ votingReady: false, executionPlanReady: true, unresolvedBlockerCount: 1, missingVoting: ['resolved blocking questions and concerns'] },
+			{ votingReady: false, executionPlanReady: false, unresolvedBlockerCount: 0, missingVoting: ['ready proposal-owned execution plan'] },
+		]) {
+			const f = fixture(), input = { expectedProposalVersion: 3 }, held = structuredClone({ readiness, input });
+			f.store.governanceProposalReadiness.mockResolvedValue(Object.assign({}, await f.store.governanceProposalReadiness(), readiness));
+			const mutate = vi.fn(async (): Promise<never> => { throw new Error('Owning mutation must not run with unready authority'); });
+			const store = { ...f.store, evaluateGovernanceProposal: mutate }, service = createGovernanceService(store, f.discussions);
+			await expect(service.evaluate(f.principal, 'project-1', 'proposal-1', input, '3'))
+				.rejects.toMatchObject({ status: 409, code: 'governance_proposal_not_ready' });
+			expect(mutate).not.toHaveBeenCalled(); expect(f.store.recordGovernanceEvent).not.toHaveBeenCalled();
+			expect({ readiness, input }).toEqual(held);
+		}
+	});
+	it('retains exact authorized evaluation and accepted-decision recovery while denying missing or malformed readiness before mutation', async () => {
+		for (const status of ['open', 'accepted']) {
+			const f = fixture(), proposal = { ...(await f.store.getGovernanceProposal()), status };
+			f.store.getGovernanceProposal.mockResolvedValue(proposal);
+			const output = { id: 'proposal-1', status: 'accepted', decisionId: 'decision' };
+			const mutate = vi.fn(async () => output), input = { expectedProposalVersion: 3 }, held = structuredClone({ proposal, input, output });
+			const service = createGovernanceService({ ...f.store, evaluateGovernanceProposal: mutate }, f.discussions);
+			await expect(service.evaluate(f.principal, 'project-1', 'proposal-1', input, '3')).resolves.toEqual(output);
+			expect(mutate).toHaveBeenCalledExactlyOnceWith('proposal-1', { expectedProposalVersion: 3, actorType: 'user', actorId: 'user-1' });
+			expect(f.store.governanceProposalReadiness).toHaveBeenCalledTimes(status === 'open' ? 1 : 0);
+			expect({ proposal, input, output }).toEqual(held);
+		}
+		for (const field of ['votingReady', 'missingVoting'] as const) {
+			for (const value of [undefined, null, 'true']) {
+				const f = fixture(), readiness = Object.assign({}, await f.store.governanceProposalReadiness(), { [field]: value });
+				f.store.governanceProposalReadiness.mockResolvedValue(readiness);
+				const held = structuredClone(readiness), mutate = vi.fn(async () => ({ id: 'proposal-1' }));
+				const service = createGovernanceService({ ...f.store, evaluateGovernanceProposal: mutate }, f.discussions);
+				await expect(service.evaluate(f.principal, 'project-1', 'proposal-1', { expectedProposalVersion: 3 }, '3'))
+					.rejects.toMatchObject({ status: 409, code: 'governance_proposal_not_ready' });
+				expect(mutate).not.toHaveBeenCalled(); expect(readiness).toEqual(held);
+			}
+		}
+		const f = fixture(), mutate = vi.fn(async () => ({ id: 'proposal-1' }));
+		f.store.governanceProposalReadiness.mockResolvedValue(null);
+		await expect(createGovernanceService({ ...f.store, evaluateGovernanceProposal: mutate }, f.discussions)
+			.evaluate(f.principal, 'project-1', 'proposal-1', { expectedProposalVersion: 3 }, '3'))
+			.rejects.toMatchObject({ status: 409, code: 'governance_proposal_not_ready' });
+		expect(mutate).not.toHaveBeenCalled();
+	});
 	it('authors and then binds one exact proposal version', async () => {
 		const { store, service, principal } = fixture();
 		const receipt = { path: 'proposals/test.md', commitSha: 'a'.repeat(40) };
@@ -62,10 +112,9 @@ describe('governance service mutation boundaries', () => {
 
 	it('rejects contradictory concurrency evidence without mutating', async () => {
 		const { store, service, principal } = fixture();
+		const expected = { status: 412, code: 'proposal_precondition_mismatch' } satisfies Partial<GovernanceServiceError>;
 		await expect(service.updateProposal(principal, 'project-1', 'proposal-1',
-			{ expectedProposalVersion: 2 }, '3')).rejects.toMatchObject<Partial<GovernanceServiceError>>({
-				status: 412, code: 'proposal_precondition_mismatch',
-			});
+			{ expectedProposalVersion: 2 }, '3')).rejects.toMatchObject(expected);
 		expect(store.updateGovernanceProposalDraft).not.toHaveBeenCalled();
 	});
 

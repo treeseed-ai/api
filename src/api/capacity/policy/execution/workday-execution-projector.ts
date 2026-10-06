@@ -54,6 +54,24 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 	for (const source of [...input.sources].sort((left, right) => left.id.localeCompare(right.id))) {
 		const workday = appliedWorkdaySchema.parse(record(source.parameters.appliedPlan));
 		const reference = sourceRef(workday);
+		const lifecycleConditions = new Map<string, ExecutionNode>();
+		const lifecycleDependencies = (node: ExecutionNode, events: string[] = []) => {
+			for (const event of events) {
+				if (event !== 'workday-closing') throw new Error(`Unsupported lifecycle dependency ${event}.`);
+				const conditionId = `condition:${workday.id}:${node.projectId}:${event}`;
+				let condition = lifecycleConditions.get(conditionId);
+				if (!condition) {
+					condition = executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1', id: conditionId,
+						teamId: input.teamId, projectId: node.projectId, workdayId: workday.id, kind: 'condition', pairRole: null,
+						sourceRef: reference, ruleRevision: 1, nodeRevision: 1,
+						status: ['closing','ended'].includes(workday.state) ? 'completed' : 'blocked',
+						condition: { conditionType: 'lifecycle', subjectRef: reference, expectedState: 'closing' },
+						graphRevisionCreated: input.revision, graphRevisionUpdated: input.revision });
+					lifecycleConditions.set(conditionId, condition); nodes.push(condition);
+				}
+				edges.push(edge(input.teamId, condition.id, node.id, 'profile-event', reference, input.revision));
+			}
+		};
 		const planningSources = record(source.parameters.planningSourceByProposalId);
 		const participants = workdayParticipants({ ...source.parameters, proposalsByProjectId: source.proposalsByProjectId });
 		changedSourceRefs.push(reference);
@@ -99,6 +117,7 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 					workspace: 'treedx', acceptanceCriteria: activity === 'estimating' ? estimatingCriteria
 						: [`Return the governed ${activity} contribution within the assigned round.`],
 					graphRevisionCreated: input.revision, graphRevisionUpdated: input.revision });
+				lifecycleDependencies(node, profile.dependsOn?.events);
 				current.push(node); nodes.push(node);
 			}
 			roundNodes.set(round, current);
@@ -151,28 +170,23 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 			}
 		}
 		for (const projectId of projectIds) {
-			const reporter = input.profiles[`${projectId}:reporter`];
+			const candidates = Object.entries(input.profiles).filter(([key, definition]) =>
+				key === `${projectId}:${definition.agentClass}` && definition.activityProfiles.reporting);
+			if (candidates.length > 1) throw new Error(`Ambiguous reporting profile selection for project ${projectId}.`);
+			const reporter = candidates[0]?.[1];
 			const reporting = reporter?.activityProfiles.reporting;
 			if (!reporter || !reporting) continue;
-			const conditionId = `condition:${workday.id}:${projectId}:workday-closing`;
-			const condition = executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1', id: conditionId,
-				teamId: input.teamId, projectId, workdayId: workday.id, kind: 'condition', pairRole: null,
-				sourceRef: reference, ruleRevision: 1, nodeRevision: 1,
-				status: ['closing','ended'].includes(workday.state) ? 'completed' : 'blocked',
-				condition: { conditionType: 'lifecycle', subjectRef: reference, expectedState: 'closing' },
-				graphRevisionCreated: input.revision, graphRevisionUpdated: input.revision });
 			const reporterId = `reporting:${workday.id}:${projectId}/${reporter.id}`;
 			const report = executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1', id: reporterId,
 				teamId: input.teamId, projectId, workdayId: workday.id, kind: 'reporting', pairRole: null,
 				sourceRef: reference, authorityRefs: [reference], ruleRevision: 1, nodeRevision: 1, agentClass: reporter.agentClass,
 				status: 'blocked', estimate: { expectedSeconds: 5, maximumSeconds: 30 },
-				// Reporter is deterministic, but admission still requires a provider that
+				// Reporting is deterministic, but admission still requires a provider that
 				// explicitly offers the standard reporting execution capability.
 				requiredCapabilities: ['treeseed.coordination.reporting'], requestedPermissions: reporting.permissions,
 				workspace: 'treedx', acceptanceCriteria: ['Commit one deterministic workday report note.'],
 				graphRevisionCreated: input.revision, graphRevisionUpdated: input.revision });
-			nodes.push(condition, report);
-			edges.push(edge(input.teamId, condition.id, report.id, 'profile-event', reference, input.revision));
+			lifecycleDependencies(report, reporting.dependsOn?.events); nodes.push(report);
 		}
 	}
 	return { nodes, edges: [...new Map(edges.map((candidate) => [candidate.id, candidate])).values()], changedSourceRefs };

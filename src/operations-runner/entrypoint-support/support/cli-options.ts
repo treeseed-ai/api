@@ -1,21 +1,23 @@
 
 
-export function readArg(name, fallback = null) {
+export function readArg(name: string, fallback: string): string;
+export function readArg(name: string, fallback?: null): string | null;
+export function readArg(name: string, fallback: string | null = null) {
     const index = process.argv.indexOf(name);
     return index >= 0 ? process.argv[index + 1] ?? fallback : fallback;
 }
 
-export function hasArg(name) {
+export function hasArg(name: string) {
     return process.argv.includes(name);
 }
 
-export function readNumberArg(name, fallback) {
+export function readNumberArg(name: string, fallback: number) {
     const value = readArg(name);
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-export function parseOperationKey(value) {
+export function parseOperationKey(value: unknown) {
     const normalized = typeof value === 'string' ? value.trim() : '';
     if (!normalized)
         return null;

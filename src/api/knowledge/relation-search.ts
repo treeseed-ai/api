@@ -42,8 +42,8 @@ export async function searchRelations(connection: any, query: string, requested:
 		if (!id) return [];
 		return [{ id, title: text(entry.frontmatter?.title) || text(entry.title) || id,
 			summary: text(entry.frontmatter?.summary) || text(entry.snippet).slice(0, 180), kind, score: Number(entry.score ?? 0), path,
-			author: text(entry.frontmatter?.author, entry.frontmatter?.createdBy, entry.frontmatter?.created_by),
-			occurredAt: text(entry.frontmatter?.createdAt, entry.frontmatter?.created_at, entry.frontmatter?.date, entry.updatedAt) }];
+			author: text(entry.frontmatter?.author),
+			occurredAt: text(entry.frontmatter?.createdAt) }];
 	});
 	if (invalid.length) throw new RelationContentValidationError(invalid);
 	return [...new Map(results.map((item: any) => [item.id, item])).values()].slice(0, 20);
