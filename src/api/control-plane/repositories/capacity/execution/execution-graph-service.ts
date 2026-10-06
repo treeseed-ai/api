@@ -1,13 +1,7 @@
 import { applyOperationalState, recoverIncompleteReviewCycles, reviewCycleLimitReached, recoverInterruptedGovernanceReviews,
 	recoverableGovernanceReviewAttemptHistory, stable, digest, record, text, type TeamGraph } from './execution-graph-state.ts';
-import {
-	graphRevisionSchema, validateExecutionGraph,
-	validateAgentDefinitionModel,
-	type AgentDefinition,
-	type ExecutionEdge,
-	type ExecutionNode,
-	type GraphRevision,
-} from '@treeseed/sdk/agent-capacity';
+import { graphRevisionSchema, validateExecutionGraph, validateAgentDefinitionModel,
+	type AgentDefinition, type ExecutionEdge, type ExecutionNode, type GraphRevision } from '@treeseed/sdk/agent-capacity';
 import { projectTeamExecutionGraph } from '../../../../capacity/policy/execution/execution-graph-projector.ts';
 import { projectActiveWorkdays } from '../../../../capacity/policy/execution/workday-execution-projector.ts';
 import { projectCommunicationInvocations } from '../../../../capacity/policy/execution/communication-execution-projector.ts';

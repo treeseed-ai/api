@@ -142,7 +142,7 @@ describe('living execution admission', () => {
 		const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed),
 			batch: vi.fn(async () => []), first: vi.fn(async () => ({ status: 'running', assignment_id: 'other-active-assignment' })) };
 		await expect(admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
-			accountingLimits, assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'runtime', laneId: 'communication',
+			accountingLimits, assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: assignment.provider.executionProviderId, laneId: 'communication',
 			lanePurpose: 'communication', executionKind: 'conversation', workdayConcurrencyLimit: 2, invocationId: 'invocation-1', predecessorResults: [], treedxProxyHandle: { id: 'tdx_assignment', status: 'issued',
 				allowedPaths: [], allowedReadPaths: [], allowedWritePaths: [], scopes: [], allowedOperations: [] }, now: assignment.createdAt }))
 			.rejects.toMatchObject({ code: 'communication_invocation_binding_failed', details: { observedAssignmentId: 'other-active-assignment' } });

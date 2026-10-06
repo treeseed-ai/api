@@ -23,15 +23,13 @@ describe('immutable assignment-attempt construction', () => {
 	});
 	it('gives planning discussion the policy turn ceiling without changing acting chat allocation', () => {
 		const discussion = structuredClone(candidate);
-		discussion.node.kind = 'communication';
-		discussion.node.pairRole = null as never;
+		discussion.node.kind = 'communication'; discussion.node.pairRole = null as never;
 		discussion.node.estimate = { expectedSeconds: 180, maximumSeconds: 180 };
 		discussion.node.requiredCapabilities = [conversationCapability];
 		discussion.node.workspace = 'treedx';
 		discussion.node.sourceRef = { ...sourceRef, model: 'discussion', path: 'discussion-messages/one.mdx' } as never;
 		discussion.node.requestedPermissions = { content: { read: ['discussion'], write: ['discussion'] }, tools: ['discussion'] } as never;
-		discussion.effectiveProfile.permissionCeiling = discussion.node.requestedPermissions;
-		discussion.effectiveProfile.activity = 'chat';
+		discussion.effectiveProfile.permissionCeiling = discussion.node.requestedPermissions; discussion.effectiveProfile.activity = 'chat';
 		const offered = { ...provider, capabilities: [conversationCapability],
 			accountingLimits: { ...provider.accountingLimits, capabilityLimits: { [conversationCapability]: { dailyActiveSecondsLimit: 28800 } } },
 			accountingObservation: { ...provider.accountingObservation,
@@ -50,8 +48,7 @@ describe('immutable assignment-attempt construction', () => {
 				capabilityUsage: { [conversationCapability]: { ...offered.accountingObservation.modelUsage, observedAt: now } } } }] as never,
 			attempt: 1, now });
 		const planning = build('2026-09-13T12:01:00.000Z');
-		expect(planning.assignment.limits.maximumSeconds).toBe(180);
-		expect(planning.allocation.calibration.measurementIds).toEqual([]);
+		expect(planning.assignment.limits.maximumSeconds).toBe(180); expect(planning.allocation.calibration.measurementIds).toEqual([]);
 		expect(build('2026-09-13T12:11:30.000Z').assignment.limits.maximumSeconds).toBe(30);
 		const acting = build('2026-09-13T12:30:00.000Z');
 		expect(acting.allocation.calibration.measurementIds).toEqual(['successful-short-chat']);
@@ -81,9 +78,7 @@ describe('immutable assignment-attempt construction', () => {
 		};
 		const architect = structuredClone(candidate);
 		architect.contextRefs = [architecture] as never;
-		architect.node.agentClass = 'architect';
-		architect.node.workItemId = 'architecture-contract';
-		architect.node.workspace = 'treedx';
+		architect.node.agentClass = 'architect'; architect.node.workItemId = 'architecture-contract'; architect.node.workspace = 'treedx';
 		architect.node.requestedPermissions = { content: { read: ['proposal', 'book'], write: ['knowledge'] },
 			tools: ['source.read'] } as never;
 		architect.effectiveProfile.permissionCeiling = architect.node.requestedPermissions;
@@ -91,8 +86,7 @@ describe('immutable assignment-attempt construction', () => {
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
 			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
-		expect(result.assignment.contextRefs).toContainEqual(architecture);
-		expect(result.assignment.grant.contentRead).toContainEqual(architecture);
+		expect(result.assignment.contextRefs).toContainEqual(architecture); expect(result.assignment.grant.contentRead).toContainEqual(architecture);
 		const target = result.assignment.grant.contentWrite[0]!;
 		expect(target).toMatchObject({ model: 'knowledge', repository: 'library', commit: 'b'.repeat(40) });
 		expect(target.id).toMatch(/^knowledge-[a-f0-9]+$/u);
@@ -410,16 +404,12 @@ describe('immutable assignment-attempt construction', () => {
 
 	it('allocates a paired work review from the acting window without a minimum floor', () => {
 		const review = structuredClone(candidate);
-		review.node.kind = 'reviewing' as never;
-		review.node.pairRole = 'reviewer';
-		review.node.workItemId = 'architecture';
-		review.node.sourceRef = sourceRef;
-		review.node.workspace = 'treedx';
+		review.node.kind = 'reviewing' as never; review.node.pairRole = 'reviewer';
+		review.node.workItemId = 'architecture'; review.node.sourceRef = sourceRef; review.node.workspace = 'treedx';
 		review.node.estimate = { expectedSeconds: 1320, maximumSeconds: 1980 };
 		review.node.requestedPermissions = { content: { read: ['proposal'], write: ['decision'] },
 			tools: ['source.read', 'verification'] } as never;
-		review.effectiveProfile.activity = 'reviewing';
-		review.effectiveProfile.permissionCeiling = review.node.requestedPermissions;
+		review.effectiveProfile.activity = 'reviewing'; review.effectiveProfile.permissionCeiling = review.node.requestedPermissions;
 		const currentObservation = { ...provider.accountingObservation.modelUsage, observedAt: '2026-09-13T12:30:00.000Z' };
 		const reviewProvider = { ...provider, accountingObservation: { modelUsage: currentObservation,
 			capabilityUsage: { [executionCapability]: currentObservation } } };
@@ -436,8 +426,7 @@ describe('immutable assignment-attempt construction', () => {
 	});
 
 	it('rejects executable nodes whose capability demand was not compiled', () => {
-		const missing = structuredClone(candidate);
-		missing.node.requiredCapabilities = [];
+		const missing = structuredClone(candidate); missing.node.requiredCapabilities = [];
 		expect(() => buildAssignmentAttempt({
 			candidate: missing as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
@@ -483,15 +472,13 @@ describe('immutable assignment-attempt construction', () => {
 
 	it('uses the independent communication lane for chat nodes', () => {
 		const chat = structuredClone(candidate);
-		chat.node.kind = 'communication' as never;
-		chat.node.pairRole = null;
+		chat.node.kind = 'communication' as never; chat.node.pairRole = null;
 		chat.node.sourceRef = { ...sourceRef, model: 'discussion', id: 'message', path: 'discussion-messages/thread/message.mdx' } as never;
 		chat.node.workspace = 'treedx';
 		chat.node.requestedPermissions = { content: { read: ['discussion'], write: ['discussion'] }, tools: ['source.read'] } as never;
 		chat.effectiveProfile = { ...chat.effectiveProfile, activity: 'chat', handler: 'writer',
 			permissionCeiling: chat.node.requestedPermissions } as never;
-		chat.contextRefs = [];
-		chat.sourceRepositories = ['repository-sdk'];
+		chat.contextRefs = []; chat.sourceRepositories = ['repository-sdk'];
 		const communicationProvider = { ...provider, lanes: [{ ...provider.lanes[0]!, id: 'chat', purpose: 'communication' }] };
 		const result = buildAssignmentAttempt({ candidate: chat as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
