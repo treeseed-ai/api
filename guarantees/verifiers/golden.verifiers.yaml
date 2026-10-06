@@ -331,6 +331,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/release/provider-prerequisites.test.ts
     testName: "complete provider verification inherits the existing disposable PostgreSQL authority before any native suite or coded scene without a second database binding"
+  api.golden.execution-native-treedx-prerequisite-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/provider-prerequisites.test.ts
+    testName: "complete provider suites provision the exact native TreeDX engine and original signed bootstrap before verification and retain explicit cleanup after scenes"
   api.golden.execution-lease-clocks-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

@@ -40,12 +40,46 @@ jobs:
       - name: Install dependencies
         timeout-minutes: 20
         run: npm ci --ignore-scripts --workspaces=false --no-audit --no-fund
+      - name: Checkout exact native TreeDX
+        uses: actions/checkout@v4
+        with:
+          repository: treeseed-ai/treedx
+          ref: 29c40be3b106393ab358874c57a3498598108b66
+          path: .treeseed/tools/treedx
+      - name: Checkout exact execution authority
+        uses: actions/checkout@v4
+        with:
+          repository: treeseed-ai/platform
+          ref: e4c4cad1e526f53d3549c8fc27c3e60122b20ee4
+          path: .treeseed/tools/platform
+          submodules: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: erlef/setup-beam@v1
+        env:
+          ImageOS: ubuntu24
+        with:
+          otp-version: '27'
+          elixir-version: '1.17'
+      - name: Verify all native TreeDX server prerequisites
+        working-directory: .treeseed/tools/treedx
+        run: |
+          ./scripts/verification/test-all.sh
+      - name: Build the verified native TreeDX engine
+        working-directory: .treeseed/tools/treedx/apps/api
+        run: MIX_ENV=dev mix compile
       - uses: treeseed-ai/sdk/.github/actions/install-exact-sdk@f13880dd8cac225a88834ad88068b9d92fe017e8
         with:
           github-token: ${{ github.token }}
           paths: |
             node_modules/@treeseed/sdk
             node_modules/@treeseed/deployment/node_modules/@treeseed/sdk
+      - name: Provision disposable signed native TreeDX
+        run: node --import tsx scripts/verification/native-treedx.ts start
+      - name: Verify all native TreeDX client SDK prerequisites
+        working-directory: .treeseed/tools/treedx
+        run: ./scripts/verification/test-sdk-packages.sh
       - run: npm run verify:direct
       - name: Verify real PostgreSQL backup-writer migration closure
         run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/services/live/replication-migration-postgres.test.ts
@@ -64,3 +98,13 @@ jobs:
           name: api-${{ github.sha }}
           path: artifacts/*.tgz
           if-no-files-found: error
+      - name: Retain native prerequisite logs
+        if: always() && env.API_NATIVE_TREEDX_ROOT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-prerequisite-evidence-${{ github.sha }}
+          path: ${{ env.API_NATIVE_TREEDX_ROOT }}/*.log
+          if-no-files-found: error
+      - name: Close allocated native TreeDX and signer server
+        if: always()
+        run: node --import tsx scripts/verification/native-treedx.ts stop

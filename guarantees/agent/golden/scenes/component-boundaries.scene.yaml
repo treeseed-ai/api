@@ -191,6 +191,9 @@ workflow:
   - id: execution-postgres-prerequisite-unit
     action: { verifier: api.golden.execution-postgres-prerequisite-unit }
     expect: { status: passed }
+  - id: execution-native-treedx-prerequisite-unit
+    action: { verifier: api.golden.execution-native-treedx-prerequisite-unit }
+    expect: { status: passed }
   - id: execution-lease-clocks-unit
     action: { verifier: api.golden.execution-lease-clocks-unit }
     expect: { status: passed }
