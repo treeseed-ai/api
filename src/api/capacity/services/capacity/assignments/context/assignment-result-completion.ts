@@ -29,7 +29,7 @@ export function validateAssignmentResultCompletion(
 		'assignment_result_identity_mismatch', 'Assignment result does not belong to this assignment.', 409, { assignmentId: assignment.id },
 	);
 	if (parsed.data.status !== status) throw new CapacityGovernanceError(
-		'assignment_result_status_invalid', 'Canonical result status must match its terminal reporting boundary.', 409);
+		'assignment_content_result_invalid', 'Canonical result status must match its terminal reporting boundary.', 409);
 	const time = record(record(record(assignment.capacityEnvelope).budget).time);
 	const started = Date.parse(String(time.executionStartedAt ?? assignment.assignmentAttempt.createdAt));
 	const completed = Date.parse(parsed.data.completedAt), deadline = Date.parse(assignment.assignmentAttempt.deadline), reported = Date.parse(now);
