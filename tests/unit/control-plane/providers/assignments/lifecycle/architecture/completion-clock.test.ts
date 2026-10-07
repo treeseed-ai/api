@@ -13,7 +13,13 @@ describe('canonical completed result original clock authority', () => {
 				references: [{ kind: 'git', repository: workspace.repository, branch: workspace.branch, commit: 'b'.repeat(40) }],
 				verification: [], usage: { elapsedSeconds: 2 }, diagnostics: [], completedAt: '2026-10-02T21:00:02.000Z' });
 			const held = structuredClone({ assignment, result });
-			expect(() => validateAssignmentResultCompletion(assignment, { assignmentResult: result })).toThrowError(expect.objectContaining({ code: 'assignment_result_status_invalid' }));
+			// The original public completion contract already owns this denial code.
+			// Both transport forms must retain it, not invent a second status error.
+			for (const input of [{ assignmentResult: result }, { output: { assignmentResult: result } }]) {
+				const original = structuredClone(input);
+				expect(() => validateAssignmentResultCompletion(assignment, input)).toThrowError(expect.objectContaining({ code: 'assignment_content_result_invalid' }));
+				expect(input).toEqual(original);
+			}
 			expect({ assignment, result }).toEqual(held);
 		}
 	});
