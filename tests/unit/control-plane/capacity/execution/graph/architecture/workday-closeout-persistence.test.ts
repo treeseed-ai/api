@@ -31,6 +31,13 @@ describe('canonical single report at the real lifecycle and SQL boundary', () =>
 			expect(await workdayReportContext(f.owner, input)).toEqual([context]);
 			expect((await f.query('SELECT * FROM capacity_provider_assignments')).rows).toEqual(baseline);
 			expect(input).toEqual(original);
+			const privateReceipt = { ...teardown, accessToken: 'controlled-private-input', resources: [
+				{ ...teardown.resources[0]!, credential: { value: 'controlled-private-input' } },
+			] };
+			await f.query('UPDATE capacity_provider_assignments SET lifecycle_output_json=?', [JSON.stringify({ ...lifecycle, teardown: privateReceipt })]);
+			const retained = (await f.query('SELECT * FROM capacity_provider_assignments')).rows;
+			expect(await workdayReportContext(f.owner, input)).toEqual([context]);
+			expect((await f.query('SELECT * FROM capacity_provider_assignments')).rows).toEqual(retained);
 		} finally { await f.db.close(); }
 	});
 	it.each(['failed', 'cancelled', 'stale'])('retains %s Reporter failure through SQL without an unreported ended workday', async status => {

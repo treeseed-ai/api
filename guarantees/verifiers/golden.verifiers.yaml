@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-report-credential-denial-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/workday-report-context.test.ts
+    testName: "retains noncredential teardown evidence while excluding nested credential custody from the public Reporter snapshot without modifying supplied rows"
   api.golden.execution-report-teardown-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

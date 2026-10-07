@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-report-credential-denial-unit
+    action: { verifier: api.golden.execution-report-credential-denial-unit }
+    expect: { status: passed }
   - id: execution-report-teardown-unit
     action: { verifier: api.golden.execution-report-teardown-unit }
     expect: { status: passed }

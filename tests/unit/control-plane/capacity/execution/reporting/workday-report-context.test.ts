@@ -15,6 +15,17 @@ function storeWith(state = rows) {
 }
 
 describe('workday Reporter context', () => {
+	it('retains noncredential teardown evidence while excluding nested credential custody from the public Reporter snapshot without modifying supplied rows', async () => {
+		const teardown = { verified: true, completedAt: '2026-10-07T20:00:00.000Z', accessToken: 'controlled-private-input',
+			resources: [{ id: 'owned-workspace', state: 'closed', credential: { value: 'controlled-private-input' } }] };
+		const state = structuredClone(rows); Object.assign(state.attempts[0]!, { teardown_result: teardown });
+		const original = structuredClone(state), store = storeWith(state);
+		const [context] = await workdayReportContext(store as never, assignment as never);
+		expect(context.value).toMatchObject({ attempts: [{ id: 'expired', status: 'expired', teardown_result: {
+			verified: true, completedAt: teardown.completedAt, resources: [{ id: 'owned-workspace', state: 'closed' }],
+		} }, state.attempts[1]] });
+		expect(JSON.stringify(context.value)).not.toContain('controlled-private-input'); expect(state).toEqual(original);
+	});
 	it('snapshots failures, revisions, graph, usage and settlements through existing authority without credentials', async () => {
 		const store = storeWith();
 		const [item] = await workdayReportContext(store as never, assignment as never);
