@@ -18,7 +18,7 @@ export const reportResult = { schemaVersion: 'treeseed.assignment-result/v1', id
 export async function closeoutDatabase() {
 	const db = new PGlite();
 	try {
-		const tables = ['capacity_workday_runs', 'capacity_provider_assignments', 'capacity_reservations', 'audit_events'];
+		const tables = ['capacity_workday_runs', 'capacity_provider_assignments', 'capacity_reservations', 'capacity_usage_actuals', 'audit_events'];
 		const initial = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
 		const bootstrap: string[] = [];
 		for (const table of tables) {

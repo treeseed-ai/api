@@ -25,6 +25,8 @@ describe('workday Reporter context', () => {
 			expect(parameters).toEqual(['team', 'workday']);
 			expect(sql).not.toMatch(/SELECT \*|lease_token|usage_report_token|settlement_token|treedx_proxy_handle/u);
 		}
+		const attemptQuery = store.all.mock.calls.find(([sql]) => sql.includes('FROM capacity_provider_assignments'));
+		expect(attemptQuery?.[0]).toContain("lifecycle_output_json::jsonb #> '{teardown}' AS teardown_result");
 	});
 	it.each(['active-attempt', 'active-reservation'])('rejects %s before Reporter admission', async failure => {
 		const state = { ...rows,

@@ -1,8 +1,33 @@
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
+import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
+import { canonicalStandardsJson } from '@treeseed/sdk/standards';
+import { assignment } from '../../fixtures/assignment.ts';
+import { workdayReportContext } from '../../../../../../../src/api/capacity/services/capacity/assignments/admission/workday-report-context.ts';
 import { advanceLivingWorkday } from '../../../../../../../src/api/capacity/services/capacity/workdays/lifecycle/living-workday-lifecycle.ts';
 import { closeoutDatabase, now, reportRef, reportResult } from './closeout-sql-fixture.ts';
 
 describe('canonical single report at the real lifecycle and SQL boundary', () => {
+	it('native Reporter snapshot retains the exact original teardown result rather than an absent status scalar without repairing evidence or changing SQL history', async () => {
+		const f = await closeoutDatabase(); try {
+			const teardown = { verified: true, completedAt: now, resources: [{ id: 'owned-workspace', state: 'closed' }] };
+			const lifecycle = { teardown, activityCompletion: { reviewDisposition: 'request-changes' } };
+			await f.query('UPDATE capacity_provider_assignments SET lifecycle_output_json=?', [JSON.stringify(lifecycle)]);
+			const input = assignmentAttemptSchema.parse({ ...assignment, sourceRef: { store: 'postgresql', model: 'workday',
+				id: 'workday', revision: 1, digest: `sha256:${'a'.repeat(64)}` },
+				effectiveProfile: { ...assignment.effectiveProfile, activity: 'reporting' } });
+			const original = structuredClone(input), baseline = (await f.query('SELECT * FROM capacity_provider_assignments')).rows;
+			const [context] = await workdayReportContext(f.owner, input);
+			expect(context.ref).toEqual(input.sourceRef);
+			expect(context.value).toMatchObject({ teamId: 'team', workdayId: 'workday', attempts: [
+				{ id: 'assignment-report', teardown_result: teardown, teardown_status: null, review_disposition: 'request-changes' },
+			] });
+			expect(context.digest).toBe(`sha256:${createHash('sha256').update(canonicalStandardsJson(context.value)).digest('hex')}`);
+			expect(await workdayReportContext(f.owner, input)).toEqual([context]);
+			expect((await f.query('SELECT * FROM capacity_provider_assignments')).rows).toEqual(baseline);
+			expect(input).toEqual(original);
+		} finally { await f.db.close(); }
+	});
 	it.each(['failed', 'cancelled', 'stale'])('retains %s Reporter failure through SQL without an unreported ended workday', async status => {
 		const { db, reads, store, query } = await closeoutDatabase();
 		try {

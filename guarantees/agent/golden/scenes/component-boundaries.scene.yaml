@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-report-teardown-unit
+    action: { verifier: api.golden.execution-report-teardown-unit }
+    expect: { status: passed }
+  - id: execution-report-teardown-native
+    action: { verifier: api.golden.execution-report-teardown-native }
+    expect: { status: passed }
   - id: execution-canonical-failure-unit
     action: { verifier: api.golden.execution-canonical-failure-unit }
     expect: { status: passed }
