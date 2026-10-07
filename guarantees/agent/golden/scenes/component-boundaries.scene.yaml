@@ -384,6 +384,12 @@ workflow:
   - id: execution-accounting-continuity-native-1
     action: { verifier: api.golden.execution-accounting-continuity-native-1 }
     expect: { status: passed }
+  - id: execution-archived-profile-unit
+    action: { verifier: api.golden.execution-archived-profile-unit }
+    expect: { status: passed }
+  - id: execution-archived-profile-native
+    action: { verifier: api.golden.execution-archived-profile-native }
+    expect: { status: passed }
   - id: execution-handler-inspection-unit-1
     action: { verifier: api.golden.execution-handler-inspection-unit-1 }
     expect: { status: passed }

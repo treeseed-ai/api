@@ -42,6 +42,73 @@ function fixture() {
 		denyTeam() { access = false; }, denyPermission() { permissions = []; } };
 }
 describe('public configured handler inspection', () => {
+	it('excludes archived profile authority without weakening validation of active or paused configured agents', async () => {
+		const f = fixture();
+		const archived = { ...f.classes[0]!, id: 'archived-class', status: 'archived',
+			handlerRefs: { agents: [{ schemaVersion: 'retired-agent/v0', slug: 'renamed-reader', activities: {} }] } };
+		const paused = { ...f.classes[1]!, status: 'paused' };
+		const classes = [archived, f.classes[0]!, paused];
+		const store = { ...f.store, getProjectAgentsSummary: async () => ({ agents: [] }),
+			listProjectAgentClassesPage: async () => ({ items: classes, page: { hasMore: false, nextCursor: null } }) };
+		const service = createAgentQueryService(store), principal = { id: 'reader' }, before = structuredClone(classes);
+		expect((await service.list(principal, 'project')).agents.map(agent => [agent.agentSlug, agent.status]))
+			.toEqual([['renamed-reader', 'ready'], ['another-reader', 'paused']]);
+		expect((await service.show(principal, 'project', 'renamed-reader')).agent.definition).toEqual(f.definitions[0]);
+		expect((await service.validateProfile(principal, 'project', 'another-reader')).definition).toEqual(f.definitions[1]);
+		expect((await service.handlers(principal, 'project')).handlers).toEqual([
+			{ id: 'writer', origin: 'agent-package' }, { id: 'configured/reader', origin: 'project-runtime' },
+		]);
+		for (const status of ['active', 'paused']) {
+			archived.status = status;
+			const invalid = structuredClone(classes);
+			await expect(service.list(principal, 'project')).rejects.toMatchObject({ status: 409, code: 'agent_definition_invalid' });
+			expect(classes).toEqual(invalid);
+		}
+		archived.status = 'archived';
+		expect((await service.classes(principal, 'project', {})).items).toEqual(before);
+		expect(classes).toEqual(before);
+	});
+	it('native public profile inspection retains archived SQL history while admitting only current canonical definitions and denying reactivated malformed authority', async () => {
+		const f = await workdayStartDatabase();
+		try {
+			const now = f.intent.startsAt, paused = structuredClone(f.definition);
+			paused.id = 'configured/paused-reader'; paused.activityProfiles.planning!.handler = 'configured/paused-reader';
+			for (const [id, status, agents] of [
+				['archived-class', 'archived', [{ schemaVersion: 'retired-agent/v0', slug: 'retired-reader', activities: {} }]],
+				['paused-class', 'paused', [paused]],
+			] as const) await f.query(`INSERT INTO project_agent_classes
+				(id,team_id,project_id,slug,name,status,handler_refs_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+				[id, 'team', 'project', id, id, status, JSON.stringify({ agents }), now, now]);
+			const service = createAgentQueryService(f.store), registry = new OperationRegistry(createAgentOperations({ agents: service }));
+			const context = { interface: 'rest' as const, requestId: 'archived-profile-inspection', principal: f.principal };
+			const input = { path: { projectId: 'project', agentSlug: f.definition.id.split('/').at(-1)! }, query: {}, body: undefined }, supplied = structuredClone(input);
+			const state = async () => ({ execution: await f.snapshot(), classes: await f.all('SELECT * FROM project_agent_classes ORDER BY id') });
+			const before = await state(), show = registry.require('agents.show'), handlers = registry.require('agents.handlers.list');
+			const result = await show.handler(input, context);
+			expect(result).toMatchObject({ projectId: 'project', agent: { definition: f.definition, status: 'ready' } });
+			expect(await show.handler({ ...input, path: { ...input.path, agentSlug: 'paused-reader' } }, context))
+				.toMatchObject({ projectId: 'project', agent: { definition: paused, status: 'paused' } });
+			await expect(show.handler({ ...input, path: { ...input.path, agentSlug: 'retired-reader' } }, context))
+				.rejects.toMatchObject({ status: 404, code: 'project_agent_not_found' });
+			const expected = { projectId: 'project', handlers: [
+				{ id: 'writer', origin: 'agent-package' }, { id: 'configured/paused-reader', origin: 'project-runtime' },
+			] };
+			expect(await handlers.handler(input, context)).toEqual(expected);
+			expect(await Promise.all([show.handler(input, context), show.handler(input, context)])).toEqual([result, result]);
+			expect(await state()).toEqual(before);
+			for (const status of ['active', 'paused']) {
+				await f.query('UPDATE project_agent_classes SET status=? WHERE id=?', [status, 'archived-class']);
+				const invalid = await state();
+				await expect(show.handler(input, context)).rejects.toMatchObject({ status: 409, code: 'agent_definition_invalid' });
+				await expect(handlers.handler(input, context)).rejects.toMatchObject({ status: 409, code: 'agent_definition_invalid' });
+				expect(await state()).toEqual(invalid);
+			}
+			await f.query('UPDATE project_agent_classes SET status=? WHERE id=?', ['archived', 'archived-class']);
+			expect(await show.handler(input, context)).toEqual(result);
+			expect((await service.classes(f.principal, 'project', {})).items).toHaveLength(3);
+			expect(await state()).toEqual(before); expect(input).toEqual(supplied); expect(f.calls).toEqual([]);
+		} finally { await f.close(); }
+	});
 	it('inspects exact renamed YAML handler origins prompts context and permissions without deriving execution authority', async () => {
 		const f = fixture(), before = structuredClone({ definitions: f.definitions, classes: f.classes });
 		const principal = { id: 'reader' };
