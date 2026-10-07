@@ -44,7 +44,7 @@ export async function workdayReportContext(store: CapacityGovernanceDatabase, as
 		? { ...row, teardown_result: redactSensitiveValue(row.teardown_result) } : row);
 	const settlements = ledger.map(row => serializeCapacityLedgerEntryRow(row)!.usageSettlement);
 	if (reservations.some(reservation => reservation.state === 'consumed' && !settlements.some(settlement =>
-		settlement?.reservationId === reservation.id && settlement.assignmentId === reservation.assignment_id))) {
+		settlement !== undefined && settlement.reservationId === reservation.id && settlement.assignmentId === reservation.assignment_id))) {
 		throw new CapacityGovernanceError('reporter_unsettled_workday', 'Consumed reservations require their original canonical settlements.', 409);
 	}
 	const value = { teamId: assignment.teamId, workdayId: assignment.workdayId, nodes, edges,
