@@ -1,6 +1,26 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-canonical-failure-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/completion-clock.test.ts
+    testName: "denies failed and blocked canonical results on the successful completion boundary without changing supplied authority"
+  api.golden.execution-canonical-failure-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "native failure preserves exact canonical failed results and actual settlement once including truthful post-deadline closeout"
+  api.golden.execution-canonical-failure-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "native failure denies malformed foreign and nonfailed canonical results before settlement or graph writes"
+  api.golden.execution-canonical-failure-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "native failed result interruption rolls back settlement and retries the same original result without deleting failure history"
   api.golden.execution-diagnostics-read-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

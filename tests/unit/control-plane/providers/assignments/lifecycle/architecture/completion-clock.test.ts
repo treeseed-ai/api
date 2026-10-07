@@ -4,6 +4,19 @@ import { validateAssignmentResultCompletion } from '../../../../../../../src/api
 import { recoveryAssignment } from '../../architecture/cancellation-fixture.ts';
 
 describe('canonical completed result original clock authority', () => {
+	it('denies failed and blocked canonical results on the successful completion boundary without changing supplied authority', () => {
+		const assignment = recoveryAssignment(true), workspace = assignment.assignmentAttempt!.workspace;
+		if (workspace.mode !== 'git') throw new Error('Expected original Git workspace');
+		for (const status of ['failed', 'blocked'] as const) {
+			const result = assignmentResultSchema.parse({ schemaVersion: 'treeseed.assignment-result/v1', id: 'original-noncompleted-result',
+				assignmentId: assignment.id, status, summary: 'Original non-completed observation.',
+				references: [{ kind: 'git', repository: workspace.repository, branch: workspace.branch, commit: 'b'.repeat(40) }],
+				verification: [], usage: { elapsedSeconds: 2 }, diagnostics: [], completedAt: '2026-10-02T21:00:02.000Z' });
+			const held = structuredClone({ assignment, result });
+			expect(() => validateAssignmentResultCompletion(assignment, { assignmentResult: result })).toThrowError(expect.objectContaining({ code: 'assignment_result_status_invalid' }));
+			expect({ assignment, result }).toEqual(held);
+		}
+	});
 	it('retains a complete arbitrary-class frozen attempt and valid exact result unchanged', () => {
 		const assignment = recoveryAssignment(true), workspace = assignment.assignmentAttempt!.workspace;
 		if (workspace.mode !== 'git') throw new Error('Expected isolated governed Git workspace');
