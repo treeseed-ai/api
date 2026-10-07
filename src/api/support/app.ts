@@ -248,7 +248,7 @@ export function createPlatformApiApp(options: any = {}) {
 			agentGovernance: createAgentGovernanceService(capacity),
 			communications,
 			inbox,
-			workdays: createWorkdayService(capacity),
+			workdays: createWorkdayService(capacity, diagnosticEnvelopes),
 			agents: createAgentQueryService(capacity),
 			capacityQueries: createCapacityQueryService(capacity),
 			assignments: createAssignmentService(capacity),

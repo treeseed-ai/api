@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-diagnostics-read-unit
+    action: { verifier: api.golden.execution-diagnostics-read-unit }
+    expect: { status: passed }
   - id: execution-sdk-closure-unit
     action: { verifier: api.golden.execution-sdk-closure-unit }
     expect: { status: passed }
