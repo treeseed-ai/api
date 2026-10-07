@@ -762,6 +762,12 @@ workflow:
   - id: architecture-dependency-poll-native-1
     action: { verifier: api.golden.architecture-dependency-poll-native-1 }
     expect: { status: passed }
+  - id: architecture-dependency-poll-expiry-unit
+    action: { verifier: api.golden.architecture-dependency-poll-expiry-unit }
+    expect: { status: passed }
+  - id: architecture-dependency-poll-expiry-native
+    action: { verifier: api.golden.architecture-dependency-poll-expiry-native }
+    expect: { status: passed }
   - id: architecture-dependency-poll-native-2
     action: { verifier: api.golden.architecture-dependency-poll-native-2 }
     expect: { status: passed }

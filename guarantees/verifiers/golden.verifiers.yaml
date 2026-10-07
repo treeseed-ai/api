@@ -1406,6 +1406,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-poll-native.test.ts
     testName: "original synthesis recovery and lease retain the exact admitted attempt and both dependency results within the original authority deadline"
+  api.golden.architecture-dependency-poll-expiry-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-poll-authority.test.ts
+    testName: "revalidates original provider availability after asynchronous synthesis before recovery explanations or lease writes"
+  api.golden.architecture-dependency-poll-expiry-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-poll-native.test.ts
+    testName: "real original synthesis crossing unchanged availability expiry cannot create a late lease explanation or financial mutation on either requested lane"
   api.golden.architecture-dependency-poll-native-2:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

@@ -246,8 +246,8 @@ export async function leaseNextProviderAssignment(
 ): Promise<ProviderAssignmentLeaseResult> {
 	await store.ensureInitialized();
 	const leaseSeconds = normalizeProviderAssignmentLeaseSeconds(input.leaseSeconds);
-	const now = new Date().toISOString();
-	const context = await resolveProviderSynthesisContext(store, principal, { ...input, now });
+	let now = new Date().toISOString();
+	let context = await resolveProviderSynthesisContext(store, principal, { ...input, now });
 	// Admission and leasing are separate durable boundaries. A pending assignment
 	// may already occupy the requested lane, so failure to synthesize additional
 	// work must never prevent that exact assignment from being leased.
@@ -262,6 +262,11 @@ export async function leaseNextProviderAssignment(
 	} catch (error) {
 		synthesis = synthesisFailure(error);
 	}
+	// Synthesis may consume or withdraw the original availability authority.
+	// Re-read it with the current clock before any subsequent lease-state write;
+	// never backdate recovery or explanations to the poll's initial observation.
+	now = new Date().toISOString();
+	context = await resolveProviderSynthesisContext(store, principal, { ...input, sessionId: context.session.id, now });
 	await recordSynthesisDiagnostic(store, principal, context.session.id, synthesis, now);
 	const recovery = await recoverExpiredProviderAssignments(store, { teamId: principal.teamId, providerId: principal.capacityProviderId, now, limit: 100 });
 	const executionProviderIds = context.executionProviders.filter(provider => provider.status === 'available').map(provider => provider.id);
