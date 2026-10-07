@@ -20,16 +20,18 @@ export async function closeoutDatabase() {
 	try {
 		const tables = ['capacity_workday_runs', 'capacity_provider_assignments', 'capacity_reservations', 'audit_events'];
 		const initial = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
+		const bootstrap: string[] = [];
 		for (const table of tables) {
 			const statements = initial.filter(sql => sql.startsWith(`CREATE TABLE "${table}" (`));
 			if (statements.length !== 1) throw new Error(`Missing or duplicate original DDL: ${table}`);
-			await db.exec(statements[0]!);
+			bootstrap.push(statements[0]!);
 		}
 		for (const migration of ['0023_living_execution_graph.sql', '0031_workday_execution_mode_authority.sql']) {
-			for (const statement of splitPostgresSqlStatements(readFileSync(`drizzle/control-plane/${migration}`, 'utf8'))) {
-				await db.exec(statement);
-			}
+			bootstrap.push(...splitPostgresSqlStatements(readFileSync(`drizzle/control-plane/${migration}`, 'utf8')));
 		}
+		// Identical ordered original DDL in one native bootstrap call rather than
+		// separate calls for each statement on every fresh isolated database.
+		await db.exec(`${bootstrap.join(';\n')};`);
 		const query = async (sql: string, parameters: unknown[] = []) => {
 			let index = 0;
 			return db.query<Record<string, unknown>>(sql.replace(/\?/gu, () => `$${++index}`), parameters);
