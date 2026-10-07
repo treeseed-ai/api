@@ -93,12 +93,12 @@ it('binds each accepted decision to at most one active simulation workday', () =
 });
 
 it('binds selected proposal work and its accepted decision to one simulation', () => {
-	const proposalWork = { ...node('ready'), sourceRef: { store: 'treedx', model: 'proposal', id: 'proposal' },
-		workItemId: 'architecture', kind: 'acting', authorityRefs: [{ store: 'treedx', model: 'proposal', id: 'proposal' }] } as never;
+	const proposalWork: ExecutionNode = { ...node('ready'), sourceRef,
+		workItemId: 'architecture', kind: 'acting', authorityRefs: [sourceRef] };
 	const proposalRuns = new Map([['proposal', 'simulation-a']]);
 	expect(simulationRunForNode(proposalWork, new Map(), proposalRuns)).toBe('simulation-a');
 	expect(simulationRunForNode(proposalWork, new Map(), new Map([['other', 'simulation-b']]))).toBe('');
-	const accepted = { ...proposalWork, authorityRefs: [{ store: 'treedx', model: 'decision', id: 'decision' }] } as never;
+	const accepted: ExecutionNode = { ...proposalWork, authorityRefs: [{ ...sourceRef, model: 'decision', id: 'decision' }] };
 	expect(simulationRunForNode(accepted, new Map([['decision', 'simulation-a']]), proposalRuns)).toBe('simulation-a');
 	expect(() => simulationRunForNode(accepted, new Map([['decision', 'simulation-b']]), proposalRuns))
 		.toThrow('different simultaneous simulations');
@@ -209,7 +209,7 @@ describe('normalized living execution graph persistence', () => {
 		const actor = { ...node('completed'), id: 'actor', nodeRevision: 16, maximumReviewCycles: 2 };
 		const reviewer = { ...node('failed'), id: 'reviewer', kind: 'reviewing' as const, pairRole: 'reviewer' as const,
 			agentClass: 'reviewer', nodeRevision: 2, maximumReviewCycles: 2 };
-		const paired = { ...graph(3, [actor, reviewer]), edges: [{ id: 'pair', teamId: 'team', fromNodeId: 'actor',
+		const paired = { ...graph(3, [actor, reviewer]), edges: [{ schemaVersion: 'treeseed.execution-edge/v1' as const, id: 'pair', teamId: 'team', fromNodeId: 'actor',
 			toNodeId: 'reviewer', provenance: 'review-pair' as const, graphRevisionCreated: 1 }] };
 		const recovered = recoverIncompleteReviewCycles(paired, new Map([['reviewer', 1]]), new Set(['reviewer']), 4);
 		expect(recovered.nodes).toEqual(expect.arrayContaining([
@@ -224,7 +224,7 @@ describe('normalized living execution graph persistence', () => {
 		const actor = { ...node('completed'), id: 'actor', nodeRevision: 14, maximumReviewCycles: 2 };
 		const reviewer = { ...node('failed'), id: 'reviewer', kind: 'reviewing' as const, pairRole: 'reviewer' as const,
 			agentClass: 'reviewer', nodeRevision: 15, maximumReviewCycles: 2 };
-		const paired = { ...graph(3, [actor, reviewer]), edges: [{ id: 'pair', teamId: 'team', fromNodeId: 'actor',
+		const paired = { ...graph(3, [actor, reviewer]), edges: [{ schemaVersion: 'treeseed.execution-edge/v1' as const, id: 'pair', teamId: 'team', fromNodeId: 'actor',
 			toNodeId: 'reviewer', provenance: 'review-pair' as const, graphRevisionCreated: 1 }] };
 		const recovered = recoverIncompleteReviewCycles(paired, new Map([['reviewer', 1]]), new Set(), 4);
 		expect(recovered.nodes).toEqual(expect.arrayContaining([

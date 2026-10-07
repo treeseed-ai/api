@@ -3,7 +3,7 @@ import { listCapacityWorkdayContentArtifactRefs } from '../../../../../../src/ap
 
 describe('workday assignment context custody', () => {
   it('reads completed artifacts from assignments owned by the workday, without a demand join', async () => {
-    const all = vi.fn(async () => []);
+    const all = vi.fn(async (_query: string, _params?: unknown[]) => []);
     const refs = await listCapacityWorkdayContentArtifactRefs(
       { all } as never,
       { id: 'run-1', teamId: 'team-1' } as never,

@@ -3,7 +3,7 @@ import pg from 'pg';
 import { describe, expect, it, vi } from 'vitest';
 import { createControlPlanePostgresDatabase } from '../../../../../src/api/support/control-plane-postgres.ts';
 import { admitDiscussionInvocations, reconcileBlockedDiscussionInvocations } from '../../../../../src/api/capacity/services/capacity/invocations/discussion-invocation-service.ts';
-import { CapacityWorkdayRunService } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
+import { CapacityWorkdayRunService, compileCapacityWorkdayRunRecord } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 import { compileWorkdayAgentProfileSnapshot } from '../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-profile-policy.ts';
 
 describe('current communication supply in PostgreSQL', () => {
@@ -41,7 +41,7 @@ describe('current communication supply in PostgreSQL', () => {
 					if (sql.includes("SET status='admitted',execution_id=?")) claim = { status: 'admitted', execution_id: values[0], blocking_state_json: values[1] };
 					return { meta: { changes: 1 } };
 				},
-				createCapacityWorkdayRun: vi.fn(async (_team: string, input: Record<string, unknown>) => ({ id: input.id })),
+				createCapacityWorkdayRun: vi.fn(async (team: string, input: Record<string, unknown>) => compileCapacityWorkdayRunRecord(team, input, { now })),
 				tickCapacityWorkdayRun: vi.fn(async () => ({})), updateCapacityWorkdayRun: vi.fn(async () => null),
 			};
 			const input = { teamId: 'team', projectId: 'project', projectSlug: 'sdk', discussionId: 'acceptance', messageId: 'message', messagePath: 'discussion-messages/acceptance/message.mdx', messageCommit: 'c'.repeat(40), contextRefs: [], agentSlugs: ['architect'], idempotencyKey: 'send', durationSeconds: 180 };

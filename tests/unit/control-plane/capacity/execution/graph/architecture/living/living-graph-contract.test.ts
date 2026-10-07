@@ -130,7 +130,7 @@ describe('complete governed living graph contract authoring', () => {
 		expect(graphState(changed, reprioritized, active)).toEqual(reprioritized);
 		const cleared = structuredClone(changed);
 		const projectedActor = cleared.nodes.find(node => node.id === actor.id); if (!projectedActor) throw new Error('Original projected Actor required');
-		delete projectedActor.priority; const removed = graphState(cleared, reprioritized, active);
+		Reflect.deleteProperty(projectedActor, 'priority'); const removed = graphState(cleared, reprioritized, active);
 		const { priority: _priority, ...omitted } = frozen;
 		expect(graphNode(removed, 'first', 'actor')).toEqual({ ...omitted, graphRevisionUpdated: 2 });
 		expect(graphState(cleared, removed, active)).toEqual(removed); expect(running).toEqual(runningBefore);

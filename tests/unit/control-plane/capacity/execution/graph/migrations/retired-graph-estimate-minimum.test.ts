@@ -14,9 +14,9 @@ it('removes only the retired minimum from persisted graph estimates and replays 
 			('current', '{"expectedSeconds":40,"maximumSeconds":90}'),
 			('condition', NULL);`);
 		await db.exec(translateControlPlaneSqlToPostgres(migration));
-		const first = (await db.query('SELECT id,estimate_json FROM execution_nodes ORDER BY id')).rows;
+		const first = (await db.query<{ id: string; estimate_json: string | null }>('SELECT id,estimate_json FROM execution_nodes ORDER BY id')).rows;
 		await db.exec(translateControlPlaneSqlToPostgres(migration));
-		const second = (await db.query('SELECT id,estimate_json FROM execution_nodes ORDER BY id')).rows;
+		const second = (await db.query<{ id: string; estimate_json: string | null }>('SELECT id,estimate_json FROM execution_nodes ORDER BY id')).rows;
 		expect(second).toEqual(first);
 		expect(first.map((row) => ({ id: row.id, estimate: row.estimate_json ? JSON.parse(String(row.estimate_json)) : null }))).toEqual([
 			{ id: 'condition', estimate: null },

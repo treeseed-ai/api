@@ -19,7 +19,7 @@ describe('original provider poll and competing claim custody', () => {
 					const result=await original(principal,body);await crossExpiry();return result;
 				};
 				if(boundary==='inventory'){
-					const all=f.store.all.bind(f.store);f.store.all=async(sql,params)=>{const rows=await all(sql,params);
+					const all=f.store.all.bind(f.store);f.store.all=async<T extends Record<string,unknown>>(sql:string,params?:unknown[])=>{const rows=await all<T>(sql,params);
 						if(sql.includes("status IN ('pending', 'returned')"))await crossExpiry();return rows;};
 				}
 				if(boundary==='explanation-read'){

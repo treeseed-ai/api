@@ -26,7 +26,7 @@ describe('assignment recovery eligibility', () => {
 	});
 
 	it('scans closed-session leases without waiting for their wall-clock expiry', async () => {
-		const all = vi.fn(async () => []);
+		const all = vi.fn(async (_query: string, _parameters?: unknown[]) => []);
 		const database = { ensureInitialized: vi.fn(async () => undefined), all };
 		const result = await recoverExpiredProviderAssignments(database as never, {
 			teamId: 'team-1', providerId: 'provider-1', now: '2026-09-14T12:00:00.000Z', limit: 10,

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { admitDiscussionInvocations, conversationRunDurationSeconds } from '../../../../../src/api/capacity/services/capacity/invocations/discussion-invocation-service.ts';
 import { compileWorkdayAgentProfileSnapshot } from '../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-profile-policy.ts';
+import { compileCapacityWorkdayRunRecord } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 
 const permissions = { content: { read: ['knowledge', 'discussion'], write: ['discussion'] }, tools: ['discussion', 'source.read'] };
 const agent = (slug: string) => ({
@@ -31,7 +32,7 @@ describe('discussion invocation capacity admission', () => {
 		};
 		const result = admitDiscussionInvocations(store, { teamId: 'team', projectId: 'project', projectSlug: 'sdk',
 			discussionId: 'discussion', messageId: 'message', messagePath: 'discussion-messages/message.mdx', messageCommit: 'c'.repeat(40),
-			contextRefs: [], agentSlugs: [scenario === 'unknown' ? 'engineer' : 'architect'], idempotencyKey: scenario, parentWorkdayId: 'parent' });
+			contextRefs: [], agentSlugs: [scenario === 'unknown' ? 'engineer' : 'architect'], idempotencyKey: scenario, parentWorkdayId: 'parent', durationSeconds: 180 });
 		if (scenario === 'selected') await expect(result).resolves.toMatchObject([{ status: 'blocked', blocker: 'communication_supply_unavailable' }]);
 		else await expect(result).rejects.toMatchObject({ code: scenario === 'corrupt' ? 'capacity_workday_agent_profile_snapshot_invalid' : 'discussion_parent_agent_not_frozen' });
 		expect(store.createCapacityWorkdayRun).not.toHaveBeenCalled();
@@ -64,7 +65,7 @@ describe('discussion invocation capacity admission', () => {
 				return { meta: { changes: 1 } };
 			}),
 			createCapacityWorkdayRun: vi.fn(async (_teamId: string, input: Record<string, unknown>) => {
-				createdRuns.push(String(input.id)); return { id: input.id };
+				createdRuns.push(String(input.id)); return compileCapacityWorkdayRunRecord(_teamId, input);
 			}),
 			tickCapacityWorkdayRun: vi.fn(async () => ({})),
 			updateCapacityWorkdayRun: vi.fn(async () => null),
@@ -84,7 +85,7 @@ describe('discussion invocation capacity admission', () => {
 		// materialized owner must not veto the current canonical availability report.
 		const supplyQuery = store.all.mock.calls.find(([query]) => query.includes('FROM capacity_provider_team_memberships'))?.[0];
 		expect(supplyQuery).not.toContain('capacity_provider_lanes');
-		expect(result.map((item) => ({ status: item.status, blocker: item.blocker ?? null }))).toEqual([
+		expect(result.map((item) => ({ status: item.status, blocker: 'blocker' in item ? item.blocker ?? null : null }))).toEqual([
 			{ status: 'admitted', blocker: null },
 			{ status: 'queued', blocker: 'communication_capacity_queued' },
 		]);

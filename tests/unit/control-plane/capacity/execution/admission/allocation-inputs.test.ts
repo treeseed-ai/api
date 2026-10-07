@@ -25,8 +25,8 @@ describe('live allocation ledger inputs', () => {
 			const at = new Date().toISOString(), startsAt = new Date(Date.parse(at) - 20_000).toISOString();
 			const database = (db: typeof f.left) => ({ db, ensureInitialized: () => db.migrate(),
 				run: async (sql: string, params: unknown[] = []) => { await db.prepare(sql).bind(...params).run(); },
-				first: (sql: string, params: unknown[] = []) => db.prepare(sql).bind(...params).first(),
-				all: async (sql: string, params: unknown[] = []) => (await db.prepare(sql).bind(...params).all()).results,
+				first: <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => db.prepare(sql).bind(...params).first<T>(),
+				all: async <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => (await db.prepare(sql).bind(...params).all<T>()).results,
 				batch: (operations: Array<{ query: string; params?: unknown[] }>) => db.batch(operations) });
 			await f.left.pool.query(`INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('project','team','allocation','Allocation',$1,$1)`, [at]);
 			await f.left.pool.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,created_at,updated_at) VALUES ('class','team','project','renamed-author','Renamed author',$1,$1)`, [at]);
@@ -89,7 +89,7 @@ describe('live allocation ledger inputs', () => {
 	}, 30_000);
 	it('sizes chat opportunities against communication concurrency and only chat-ready graph nodes', async () => {
 		const at = '2026-09-16T13:55:00.000Z';
-		const store = { all: vi.fn(async () => []), first: vi.fn(async () => ({ ready_count: 1 })) };
+		const store = { all: vi.fn(async () => []), first: vi.fn(async (_query: string, _params?: unknown[]) => ({ ready_count: 1 })) };
 		const chatRun = { ...run, parameters: { ...run.parameters, appliedPlan: { ...plan,
 			policySnapshot: { ...plan.policySnapshot, communicationConcurrency: 2 } } } };
 		const chatProvider = { ...provider, accountingObservation: { modelUsage: { ...observation, observedAt: at },

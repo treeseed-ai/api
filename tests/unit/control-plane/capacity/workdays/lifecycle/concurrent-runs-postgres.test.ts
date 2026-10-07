@@ -5,6 +5,7 @@ import { createControlPlanePostgresDatabase } from '../../../../../../src/api/su
 import { CapacityWorkdayRunService } from '../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 import { loadCommunicationInvocations } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { projectCommunicationInvocations } from '../../../../../../src/api/capacity/policy/execution/communication-execution-projector.ts';
+import { agentDefinitionSchema } from '@treeseed/sdk/agent-capacity';
 
 describe('concurrent local execution in PostgreSQL', () => {
 	it('preserves production and simulation workdays when another workday or conversation starts', async () => {
@@ -25,8 +26,8 @@ describe('concurrent local execution in PostgreSQL', () => {
 			const store = {
 				ensureInitialized: () => database.migrate(),
 				run: (sql: string, values: unknown[]) => database.prepare(sql).bind(...values).run(),
-				first: (sql: string, values: unknown[]) => database.prepare(sql).bind(...values).first(),
-				all: async (sql: string, values: unknown[]) => (await database.prepare(sql).bind(...values).all()).results,
+				first: (sql: string, values: unknown[] = []) => database.prepare(sql).bind(...values).first(),
+				all: async (sql: string, values: unknown[] = []) => (await database.prepare(sql).bind(...values).all()).results,
 				batch: (operations: Array<{ query: string; params?: unknown[] }>) => database.batch(operations),
 				scheduleCapacityWorkdayRun: vi.fn(async () => ({})),
 				closeCapacityWorkdayAdmission: vi.fn(), terminalizeCapacityWorkdayAssignments: vi.fn(), terminalizeCapacityWorkdayEnvelopes: vi.fn(),
@@ -58,11 +59,11 @@ describe('concurrent local execution in PostgreSQL', () => {
 			expect(sources).toHaveLength(9);
 			expect(sources.filter(source => source.workdayId === 'sdk').map(source => source.agentId).sort()).toEqual([...roles].sort());
 			expect(sources.some(source => source.workdayId === 'api')).toBe(false);
-			const profiles = Object.fromEntries(roles.map(role => [`project:${role}`, {
+			const profiles = Object.fromEntries(roles.map(role => [`project:${role}`, agentDefinitionSchema.parse({
 				schemaVersion: 'treeseed.agent/v1' as const, id: `sdk/${role}`, name: role, agentClass: role,
 				purpose: 'Answer bounded questions.', responsibilities: ['Answer questions.'], capabilities: ['reasoning'], context: { include: ['project-objectives'] },
 				activityProfiles: { chat: { handler: 'writer', permissions: { content: { read: ['discussion'], write: ['discussion'] }, tools: ['discussion'] }, prompt: { system: 'Answer with evidence.' } } },
-			}]));
+			})]));
 			const projected = projectCommunicationInvocations({ teamId: 'team', revision: 1, sources, profiles });
 			expect(projected.nodes.filter(node => node.workdayId === 'sdk')).toHaveLength(8);
 			expect(projected.nodes.map(node => node.sourceRef.id)).toEqual(sources.map(source => source.id).sort());

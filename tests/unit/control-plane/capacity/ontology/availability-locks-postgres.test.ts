@@ -46,8 +46,8 @@ describe('availability publication foreign-key lock compatibility', () => {
         VALUES ('engineer','team','project','engineer','Engineer',$1,$1)`, [now]);
       const store = { db, ensureInitialized: () => db.migrate(),
         run: async (sql: string, params: unknown[] = []) => { await db.prepare(sql).bind(...params).run(); },
-        first: (sql: string, params: unknown[] = []) => db.prepare(sql).bind(...params).first(),
-        all: async (sql: string, params: unknown[] = []) => (await db.prepare(sql).bind(...params).all()).results,
+        first: <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => db.prepare(sql).bind(...params).first<T>(),
+        all: async <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => (await db.prepare(sql).bind(...params).all<T>()).results,
         batch: (operations: Array<{ query: string; params?: unknown[] }>) => db.batch(operations) };
       const service = new AvailabilitySessionService(store);
       const principal = { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider' };
