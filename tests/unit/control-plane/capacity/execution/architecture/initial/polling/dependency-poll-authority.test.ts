@@ -15,20 +15,24 @@ describe('provider poll input authority', () => {
 		for (const value of ['', '30', null, true, 30.5, Number.NaN, Infinity, -Infinity]) expect(() => normalizeProviderAssignmentLeaseSeconds(value)).toThrow();
 	});
 	it('revalidates original provider availability after asynchronous synthesis before recovery explanations or lease writes', async () => {
+		for (const boundary of ['synthesis', 'inventory']) {
 		const expiry=Date.now()+100, session={id:'session',membership_id:'membership',team_id:'team',capacity_provider_id:'provider',
 			status:'open',available_from:new Date(expiry-1000).toISOString(),available_until:new Date(expiry).toISOString(),
 			execution_providers_json:JSON.stringify([{id:'executor',runtimeBuild:`sha256:${'a'.repeat(64)}`,status:'available'}])};
 		const principal={teamId:'team',membershipId:'membership',capacityProviderId:'provider'}, request={providerSessionId:'session',leaseSeconds:30};
 		const inputs=structuredClone({session,principal,request}); let writes=0,syntheses=0;
 		const store:Parameters<typeof leaseNextProviderAssignment>[0]={ensureInitialized:async()=>undefined,
-			first:async()=>null,all:async()=>[],run:async()=>{writes++;},batch:async()=>{writes++;return [];},
+			first:async()=>null,all:async(sql)=>{if(boundary==='inventory'&&sql.includes("status IN ('pending', 'returned')")) {
+				expect(Date.now()).toBeLessThan(expiry);while(Date.now()<expiry)await new Promise<void>(resolve=>setTimeout(resolve,expiry-Date.now()));
+			}return [];},run:async()=>{writes++;},batch:async()=>{writes++;return [];},
 			recordProviderAssignmentExplanation:async()=>{writes++;return null;},
 			synthesizeProviderAssignments:async()=>{syntheses++;expect(Date.now()).toBeLessThan(expiry);
-				while(Date.now()<expiry)await new Promise<void>(resolve=>setTimeout(resolve,expiry-Date.now()));return {};}};
+				if(boundary==='synthesis')while(Date.now()<expiry)await new Promise<void>(resolve=>setTimeout(resolve,expiry-Date.now()));return {};}};
 		const reads=vi.spyOn(store,'first').mockImplementation(async(sql:string)=>sql.includes('provider.id AS provider_id')
 			?{provider_id:'provider',provider_status:'active'}:sql.includes('capacity_provider_availability_sessions')?session:null);
 		await expect(leaseNextProviderAssignment(store,principal,request)).rejects.toMatchObject({code:'provider_synthesis_window_expired',status:409});
-		expect(syntheses).toBe(1);expect(writes).toBe(0);expect({session,principal,request}).toEqual(inputs);
+		expect(syntheses).toBe(1);expect(writes).toBe(boundary==='synthesis'?0:1);expect({session,principal,request}).toEqual(inputs);
 		reads.mockRestore();
+		}
 	});
 });
