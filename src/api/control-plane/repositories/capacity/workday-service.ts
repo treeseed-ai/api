@@ -7,6 +7,9 @@ import { communicationSchedulingDiagnostics } from './communication/scheduling-d
 import { advanceLivingWorkday } from '../../../capacity/services/capacity/workdays/lifecycle/living-workday-lifecycle.ts';
 import { reconcileExecutionGraph } from './execution/execution-graph-service.ts';
 import { workdayTerminalizationPreserveUntil } from '../../../capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
+import { encryptedEnvelopeSchema } from '@treeseed/sdk/security';
+import type { CapacityWorkdayEventRecord } from '@treeseed/sdk/agent-capacity';
+import type { DiagnosticEnvelopeService } from '../../../../security/diagnostic-envelope.ts';
 
 function page(query: Record<string, unknown>) {
 	try { return { limit: normalizeCapacityPageLimit(query.limit), cursor: decodeCapacityPageCursor(query.cursor) }; }
@@ -22,7 +25,7 @@ function translate(error: unknown): never {
 		typeof candidate?.message === 'string' ? candidate.message : 'Workday operation failed.');
 }
 
-export function createWorkdayService(store: any) {
+export function createWorkdayService(store: any, diagnosticEnvelopes?: DiagnosticEnvelopeService) {
 	return {
 		...createWorkdayProfileService(store),
 		async list(principal: CapacityPrincipal, teamId: string, query: Record<string, unknown>) {
@@ -83,8 +86,30 @@ export function createWorkdayService(store: any) {
 		},
 		async events(principal: CapacityPrincipal, teamId: string, runId: string, query: Record<string, unknown>) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
+			if (query.diagnostics !== undefined && query.diagnostics !== 'metadata' && query.diagnostics !== 'full') {
+				throw new CapacityOperationError(400, 'workday_diagnostics_invalid', 'Diagnostic detail must be metadata or full.');
+			}
+			if (query.diagnostics === 'full') await authorizeCapacityTeam(store, principal, teamId, 'agents:diagnostics:team');
 			if (!await store.getCapacityWorkdayRun(teamId, runId)) throw new CapacityOperationError(404, 'workday_not_found', 'Workday not found.');
-			try { return await store.listCapacityWorkdayEventsPage(teamId, runId, page(query)); } catch (error) { translate(error); }
+			try {
+				const events = await store.listCapacityWorkdayEventsPage(teamId, runId, page(query));
+				if (query.diagnostics !== 'full') return events;
+				return { ...events, items: events.items.map((event: CapacityWorkdayEventRecord) => {
+					const raw = event.metadata.protectedPayloadEnvelope;
+					if (raw === undefined) return event;
+					if (!diagnosticEnvelopes) throw new CapacityOperationError(503, 'diagnostics_encryption_unavailable', 'Protected diagnostics require an active encryption key.');
+					const envelope = encryptedEnvelopeSchema.safeParse(raw), aad = envelope.success ? envelope.data.aad : undefined;
+					if (!envelope.success || !aad || event.teamId !== teamId || event.runId !== runId || aad.purpose !== 'diagnostics' || aad.teamId !== teamId
+						|| aad.assignmentId !== event.assignmentId || aad.resourceId !== event.id || aad.eventType !== event.eventType) {
+						throw new CapacityOperationError(409, 'workday_diagnostics_integrity_invalid', 'Protected diagnostics disagree with their owning event.');
+					}
+					try {
+						const protectedPayload = diagnosticEnvelopes.decrypt(envelope.data);
+						if (!protectedPayload || typeof protectedPayload !== 'object' || Array.isArray(protectedPayload) || !Object.keys(protectedPayload).length) throw new Error('Invalid protected payload.');
+						return { ...event, protectedPayload };
+					} catch { throw new CapacityOperationError(409, 'workday_diagnostics_integrity_invalid', 'Protected diagnostics cannot be authenticated.'); }
+				}) };
+			} catch (error) { translate(error); }
 		},
 		async schedules(principal: CapacityPrincipal, teamId: string) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
