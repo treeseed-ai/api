@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-diagnostics-read-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/provider-assignment-timestamp.test.ts
+    testName: requires explicit diagnostic read authority and exact metadata or full selection before reading protected workday evidence
   api.golden.execution-sdk-closure-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

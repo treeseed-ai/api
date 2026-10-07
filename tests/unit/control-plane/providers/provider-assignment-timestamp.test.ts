@@ -12,6 +12,7 @@ import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import { frozenAttempt } from '../capacity/accounting/architecture/settlement-fixture.ts';
 import { workdayStartDatabase } from '../capacity/workdays/scheduling/architecture/workday-start-fixture.ts';
 import { serializeProviderAssignmentRow } from '../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
+import { createWorkdayService } from '../../../../src/api/control-plane/repositories/capacity/workday-service.ts';
 
 describe('provider assignment timestamps', () => {
 	it('normalizes database Date values before returning communication receipts', () => {
@@ -22,6 +23,30 @@ describe('provider assignment timestamps', () => {
 });
 
 describe('provider assignment workday identity', () => {
+	it('requires explicit diagnostic read authority and exact metadata or full selection before reading protected workday evidence', async () => {
+		const response = { items: [{ id: 'original-public-event', metadata: { marker: 'original-public-metadata' } }], page: { limit: 2, hasMore: false, nextCursor: null } };
+		const store = { principalCanAccessTeam: vi.fn(async () => true), getTeamAccessSummary: vi.fn(async () => ({ permissions: ['projects:read:team'] })),
+			getCapacityWorkdayRun: vi.fn(async () => ({ id: 'original-run', teamId: 'original-team' })),
+			listCapacityWorkdayEventsPage: vi.fn(async () => response) };
+		const service = createWorkdayService(store), principal = { id: 'operator' }, held = structuredClone(response);
+		await expect(service.events(principal, 'original-team', 'original-run', { diagnostics: 'full' }))
+			.rejects.toMatchObject({ status: 403, code: 'capacity_permission_denied' });
+		expect(store.getCapacityWorkdayRun).not.toHaveBeenCalled(); expect(store.listCapacityWorkdayEventsPage).not.toHaveBeenCalled();
+		await expect(service.events(undefined, 'original-team', 'original-run', { diagnostics: 'full' })).rejects.toMatchObject({ status: 401 });
+		for (const diagnostics of [null, '', 'FULL', 'private', 0, false, [], {}]) {
+			const query = { diagnostics, limit: 2 }, before = structuredClone(query);
+			await expect(service.events({ id: 'admin', roles: ['admin'] }, 'original-team', 'original-run', query))
+				.rejects.toMatchObject({ status: 400, code: 'workday_diagnostics_invalid' });
+			expect(query).toEqual(before); expect(store.getCapacityWorkdayRun).not.toHaveBeenCalled();
+			expect(store.listCapacityWorkdayEventsPage).not.toHaveBeenCalled();
+		}
+		for (const diagnostics of [undefined, 'metadata']) {
+			const query = { limit: 2, ...(diagnostics === undefined ? {} : { diagnostics }) }, before = structuredClone(query);
+			await expect(service.events(principal, 'original-team', 'original-run', query)).resolves.toEqual(response);
+			expect(query).toEqual(before); expect(response).toEqual(held);
+		}
+		expect(store.listCapacityWorkdayEventsPage).toHaveBeenCalledTimes(2);
+	});
 	it('refuses protected ordinary execution evidence when encryption or exact current lease authority is unavailable without writing public events or hiding caller bytes', async () => {
 		const createdAt = new Date().toISOString(), deadline = new Date(Date.now() + 30_000).toISOString();
 		// Controlled UNIT authority, not an issued or refreshed native deadline.
@@ -135,6 +160,29 @@ describe('provider assignment workday identity', () => {
 			const publicEvents = await f.store.listCapacityWorkdayEventsPage('team', runId);
 			expect(JSON.stringify(publicEvents).includes('original-private-action')).toBe(false);
 			const retained = await f.snapshot();
+			const reader = createWorkdayService(f.store, envelopes), query = { diagnostics: 'full', limit: 200 }, queryBefore = structuredClone(query);
+			const full = await reader.events(f.principal, 'team', runId, query);
+			expect(full.items.find((event: { id: string }) => event.id === first!.id)).toEqual({ ...first, protectedPayload: body.protectedPayload });
+			expect(full.page).toEqual((await f.publicService.events(f.principal, 'team', runId, { limit: 200 })).page);
+			expect(query).toEqual(queryBefore); expect(await f.snapshot()).toEqual(retained);
+			await expect(f.publicService.events(f.principal, 'team', runId, query))
+				.rejects.toMatchObject({ status: 503, code: 'diagnostics_encryption_unavailable' });
+			expect(await f.snapshot()).toEqual(retained);
+			const originalMetadata = String(rows[0]!.metadata_json);
+			const invalid = [
+				...['teamId', 'assignmentId', 'resourceId', 'eventType', 'purpose'].map(field => ({ ...envelope, aad: { ...envelope.aad, [field]: 'foreign-boundary' } })),
+				{ ...envelope, ciphertext: 'corrupted-ciphertext' },
+			];
+			for (const changed of invalid) {
+				await f.query('UPDATE capacity_workday_events SET metadata_json=? WHERE id=?', [JSON.stringify({ ...metadata, protectedPayloadEnvelope: changed }), first!.id]);
+				const supplied = await f.snapshot();
+				await expect(reader.events(f.principal, 'team', runId, query)).rejects.toMatchObject({ status: 409, code: 'workday_diagnostics_integrity_invalid' });
+				expect(await f.snapshot()).toEqual(supplied); expect(query).toEqual(queryBefore);
+				await f.query('UPDATE capacity_workday_events SET metadata_json=? WHERE id=?', [originalMetadata, first!.id]);
+			}
+			expect((await reader.events(f.principal, 'team', runId, query)).items.find((event: { id: string }) => event.id === first!.id))
+				.toEqual({ ...first, protectedPayload: body.protectedPayload });
+			expect(await f.snapshot()).toEqual(retained);
 			for (const name of ['assignments', 'reservations', 'usage', 'ledger', 'nodes', 'edges', 'revisions'] as const) expect(retained[name]).toEqual(before[name]);
 			expect(await service.createEvent(auth, attempt.id, body)).toEqual(first); expect(await f.snapshot()).toEqual(retained);
 			await expect(service.createEvent(auth, attempt.id, { ...body, protectedPayload: { providerEvents: [{ type: 'substituted-private-action' }] } }))
