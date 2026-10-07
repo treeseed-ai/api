@@ -10,12 +10,13 @@ export function validateAssignmentResultCompletion(
 	assignment: DurableProviderAssignment,
 	input: Record<string, unknown>,
 	now = new Date().toISOString(),
+	status: 'completed' | 'failed' = 'completed',
 ): AssignmentResult {
 	if (!assignment.assignmentAttempt || !assignment.executionNodeId) {
 		throw new CapacityGovernanceError('assignment_attempt_required', 'Living execution completion requires its immutable assignment attempt.', 409, { assignmentId: assignment.id });
 	}
 	const output = record(input.output);
-	const supplied = output.assignmentResult ?? input.assignmentResult;
+	const supplied = Object.hasOwn(output, 'assignmentResult') ? output.assignmentResult : input.assignmentResult;
 	const raw = record(supplied);
 	if (['id', 'assignmentId'].some(field => typeof raw[field] === 'string' && raw[field] !== raw[field].trim())) throw new CapacityGovernanceError(
 		'assignment_result_invalid', 'Canonical result identities must retain their exact untrimmed input bytes.', 409);
@@ -27,11 +28,16 @@ export function validateAssignmentResultCompletion(
 	if (parsed.data.assignmentId !== assignment.id) throw new CapacityGovernanceError(
 		'assignment_result_identity_mismatch', 'Assignment result does not belong to this assignment.', 409, { assignmentId: assignment.id },
 	);
+	if (parsed.data.status !== status) throw new CapacityGovernanceError(
+		'assignment_result_status_invalid', 'Canonical result status must match its terminal reporting boundary.', 409);
 	const time = record(record(record(assignment.capacityEnvelope).budget).time);
 	const started = Date.parse(String(time.executionStartedAt ?? assignment.assignmentAttempt.createdAt));
 	const completed = Date.parse(parsed.data.completedAt), deadline = Date.parse(assignment.assignmentAttempt.deadline), reported = Date.parse(now);
-	if (![started, completed, deadline, reported].every(Number.isFinite) || completed < started || completed > deadline || completed > reported) throw new CapacityGovernanceError(
-		'assignment_result_clock_invalid', 'Completion must be inside its original productive interval and no later than the actual report.', 409);
+	if (![started, completed, deadline, reported].every(Number.isFinite) || completed < started || status === 'completed' && completed > deadline || completed > reported) throw new CapacityGovernanceError(
+		'assignment_result_clock_invalid', 'Terminal results must follow original execution and precede reporting; successful completion must remain inside its original deadline.', 409);
+	// A truthful failed closeout is not successful publication. Its measured
+	// completion may follow expiry; never invent a candidate or backdate it.
+	if (status === 'failed') return parsed.data;
 	const workspace = assignment.assignmentAttempt.workspace;
 	const matching = parsed.data.references.filter((reference) => {
 		if (workspace.mode === 'git') return reference.kind === 'git'
