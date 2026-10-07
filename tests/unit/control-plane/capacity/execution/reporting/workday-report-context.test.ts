@@ -11,10 +11,21 @@ const rows = { nodes: [{ id: 'actor', status: 'completed' }], edges: [{ from_nod
 	usage: [{ id: 'usage', assignment_id: 'revision', active_seconds: 12 }] };
 function storeWith(state = rows) {
 	return { all: vi.fn().mockResolvedValueOnce(state.nodes).mockResolvedValueOnce(state.edges)
-		.mockResolvedValueOnce(state.attempts).mockResolvedValueOnce(state.reservations).mockResolvedValueOnce(state.usage) };
+		.mockResolvedValueOnce(state.attempts).mockResolvedValueOnce(state.reservations).mockResolvedValueOnce(state.usage)
+		.mockResolvedValueOnce([]) };
 }
 
 describe('workday Reporter context', () => {
+	it('reads original scoped canonical settlement authority rather than inferring settlement from consumed reservation totals', async () => {
+		const store = storeWith(), original = structuredClone(rows);
+		const [context] = await workdayReportContext(store as never, assignment as never);
+		expect(context.value).toMatchObject({ settlements: [] });
+		const ledgerQuery = store.all.mock.calls.filter(([sql]) => sql.includes('FROM capacity_ledger_entries'));
+		expect(ledgerQuery).toHaveLength(1);
+		expect(ledgerQuery[0]?.[1]).toEqual(['team', 'workday']);
+		expect(ledgerQuery[0]?.[0]).toContain("phase='task_completed_actual_settlement'");
+		expect(rows).toEqual(original);
+	});
 	it('retains noncredential teardown evidence while excluding nested credential custody from the public Reporter snapshot without modifying supplied rows', async () => {
 		const teardown = { verified: true, completedAt: '2026-10-07T20:00:00.000Z', accessToken: 'controlled-private-input',
 			resources: [{ id: 'owned-workspace', state: 'closed', credential: { value: 'controlled-private-input' } }] };
@@ -30,7 +41,7 @@ describe('workday Reporter context', () => {
 		const store = storeWith();
 		const [item] = await workdayReportContext(store as never, assignment as never);
 		expect(item.ref).toEqual(assignment.sourceRef);
-		expect(item.value).toEqual({ teamId: 'team', workdayId: 'workday', ...rows });
+		expect(item.value).toEqual({ teamId: 'team', workdayId: 'workday', ...rows, settlements: [] });
 		expect(item.digest).toBe(`sha256:${createHash('sha256').update(canonicalStandardsJson(item.value)).digest('hex')}`);
 		for (const [sql, parameters] of store.all.mock.calls) {
 			expect(parameters).toEqual(['team', 'workday']);

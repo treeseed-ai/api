@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-report-settlement-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/workday-report-context.test.ts
+    testName: "reads original scoped canonical settlement authority rather than inferring settlement from consumed reservation totals"
   api.golden.execution-report-credential-denial-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

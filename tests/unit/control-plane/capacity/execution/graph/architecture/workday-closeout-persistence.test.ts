@@ -12,9 +12,11 @@ import { closeoutDatabase, now, reportRef, reportResult } from './closeout-sql-f
 describe('canonical single report at the real lifecycle and SQL boundary', () => {
 	it('native Reporter snapshot retains the exact original teardown result rather than an absent status scalar without repairing evidence or changing SQL history', async () => {
 		const f = await closeoutDatabase(); try {
-			const usageDdl = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'))
-				.filter(sql => sql.startsWith('CREATE TABLE "capacity_usage_actuals" ('));
-			expect(usageDdl).toHaveLength(1); await f.db.exec(usageDdl[0]!);
+			const initial = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
+			for (const table of ['capacity_usage_actuals', 'capacity_ledger_entries']) {
+				const ddl = initial.filter(sql => sql.startsWith(`CREATE TABLE "${table}" (`));
+				expect(ddl).toHaveLength(1); await f.db.exec(ddl[0]!);
+			}
 			const teardown = { verified: true, completedAt: now, resources: [{ id: 'owned-workspace', state: 'closed' }] };
 			const lifecycle = { teardown, activityCompletion: { reviewDisposition: 'request-changes' } };
 			await f.query('UPDATE capacity_provider_assignments SET lifecycle_output_json=?', [JSON.stringify(lifecycle)]);
