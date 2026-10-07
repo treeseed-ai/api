@@ -1,7 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import { dependencyPoll } from './dependency-poll-fixture.ts';
+import { isDeepStrictEqual } from 'node:util';
 
 describe('original provider poll and competing claim custody', () => {
+	it('real original synthesis crossing unchanged availability expiry cannot create a late lease explanation or financial mutation on either requested lane', async () => {
+		const observations=[];
+		for(const laneId of ['workday','foreign-lane']){
+			const f=await dependencyPoll();try{
+				expect((await f.evaluate()).eligible).toBe(true);
+				const request={...f.request,laneId}, input=structuredClone(request), custody=await f.custody();
+				const original=f.store.synthesizeProviderAssignments.bind(f.store), expiry=Date.parse(f.attempt.deadline);
+				let synthesized:Awaited<ReturnType<typeof f.snapshot>>|undefined, calls=0;
+				f.store.synthesizeProviderAssignments=async(principal,body)=>{
+					calls++;const result=await original(principal,body);synthesized=await f.snapshot();expect(Date.now()).toBeLessThan(expiry);
+					while(Date.now()<expiry)await new Promise<void>(resolve=>setTimeout(resolve,expiry-Date.now()));return result;
+				};
+				let error:unknown, assigned=false;
+				try{assigned=Boolean((await f.poll(request)).assignment);}catch(cause){error=cause;}
+				const after=await f.snapshot(), row=await f.repository.get(f.principal.teamId,f.attempt.id);
+				observations.push({laneId,calls,assigned,code:error&&typeof error==='object'&&'code' in error?error.code:null,
+					status:row?.status,leaseAbsent:row?.leaseToken===null,postSynthesisUnchanged:isDeepStrictEqual(after,synthesized),
+					custodyUnchanged:isDeepStrictEqual(await f.custody(),custody),inputUnchanged:isDeepStrictEqual(request,input)});
+			}finally{await f.db.close();}
+		}
+		for(const observation of observations)expect(observation).toEqual({laneId:observation.laneId,calls:1,assigned:false,
+			code:'provider_synthesis_window_expired',status:'pending',leaseAbsent:true,postSynthesisUnchanged:true,custodyUnchanged:true,inputUnchanged:true});
+	});
 	it('original synthesis recovery and lease retain the exact admitted attempt and both dependency results within the original authority deadline', async () => {
 		const f = await dependencyPoll(); try {
 			const before = await f.custody(), calledAt = Date.now(), result = await f.poll(), receivedAt = Date.now();

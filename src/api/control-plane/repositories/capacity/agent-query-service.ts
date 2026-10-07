@@ -36,6 +36,7 @@ async function acceptedAgents(store: any, projectId: string) {
 	}
 	const identities = new Set<string>(), slugs = new Set<string>();
 	return classes.flatMap((agentClass) => {
+		if (agentClass.status === 'archived') return [];
 		const agents = record(agentClass.handlerRefs).agents;
 		if (agents === undefined) return [];
 		if (!Array.isArray(agents)) throw new CapacityOperationError(409, 'agent_definition_invalid', 'Stored agent definitions must be a complete array.');

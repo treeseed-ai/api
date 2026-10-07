@@ -98,7 +98,7 @@ jobs:
           npm pack --json --ignore-scripts --pack-destination source-assets
           npm sbom --sbom-format cyclonedx > source-assets/sbom.cdx.json
       - name: Execute coded golden component scenes
-        uses: treeseed-ai/reviewer/.github/actions/run-scenes@98e14a4da20054c64b8a1751ed204161550209bb
+        uses: treeseed-ai/reviewer/.github/actions/run-scenes@2b65e70db059b0c3e4b0cb4937130a1bb3ba61ae
         with:
           ids: guarantee.api.golden.component-boundaries
       - uses: actions/upload-artifact@v4

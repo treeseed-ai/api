@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-diagnostics-read-unit
+    action: { verifier: api.golden.execution-diagnostics-read-unit }
+    expect: { status: passed }
   - id: execution-sdk-closure-unit
     action: { verifier: api.golden.execution-sdk-closure-unit }
     expect: { status: passed }
@@ -384,6 +387,12 @@ workflow:
   - id: execution-accounting-continuity-native-1
     action: { verifier: api.golden.execution-accounting-continuity-native-1 }
     expect: { status: passed }
+  - id: execution-archived-profile-unit
+    action: { verifier: api.golden.execution-archived-profile-unit }
+    expect: { status: passed }
+  - id: execution-archived-profile-native
+    action: { verifier: api.golden.execution-archived-profile-native }
+    expect: { status: passed }
   - id: execution-handler-inspection-unit-1
     action: { verifier: api.golden.execution-handler-inspection-unit-1 }
     expect: { status: passed }
@@ -752,6 +761,12 @@ workflow:
     expect: { status: passed }
   - id: architecture-dependency-poll-native-1
     action: { verifier: api.golden.architecture-dependency-poll-native-1 }
+    expect: { status: passed }
+  - id: architecture-dependency-poll-expiry-unit
+    action: { verifier: api.golden.architecture-dependency-poll-expiry-unit }
+    expect: { status: passed }
+  - id: architecture-dependency-poll-expiry-native
+    action: { verifier: api.golden.architecture-dependency-poll-expiry-native }
     expect: { status: passed }
   - id: architecture-dependency-poll-native-2
     action: { verifier: api.golden.architecture-dependency-poll-native-2 }

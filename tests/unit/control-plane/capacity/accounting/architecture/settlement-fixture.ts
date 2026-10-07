@@ -28,18 +28,20 @@ export async function settlementDatabase() {
 	const base = await closeoutDatabase();
 	try {
 		const initial = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
+		const bootstrap: string[] = [];
 		for (const table of ['capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_admission_counters', 'capacity_reservation_counter_claims']) {
 			const ddl = initial.filter(sql => sql.startsWith(`CREATE TABLE "${table}" (`));
 			if (ddl.length !== 1) throw new Error(`Missing original ${table} DDL`);
-			await base.db.exec(ddl[0]!);
+			bootstrap.push(ddl[0]!);
 		}
 		for (const name of ['idx_capacity_ledger_settlement_key', 'idx_capacity_ledger_reservation_phase',
 			'idx_capacity_usage_actuals_idempotency', 'idx_capacity_usage_actuals_attempt_dimension', 'idx_capacity_reservation_counter_claim']) {
 			const ddl = initial.filter(sql => sql.startsWith(`CREATE UNIQUE INDEX "${name}" `));
 			if (ddl.length !== 1) throw new Error(`Missing original ${name} index`);
-			await base.db.exec(ddl[0]!);
+			bootstrap.push(ddl[0]!);
 		}
-		await base.db.exec(readFileSync('drizzle/control-plane/0033_settle_actual_usage_without_approval.sql', 'utf8'));
+		bootstrap.push(...splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0033_settle_actual_usage_without_approval.sql', 'utf8')));
+		await base.db.exec(`${bootstrap.join(';\n')};`);
 		const envelope = { teamId: frozenAttempt.teamId, projectId: frozenAttempt.projectId, workDayId: frozenAttempt.workdayId,
 			mode: 'acting', projectAgentClassId: 'isolated-class-row', capacityProviderId: frozenAttempt.provider.providerId,
 			executionProviderId: frozenAttempt.provider.executionProviderId, reservationId: frozenAttempt.reservationId };

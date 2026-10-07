@@ -43,12 +43,18 @@ export async function initialAdmission(admissionNow: string | (() => string) = '
 			if (/^(?:ALTER TABLE|UPDATE) "(?:capacity_provider_assignments|capacity_reservations|capacity_ledger_entries)"/u.test(statement)) await base.db.exec(statement);
 		}
 		if (completeOriginalTables) {
+			// Read the native catalog once and apply the same missing original DDL
+			// in one batch. Each scenario still owns a fresh database; no authority
+			// clock is created until this bootstrap has completed.
+			const existing = await base.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public'");
+			const names = new Set(existing.rows.map(row => row.table_name));
+			const missing: string[] = [];
 			for (const statement of initial) {
 				const table = /^CREATE TABLE "([a-z0-9_]+)" \(/u.exec(statement)?.[1];
 				if (!table) continue;
-				const existing = await base.query('SELECT table_name FROM information_schema.tables WHERE table_schema=\'public\' AND table_name=?', [table]);
-				if (!existing.rows.length) await base.db.exec(statement);
+				if (!names.has(table)) missing.push(statement);
 			}
+			if (missing.length) await base.db.exec(`${missing.join(';\n')};`);
 			await base.db.exec(readFileSync('drizzle/control-plane/0008_capability_ontology.sql', 'utf8'));
 		}
 		for (const table of ['capacity_provider_availability_sessions', 'treedx_proxy_handles']) {

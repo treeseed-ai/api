@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-diagnostics-read-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/provider-assignment-timestamp.test.ts
+    testName: requires explicit diagnostic read authority and exact metadata or full selection before reading protected workday evidence
   api.golden.execution-sdk-closure-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -776,6 +781,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/ontology/availability-postgres.test.ts
     testName: "native PostgreSQL retains closed shared model history across membership restart and rejects malformed or regressed reports before publication"
+  api.golden.execution-archived-profile-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/agents/handler-inspection.test.ts
+    testName: "excludes archived profile authority without weakening validation of active or paused configured agents"
+  api.golden.execution-archived-profile-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/agents/handler-inspection.test.ts
+    testName: "native public profile inspection retains archived SQL history while admitting only current canonical definitions and denying reactivated malformed authority"
   api.golden.execution-handler-inspection-unit-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -1391,6 +1406,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-poll-native.test.ts
     testName: "original synthesis recovery and lease retain the exact admitted attempt and both dependency results within the original authority deadline"
+  api.golden.architecture-dependency-poll-expiry-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-poll-authority.test.ts
+    testName: "revalidates original provider availability after asynchronous synthesis before recovery explanations or lease writes"
+  api.golden.architecture-dependency-poll-expiry-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-poll-native.test.ts
+    testName: "real original synthesis crossing unchanged availability expiry cannot create a late lease explanation or financial mutation on either requested lane"
   api.golden.architecture-dependency-poll-native-2:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
