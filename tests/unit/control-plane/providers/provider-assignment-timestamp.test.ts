@@ -13,6 +13,7 @@ import { frozenAttempt } from '../capacity/accounting/architecture/settlement-fi
 import { workdayStartDatabase } from '../capacity/workdays/scheduling/architecture/workday-start-fixture.ts';
 import { serializeProviderAssignmentRow } from '../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { createWorkdayService } from '../../../../src/api/control-plane/repositories/capacity/workday-service.ts';
+import { serializeCapacityWorkdayEventRow } from '../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 
 describe('provider assignment timestamps', () => {
 	it('normalizes database Date values before returning communication receipts', () => {
@@ -71,6 +72,9 @@ describe('provider assignment workday identity', () => {
 			getProviderAssignment: async () => assignment, leaseNextProviderAssignment: async () => ({}),
 			renewProviderAssignmentLease: async () => null, returnProviderAssignment: async () => null,
 			completeProviderAssignment: async () => null, failProviderAssignment: async () => null,
+			createCapacityWorkdayRun: async (): Promise<never> => { throw new Error('Unexpected UNIT workday creation'); },
+			tickCapacityWorkdayRun: async (): Promise<never> => { throw new Error('Unexpected UNIT workday tick'); },
+			updateCapacityWorkdayRun: async (): Promise<never> => { throw new Error('Unexpected UNIT workday update'); },
 			createCapacityWorkdayEvent: async (...args) => { writes.push(args); return null; },
 		};
 		const auth = { principal: { teamId: 'team-1', capacityProviderId: 'provider-1', membershipId: 'membership-1', scopes: ['provider:assignments:write'] } };
@@ -152,6 +156,9 @@ describe('provider assignment workday identity', () => {
 			const first = await service.createEvent(auth, attempt.id, body);
 			const rows = await f.all('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index', [attempt.id]);
 			expect(rows).toHaveLength(1); const metadata = JSON.parse(String(rows[0]!.metadata_json));
+			const persisted = serializeCapacityWorkdayEventRow(rows[0]!);
+			if (!persisted) throw new Error('Actual independently serialized event required.');
+			expect(first).toEqual(persisted);
 			const envelope = encryptedEnvelopeSchema.parse(metadata.protectedPayloadEnvelope);
 			expect(envelope.aad).toMatchObject({ purpose: 'diagnostics', teamId: 'team', assignmentId: attempt.id,
 				resourceId: String(rows[0]!.id), sequence: 0, eventType: body.eventType });
@@ -162,26 +169,35 @@ describe('provider assignment workday identity', () => {
 			const retained = await f.snapshot();
 			const reader = createWorkdayService(f.store, envelopes), query = { diagnostics: 'full', limit: 200 }, queryBefore = structuredClone(query);
 			const full = await reader.events(f.principal, 'team', runId, query);
-			expect(full.items.find((event: { id: string }) => event.id === first!.id)).toEqual({ ...first, protectedPayload: body.protectedPayload });
+			expect(full.items.find((event: { id: string }) => event.id === persisted.id)).toEqual({ ...persisted, protectedPayload: body.protectedPayload });
 			expect(full.page).toEqual((await f.publicService.events(f.principal, 'team', runId, { limit: 200 })).page);
 			expect(query).toEqual(queryBefore); expect(await f.snapshot()).toEqual(retained);
+			await expect(reader.events(undefined, 'team', runId, query)).rejects.toMatchObject({ status: 401 });
+			await expect(reader.events(f.principal, 'foreign-team', runId, query)).rejects.toMatchObject({ status: 404 });
+			await expect(reader.events(f.principal, 'team', 'foreign-run', query)).rejects.toMatchObject({ status: 404 });
+			expect(await f.snapshot()).toEqual(retained);
 			await expect(f.publicService.events(f.principal, 'team', runId, query))
 				.rejects.toMatchObject({ status: 503, code: 'diagnostics_encryption_unavailable' });
 			expect(await f.snapshot()).toEqual(retained);
 			const originalMetadata = String(rows[0]!.metadata_json);
 			const invalid = [
-				...['teamId', 'assignmentId', 'resourceId', 'eventType', 'purpose'].map(field => ({ ...envelope, aad: { ...envelope.aad, [field]: 'foreign-boundary' } })),
+				...['teamId', 'assignmentId', 'resourceId', 'eventType'].map(field => {
+					const foreign = envelopes.encrypt(body.protectedPayload, { teamId: 'team', assignmentId: attempt.id,
+						resourceId: persisted.id, sequence: 0, eventType: body.eventType, [field]: 'foreign-boundary' });
+					expect(envelopes.decrypt(foreign)).toEqual(body.protectedPayload); return foreign;
+				}),
+				{ ...envelope, aad: { ...envelope.aad, purpose: 'foreign-boundary' } },
 				{ ...envelope, ciphertext: 'corrupted-ciphertext' },
 			];
 			for (const changed of invalid) {
-				await f.query('UPDATE capacity_workday_events SET metadata_json=? WHERE id=?', [JSON.stringify({ ...metadata, protectedPayloadEnvelope: changed }), first!.id]);
+				await f.query('UPDATE capacity_workday_events SET metadata_json=? WHERE id=?', [JSON.stringify({ ...metadata, protectedPayloadEnvelope: changed }), persisted.id]);
 				const supplied = await f.snapshot();
 				await expect(reader.events(f.principal, 'team', runId, query)).rejects.toMatchObject({ status: 409, code: 'workday_diagnostics_integrity_invalid' });
 				expect(await f.snapshot()).toEqual(supplied); expect(query).toEqual(queryBefore);
-				await f.query('UPDATE capacity_workday_events SET metadata_json=? WHERE id=?', [originalMetadata, first!.id]);
+				await f.query('UPDATE capacity_workday_events SET metadata_json=? WHERE id=?', [originalMetadata, persisted.id]);
 			}
-			expect((await reader.events(f.principal, 'team', runId, query)).items.find((event: { id: string }) => event.id === first!.id))
-				.toEqual({ ...first, protectedPayload: body.protectedPayload });
+			expect((await reader.events(f.principal, 'team', runId, query)).items.find((event: { id: string }) => event.id === persisted.id))
+				.toEqual({ ...persisted, protectedPayload: body.protectedPayload });
 			expect(await f.snapshot()).toEqual(retained);
 			for (const name of ['assignments', 'reservations', 'usage', 'ledger', 'nodes', 'edges', 'revisions'] as const) expect(retained[name]).toEqual(before[name]);
 			expect(await service.createEvent(auth, attempt.id, body)).toEqual(first); expect(await f.snapshot()).toEqual(retained);
