@@ -16,6 +16,12 @@ function storeWith(state = rows) {
 }
 
 describe('workday Reporter context', () => {
+	it('denies consumed reservation totals without the original matching scoped canonical settlement rather than fabricating closed report evidence', async () => {
+		const state = structuredClone(rows); Object.assign(state.reservations[0]!, { state: 'consumed' });
+		const held = structuredClone(state), store = storeWith(state);
+		await expect(workdayReportContext(store as never, assignment as never)).rejects.toMatchObject({ code: 'reporter_unsettled_workday', status: 409 });
+		expect(state).toEqual(held);
+	});
 	it('reads original scoped canonical settlement authority rather than inferring settlement from consumed reservation totals', async () => {
 		const store = storeWith(), original = structuredClone(rows);
 		const [context] = await workdayReportContext(store as never, assignment as never);

@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-report-settlement-required-unit
+    action: { verifier: api.golden.execution-report-settlement-required-unit }
+    expect: { status: passed }
+  - id: execution-report-settlement-required-native
+    action: { verifier: api.golden.execution-report-settlement-required-native }
+    expect: { status: passed }
   - id: execution-report-settlement-unit
     action: { verifier: api.golden.execution-report-settlement-unit }
     expect: { status: passed }

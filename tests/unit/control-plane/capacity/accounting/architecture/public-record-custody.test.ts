@@ -38,6 +38,22 @@ async function fixture() {
 // SQL, with settlement first through the public provider service. Supplied
 // principals/usage are INPUTS, not authenticated HTTP or external native charges.
 describe('public all-attempt accounting record custody', () => {
+	it('native Reporter denies consumed totals when the retained original settlement moves outside team or workday scope without repairing financial history', async () => {
+		const f = await fixture(); try {
+			await f.service.settle(provider, frozenAttempt.id, { ...terminalUsage }, terminalUsage.settlementKey);
+			const original = (await f.query('SELECT * FROM capacity_ledger_entries')).rows;
+			const [context] = await workdayReportContext(f.owner, reporter);
+			for (const column of ['team_id', 'work_day_id']) {
+				await f.query(`UPDATE capacity_ledger_entries SET ${column}=? WHERE id=?`, ['foreign', original[0]!.id]);
+				const retained = await f.snapshot();
+				await expect(workdayReportContext(f.owner, reporter)).rejects.toMatchObject({ code: 'reporter_unsettled_workday', status: 409 });
+				expect(await f.snapshot()).toEqual(retained);
+				await f.query(`UPDATE capacity_ledger_entries SET ${column}=? WHERE id=?`, [original[0]![column], original[0]!.id]);
+			}
+			expect(await workdayReportContext(f.owner, reporter)).toEqual([context]);
+			expect((await f.query('SELECT * FROM capacity_ledger_entries')).rows).toEqual(original);
+		} finally { await f.db.close(); }
+	});
 	it('native budget SQL and supplied reservation readback agree despite another provider reusing the execution identity and retain failed charges', async () => {
 		const f = await workdayStartDatabase(); try {
 			await f.db.exec(readFileSync('drizzle/control-plane/0008_capability_ontology.sql', 'utf8'));
