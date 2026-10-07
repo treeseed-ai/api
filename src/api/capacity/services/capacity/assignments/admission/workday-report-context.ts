@@ -3,6 +3,7 @@ import { canonicalStandardsJson } from '@treeseed/sdk/standards';
 import { authorizedContextItemSchema, type AssignmentAttempt } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
+import { redactSensitiveValue } from '../../../../../../security/redact-sensitive-value.ts';
 
 /** Snapshot existing execution authority for the native Reporter; never copy credential custody. */
 export async function workdayReportContext(store: CapacityGovernanceDatabase, assignment: AssignmentAttempt) {
@@ -34,7 +35,10 @@ export async function workdayReportContext(store: CapacityGovernanceDatabase, as
 		|| reservations.some(row => !['consumed', 'released', 'expired', 'failed'].includes(String(row.state)))) {
 		throw new CapacityGovernanceError('reporter_unsettled_workday', 'Reporter requires settled predecessor attempts.', 409);
 	}
-	const value = { teamId: assignment.teamId, workdayId: assignment.workdayId, nodes, edges, attempts, reservations, usage };
+	const publicAttempts = attempts.map(row => Object.hasOwn(row, 'teardown_result')
+		? { ...row, teardown_result: redactSensitiveValue(row.teardown_result) } : row);
+	const value = { teamId: assignment.teamId, workdayId: assignment.workdayId, nodes, edges,
+		attempts: publicAttempts, reservations, usage };
 	return [authorizedContextItemSchema.parse({ ref: assignment.sourceRef, mediaType: 'application/json',
 		digest: `sha256:${createHash('sha256').update(canonicalStandardsJson(value)).digest('hex')}`, value })];
 }
