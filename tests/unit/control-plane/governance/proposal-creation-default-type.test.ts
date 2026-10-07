@@ -13,7 +13,7 @@ describe('governance proposal creation defaults', () => {
 			getGovernanceProposal: vi.fn(async () => ({ id: 'proposal-1', proposalType: 'implementation', proposalTypes: ['implementation'] })),
 		};
 
-		const result = await createGovernanceProposalMethod.call(store as never, { id: 'user-1' }, {
+		const result = await createGovernanceProposalMethod.call(store as never, { id: 'user-1', roles: [], scopes: [], permissions: [] }, {
 			id: 'proposal-1', projectId: 'project-1', request: 'Verify the portable proposal.', title: 'Portable proposal',
 		});
 

@@ -17,7 +17,7 @@ describe('external approval before estimates', () => {
 		const store = { getGovernanceProposal: vi.fn(async () => proposal),
 			recordGovernanceEvent: vi.fn(async () => undefined), evaluateGovernanceProposal: vi.fn() };
 		const result = await adminDecideGovernanceProposalMethod.call(store as never,
-			{ id: 'human' }, 'proposal', { status: 'approved', reason: 'Approved for execution.', expectedProposalVersion: 1 });
+			{ id: 'human', roles: [], scopes: [], permissions: [] }, 'proposal', { status: 'approved', reason: 'Approved for execution.', expectedProposalVersion: 1 });
 		expect(result).toMatchObject({ pendingEstimates: true, status: 'open' });
 		expect(store.evaluateGovernanceProposal).not.toHaveBeenCalled();
 		expect(store.recordGovernanceEvent).toHaveBeenCalledWith(expect.objectContaining({

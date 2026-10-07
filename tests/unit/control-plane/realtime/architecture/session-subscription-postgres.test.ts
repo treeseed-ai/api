@@ -188,7 +188,7 @@ describe('independent PostgreSQL session event delivery and subscription ownersh
 			// Only this fresh pool's first client queues native SQL before LISTEN.
 			pool.once('acquire', client => {
 				setup = client.query('BEGIN; SELECT 1/0').then(
-					() => { throw new Error('Native division by zero unexpectedly succeeded'); }, error => { setupErrors.push(error); });
+					() => { throw new Error('Native division by zero unexpectedly succeeded'); }, (error: unknown) => { setupErrors.push(error); });
 			});
 			const teams = ['team', 'team', 'foreign-team'];
 			const outcomes = await Promise.allSettled(teams.map(team => {
@@ -373,7 +373,7 @@ describe('independent PostgreSQL session event delivery and subscription ownersh
 			pool.once('acquire', client => {
 				setup = client.query('BEGIN; SELECT 1/0').then(
 					() => { throw new Error('Native division by zero unexpectedly succeeded'); },
-					error => { setupErrors.push(error); });
+					(error: unknown) => { setupErrors.push(error); });
 			});
 			const [outcome] = await Promise.allSettled([service.subscribe('team', event => denied.push(event))]);
 			if (outcome.status === 'fulfilled') releaseDenied = outcome.value;

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import assert from 'node:assert/strict';
 import { describe, expect, it } from 'vitest';
 import { relationPublicationDatabase } from './relation-publication-fixture.ts';
 import { object } from './relation-authoring-fixture.ts';
@@ -38,6 +39,7 @@ describe('native governed dependency Note publication and graph intake', () => {
 	it('ordinary submission and actual runner publish the native exact Note then owning graph persistence exposes the independent reviewer dependency gate', async () => {
 		const f = await relationPublicationDatabase(); try {
 			const originals = structuredClone(f.sources), workspace = await f.create(), written = await f.write(workspace), submitted = await f.submit(written.workspace);
+			assert.ok(submitted.integration);
 			const operation = submitted.integration.operation, result = await f.run(operation.id);
 			expect(result).toMatchObject({ ok: true, claimed: true, operation: { status: 'succeeded' }, output: { commitSha: submitted.commit.commitSha, publishedRef: 'refs/heads/staging' } });
 			const manifest = await f.storage.readCurrent('team'); expect(manifest).toBeTruthy();
@@ -66,6 +68,7 @@ describe('native governed dependency Note publication and graph intake', () => {
 				await f.client.files.write(id, { path: 'README.md', content: 'Independent native staging movement\n' });
 				await f.client.files.commit(id, { message: 'Move disposable staging', author: { name: 'Fixture', email: 'fixture@example.invalid' } });
 			} finally { await f.client.workspaces.close(id); }
+			assert.ok(submitted.integration);
 			const result = await f.run(submitted.integration.operation.id); expect(result.ok).toBe(false);
 			expect(result.operation.status).toBe('failed'); expect(await f.storage.readCurrent('team')).toBeNull();
 			const after = await f.snapshot(); expect(after.publications[0]).toMatchObject({ status: 'queued', commit_sha: submitted.commit.commitSha });
@@ -74,7 +77,9 @@ describe('native governed dependency Note publication and graph intake', () => {
 	}, 60_000);
 	it('late original publication audit interruption preserves native published commit immutable manifest and failed runner history before exact recovery replay', async () => {
 		const f = await relationPublicationDatabase(); try {
-			const workspace = await f.create(), written = await f.write(workspace), submitted = await f.submit(written.workspace), operationId = submitted.integration.operation.id;
+			const workspace = await f.create(), written = await f.write(workspace), submitted = await f.submit(written.workspace);
+			assert.ok(submitted.integration);
+			const operationId = submitted.integration.operation.id;
 			await f.db.exec(`CREATE FUNCTION reject_publication_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
 				IF NEW.event_type='knowledge.publication.completed' THEN RAISE EXCEPTION 'controlled late publication audit interruption'; END IF; RETURN NEW; END $$;
 				CREATE TRIGGER reject_publication_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION reject_publication_audit();`);
@@ -86,8 +91,10 @@ describe('native governed dependency Note publication and graph intake', () => {
 			const failedEvents = await f.store.listPlatformOperationEvents(operationId);
 			expect(failedEvents).toContainEqual(expect.objectContaining({ kind: 'runner.retry_safe_failure' }));
 			await f.db.exec('DROP TRIGGER reject_publication_audit ON audit_events; DROP FUNCTION reject_publication_audit();');
-			const original = await f.store.findPlatformOperationById(operationId); await f.store.retryPlatformOperation(operationId);
-			expect((await f.store.findPlatformOperationById(operationId)).input).toEqual(original.input);
+			const original = await f.store.findPlatformOperationById(operationId); assert.ok(original);
+			await f.store.retryPlatformOperation(operationId);
+			const retried = await f.store.findPlatformOperationById(operationId); assert.ok(retried);
+			expect(retried.input).toEqual(original.input);
 			expect(await f.run(operationId)).toMatchObject({ ok: true, operation: { status: 'succeeded' } });
 			expect(await f.storage.readCurrent('team')).toEqual(manifest);
 			const recovered = await f.snapshot(); expect(recovered.publications).toEqual(after.publications); expect(recovered.reviews).toEqual(after.reviews); expect(recovered.ledger).toEqual(after.ledger);

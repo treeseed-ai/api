@@ -12,12 +12,12 @@ function fixture(provenance: Record<string, string> | null = null) {
 		run: vi.fn(async () => undefined), first: vi.fn(async () => ({ id: 'existing-event' })), batch: vi.fn(async () => undefined),
 		recordGovernanceEvent: vi.fn(async () => undefined) };
 	const update = (input: Record<string, unknown> = {}) => updateGovernanceProposalDraftMethod.call(store as unknown as ControlPlaneStore,
-		{ id: 'user-1' }, proposal.id, { expectedProposalVersion: 1, changeReason: 'Publish the draft.', ...input });
+		{ id: 'user-1', roles: [], scopes: [], permissions: [] }, proposal.id, { expectedProposalVersion: 1, changeReason: 'Publish the draft.', ...input });
 	return { store, proposal, update };
 }
 
 describe('proposal publication provenance', () => {
-	it.each([null, {}, { contentPath: 'proposals/test.md', commitSha: 'a'.repeat(40), digest: ' ' }])(
+	it.each<Record<string, string> | null>([null, {}, { contentPath: 'proposals/test.md', commitSha: 'a'.repeat(40), digest: ' ' }])(
 		'forces TreeDX authoring instead of replaying unpublished content (%j)', async (provenance) => {
 			const { store, update } = fixture(provenance);
 			await expect(update({ repairExistingVersion: true })).rejects.toMatchObject({ code: 'governance_proposal_repair_material_change' });

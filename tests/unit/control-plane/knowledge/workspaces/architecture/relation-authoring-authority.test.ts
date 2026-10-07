@@ -11,7 +11,7 @@ import { noteSource } from './relation-authoring-fixture.ts';
 describe('ordinary exact relation authoring authority', () => {
 	it('denies malformed governed Note identities and duplicate exact subject authority without normalizing the supplied relation', () => {
 		const f = relationInputs(), original = structuredClone(f.note);
-		const missing = { ...f.note }; delete missing.id;
+		const missing = { ...f.note }; Reflect.deleteProperty(missing, 'id');
 		const invalid = [missing, ...['', ' padded', 'internal space', 'é', 'a'.repeat(201), null].flatMap(value =>
 			[{ ...f.note, id: value }, { ...f.note, projectId: value }]),
 			{ ...f.note, subjectRefs: [f.link.from, f.link.from] },

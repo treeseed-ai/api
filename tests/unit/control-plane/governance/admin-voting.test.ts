@@ -56,8 +56,8 @@ describe('admin governance voting', () => {
 		}
 		read.mockRestore();
 	});
-	it('accepts an eligible administrator support vote without waiting for the voting deadline', () => {
-		const electorate = adminApprovalProvider.snapshotElectorate({
+	it('accepts an eligible administrator support vote without waiting for the voting deadline', async () => {
+		const electorate = await adminApprovalProvider.snapshotElectorate({
 			teamId: 'team-1', projectId: 'project-1', scope: 'project', providerConfig: {}, eligibleVoters: [voter],
 		});
 		expect(adminApprovalProvider.evaluate({
@@ -65,8 +65,8 @@ describe('admin governance voting', () => {
 		})).toMatchObject({ status: 'accepted', reasonCode: 'admin_approved', decisionEligible: true });
 	});
 
-	it('rejects an eligible administrator objection without waiting for the voting deadline', () => {
-		const electorate = adminApprovalProvider.snapshotElectorate({
+	it('rejects an eligible administrator objection without waiting for the voting deadline', async () => {
+		const electorate = await adminApprovalProvider.snapshotElectorate({
 			teamId: 'team-1', projectId: 'project-1', scope: 'project', providerConfig: {}, eligibleVoters: [voter],
 		});
 		expect(adminApprovalProvider.evaluate({
