@@ -20,6 +20,7 @@ export async function workdayReportContext(store: CapacityGovernanceDatabase, as
 		store.all(`SELECT id,execution_node_id,execution_node_revision,status,reservation_id,execution_provider_id,
 			assignment_result_json,lifecycle_code,created_at,completed_at,failed_at,
 			lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}' AS review_disposition,
+			lifecycle_output_json::jsonb #> '{teardown}' AS teardown_result,
 			lifecycle_output_json::jsonb #>> '{teardown,status}' AS teardown_status
 			FROM capacity_provider_assignments WHERE team_id=? AND work_day_id=? ORDER BY created_at,id`, scope),
 		store.all(`SELECT id,assignment_id,state,requested_seconds,reserved_seconds,active_seconds,elapsed_seconds,

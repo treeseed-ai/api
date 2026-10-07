@@ -297,8 +297,11 @@ export async function leaseNextProviderAssignment(
 			if (row.id) workdayStatuses.set(String(row.id), String(row.status ?? ''));
 		}
 	}
-	const nowMs = Date.parse(now);
 	const {leasable,diagnostics,assignment}=await eligibleLeaseCandidates({store,principal,request:input,assignments,workdayStatuses,now,availabilitySessionId:context.session.id});
+	// Inventory and candidate authority reads can consume the same original
+	// availability window. Never issue explanations or a claim with that stale clock.
+	now = new Date().toISOString();
+	context = await resolveProviderSynthesisContext(store, principal, { ...input, sessionId: context.session.id, now });
 	const leaseDiagnostics: JsonRecord = {
 		source: 'lease_next_assignment',
 		evaluatedAt: now,
@@ -337,6 +340,9 @@ export async function leaseNextProviderAssignment(
 		leaseDiagnostics.synthesis = { ...synthesis, attempted: true, reason: 'no_assignment_selected', mode: 'request_scoped_api_owned' };
 		return { assignment: null, leaseToken: null, leaseSeconds, diagnostics: leaseDiagnostics };
 	}
+	now = new Date().toISOString();
+	context = await resolveProviderSynthesisContext(store, principal, { ...input, sessionId: context.session.id, now });
+	const nowMs = Date.parse(now);
 	const leaseToken = randomUUID();
 	const leasedCapacityEnvelope = assignment.status === 'pending'
 		? beginAssignmentPreparationTimeBudget(record(assignment.capacityEnvelope), now)
@@ -345,7 +351,7 @@ export async function leaseNextProviderAssignment(
 	const hardDeadlineMs = assignmentDeadline.hardDeadlineAt
 		? Date.parse(assignmentDeadline.hardDeadlineAt)
 		: Number.POSITIVE_INFINITY;
-	const leaseExpiresAt = new Date(Math.min(nowMs + leaseSeconds * 1000, hardDeadlineMs)).toISOString();
+	const leaseExpiresAt = new Date(Math.min(Date.parse(now) + leaseSeconds * 1000, hardDeadlineMs)).toISOString();
 	const selectedExplanation = buildProviderAssignmentExplanation(assignment, principal.teamId, {
 		source: String(record(assignment.explanation).source ?? assignment.synthesizedFrom ?? 'lease_next_assignment'),
 		sourceId: record(assignment.explanation).sourceId as string | null | undefined ?? assignment.synthesisKey ?? assignment.id,
