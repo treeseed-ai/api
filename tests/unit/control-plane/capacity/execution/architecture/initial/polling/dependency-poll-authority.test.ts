@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { providerPrincipal } from '../../../../../../../../src/api/control-plane/repositories/providers/provider-runtime-service.ts';
 import { leaseNextProviderAssignment, normalizeProviderAssignmentLeaseSeconds } from '../../../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-lease-service.ts';
 
@@ -21,15 +21,14 @@ describe('provider poll input authority', () => {
 		const principal={teamId:'team',membershipId:'membership',capacityProviderId:'provider'}, request={providerSessionId:'session',leaseSeconds:30};
 		const inputs=structuredClone({session,principal,request}); let writes=0,syntheses=0;
 		const store:Parameters<typeof leaseNextProviderAssignment>[0]={ensureInitialized:async()=>undefined,
-			first:async <T extends Record<string,unknown>>(sql:string):Promise<T|null>=>{
-				const value=sql.includes('provider.id AS provider_id')?{provider_id:'provider',provider_status:'active'}:
-					sql.includes('capacity_provider_availability_sessions')?session:null;
-				return value as T|null;
-			},all:async()=>[],run:async()=>{writes++;},batch:async()=>{writes++;return [];},
+			first:async()=>null,all:async()=>[],run:async()=>{writes++;},batch:async()=>{writes++;return [];},
 			recordProviderAssignmentExplanation:async()=>{writes++;return null;},
 			synthesizeProviderAssignments:async()=>{syntheses++;expect(Date.now()).toBeLessThan(expiry);
 				while(Date.now()<expiry)await new Promise<void>(resolve=>setTimeout(resolve,expiry-Date.now()));return {};}};
+		const reads=vi.spyOn(store,'first').mockImplementation(async(sql:string)=>sql.includes('provider.id AS provider_id')
+			?{provider_id:'provider',provider_status:'active'}:sql.includes('capacity_provider_availability_sessions')?session:null);
 		await expect(leaseNextProviderAssignment(store,principal,request)).rejects.toMatchObject({code:'provider_synthesis_window_expired',status:409});
 		expect(syntheses).toBe(1);expect(writes).toBe(0);expect({session,principal,request}).toEqual(inputs);
+		reads.mockRestore();
 	});
 });
