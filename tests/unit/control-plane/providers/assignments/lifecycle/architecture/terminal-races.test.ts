@@ -46,9 +46,9 @@ describe('terminal races preserve one immutable attempt and prior measured truth
 		const outcomes: boolean[] = [];
 		for (const patch of [{ assignmentId: 'foreign' }, { id: ' moved ' }, { status: 'completed' }, { status: 'blocked' },
 			{ completedAt: '2026-10-02T20:59:59.000Z' }, { completedAt: '2026-10-02T21:00:02.001Z' },
-			{ usage: { elapsedSeconds: '2' } }, { timingAwareness: {} }]) {
+			{ usage: { elapsedSeconds: '2' } }, { timingAwareness: {} }, null, undefined]) {
 			const f = await completionFixture(false); try {
-				const input = { ...failure, output: { assignmentResult: { ...f.result, status: 'failed', references: [], verification: [], ...patch } } };
+				const input = { ...failure, output: { assignmentResult: patch == null ? patch : { ...f.result, status: 'failed', references: [], verification: [], ...patch } } };
 				const held = structuredClone(input), before = await f.snapshot(), finance = await financialTruth(f), graph = (await f.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows;
 				const denied = await f.service.fail(principal, f.attempt.id, input).then(() => false, () => true);
 				outcomes.push(denied && JSON.stringify(await f.snapshot()) === JSON.stringify(before)
@@ -57,7 +57,7 @@ describe('terminal races preserve one immutable attempt and prior measured truth
 				expect(input).toEqual(held);
 			} finally { await f.close(); }
 		}
-		expect(outcomes).toEqual(Array(8).fill(true));
+		expect(outcomes).toEqual(Array(10).fill(true));
 	});
 	it('native failed result interruption rolls back settlement and retries the same original result without deleting failure history', async () => {
 		const f = await completionFixture(false); try {
