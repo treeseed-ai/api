@@ -8,7 +8,10 @@ type Fixture = Awaited<ReturnType<typeof dependencyRegistration>>;
 async function registered(f: Fixture) {
 	expect((await f.evaluate()).eligible).toBe(true); const response = await f.register(); expect(response.status).toBe(200); const value: unknown = await response.json();
 	if (!value || typeof value !== 'object' || !('data' in value)) throw new Error('Original public registration data missing');
-	return CONTROL_PLANE_OPERATIONS.providers.register.schema.output.parse(value.data);
+	const registration = CONTROL_PLANE_OPERATIONS.providers.register.schema.output.parse(value.data);
+	if (typeof registration.id !== 'string' || !registration.id || typeof registration.teamId !== 'string' || !registration.teamId
+		|| typeof registration.providerId !== 'string' || !registration.providerId) throw new Error('Exact public registration identity required');
+	return { ...registration, id: registration.id, teamId: registration.teamId, providerId: registration.providerId };
 }
 function within(f: Fixture) { expect(Date.now()).toBeLessThanOrEqual(Date.parse(f.attempt.deadline)); }
 

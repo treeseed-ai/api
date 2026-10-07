@@ -13,7 +13,8 @@ export function longpollGuard(prohibitWork = false, subscriptionReady?: Promise<
 	const store: ProviderAssignmentStore = { ensureInitialized: async () => undefined,
 		first: async () => { reads++; if (prohibitWork) throw new Error('Unexpected unit longpoll read'); return null; },
 		all: async () => { reads++; if (prohibitWork) throw new Error('Unexpected unit longpoll read'); return []; },
-		run: unexpectedWrite, batch: unexpectedWrite,
+		run: unexpectedWrite, batch: unexpectedWrite, updateCapacityWorkdayRun: unexpectedWrite,
+		createCapacityWorkdayRun: unexpectedWrite, tickCapacityWorkdayRun: unexpectedWrite,
 		leaseNextProviderAssignment: async (_principal, body) => { leases++; inputs.push(structuredClone(body)); if (prohibitWork) throw new Error('Unexpected unit longpoll lease'); return { assignment: null, leaseToken: null, leaseSeconds: 30 }; },
 		getProviderAssignment: async () => null, renewProviderAssignmentLease: async () => null,
 		returnProviderAssignment: async () => null, completeProviderAssignment: async () => null, failProviderAssignment: async () => null };
@@ -38,10 +39,11 @@ export async function dependencyLongpoll(subscriptionReady?: Promise<void>) {
 		let polls = 0, completedPolls = 0;
 		const original = f.store.leaseNextProviderAssignment.bind(f.store);
 		let lastResult: Awaited<ReturnType<typeof original>> | undefined;
-		const pollInputs: Record<string, unknown>[] = [];
+		const pollInputs: NonNullable<Parameters<typeof original>[1]>[] = [];
 		// Narrow delegated observation ONLY. Original SQL/synthesis/recovery/CAS and
 		// serializer still determine every result; no alternative leasing operation.
 		f.store.leaseNextProviderAssignment = async (principal, body) => {
+			assert.ok(body, 'Original observed provider poll request required');
 			polls++; pollInputs.push(structuredClone(body)); try { lastResult = await original(principal, body); return lastResult; } finally { completedPolls++; }
 		};
 		const remaining = Date.parse(f.attempt.deadline) - Date.now(); assert.ok(remaining > 0);
@@ -51,7 +53,8 @@ export async function dependencyLongpoll(subscriptionReady?: Promise<void>) {
 		const controller = new AbortController();
 		let pending: Promise<Response> | undefined;
 		let owningPending: ReturnType<typeof f.service.next> | undefined;
-		const start = (requestBody: Record<string, unknown> = body) => { assert.equal(pending, undefined); pending = f.request(requestBody, { token: f.token, signal: controller.signal }); return pending; };
+		const start = (requestBody: Record<string, unknown> = body) => { assert.equal(pending, undefined);
+			const started = Promise.resolve(f.request(requestBody, { token: f.token, signal: controller.signal })); pending = started; return started; };
 		// SAME original service and genuinely authenticated principal. This bypasses
 		// HTTP serialization deliberately: the owning boundary receives this exact
 		// mutable caller object, not a JSON copy or a replacement poll operation.

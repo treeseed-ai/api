@@ -43,7 +43,8 @@ describe('exact assignment source pins', () => {
     { status: 403, headers: {}, code: 'assignment_source_access_denied', retryable: false },
   ])('preserves HTTP $status diagnostics and existing retry classification without reflecting response bodies', async ({ status, headers, code, retryable }) => {
     try {
-      await resolveAuthorizedSourceCommit(repository, undefined, async () => new Response('private-provider-body', { status, headers }));
+      const suppliedHeaders = Object.fromEntries(Object.entries(headers).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+      await resolveAuthorizedSourceCommit(repository, undefined, async () => new Response('private-provider-body', { status, headers: suppliedHeaders }));
       throw new Error('expected source failure');
     } catch (error) {
       expect(error).toMatchObject({ code });

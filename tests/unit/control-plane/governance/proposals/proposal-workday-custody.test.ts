@@ -22,7 +22,7 @@ function fixture(mode = 'simulation') {
 		appliedPlan: { state: 'active', endsAt: '2099-01-01T00:00:00.000Z' }, scheduledProjectIds: ['project-1'], proposalIds: ['proposal-1'],
 	} };
 	vi.spyOn(CapacityWorkdayRunRepository.prototype, 'get').mockResolvedValue(run as never);
-	const client = { createWorkspace: vi.fn(async () => ({ workspaceId: 'workspace-1', baseCommitSha: base })),
+	const client = { createWorkspace: vi.fn(async (_request: { branchName?: string; baseRef?: string }) => ({ workspaceId: 'workspace-1', baseCommitSha: base })),
 		readRepositoryFiles: vi.fn(async () => ({ resolvedRef: base, files: [{ path: '.treeseed/governance/proposal-types/implementation.yaml', content: JSON.stringify({
 			schemaVersion: 'treeseed.proposal-type/v1', id: 'implementation', label: 'Implementation', description: 'Bounded change.',
 		}) }] })), readRepositoryFile: vi.fn(async () => ({ resolvedRef: base, file: { content: 'before' } })),
@@ -60,7 +60,9 @@ describe('workday-scoped proposal authoring', () => {
 			return { workspaceId: 'workspace-1', baseCommitSha: base };
 		});
 		await expect(commitProposalVersionContent(input)).resolves.toMatchObject({ update: { contentProvenance: { commitSha: 'b'.repeat(40) } } });
-		expect(client.createWorkspace.mock.calls[0]?.[0].branchName).not.toBe('refs/heads/workday-1');
+		const request = client.createWorkspace.mock.calls[0]?.[0];
+		expect(request).toBeDefined(); if (!request) throw new Error('Original workspace request required');
+		expect(request.branchName).not.toBe('refs/heads/workday-1');
 	});
 	it('starts a later estimate version from its exact prior proposal commit on the same simulation branch', async () => {
 		const { input, client } = fixture();
@@ -68,8 +70,11 @@ describe('workday-scoped proposal authoring', () => {
 		const first = await commitProposalVersionContent(input);
 		const second = await commitProposalVersionContent(input);
 		expect(client.createWorkspace).toHaveBeenCalledTimes(2);
-		expect(client.createWorkspace.mock.calls[0]?.[0].branchName).toBe(client.createWorkspace.mock.calls[1]?.[0].branchName);
-		expect(client.createWorkspace.mock.calls[1]?.[0].baseRef).toBe('b'.repeat(40));
+		const firstRequest = client.createWorkspace.mock.calls[0]?.[0], secondRequest = client.createWorkspace.mock.calls[1]?.[0];
+		expect(firstRequest).toBeDefined(); expect(secondRequest).toBeDefined();
+		if (!firstRequest || !secondRequest) throw new Error('Both original workspace requests required');
+		expect(firstRequest.branchName).toBe(secondRequest.branchName);
+		expect(secondRequest.baseRef).toBe('b'.repeat(40));
 		expect(first.update.contentProvenance.commitSha).toBe(second.update.contentProvenance.commitSha);
 	});
 	it.each(['missing', 'terminal', 'project', 'proposal', 'expired'])('rejects %s workday scope before issuing a workspace', async invalid => {

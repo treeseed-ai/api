@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { GraphRevision } from '@treeseed/sdk/agent-capacity';
 import { graphProjection, livingGraphDatabase } from './living-graph-fixture.ts';
 import { createExecutionGraphService } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 
@@ -37,7 +38,7 @@ describe('native owning graph watch complete pagination', () => {
 			for (const cursor of ['0', '100', '101']) {
 				const page = await f.service.watch(f.principal, 'team', { cursor }); all.push(...page.items);
 				expect(page.items).toHaveLength(cursor === '0' ? 100 : cursor === '100' ? 1 : 0);
-				expect(page.nextCursor).toBe(cursor === '0' ? '100' : '101'); expect(page.items.every(item => item.teamId === 'team')).toBe(true);
+				expect(page.nextCursor).toBe(cursor === '0' ? '100' : '101'); expect(page.items.every((item: GraphRevision) => item.teamId === 'team')).toBe(true);
 			}
 			expect(all.map(record => record.revision)).toEqual(Array.from({ length: 101 }, (_, index) => index + 1));
 			await Promise.all([f.service.watch(f.principal, 'team', { cursor: '100' }), f.service.watch(f.principal, 'team', { cursor: '100' })]);
@@ -47,7 +48,9 @@ describe('native owning graph watch complete pagination', () => {
 	it('denies absent principal and malformed watch cursors rather than silently restarting from old history', async () => {
 		const f = await history(); try {
 			const before = await f.snapshot(), outcomes = [];
-			outcomes.push(await f.service.watch(null, 'team', { cursor: '0' }).then(() => 'admitted', () => 'denied'));
+			const absent: { principal: Parameters<typeof f.service.watch>[0] } = { principal: undefined };
+			Object.assign(absent, { principal: null });
+			outcomes.push(await f.service.watch(absent.principal, 'team', { cursor: '0' }).then(() => 'admitted', () => 'denied'));
 			const invalid = ['-1', 'NaN', '1.5', '1garbage', '', ' ', '1e2', '0x10', '9007199254740992'];
 			for (const cursor of invalid) {
 				const query = { cursor }, retained = structuredClone(query);

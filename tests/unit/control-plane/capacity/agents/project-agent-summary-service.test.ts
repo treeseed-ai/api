@@ -6,7 +6,7 @@ describe('project agent health summary', () => {
 		const store = {
 			getProjectDetails: vi.fn(async () => ({ id: 'project', teamId: 'team' })),
 			listApprovalRequestsForProject: vi.fn(async () => []),
-			all: vi.fn(async () => [{ id: 'run', status: 'running', summary: { completedAssignments: 2 }, createdAt: '2026-09-20T00:00:00Z' }]),
+			all: vi.fn(async (_query: string, _values?: unknown[]) => [{ id: 'run', status: 'running', summary: { completedAssignments: 2 }, createdAt: '2026-09-20T00:00:00Z' }]),
 			listProviderAssignmentsPage: vi.fn(async () => ({ items: [
 				{ id: 'active', agentId: 'engineer', status: 'running' },
 				{ id: 'failed', agentId: 'tester', status: 'failed' },

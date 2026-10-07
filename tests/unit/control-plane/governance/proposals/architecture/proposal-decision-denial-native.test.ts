@@ -62,7 +62,7 @@ describe('native proposal Decision authority', () => {
 		const store = new ControlPlaneStore(fixture.store.config, { prepare: (sql: string) => ({ bind: (...parameters: unknown[]) => ({
 			first: async () => (await fixture.query(sql, parameters)).rows[0] ?? null,
 			all: async () => ({ results: (await fixture.query(sql, parameters)).rows }),
-			run: async () => { writes.push(sql); return fixture.query(sql, parameters); },
+			run: async () => { writes.push(sql); const result = await fixture.query(sql, parameters); return { success: true as const, results: result.rows, meta: { changes: result.affectedRows ?? result.rows.length } }; },
 		}) }) });
 		store.initializationPromise = Promise.resolve();
 		try {
@@ -87,7 +87,7 @@ describe('native proposal Decision authority', () => {
 				prepare: (sql: string) => ({ bind: (...parameters: unknown[]) => ({
 					first: async () => (await fixture.query(sql, parameters)).rows[0] ?? null,
 					all: async () => ({ results: (await fixture.query(sql, parameters)).rows }),
-					run: async () => { writes.push(sql); return fixture.query(sql, parameters); },
+					run: async () => { writes.push(sql); const result = await fixture.query(sql, parameters); return { success: true as const, results: result.rows, meta: { changes: result.affectedRows ?? result.rows.length } }; },
 				}) }),
 				batch: async () => { writes.push('batch'); throw new Error('Denied evaluation must not write a batch'); },
 			} satisfies ControlPlaneStore['db']);
@@ -137,8 +137,8 @@ describe('native proposal Decision authority', () => {
 		const store = new ControlPlaneStore(fixture.store.config, {
 			prepare: (sql: string) => ({ bind: (...parameters: unknown[]) => ({
 				first: async () => (await fixture.query(sql, parameters)).rows[0] ?? null,
-				all: async () => (await fixture.query(sql, parameters)).rows,
-				run: async () => { writes.push(sql); return fixture.query(sql, parameters); },
+				all: async () => ({ results: (await fixture.query(sql, parameters)).rows }),
+				run: async () => { writes.push(sql); const result = await fixture.query(sql, parameters); return { success: true as const, results: result.rows, meta: { changes: result.affectedRows ?? result.rows.length } }; },
 			}) }),
 			batch: async () => { writes.push('batch'); throw new Error('Unexpected replay batch'); },
 		});

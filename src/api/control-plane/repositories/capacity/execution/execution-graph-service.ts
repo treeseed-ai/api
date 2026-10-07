@@ -4,7 +4,7 @@ import { graphRevisionSchema, validateExecutionGraph, validateAgentDefinitionMod
 	type AgentDefinition, type ExecutionEdge, type ExecutionNode, type GraphRevision } from '@treeseed/sdk/agent-capacity';
 import { projectTeamExecutionGraph } from '../../../../capacity/policy/execution/execution-graph-projector.ts';
 import { projectActiveWorkdays } from '../../../../capacity/policy/execution/workday-execution-projector.ts';
-import { projectCommunicationInvocations } from '../../../../capacity/policy/execution/communication-execution-projector.ts';
+import { projectCommunicationInvocations, type CommunicationProjectionSource } from '../../../../capacity/policy/execution/communication-execution-projector.ts';
 import { loadTeamExecutableProposalSources } from '../../../../capacity/services/capacity/execution/executable-proposal-source.ts';
 import { loadTeamExactDependencyLinks } from '../../../../capacity/services/capacity/execution/exact-dependency-links.ts';
 import { readExactProposal } from '../../../../governance/executable-proposal.ts';
@@ -146,7 +146,7 @@ async function loadActiveWorkdays(store: any, teamId: string) {
 	}));
 }
 
-export async function loadCommunicationInvocations(store: any, teamId: string) {
+export async function loadCommunicationInvocations(store: { all(query: string, params?: unknown[]): Promise<Row[]> }, teamId: string): Promise<CommunicationProjectionSource[]> {
 	const rows = await store.all(`SELECT invocation.id,invocation.team_id,invocation.project_id,invocation.agent_id,
 		invocation.execution_id,invocation.metadata_json,invocation.content_refs_json,library.repository_id
 		FROM agent_invocation_requests invocation

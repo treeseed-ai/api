@@ -28,8 +28,8 @@ describe('provider accounting in disposable PostgreSQL', () => {
         VALUES ('membership','team','provider',$1,'controlled-operator',$1,$1)`, [original.now]);
       const store = { db: f.left, ensureInitialized: () => f.left.migrate(),
         run: async (sql: string, params: unknown[] = []) => { await f.left.prepare(sql).bind(...params).run(); },
-        first: (sql: string, params: unknown[] = []) => f.left.prepare(sql).bind(...params).first(),
-        all: async (sql: string, params: unknown[] = []) => (await f.left.prepare(sql).bind(...params).all()).results,
+        first: <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => f.left.prepare(sql).bind(...params).first<T>(),
+        all: async <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => (await f.left.prepare(sql).bind(...params).all<T>()).results,
         batch: (operations: Array<{ query: string; params?: unknown[] }>) => f.left.batch(operations) };
       const principal = { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider' };
       const input = { adapters: [{ id: adapter.id, runtimeBuild: adapter.runtimeBuild, offers: adapter.offers,
@@ -175,7 +175,7 @@ describe('provider accounting in disposable PostgreSQL', () => {
     let entered = () => {};
     const firstEntered = new Promise<void>(resolve => { entered = resolve; });
     const original = AvailabilitySessionRepository.prototype.open;
-    const spy = vi.spyOn(AvailabilitySessionRepository.prototype, 'open').mockImplementation(async function(write, operations) {
+    const spy = vi.spyOn(AvailabilitySessionRepository.prototype, 'open').mockImplementation(async function(this: AvailabilitySessionRepository, write, operations) {
       if (write.membershipId === 'membership-first') { entered(); await released; }
       return original.call(this, write, operations);
     });
@@ -194,8 +194,8 @@ describe('provider accounting in disposable PostgreSQL', () => {
       }
       const store = { db, ensureInitialized: () => db.migrate(),
         run: async (sql: string, params: unknown[] = []) => { await db.prepare(sql).bind(...params).run(); },
-        first: (sql: string, params: unknown[] = []) => db.prepare(sql).bind(...params).first(),
-        all: async (sql: string, params: unknown[] = []) => (await db.prepare(sql).bind(...params).all()).results,
+        first: <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => db.prepare(sql).bind(...params).first<T>(),
+        all: async <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => (await db.prepare(sql).bind(...params).all<T>()).results,
         batch: (operations: Array<{ query: string; params?: unknown[] }>) => db.batch(operations) };
       const service = new AvailabilitySessionService(store);
       const input = (activeSeconds: number) => {
@@ -252,8 +252,8 @@ describe('native provider restart accounting authority', () => {
       }
       const store = { db, ensureInitialized: () => db.migrate(),
         run: async (sql: string, params: unknown[] = []) => { await db.prepare(sql).bind(...params).run(); },
-        first: (sql: string, params: unknown[] = []) => db.prepare(sql).bind(...params).first(),
-        all: async (sql: string, params: unknown[] = []) => (await db.prepare(sql).bind(...params).all()).results,
+        first: <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => db.prepare(sql).bind(...params).first<T>(),
+        all: async <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => (await db.prepare(sql).bind(...params).all<T>()).results,
         batch: (operations: Array<{ query: string; params?: unknown[] }>) => db.batch(operations) };
       const principal = (team: string) => ({ teamId: team, membershipId: `membership-${team}`, capacityProviderId: 'provider' });
       const input = (activeSeconds: number, id = 'configured-runtime') => {

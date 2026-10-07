@@ -32,7 +32,7 @@ describe('workday stop when graph reconciliation fails', () => {
 				run = { ...run, ...input } as typeof run;
 				return run;
 			}),
-			terminalizeCapacityWorkdayAssignments: vi.fn(async () => ({ assignmentCount: 2, completedAssignments: 1,
+			terminalizeCapacityWorkdayAssignments: vi.fn(async (_teamId: string, _runId: string, _input: Record<string, unknown>) => ({ assignmentCount: 2, completedAssignments: 1,
 				failedAssignments: 1, unfinishedAssignmentCount: 0, deferredActiveAssignmentCount: 0,
 				settlementErrors: [], settlementErrorCount: 0, settlementErrorsTruncated: false })),
 		};

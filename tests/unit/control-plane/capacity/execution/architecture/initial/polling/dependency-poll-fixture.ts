@@ -11,7 +11,7 @@ export async function dependencyPoll() {
 	try {
 		class Statement {
 			constructor(readonly sql: string, readonly params: unknown[]) {}
-			async run() { const result = await f.query(this.sql, this.params); return { success: true, meta: { changes: result.affectedRows ?? result.rows.length } }; }
+			async run() { const result = await f.query(this.sql, this.params); return { success: true as const, results: result.rows, meta: { changes: result.affectedRows ?? result.rows.length } }; }
 			async first() { return (await f.query(this.sql, this.params)).rows[0] ?? null; }
 			async all() { return { results: (await f.query(this.sql, this.params)).rows }; }
 		}

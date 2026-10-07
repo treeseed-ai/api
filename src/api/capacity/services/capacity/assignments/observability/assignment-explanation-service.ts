@@ -1,5 +1,6 @@
 import type { ProviderAssignment,ProviderAssignmentExplanation } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
+import { CapacityGovernanceError } from '../../../../database.ts';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -92,6 +93,23 @@ export async function recordProviderAssignmentExplanation(
 	if (!assignment) return null;
 	const timestamp = new Date().toISOString();
 	const explanation = buildProviderAssignmentExplanation(assignment, teamId, input, timestamp);
+	if (input.source === 'lease_next_assignment') {
+		const sessionId = record(record(input.metadata).leaseAttempt).sessionId;
+		// Use the original availability row at the UPDATE boundary, not a clock
+		// captured before the asynchronous assignment read. No credential is copied.
+		const updated = await repository.first(`UPDATE capacity_provider_assignments
+			SET explanation_json = ?, updated_at = ? WHERE id = ? AND team_id = ?
+			AND EXISTS (SELECT 1 FROM capacity_provider_availability_sessions session
+				WHERE session.id=? AND session.team_id=capacity_provider_assignments.team_id
+				AND session.membership_id=capacity_provider_assignments.membership_id
+				AND session.capacity_provider_id=capacity_provider_assignments.capacity_provider_id
+				AND session.status='open' AND session.closed_at IS NULL
+				AND COALESCE(session.available_until,session.expires_at)::timestamptz > clock_timestamp())
+			RETURNING id`, [JSON.stringify(explanation), timestamp, assignmentId, teamId, sessionId]);
+		if (!updated) throw new CapacityGovernanceError('provider_synthesis_window_expired',
+			'Original provider availability no longer authorizes this explanation.', 409);
+		return explanation;
+	}
 	await repository.run(
 		`UPDATE capacity_provider_assignments
 		 SET explanation_json = ?, updated_at = ?

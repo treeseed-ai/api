@@ -145,7 +145,7 @@ describe('real public provider poll HTTP and original SQL custody', () => {
 		try {
 			expect((await f.request()).status).toBe(200); const custody = await f.custody();
 			const remaining = Date.parse(f.attempt.deadline) - Date.now(); expect(remaining).toBeGreaterThan(0);
-			pending = f.request({ ...f.requestBody, waitSeconds: remaining / 1000 }, { signal: controller.signal });
+			pending = Promise.resolve(f.request({ ...f.requestBody, waitSeconds: remaining / 1000 }, { signal: controller.signal }));
 			await Promise.race([f.subscription, new Promise<never>((_resolve, reject) => {
 				timer = setTimeout(() => reject(new Error('Original authority elapsed before public longpoll subscription')), remaining);
 			})]);

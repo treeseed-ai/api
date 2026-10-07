@@ -27,8 +27,8 @@ describe('provider progress durable PostgreSQL custody', () => {
 			const service = new CapacityWorkdayEventService({
 				ensureInitialized: () => database.migrate(),
 				run: async (sql: string, params: unknown[] = []) => { await database.prepare(sql).bind(...params).run(); },
-				first: (sql: string, params: unknown[] = []) => database.prepare(sql).bind(...params).first(),
-				all: async (sql: string, params: unknown[] = []) => (await database.prepare(sql).bind(...params).all()).results,
+				first: <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => database.prepare(sql).bind(...params).first<T>(),
+				all: async <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => (await database.prepare(sql).bind(...params).all<T>()).results,
 				batch: (operations: Array<{ query: string; params?: unknown[] }>) => database.batch(operations),
 			});
 			const values = ['provider.execution.preparing', 'provider.sandbox.created', 'provider.execution.progress', 'provider.execution.progress']

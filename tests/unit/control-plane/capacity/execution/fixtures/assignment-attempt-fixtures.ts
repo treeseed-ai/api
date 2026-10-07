@@ -1,4 +1,4 @@
-import { DEFAULT_WORKDAY_POLICY, allocateWorkdayCapacity, compileWorkday, effectiveActivityProfileSchema, exactEntityReferenceSchema, executionNodeSchema } from '@treeseed/sdk/agent-capacity';
+import { DEFAULT_WORKDAY_POLICY, allocateWorkdayCapacity, appliedWorkdaySchema, compileWorkday, effectiveActivityProfileSchema, exactEntityReferenceSchema, executionNodeSchema, type AssignmentResult } from '@treeseed/sdk/agent-capacity';
 import { capabilityOfferDigest, capabilityOfferSchema, CORE_CAPABILITY_DEFINITIONS, type CapabilityOffer } from '@treeseed/sdk/capacity-provider';
 import type { buildAssignmentAttempt } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import { serializeCapacityWorkdayRunRow } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
@@ -12,14 +12,14 @@ export const permissions = { content: { read: ['proposal'] as const, write: [] }
 export const executionCapability = 'treeseed.engineering.code-change';
 export const conversationCapability = 'treeseed.coordination.conversation';
 export const candidate = {
-	graphRevision: 4, projectAgentClassId: 'class-engineer', projectContentRepositoryId: 'library', contextRefs: [gitRef], predecessorResults: [],
-	sourceRepositories: [],
-	effectiveProfile: {
+	graphRevision: 4, projectAgentClassId: 'class-engineer', projectContentRepositoryId: 'library', contextRefs: [exactEntityReferenceSchema.parse(gitRef)], predecessorResults: new Array<AssignmentResult>(),
+	sourceRepositories: new Array<string>(), readyAt: '2026-09-13T12:00:00.000Z',
+	effectiveProfile: effectiveActivityProfileSchema.parse({
 		handler: 'actor', prompt: { system: 'Implement the accepted work and verify the exact result.' },
 		profileRef: { store: 'treedx', model: 'agent', id: 'agent:engineer', revision: 1, digest: `sha256:${'d'.repeat(64)}` },
 		activity: 'acting', handlerOrigin: 'agent-package', permissionCeiling: permissions,
-	},
-	node: {
+	}),
+	node: (() => { const node = executionNodeSchema.parse({
 		schemaVersion: 'treeseed.execution-node/v1', id: 'node', teamId: 'team', projectId: 'project',
 		workItemId: 'implementation', kind: 'acting', pairRole: 'actor', sourceRef,
 		authorityRefs: [{ store: 'postgresql', model: 'decision', id: 'decision', revision: 1, digest: `sha256:${'e'.repeat(64)}` }],
@@ -28,8 +28,9 @@ export const candidate = {
 		requiredCapabilities: [executionCapability], requestedPermissions: permissions, workspace: 'git',
 		acceptanceCriteria: ['Tests pass.'], maximumReviewCycles: 2,
 		graphRevisionCreated: 1, graphRevisionUpdated: 4,
-	},
-};
+	}); if (!node.estimate || !node.requestedPermissions) throw new Error('Complete supplied node estimate and permissions required');
+	return { ...node, estimate: node.estimate, requestedPermissions: node.requestedPermissions }; })(),
+} satisfies Parameters<typeof buildAssignmentAttempt>[0]['candidate'];
 export const provider = {
 	id: 'codex', runtimeBuild: `sha256:${'f'.repeat(64)}`, status: 'available',
 	capabilities: [executionCapability], availableConcurrency: 1, maxConcurrentRunners: 1,
@@ -41,7 +42,7 @@ export const provider = {
 		maxConcurrentRunners: 1, reservedConcurrentWorkers: 0, borrowWhenIdle: true, lendWhenIdle: true, queueLimit: 10 }],
 	offers: [suppliedCapabilityOffer('2026-09-13T12:00:00.000Z', executionCapability, 'codex-offer')],
 };
-export const run = { id: 'workday', executionMode: 'simulation', parameters: { appliedPlan: {
+const suppliedRun = { id: 'workday', executionMode: 'simulation', parameters: { appliedPlan: {
 	schemaVersion: 'treeseed.workday/v1', id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
 	executionMode: 'simulation',
 	policySnapshot: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 3600, maximumConcurrency: 1, planningTurnMaximumSeconds: 60,
@@ -50,7 +51,16 @@ export const run = { id: 'workday', executionMode: 'simulation', parameters: { a
 	planningRounds: [{ round: 1, state: 'complete', assignmentIds: ['planning:1:project/engineer'] },
 		{ round: 2, state: 'complete', assignmentIds: ['planning:2:project/engineer'] }],
 	admittedSecondsByProject: {}, admittedSecondsByAgentClass: {}, activatedAt: '2026-09-13T12:00:00.000Z',
-} } } as never;
+} } };
+export const run = (() => {
+const owner = serializeCapacityWorkdayRunRow({ id: suppliedRun.id, team_id: 'team', scenario_id: 'assignment-builder-input',
+	status: 'running', environment: 'local', execution_kind: 'workday', trigger_kind: 'manual', execution_mode: suppliedRun.executionMode,
+	created_at: '2026-09-13T12:00:00.000Z', updated_at: '2026-09-13T12:00:00.000Z', started_at: '2026-09-13T12:00:00.000Z',
+	parameters_json: JSON.stringify(suppliedRun.parameters), summary_json: '{}', metrics_json: '{}', expected_json: '{}',
+	actual_json: '{}', report_refs_json: '{}', error_json: '{}' });
+if (!owner) throw new Error('Original serialized assignment-builder Workday input required');
+return { ...owner, parameters: { ...owner.parameters, appliedPlan: appliedWorkdaySchema.parse(owner.parameters.appliedPlan) } };
+})();
 
 /** Complete supplied qualification input, not native attestation or suite proof. */
 export function suppliedCapabilityOffer(now: string, capabilityId: string, offerId: string): CapabilityOffer {

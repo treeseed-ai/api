@@ -72,7 +72,11 @@ describe('accepted proposal decision recovery', () => {
 		const row = { ...baseRow, status: 'creating', created_at: '2026-10-04T00:00:00.000Z',
 			decision_record_json: JSON.stringify({ proposalRef, decisionDependencies: [], rationale: 'Original governed approval.' }) };
 		const proposal = serializeGovernanceProposal({ id: 'proposal', team_id: 'team', project_id: 'project', status: 'accepted', active_version: 2,
-			active_content_hash: digest, metadata_json: '{}', closed_reason: 'admin_approved' });
+			active_content_hash: digest, metadata_json: '{}', closed_reason: 'admin_approved', scope: 'project',
+			title: 'Controlled UNIT proposal', summary: '', body: '', proposal_type: 'implementation', proposal_types_json: '["implementation"]',
+			content_proposal_slug: null, content_decision_slug: null, governance_provider_id: 'default', governance_provider_version: '1',
+			governance_policy_id: null, decision_id: null, voting_starts_at: null, voting_ends_at: null, closed_at: null,
+			created_by_type: 'user', created_by_id: 'operator', created_at: row.created_at, updated_at: row.created_at });
 		const writes: string[] = [], batches: Array<Array<{ sql: string; params: unknown[] }>> = [], interruption = new Error('controlled atomic Decision interruption');
 		const store = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, {
 			prepare: (sql: string) => ({ bind: (...params: unknown[]) => ({ sql, params,

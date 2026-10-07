@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import assert from 'node:assert/strict';
 import { ControlPlaneStore, serializeGovernanceProposal } from '../../../../../src/api/persistence/store.ts';
 import * as executableProposal from '../../../../../src/api/governance/executable-proposal.ts';
 const proposalRef = { store: 'treedx' as const, model: 'proposal', id: 'proposal', revision: 1,
@@ -29,7 +30,12 @@ describe('draft proposal graph readiness', () => {
 	it('accepts the same reviewed draft version as decision authority', async () => {
 		// Supplied UNIT rows/readbacks, not native governance or SQL proof.
 		const proposal = serializeGovernanceProposal({ id: 'proposal', team_id: 'team', project_id: 'project', status: 'accepted',
-			active_version: 1, active_content_hash: 'a'.repeat(64), metadata_json: '{}', governance_provider_id: 'default' });
+			active_version: 1, active_content_hash: 'a'.repeat(64), metadata_json: '{}', governance_provider_id: 'default',
+			scope: 'project', title: 'Controlled UNIT proposal', summary: '', body: '', proposal_type: 'implementation',
+			proposal_types_json: '["implementation"]', content_proposal_slug: null, content_decision_slug: null, governance_provider_version: '1',
+			governance_policy_id: null, decision_id: null, voting_starts_at: null, voting_ends_at: null, closed_at: null, closed_reason: null,
+			created_by_type: 'user', created_by_id: 'author', created_at: '2026-10-04T00:00:00.000Z', updated_at: '2026-10-04T00:00:00.000Z' });
+		assert.ok(proposal, 'Original serialized UNIT proposal required');
 		const row: Record<string, unknown> = { id: 'decision', team_id: 'team', project_id: 'project', proposal_id: 'proposal',
 			proposal_version: 1, proposal_content_hash: 'a'.repeat(64), status: 'creating', superseded_at: null,
 			created_at: '2026-10-04T00:00:00.000Z', proposal_status: 'accepted', active_version: 1, active_content_hash: 'a'.repeat(64),
@@ -42,6 +48,7 @@ describe('draft proposal graph readiness', () => {
 		const run = vi.spyOn(store, 'run').mockImplementation(async (sql, params) => {
 			expect(sql).toContain('INSERT INTO governance_decisions');
 			row.id = params![0]; reserved = true;
+			return { success: true, results: [], meta: { changes: 1 } };
 		});
 		const first = vi.spyOn(store, 'first').mockImplementation(async <T extends Record<string, unknown>>() => reserved ? structuredClone(row) as T : null);
 		const getProposal = vi.spyOn(store, 'getGovernanceProposal').mockResolvedValue(proposal);

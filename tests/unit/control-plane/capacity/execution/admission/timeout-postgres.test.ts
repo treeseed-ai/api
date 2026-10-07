@@ -6,7 +6,6 @@ import { ControlPlaneStore } from '../../../../../../src/api/persistence/store.t
 import { createCapacityControlPlane } from '../../../../../../src/api/capacity/control-plane.ts';
 import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { seedPlanningBoundary } from './fixtures/planning-boundary-postgres.ts';
-import { terminalPerformance } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/completion/assignment-terminal-performance.ts';
 import { OperatorAssignmentService } from '../../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
 import { settleCapacityReservationExactlyOnce } from '../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
 import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
@@ -98,7 +97,8 @@ describe('terminal timeout PostgreSQL custody', () => {
 			const failure = { leaseToken: 'lease', code: requested ? 'assignment_cancelled' : 'assignment_timeout', retryable: false,
 				activeSeconds, elapsedSeconds: activeSeconds + 3, usage: { inputTokens: 200, outputTokens: 30 },
 				output: { teardown: { verified: true, completedAt: now } } };
-			const report = phase ? { ...failure, performance: terminalPerformance((await repository.get('team', 'assignment'))!, failure, 'failed', now) } : failure;
+			// Report only measured provider facts. The owning lifecycle service must
+			// derive the terminal disposition and persisted performance itself.
 			expect(await store.completeProviderAssignment(principal, 'assignment', { leaseToken: 'lease' })).toBeNull();
 			expect(await store.failProviderAssignment(principal, 'assignment', { ...failure, leaseToken: 'wrong' })).toBeNull();
 			if (returned) {
@@ -111,7 +111,7 @@ describe('terminal timeout PostgreSQL custody', () => {
 				await operator.cancel('team', 'assignment', { idempotencyKey: 'phase' });
 				await operator.cancel('team', 'assignment', { idempotencyKey: 'phase-replay' });
 			} else {
-				const outcomes = await Promise.all([store.failProviderAssignment(principal, 'assignment', report), store.failProviderAssignment(principal, 'assignment', report)]);
+				const outcomes = await Promise.all([store.failProviderAssignment(principal, 'assignment', failure), store.failProviderAssignment(principal, 'assignment', failure)]);
 				expect(outcomes.filter(Boolean)).toHaveLength(1);
 			}
 			expect(await repository.get('team', 'assignment')).toMatchObject({ status: phase ? 'cancelled' : 'failed',

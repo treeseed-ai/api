@@ -132,7 +132,8 @@ export async function relationSchedulingDatabase(primarySource?: ExactEntityRefe
 		};
 		const publish = async () => {
 			const workspace = await f.create(), written = await f.write(workspace, `---\n${stringify(f.note)}---\n\nReviewed precursor governs dependent work.\n`);
-			const submitted = await f.submit(written.workspace), result = await f.run(submitted.integration.operation.id);
+			const submitted = await f.submit(written.workspace); assert.ok(submitted.integration);
+			const result = await f.run(submitted.integration.operation.id);
 			assert.equal(result.ok, true, result.error?.message);
 			return { submitted, graph: await reconcile() };
 		};

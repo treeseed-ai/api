@@ -11,9 +11,14 @@ import { workdayStartDatabase } from '../../workdays/scheduling/architecture/wor
 import { upsertCapacityExecutionProviderOperations } from '../../../../../../src/api/capacity/repositories/capacity/providers/execution-provider.ts';
 import { NativeCapacityService } from '../../../../../../src/api/capacity/services/capacity/capacity-core/native-capacity-service.ts';
 import { serializeCapacityReservationRow } from '../../../../../../src/api/capacity/repositories/capacity/accounting/reservation.ts';
+import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
+import { workdayReportContext } from '../../../../../../src/api/capacity/services/capacity/assignments/admission/workday-report-context.ts';
 
 const operator = { id: 'isolated-operator', roles: ['admin'] };
 const provider = { principal: { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider', scopes: ['provider:usage:write', 'provider:assignments:write'] } };
+const reporter = assignmentAttemptSchema.parse({ ...frozenAttempt,
+	sourceRef: { store: 'postgresql', model: 'workday', id: frozenAttempt.workdayId, revision: 1, digest: `sha256:${'a'.repeat(64)}` },
+	effectiveProfile: { ...frozenAttempt.effectiveProfile, activity: 'reporting' } });
 async function fixture() {
 	const f = await settlementDatabase();
 	try {
@@ -33,6 +38,22 @@ async function fixture() {
 // SQL, with settlement first through the public provider service. Supplied
 // principals/usage are INPUTS, not authenticated HTTP or external native charges.
 describe('public all-attempt accounting record custody', () => {
+	it('native Reporter denies consumed totals when the retained original settlement moves outside team or workday scope without repairing financial history', async () => {
+		const f = await fixture(); try {
+			await f.service.settle(provider, frozenAttempt.id, { ...terminalUsage }, terminalUsage.settlementKey);
+			const original = (await f.query('SELECT * FROM capacity_ledger_entries')).rows;
+			const [context] = await workdayReportContext(f.owner, reporter);
+			for (const column of ['team_id', 'work_day_id']) {
+				await f.query(`UPDATE capacity_ledger_entries SET ${column}=? WHERE id=?`, ['foreign', original[0]!.id]);
+				const retained = await f.snapshot();
+				await expect(workdayReportContext(f.owner, reporter)).rejects.toMatchObject({ code: 'reporter_unsettled_workday', status: 409 });
+				expect(await f.snapshot()).toEqual(retained);
+				await f.query(`UPDATE capacity_ledger_entries SET ${column}=? WHERE id=?`, [original[0]![column], original[0]!.id]);
+			}
+			expect(await workdayReportContext(f.owner, reporter)).toEqual([context]);
+			expect((await f.query('SELECT * FROM capacity_ledger_entries')).rows).toEqual(original);
+		} finally { await f.db.close(); }
+	});
 	it('native budget SQL and supplied reservation readback agree despite another provider reusing the execution identity and retain failed charges', async () => {
 		const f = await workdayStartDatabase(); try {
 			await f.db.exec(readFileSync('drizzle/control-plane/0008_capability_ontology.sql', 'utf8'));
@@ -155,8 +176,15 @@ describe('public all-attempt accounting record custody', () => {
 				const attempt = { ...frozenAttempt, status }; await f.query('UPDATE capacity_provider_assignments SET status=?,assignment_attempt_json=? WHERE id=?', [status, JSON.stringify(attempt), attempt.id]);
 				await f.service.settle(provider, attempt.id, { ...terminalUsage }, terminalUsage.settlementKey);
 				const stable = await f.snapshot(), page = await f.read('capacity.ledger');
+				const ledger = (await f.query('SELECT * FROM capacity_ledger_entries')).rows;
+				expect(ledger).toHaveLength(1);
+				const stored = JSON.parse(String(ledger[0]!.metadata_json)).usageSettlement;
+				const [context] = await workdayReportContext(f.owner, reporter);
+				expect(context.value).toMatchObject({ teamId: frozenAttempt.teamId, workdayId: frozenAttempt.workdayId, settlements: [stored] });
+				expect(await workdayReportContext(f.owner, reporter)).toEqual([context]);
 				outcomes.push(page); expect(await f.snapshot()).toEqual(stable);
 				await f.service.settle(provider, attempt.id, { ...terminalUsage }, terminalUsage.settlementKey); expect(await f.read('capacity.ledger')).toEqual(page); expect(await f.snapshot()).toEqual(stable);
+				expect(await workdayReportContext(f.owner, reporter)).toEqual([context]);
 			} finally { await f.db.close(); }
 		}
 		// The supported page retains its operational ledger envelope. Its canonical
@@ -184,10 +212,12 @@ describe('public all-attempt accounting record custody', () => {
 				const supplied = JSON.stringify({ ...original, usageSettlement });
 				await f.query('UPDATE capacity_ledger_entries SET metadata_json=? WHERE id=?', [supplied, entry.id]);
 				const retained = await f.snapshot(); await expect(f.read('capacity.ledger')).rejects.toMatchObject({ code: 'capacity_ledger_entry_corrupt' });
+				await expect(workdayReportContext(f.owner, reporter)).rejects.toMatchObject({ code: 'capacity_ledger_entry_corrupt' });
 				await expect(f.service.settle(provider, frozenAttempt.id, { ...terminalUsage }, terminalUsage.settlementKey)).rejects.toMatchObject({ code: 'capacity_ledger_entry_corrupt' });
 				expect(await f.snapshot()).toEqual(retained);
 			}
 			await f.query('UPDATE capacity_ledger_entries SET metadata_json=? WHERE id=?', [entry.metadata_json, entry.id]);
+			expect((await workdayReportContext(f.owner, reporter))[0]?.value).toMatchObject({ settlements: [original.usageSettlement] });
 			expect(await f.read('capacity.ledger')).toEqual(page); expect((await f.query('SELECT * FROM capacity_ledger_entries')).rows).toEqual(rows);
 		} finally { await f.db.close(); }
 	});

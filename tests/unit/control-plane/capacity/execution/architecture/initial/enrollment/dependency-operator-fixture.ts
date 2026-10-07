@@ -77,7 +77,8 @@ export async function dependencyOperator() {
 			assert.equal(response.status, 200); assert.ok(Date.now() < Date.parse(inputs.payload.expiresAt)); assert.deepEqual({ body: inputs.body, payload: inputs.payload }, original);
 			const request = CONTROL_PLANE_OPERATIONS.providers.register.schema.output.parse(await response.json());
 			const data = z.object({ id: z.string().min(1), teamId: z.literal('team'), status: z.literal('pending'), providerId: z.string().min(1) }).parse(request.data);
-			return { credential, request: data, inputs, approvalPath: CONTROL_PLANE_OPERATIONS.providers.requests.approve.descriptor.rest.path.replace('{teamId}', 'team').replace('{requestId}', data.id) };
+			const approvalRest = CONTROL_PLANE_OPERATIONS.providers.requests.approve.descriptor.rest; assert.ok(approvalRest, 'Original approval REST binding required');
+			return { credential, request: data, inputs, approvalPath: approvalRest.path.replace('{teamId}', 'team').replace('{requestId}', data.id) };
 		};
 		const ownedDirectory = directory;
 		return { ...f, app, identity, authenticate, token, post, challenge, state, register, async close() { try { await f.close(); } finally { await rm(ownedDirectory, { recursive: true, force: true }); } } };

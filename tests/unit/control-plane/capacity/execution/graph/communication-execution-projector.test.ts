@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
-import { calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
+import { calculateAssignmentAllocation, agentDefinitionSchema } from '@treeseed/sdk/agent-capacity';
 import { projectCommunicationInvocations } from '../../../../../../src/api/capacity/policy/execution/communication-execution-projector.ts';
 import { reconcileCommunicationExecutionGraph } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 
-const definition = {
+const definition = agentDefinitionSchema.parse({
 	schemaVersion: 'treeseed.agent/v1' as const, id: 'sdk/architect', name: 'SDK Architect', agentClass: 'architect',
 	purpose: 'Explain and guide SDK architecture.', responsibilities: ['Answer bounded SDK questions.'],
 	capabilities: ['reasoning'], context: { include: ['project-objectives'] },
 	activityProfiles: { chat: { handler: 'writer', permissions: {
 		content: { read: ['discussion'], write: ['discussion'] }, tools: ['discussion'],
 	}, prompt: { system: 'Research the authorized context and answer with evidence.' } } },
-};
+});
 
 describe('communication living-graph projection', () => {
 	it('projects chat in the one team graph without validating unrelated accepted proposal content', async () => {

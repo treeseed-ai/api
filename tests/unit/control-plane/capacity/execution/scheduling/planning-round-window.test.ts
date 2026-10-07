@@ -20,7 +20,7 @@ describe('planning round admission before an authoritative boundary', () => {
 			summary: {}, metrics: {}, expected: {}, actual: {}, reportRefs: {}, error: {}, startedAt: plan.startsAt,
 			completedAt: null, createdAt: plan.startsAt, updatedAt: plan.startsAt };
 		const store = { ensureInitialized: vi.fn<CapacityGovernanceDatabase['ensureInitialized']>(),
-			all: vi.fn<CapacityGovernanceDatabase['all']>(), first: vi.fn<CapacityGovernanceDatabase['first']>(),
+			all: vi.fn(), first: vi.fn(),
 			run: vi.fn<CapacityGovernanceDatabase['run']>(), batch: vi.fn<CapacityGovernanceDatabase['batch']>(),
 			updateCapacityWorkdayRun: vi.fn<Parameters<typeof advanceLivingWorkday>[0]['updateCapacityWorkdayRun']>() };
 		for (const ordinal of [2, 3, 4, 5]) {

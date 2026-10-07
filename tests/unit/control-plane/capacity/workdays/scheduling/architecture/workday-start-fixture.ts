@@ -48,7 +48,7 @@ export async function workdayStartDatabase() {
 			let index = 0; return db.query<T>(sql.replace(/\?/gu, () => `$${++index}`), values);
 		};
 		const all = async <T extends Record<string, unknown> = Record<string, unknown>>(sql: string, values: unknown[] = []) => (await query<T>(sql, values)).rows;
-		const first = async <T extends Record<string, unknown> = Record<string, unknown>>(sql: string, values: unknown[] = []) => (await all<T>(sql, values))[0] ?? null;
+		const first = async <T extends Record<string, unknown> = Record<string, unknown>>(sql: string, values: unknown[] = []): Promise<T | null> => (await all<T>(sql, values))[0] ?? null;
 		const now = new Date().toISOString();
 		const parsed = validateAgentDefinitionModel(parse(`
 schemaVersion: treeseed.agent/v1
@@ -93,6 +93,7 @@ activityProfiles:
 				}
 				return results;
 			}), createTeam: outside, prepareTeamDeletion: outside, getProject: project,
+			getProjectByTeamAndSlug: outside, listTreeDxSharesForRecipient: outside,
 			getProjectDetails: async id => { const value = await project(id); return value ? { project: value } : null; },
 			getProjectTreeDxLibrary: id => first(`SELECT id,repository_id AS "repositoryId",content_path AS "contentPath",instance_id AS "instanceId",
 				content_repository_ref AS "contentRepositoryRef",content_repository_default_branch AS "contentRepositoryDefaultBranch",

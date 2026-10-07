@@ -3,7 +3,7 @@ import { DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { buildAssignmentAttempt } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import { beginAssignmentPreparationTimeBudget, compileAssignmentTimeBudget } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-time-budget.ts';
 import { compileAssignmentExecutionWindow } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-execution-window-service.ts';
-import { candidate, provider, run, executionCapability } from '../fixtures/assignment-attempt-fixtures.ts';
+import { candidate, provider, run, executionCapability, canonicalOfferBuildInput } from '../fixtures/assignment-attempt-fixtures.ts';
 
 function allocate(now: string, mode: 'production' | 'simulation', startsAt: string, endsAt: string) {
 	const planning = structuredClone(candidate);
@@ -14,8 +14,8 @@ function allocate(now: string, mode: 'production' | 'simulation', startsAt: stri
 	planning.node.requestedPermissions = { content: { read: ['proposal'], write: [] }, tools: ['source.read'] } as never;
 	planning.effectiveProfile = { ...planning.effectiveProfile, activity: 'planning', handler: 'planner',
 		permissionCeiling: planning.node.requestedPermissions } as never;
-	const applied = { ...structuredClone(run as Record<string, unknown>), executionMode: mode, parameters: { appliedPlan: {
-		...(run as { parameters: { appliedPlan: Record<string, unknown> } }).parameters.appliedPlan,
+	const applied = { ...structuredClone(run), executionMode: mode, parameters: { appliedPlan: {
+		...run.parameters.appliedPlan,
 		executionMode: mode, startsAt, endsAt, policySnapshot: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 3600, planningPercent: 100 / 3,
 			maximumConcurrency: 5, communicationConcurrency: 5, planningTurnMaximumSeconds: 180,
 			projectPercentages: { project: 100 }, agentClassPercentages: { project: { engineer: 100 } } },
@@ -23,7 +23,7 @@ function allocate(now: string, mode: 'production' | 'simulation', startsAt: stri
 	const observation = { ...provider.accountingObservation.modelUsage, day: now.slice(0, 10), observedAt: now };
 	return buildAssignmentAttempt({ candidate: planning as never, run: applied as never,
 		principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-		allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
+		allocationInputs: { codex: { measurements: [], constraints: [], opportunity: canonicalOfferBuildInput().allocationInputs.codex!.opportunity } }, providerSessionId: 'session',
 		providers: [{ ...provider, accountingObservation: { modelUsage: observation, capabilityUsage: { [executionCapability]: observation } } }] as never,
 		attempt: 1, now });
 }
