@@ -31,7 +31,7 @@ describe('actual authenticated longpoll wake revalidation and failure cleanup', 
 			// A NEW un-aborted public request uses the ORIGINAL admitted lane;
 			// it does not resurrect or broaden the withdrawn foreign-lane request.
 			const retry = { ...f.requestBody, waitSeconds: 0 }, retryInput = structuredClone(retry);
-			const retried = await beforeOriginalDeadline(f.request(retry, { token: f.token }), f.attempt.deadline);
+			const retried = await beforeOriginalDeadline(Promise.resolve(f.request(retry, { token: f.token })), f.attempt.deadline);
 			expect(retried.status).toBe(200); const result = await f.decode(retried);
 			const row = await f.repository.get(f.principal.teamId, f.attempt.id);
 			expect(result).toMatchObject({ assignment: { id: f.attempt.id, assignmentAttempt: f.attempt,
