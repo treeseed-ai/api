@@ -1,6 +1,6 @@
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
-import { ProviderAssignmentRepository,type DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
+import { ProviderAssignmentRepository,advanceAssignmentAttemptLifecycle,type DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 
 type JsonRecord = Record<string,unknown>;
 interface CapacityProviderAccessPrincipal {
@@ -55,8 +55,8 @@ export async function startAssignmentExecutionWindow(database:CapacityGovernance
 	if(text(existing.startedAt)) throw new CapacityGovernanceError('assignment_execution_already_started','Productive execution already started from a different transition.',409,{ executionWindow:existing });
 	if(!Number.isInteger(expected)||expected!==assignment.stateVersion) throw new CapacityGovernanceError('assignment_execution_state_stale','Execution start requires the exact assignment state version.',409,{ expectedStateVersion:expected,stateVersion:assignment.stateVersion });
 	const compiled=compileAssignmentExecutionWindow(assignment,now,executionRef); const metadata={ ...compiled.metadata,executionWindow:{ ...record(compiled.metadata.executionWindow),idempotencyKey:key } };
-	await database.run(`UPDATE capacity_provider_assignments SET capacity_envelope_json=?,metadata_json=?,state_version=state_version+1,updated_at=? WHERE id=? AND team_id=? AND state_version=? AND status='leased' AND lease_state='leased' AND lease_token=?`,[
-		JSON.stringify(compiled.capacityEnvelope),JSON.stringify(metadata),now,assignmentId,principal.teamId,expected,input.leaseToken,
+	await database.run(`UPDATE capacity_provider_assignments SET capacity_envelope_json=?,metadata_json=?,assignment_attempt_json=?,state_version=state_version+1,updated_at=? WHERE id=? AND team_id=? AND state_version=? AND status='leased' AND lease_state='leased' AND lease_token=? AND assignment_attempt_json::jsonb=?::jsonb`,[
+		JSON.stringify(compiled.capacityEnvelope),JSON.stringify(metadata),JSON.stringify(advanceAssignmentAttemptLifecycle(attempt,'running',now)),now,assignmentId,principal.teamId,expected,input.leaseToken,JSON.stringify(attempt),
 	]);
 	const updated=await repository.get(principal.teamId,assignmentId);
 	if(!updated||text(record(record(updated.metadata).executionWindow).idempotencyKey)!==key) throw new CapacityGovernanceError('assignment_execution_start_conflict','Execution start lost a concurrent state transition.',409);

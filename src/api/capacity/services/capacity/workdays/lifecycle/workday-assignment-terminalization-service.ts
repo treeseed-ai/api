@@ -2,7 +2,8 @@ import { MAX_CAPACITY_PAGE_LIMIT } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { releaseCapacityReservationsExactlyOnce } from '../../accounting/settlement-service.ts';
-import { ProviderAssignmentRepository } from '../../../../repositories/capacity/assignments/assignment.ts';
+import { ProviderAssignmentRepository, advanceAssignmentAttemptLifecycle,
+	type DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import { closeTerminalAssignmentWorkspace } from '../../assignments/observability/assignment-terminal-workspace.ts';
 import type { WorkdayTreeDxConnectionStore } from '../treedx/workday-treedx-connection.ts';
 import { terminalAssignmentAuthority } from '../../assignments/lifecycle/assignment-terminal-authority.ts';
@@ -69,6 +70,7 @@ async function settleTerminalAssignments(
 	now: string,
 	input: WorkdayAssignmentTerminalizationInput,
 ) {
+	const admittedAssignments = new Map<string, DurableProviderAssignment>();
 	for (const assignment of assignments) {
 		if (!assignment.reservation_id || !assignment.membership_id) {
 			throw new CapacityGovernanceError(
@@ -81,6 +83,9 @@ async function settleTerminalAssignments(
 		const admitted = await new ProviderAssignmentRepository(database).get(teamId, assignment.id);
 		if (!admitted) throw new CapacityGovernanceError('workday_assignment_admission_provenance_missing',
 			`Workday assignment ${assignment.id} has no readable admitted authority.`, 409);
+		if (!admitted.assignmentAttempt) throw new CapacityGovernanceError('assignment_attempt_required',
+			'Workday terminalization requires its original canonical assignment attempt.', 409);
+		admittedAssignments.set(assignment.id, admitted);
 		const measured = await database.first(`SELECT active_seconds,elapsed_seconds,input_tokens,cached_input_tokens,
 			reasoning_tokens,output_tokens,actual_usd FROM capacity_usage_actuals
 			WHERE id=? AND assignment_id=? AND accounting_mode='aggregate' LIMIT 1`,
@@ -104,6 +109,7 @@ async function settleTerminalAssignments(
 				metadata: { runId, terminalizedAt: now, ...(input.metadata ?? {}) },
 		})),
 	);
+	return admittedAssignments;
 }
 
 async function releaseUnsettledTerminalAssignments(
@@ -221,7 +227,7 @@ export async function terminalizeCapacityWorkdayAssignments(
 		);
 		if (assignments.length === 0) break;
 
-		await settleTerminalAssignments(database, assignments, teamId, runId, now, input);
+		const admittedAssignments = await settleTerminalAssignments(database, assignments, teamId, runId, now, input);
 		const assignmentsByVersion = new Map<number, TerminalAssignmentRow[]>();
 		for (const assignment of assignments) {
 			const version = number(assignment.state_version);
@@ -232,9 +238,14 @@ export async function terminalizeCapacityWorkdayAssignments(
 		const stateOperations = [...assignmentsByVersion.entries()].flatMap(([stateVersion, versionAssignments]) => {
 			const ids = versionAssignments.map(() => '?').join(', ');
 			const idValues = versionAssignments.map((assignment) => assignment.id);
-			const terminalAssignmentOperations = versionAssignments.map((assignment) => ({
+			const terminalAssignmentOperations = versionAssignments.map((assignment) => {
+				const attempt = admittedAssignments.get(assignment.id)?.assignmentAttempt;
+				if (!attempt) throw new CapacityGovernanceError('assignment_attempt_required',
+					'Workday terminalization lost its validated canonical attempt.', 409);
+				return {
 				query: `UPDATE capacity_provider_assignments
 				 SET status = 'failed',
+				     assignment_attempt_json = ?,
 				     lease_state = 'released',
 				     lease_token = NULL,
 				     lease_expires_at = NULL,
@@ -248,9 +259,11 @@ export async function terminalizeCapacityWorkdayAssignments(
 				     updated_at = ?
 				 WHERE team_id = ? AND state_version = ? AND id = ?
 				   AND status NOT IN ('completed', 'failed', 'expired', 'cancelled')
+				   AND assignment_attempt_json::jsonb = ?::jsonb
 				   AND NOT EXISTS (SELECT 1 FROM agent_invocation_requests WHERE assignment_id = ?
 				     AND status = 'suspended' AND final_message_ref IS NOT NULL)`,
 				params: [
+					JSON.stringify(advanceAssignmentAttemptLifecycle(attempt, 'failed', now)),
 					now,
 					input.reason ?? 'Workday terminalized before this assignment reached a terminal state.',
 					input.code ?? 'workday_terminalized',
@@ -264,9 +277,10 @@ export async function terminalizeCapacityWorkdayAssignments(
 					teamId,
 					stateVersion,
 					assignment.id,
+					JSON.stringify(attempt),
 					assignment.id,
 				],
-			}));
+			}; });
 			return [...terminalAssignmentOperations,{
 				query: `UPDATE execution_nodes SET status='cancelled',updated_at=?
 				 WHERE team_id=? AND EXISTS (SELECT 1 FROM capacity_provider_assignments assignment

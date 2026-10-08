@@ -1,4 +1,4 @@
-import type { ProviderAssignment } from '@treeseed/sdk/agent-capacity';
+import type { AssignmentAttempt, ProviderAssignment } from '@treeseed/sdk/agent-capacity';
 import { assignmentAttemptSchema, assignmentResultSchema, validateProviderAssignment } from '@treeseed/sdk/agent-capacity';
 import { isDeepStrictEqual } from 'node:util';
 import {
@@ -14,6 +14,16 @@ type Row = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
 
 export type DurableProviderAssignment = ProviderAssignment;
+
+/** Advance only the canonical row's lifecycle, never its admitted authority. */
+export function advanceAssignmentAttemptLifecycle(attempt: AssignmentAttempt,
+	status: AssignmentAttempt['status'], now: string): AssignmentAttempt {
+	return { ...attempt, status,
+		...(status === 'running' ? { startedAt: attempt.startedAt ?? now } : {}),
+		...(['completed', 'blocked', 'failed', 'cancelled', 'expired'].includes(status)
+			? { finishedAt: attempt.finishedAt ?? now } : {}),
+	};
+}
 
 export interface ProviderAssignmentFilters {
 	projectId?: string | null;
