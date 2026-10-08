@@ -2439,6 +2439,12 @@ workflow:
   - id: operator-settlement-dispute-unit
     action: { verifier: api.golden.operator-settlement-dispute-unit }
     expect: { status: passed }
+  - id: operator-settlement-dispute-authority-unit
+    action: { verifier: api.golden.operator-settlement-dispute-authority-unit }
+    expect: { status: passed }
+  - id: operator-settlement-dispute-postgres-native
+    action: { verifier: api.golden.operator-settlement-dispute-postgres-native }
+    expect: { status: passed }
   - id: operator-settlement-dispute-native
     action: { verifier: api.golden.operator-settlement-dispute-native }
     expect: { status: passed }

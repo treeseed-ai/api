@@ -29,12 +29,15 @@ async function nativeRecovery() {
 // authenticated HTTP or physical sandbox/workspace closure proof.
 describe('native unresolved operator recovery', () => {
 	it('native recovery disputes only original automatic zero settlement and restores original period holds once while retaining all failed and accounting bytes', async () => {
+		for (const policy of ['period', 'actual-settlement']) {
 		const f = await nativeRecovery(); try {
+			await f.query("UPDATE capacity_reservation_counter_claims SET release_policy=? WHERE counter_id='seconds'", [policy]);
+			await f.query("UPDATE capacity_admission_counters SET committed_amount=3 WHERE id='seconds'");
 			await settleCapacityReservationExactlyOnce(f.owner, { ...terminalUsage, activeSeconds: 0, elapsedSeconds: 0,
 				source: 'capacity_workday_deadline_terminalization', usageActual: undefined });
 			const before = await f.snapshot();
 			expect((await f.query('SELECT id,committed_amount FROM capacity_admission_counters ORDER BY id')).rows)
-				.toEqual([{ id: 'concurrency', committed_amount: 0 }, { id: 'seconds', committed_amount: 0 }]);
+				.toEqual([{ id: 'concurrency', committed_amount: 0 }, { id: 'seconds', committed_amount: 1 }]);
 			await f.db.exec(`CREATE FUNCTION interrupt_dispute() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'retained dispute interruption'; END $$;
 				CREATE TRIGGER interrupt_dispute BEFORE INSERT ON capacity_audit_events FOR EACH ROW EXECUTE FUNCTION interrupt_dispute();`);
 			await expect(f.call()).rejects.toThrow('retained dispute interruption');
@@ -46,7 +49,7 @@ describe('native unresolved operator recovery', () => {
 			for (const table of ['capacity_provider_assignments', 'capacity_reservations', 'capacity_usage_actuals', 'capacity_ledger_entries'])
 				expect(after[table]).toEqual(before[table]);
 			expect((await f.query('SELECT id,committed_amount FROM capacity_admission_counters ORDER BY id')).rows)
-				.toEqual([{ id: 'concurrency', committed_amount: 0 }, { id: 'seconds', committed_amount: 2 }]);
+				.toEqual([{ id: 'concurrency', committed_amount: 0 }, { id: 'seconds', committed_amount: 3 }]);
 			expect((await f.query('SELECT counter_id,released_amount FROM capacity_reservation_counter_claims ORDER BY counter_id')).rows)
 				.toEqual([{ counter_id: 'concurrency', released_amount: 1 }, { counter_id: 'seconds', released_amount: 0 }]);
 			const disputes = after.audit.filter(row => row.action === 'assignment.settlement.disputed'); expect(disputes).toHaveLength(1);
@@ -59,6 +62,7 @@ describe('native unresolved operator recovery', () => {
 			await expect(f.call(undefined, 'changed-dispute')).rejects.toMatchObject({ status: 409 });
 			expect(await f.snapshot()).toEqual(after);
 		} finally { await f.db.close(); }
+		}
 	});
 	it('native settlement dispute rejects measured foreign moved corrupt and unrelated settlements or claims without accounting changes', async () => {
 		const f = await nativeRecovery(); try {
