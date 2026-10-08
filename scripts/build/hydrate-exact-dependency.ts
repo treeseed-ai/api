@@ -70,7 +70,7 @@ async function hydrate(): Promise<void> {
 		run('tar', ['-xzf', archive, '--strip-components=1', '-C', stage]);
 		const manifest = object(JSON.parse(readFileSync(join(stage, 'package.json'), 'utf8')));
 		const expected = sha ? object(JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'))).version : declared;
-		if (manifest.name !== name || manifest.version !== expected || !existsSync(join(stage, 'dist'))) throw new Error('Exact package identity or built payload disagrees with candidate');
+		if (manifest.name !== name || manifest.version !== expected || !existsSync(join(stage, 'dist')) || !lstatSync(join(stage, 'dist')).isDirectory()) throw new Error('Exact package identity or built payload disagrees with candidate');
 		if (!held.equals(readFileSync(archive))) throw new Error('Exact archive moved during validation');
 		if (mode === 'download') return;
 		// npm ci owns the locked transitive tree. Preserve it and replace only the
