@@ -2397,3 +2397,6 @@ workflow:
   - id: execution-canonical-operator-cancel-native
     action: { verifier: api.golden.execution-canonical-operator-cancel-native }
     expect: { status: passed }
+  - id: execution-canonical-start-clock-native
+    action: { verifier: api.golden.execution-canonical-start-clock-native }
+    expect: { status: passed }
