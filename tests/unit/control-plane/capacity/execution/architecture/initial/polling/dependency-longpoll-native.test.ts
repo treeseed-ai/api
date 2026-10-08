@@ -34,8 +34,9 @@ describe('actual authenticated longpoll wake revalidation and failure cleanup', 
 			const retried = await beforeOriginalDeadline(Promise.resolve(f.request(retry, { token: f.token })), f.attempt.deadline);
 			expect(retried.status).toBe(200); const result = await f.decode(retried);
 			const row = await f.repository.get(f.principal.teamId, f.attempt.id);
-			expect(result).toMatchObject({ assignment: { id: f.attempt.id, assignmentAttempt: f.attempt,
+			expect(result).toMatchObject({ assignment: { id: f.attempt.id, assignmentAttempt: { ...f.attempt, status: 'leased' },
 				workspaceContext: { predecessorResults: [f.actor, f.review] } }, leaseToken: row?.leaseToken });
+			expect(row?.assignmentAttempt).toEqual({ ...f.attempt, status: 'leased' }); expect(f.attempt.status).toBe('created');
 			expect(row?.status).toBe('leased'); expect(Date.parse(row?.leaseExpiresAt ?? '')).toBeLessThanOrEqual(Date.parse(f.attempt.deadline));
 			expect(f.polls()).toBe(2); expect(f.pollInputs()).toEqual([input, retryInput]);
 			expect(f.listenerCounts()).toEqual({ subscribed: 1, unsubscribed: 1 }); expect(await f.custody()).toEqual(custody);
