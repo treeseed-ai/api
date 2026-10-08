@@ -9,6 +9,9 @@ vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => (
 import { executionNodeRunScope, linearPredecessorSourceCommit, listReadyExecutionNodes, workItemContext } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { replayAttempt } from './architecture/admission-replay-fixture.ts';
+import { candidate as governedCandidate } from './fixtures/assignment-attempt-fixtures.ts';
+import { readyProposal } from '../../governance/proposals/architecture/ready-proposal-fixture.ts';
+import { executionNodeSchema } from '@treeseed/sdk/agent-capacity';
 
 const projectId = 'project';
 const sourceRef = {
@@ -123,6 +126,28 @@ const teamContextStore = {
 };
 
 describe('direct ready-node admission input', () => {
+	it('retains frozen selected Proposal Git context for workday planning without following later proposal versions', async () => {
+		const definition = readyProposal(), git = contextRefs[0]!;
+		Object.assign(definition.executionPlan.workItems[0]!, { contextRefs: [git] });
+		const bytes = 'controlled exact selected proposal bytes', digest = createHash('sha256').update(bytes).digest('hex');
+		const frozen = { ...sourceRef, digest: `sha256:${digest}` };
+		const book = { ...sourceRef, model: 'book', id: 'core', path: 'books/core.md' };
+		const parameters = { workdayContextByProjectId: { project: book }, planningSourceByProposalId: { proposal: frozen } };
+		const store = { first: vi.fn(async () => ({ parameters_json: JSON.stringify(parameters) })),
+			getGovernanceProposal: vi.fn(async () => ({ id: 'proposal', teamId: 'team', projectId: 'project', activeVersion: 2,
+				activeContentHash: 'f'.repeat(64), metadata: { contentProvenance: { commitSha: 'f'.repeat(40) } } })),
+			getProjectTreeDxLibrary: vi.fn(async () => ({ repositoryId: 'repository' })) };
+		const before = structuredClone(parameters);
+		for (const kind of ['planning', 'estimating'] as const) {
+			const node = executionNodeSchema.parse({ ...governedCandidate.node, kind, pairRole: null, workItemId: undefined,
+				workdayId: 'run', workspace: 'treedx', sourceRef: { store: 'postgresql', model: 'workday', id: 'run' } });
+			gateway.readRepositoryFile.mockResolvedValue({ resolvedRef: frozen.commit,
+				file: { path: frozen.path, content: bytes, frontmatter: definition } });
+			expect(await workItemContext(store, node)).toEqual([book, frozen, git]);
+			expect(gateway.readRepositoryFile).toHaveBeenLastCalledWith(expect.objectContaining({ ref: frozen.commit, path: frozen.path }));
+		}
+		expect(parameters).toEqual(before);
+	});
 	it('denies a required native predecessor without a canonical owning result instead of dropping it from the candidate inventory', async () => {
 		for (const missing of [null, {}, { ...result, status: 'running' }, { ...result, status: 'failed' }]) {
 			const supplied = { predecessor_node_id: 'required-predecessor', assignment_result_json: missing }, held = structuredClone(supplied);

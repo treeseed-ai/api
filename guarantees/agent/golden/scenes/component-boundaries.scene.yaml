@@ -3,6 +3,30 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: unreported-closeout-migration-native
+    action: { verifier: api.golden.unreported-closeout-migration-native }
+    expect: { status: passed }
+  - id: operator-stop-closeout-unit
+    action: { verifier: api.golden.operator-stop-closeout-unit }
+    expect: { status: passed }
+  - id: operator-stop-closeout-native
+    action: { verifier: api.golden.operator-stop-closeout-native }
+    expect: { status: passed }
+  - id: workday-planning-source-unit
+    action: { verifier: api.golden.workday-planning-source-unit }
+    expect: { status: passed }
+  - id: workday-planning-source-native
+    action: { verifier: api.golden.workday-planning-source-native }
+    expect: { status: passed }
+  - id: source-canonical-identity-unit
+    action: { verifier: api.golden.source-canonical-identity-unit }
+    expect: { status: passed }
+  - id: source-exact-context-unit
+    action: { verifier: api.golden.source-exact-context-unit }
+    expect: { status: passed }
+  - id: source-canonical-identity-native
+    action: { verifier: api.golden.source-canonical-identity-native }
+    expect: { status: passed }
   - id: execution-assignment-filter-unit
     action: { verifier: api.golden.execution-assignment-filter-unit }
     expect: { status: passed }

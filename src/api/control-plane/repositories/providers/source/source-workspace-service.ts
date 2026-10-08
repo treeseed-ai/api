@@ -1,5 +1,5 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { assignmentSourceBranch, simulationSourceBranch, sourceWorkspaceRequestSchema, sourceWorkspaceResponseSchema, type SourceWorkspaceAuthorization } from '@treeseed/sdk/capacity-provider/sandbox';
+import { sourceWorkspaceRequestSchema, sourceWorkspaceResponseSchema, type SourceWorkspaceAuthorization } from '@treeseed/sdk/capacity-provider/sandbox';
 import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 import { sealSourceCredential } from '@treeseed/deployment/security/source';
 import { resolveGitHubSourceAuthority } from '../../../../../security/provider-credential-authority.ts';
@@ -59,17 +59,13 @@ export function assignmentSourceMode(row: RecordValue) {
 		publication: 'denied' as const };
 	const workspace = attempt.data.workspace;
 	if (workspace.mode === 'git') {
-		const campaignId = String(record(row.workday_parameters_json).acceptanceCampaignId || 'local');
 		const frozenUpstreamBase = attempt.data.contextRefs.some(reference => reference.store === 'git'
 			&& reference.commit === workspace.baseCommit) && attempt.data.predecessorResultIds.length === 0;
 		const acquisition = executionMode === 'production' ? 'upstream-authorized' as const
 			: frozenUpstreamBase ? 'upstream-public' as const : 'simulation-local' as const;
-		const publicationRef = executionMode === 'simulation'
-			? simulationSourceBranch(campaignId, String(row.work_day_id), String(row.id))
-			: assignmentSourceBranch(String(row.id));
 		return { mode: 'work' as const, acquisition,
 			publication: executionMode === 'simulation' ? 'simulation-branch' as const : 'assignment-branch' as const,
-			publicationRef };
+			publicationRef: workspace.branch };
 	}
 	return { mode: 'analysis' as const,
 		acquisition: executionMode === 'production' ? 'upstream-authorized' as const
@@ -138,6 +134,8 @@ export function createSourceWorkspaceService(database: CapacityGovernanceDatabas
 	const exactAttemptCommit = attempt.success
 		? attempt.data.workspace.mode === 'git' ? attempt.data.workspace.baseCommit : exactAssignmentSource?.commit
 		: undefined;
+	if (attempt.success && !exactAttemptCommit) throw new CapacityGovernanceError(
+		'assignment_source_context_missing', 'Source access requires the immutable assignment\u2019s exact Git context.', 409);
 	if (attempt.success && attempt.data.workspace.mode === 'git'
 		&& attempt.data.workspace.repository !== configured.id && attempt.data.workspace.repository !== configuredRepository) {
 		throw new CapacityGovernanceError('assignment_source_repository_changed', 'Assignment workspace does not match the project software repository.', 409);
@@ -185,12 +183,12 @@ export function createSourceWorkspaceService(database: CapacityGovernanceDatabas
     if (!Number.isFinite(expiry) || expiry <= issued.getTime()) throw new CapacityGovernanceError('assignment_source_credential_expired', 'Source credential expired during authorization.', 409);
     const authorization: SourceWorkspaceAuthorization = { schemaVersion: 'treeseed.source-workspace-authorization/v1', id: randomUUID(),
       providerId: actor.capacityProviderId, assignmentId, attempt: attempt.success ? attempt.data.attempt : Number(row.attempt_count) + 1,
-	  source: { controlPlaneId: options.controlPlaneId, teamId: actor.teamId, projectId, repositoryId: pin.repository.id,
+	  source: { controlPlaneId: options.controlPlaneId, teamId: actor.teamId, projectId, repositoryId: configuredRepository,
 		commit: pin.exactCommit, ...(additionalCommits.length ? { additionalCommits } : {}), formatVersion: 1, profile: 'source-only' },
 		...sourceMode, ...(pin.credentialBindingId ? { credentialBindingId: pin.credentialBindingId } : {}), issuedAt: issued.toISOString(), expiresAt: new Date(expiry).toISOString() };
 	const sealed = credential ? sealSourceCredential({ authorization, recipientPublicKey: request.recipientPublicKey, credential }, issued) : null;
     const { id: _id, ...repository } = pin.repository;
-    const response = sourceWorkspaceResponseSchema.safeParse({ authorization, repository, credential: sealed });
+    const response = sourceWorkspaceResponseSchema.safeParse({ authorization, repository: { ...repository, ref: pin.exactCommit }, credential: sealed });
     if (!response.success) throw new CapacityGovernanceError('assignment_source_response_invalid',
       `Source workspace response is invalid: ${response.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ')}`, 500);
     return response.data;
