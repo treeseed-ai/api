@@ -5,6 +5,8 @@ import { createAssignmentService } from '../../../../../../../src/api/control-pl
 import { cancellationDatabase } from '../cancellation-fixture.ts';
 import { terminalUsage } from '../../../../capacity/accounting/architecture/settlement-fixture.ts';
 import { settleCapacityReservationExactlyOnce } from '../../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
+import { createProviderAssignmentService } from '../../../../../../../src/api/control-plane/repositories/providers/provider-assignment-service.ts';
+import { ProviderAssignmentRepository } from '../../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 
 async function nativeRecovery() {
 	const f = await cancellationDatabase('expired');
@@ -42,6 +44,19 @@ describe('native unresolved operator recovery', () => {
 			expect((await f.query('SELECT counter_id,released_amount FROM capacity_reservation_counter_claims ORDER BY counter_id')).rows)
 				.toEqual([{ counter_id: 'concurrency', released_amount: 1 }, { counter_id: 'seconds', released_amount: 0 }]);
 			expect(await f.call()).toEqual(first); expect(await f.snapshot()).toEqual(after);
+			const unused = async () => { throw new Error('Recovery read must not invoke a productive lifecycle'); };
+			const provider = createProviderAssignmentService({ ...f.owner,
+				getProviderAssignment: (team, id) => new ProviderAssignmentRepository(f.owner).get(team, id),
+				leaseNextProviderAssignment: unused, renewProviderAssignmentLease: unused, returnProviderAssignment: unused,
+				completeProviderAssignment: unused, failProviderAssignment: unused,
+				createCapacityWorkdayRun: unused, tickCapacityWorkdayRun: unused, updateCapacityWorkdayRun: unused });
+			const principal = { principal: { teamId: f.assignment.teamId, capacityProviderId: f.assignment.capacityProviderId,
+				membershipId: f.assignment.membershipId!, scopes: ['provider:assignments:read'] } };
+			expect(await provider.show(principal, f.assignment.id)).toEqual({
+				...await new ProviderAssignmentRepository(f.owner).get('team', f.assignment.id), unresolvedUsageRecovery: first });
+			await expect(provider.show({ principal: { ...principal.principal, capacityProviderId: 'foreign' } }, f.assignment.id))
+				.rejects.toMatchObject({ status: 403 });
+			expect(await f.snapshot()).toEqual(after);
 			await expect(f.call({ expectedStateVersion: 1, reason: 'Changed evidence' })).rejects.toMatchObject({ status: 409 });
 			await expect(f.call(undefined, 'other-key')).rejects.toMatchObject({ status: 409 });
 			expect(await f.snapshot()).toEqual(after);
