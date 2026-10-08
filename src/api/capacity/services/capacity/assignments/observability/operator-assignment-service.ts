@@ -7,6 +7,8 @@ import { terminalAssignmentAuthority } from '../lifecycle/assignment-terminal-au
 import { planningBoundaryCancellation } from '../lifecycle/assignment-failure-policy.ts';
 import { composeAssignmentLifecycleOutput } from '../lifecycle/assignment-lifecycle-output.ts';
 import { record, terminalPerformance } from '../lifecycle/completion/assignment-terminal-performance.ts';
+import { capacityTransaction } from '../../../../transaction.ts';
+import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 
 function idempotencyKey(value: string) {
 	if (!value.trim()) throw new CapacityGovernanceError('capacity_idempotency_key_required', 'An idempotency key is required.', 400);
@@ -20,6 +22,77 @@ export class OperatorAssignmentService {
 		private readonly closeWorkspace?: (assignment: DurableProviderAssignment) => Promise<unknown>,
 	) {
 		this.assignments = new ProviderAssignmentRepository(database);
+	}
+
+	/** Release an operator-held terminal slot, NOT an actual usage settlement.
+	 * Audit is the sole unresolved-usage fact. Period claims stay held until actual
+	 * measurements exist; neither zero charges nor budget refunds are inferred. */
+	async recover(teamId: string, assignmentId: string, input: Record<string, unknown>) {
+		const parsed = CONTROL_PLANE_OPERATIONS.assignments.recover.schema.body.safeParse({
+			expectedStateVersion: input.expectedStateVersion, reason: input.reason });
+		if (!parsed.success || typeof input.actorId !== 'string' || !input.actorId.trim()
+			|| typeof input.idempotencyKey !== 'string') throw new CapacityGovernanceError(
+			'capacity_recovery_input_invalid', 'Recovery requires authenticated actor, exact version, reason and operation identity.', 400);
+		const key = idempotencyKey(input.idempotencyKey), actorId = input.actorId;
+		await this.database.ensureInitialized();
+		return capacityTransaction(this.database, async database => {
+			const row = await database.first('SELECT * FROM capacity_provider_assignments WHERE team_id=? AND id=? FOR UPDATE', [teamId, assignmentId]);
+			if (!row) throw new CapacityGovernanceError('capacity_assignment_not_found', 'Assignment does not exist.', 404);
+			const audit = await database.first("SELECT * FROM capacity_audit_events WHERE team_id=? AND resource_id=? AND action='assignment.usage.unresolved'", [teamId, assignmentId]);
+			if (audit) {
+				const retained: unknown = JSON.parse(String(audit.metadata_json));
+				const value = record(retained);
+				if (audit.idempotency_key !== key || value.actorId !== actorId || value.reason !== parsed.data.reason
+					|| value.expectedStateVersion !== parsed.data.expectedStateVersion) throw new CapacityGovernanceError(
+					'capacity_recovery_idempotency_conflict', 'Original unresolved recovery evidence must be replayed unchanged.', 409);
+				return value;
+			}
+			const metadata = record(JSON.parse(String(row.metadata_json ?? '{}')));
+			if (!['expired', 'failed', 'cancelled'].includes(String(row.status)) || row.lease_state === 'leased'
+				|| row.lease_token || row.lease_expires_at || record(metadata.leaseRecovery).disposition !== 'operator-action')
+				throw new CapacityGovernanceError('capacity_recovery_authority_conflict', 'Only a terminal assignment held for operator action can release unresolved capacity.', 409);
+			if (row.state_version !== parsed.data.expectedStateVersion) throw new CapacityGovernanceError(
+				'capacity_recovery_version_conflict', 'Assignment state version moved.', 409);
+			const reservation = await database.first('SELECT * FROM capacity_reservations WHERE id=? AND team_id=? FOR UPDATE', [row.reservation_id, teamId]);
+			if (!reservation || reservation.assignment_id !== assignmentId || reservation.membership_id !== row.membership_id
+				|| reservation.capacity_provider_id !== row.capacity_provider_id || reservation.project_id !== row.project_id
+				|| reservation.execution_provider_id !== row.execution_provider_id
+				|| reservation.work_day_id !== row.work_day_id || !['reserved', 'consuming'].includes(String(reservation.state))
+				|| reservation.settlement_token || reservation.usage_report_token) throw new CapacityGovernanceError(
+				'capacity_recovery_reservation_conflict', 'Original held reservation authority is required.', 409);
+			if (await database.first(`SELECT id FROM capacity_usage_actuals WHERE assignment_id=? AND accounting_mode='aggregate'
+				UNION ALL SELECT id FROM capacity_ledger_entries WHERE reservation_id=? LIMIT 1`, [assignmentId, reservation.id]))
+				throw new CapacityGovernanceError('capacity_recovery_measured_usage_conflict', 'Measured or settled usage must use the existing settlement path.', 409);
+			const assignment = await new ProviderAssignmentRepository(database).getForCancellation(teamId, assignmentId);
+			if (!assignment) throw new CapacityGovernanceError('capacity_assignment_not_found', 'Assignment disappeared.', 500);
+			if (this.closeWorkspace) {
+				const closed = record(await this.closeWorkspace(assignment));
+				if (closed.closed !== true) throw new CapacityGovernanceError('capacity_recovery_workspace_open', 'Exact native workspace closure is required.', 409);
+			} else if (assignment.workspaceContext?.workspaceId || assignment.treedxProxyHandle?.workspaceId)
+				throw new CapacityGovernanceError('capacity_recovery_workspace_unavailable', 'Workspace closure authority is missing.', 503);
+			const claims = await database.all(`SELECT claim.*,counter.team_id,counter.committed_amount FROM capacity_reservation_counter_claims claim
+				JOIN capacity_admission_counters counter ON counter.id=claim.counter_id WHERE claim.reservation_id=? FOR UPDATE OF claim,counter`, [reservation.id]);
+			const retainedClaims = await database.all('SELECT counter_id FROM capacity_reservation_counter_claims WHERE reservation_id=?', [reservation.id]);
+			if (retainedClaims.length !== claims.length) throw new CapacityGovernanceError(
+				'capacity_recovery_counter_conflict', 'Every original reservation claim must retain its owning counter.', 409);
+			const now = new Date().toISOString();
+			for (const claim of claims) {
+				if (claim.team_id !== teamId) throw new CapacityGovernanceError('capacity_recovery_counter_conflict', 'Counter authority differs from the reservation.', 409);
+				if (claim.release_policy !== 'assignment-terminal') continue;
+				const amount = Number(claim.reserved_amount) - Number(claim.released_amount);
+				if (!Number.isFinite(amount) || amount < 0 || Number(claim.committed_amount) < amount) throw new CapacityGovernanceError(
+					'capacity_recovery_counter_conflict', 'Terminal counter release is inconsistent.', 409);
+				await database.run(`UPDATE capacity_admission_counters SET committed_amount=committed_amount-?,state_version=state_version+1,updated_at=? WHERE id=? AND team_id=?`, [amount, now, claim.counter_id, teamId]);
+				await database.run('UPDATE capacity_reservation_counter_claims SET released_amount=reserved_amount,updated_at=? WHERE reservation_id=? AND counter_id=?', [now, reservation.id, claim.counter_id]);
+			}
+			await database.run("UPDATE capacity_reservations SET state='released',updated_at=? WHERE id=? AND team_id=?", [now, reservation.id, teamId]);
+			const result = { assignmentId, reservationId: String(reservation.id), usageStatus: 'unresolved', settled: false,
+				expectedStateVersion: parsed.data.expectedStateVersion, actorId, reason: parsed.data.reason, recoveredAt: now };
+			await database.run(`INSERT INTO capacity_audit_events (id,team_id,capacity_provider_id,membership_id,actor_type,actor_id,action,resource_type,resource_id,idempotency_key,metadata_json,created_at)
+				VALUES (?,?,?,?,?,?,'assignment.usage.unresolved','capacity_provider_assignment',?,?,?,?)`,
+				[`operator-recovery:${teamId}:${assignmentId}`, teamId, row.capacity_provider_id, row.membership_id, 'user', actorId, assignmentId, key, JSON.stringify(result), now]);
+			return result;
+		});
 	}
 
 	async cancel(teamId: string, assignmentId: string, input: { idempotencyKey: string; actorId?: string | null; reason?: string | null }) {
