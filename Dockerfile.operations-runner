@@ -10,7 +10,8 @@ RUN npm config set fetch-retries 5 \
 	&& (npm ci --ignore-scripts || npm ci --ignore-scripts || npm ci --ignore-scripts)
 
 COPY . .
-RUN ./scripts/build/hydrate-exact-sdk.sh artifacts/sealed-sdk install \
+RUN node --import tsx scripts/build/hydrate-exact-dependency.ts artifacts/sealed-sdk install \
+	&& node --import tsx scripts/build/hydrate-exact-dependency.ts artifacts/native-treedx-sdk install @treeseed/treedx \
 	&& npm run build
 
 ENV NODE_ENV=production \
