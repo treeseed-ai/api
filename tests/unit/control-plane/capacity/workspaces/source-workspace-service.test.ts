@@ -68,6 +68,28 @@ it('authorizes only exact same-repository Git predecessors from the immutable at
 });
 
 describe('provider source workspace authorization', () => {
+	it('signs the exact canonical Git repository identity rather than its database row id for source-read planning', async () => {
+		const git = { store: 'git', model: 'repository', id: 'source', repository: 'example/project', commit };
+		const attempt = assignmentAttemptSchema.parse({ ...canonicalAttempt, workspace: { mode: 'read-only' }, contextRefs: [git],
+			grant: { ...canonicalAttempt.grant, sourceRead: ['example/project'], sourceWrite: [], tools: ['source.read'] } });
+		const f = fixture({ workday_execution_mode: 'simulation', assignment_attempt_json: JSON.stringify(attempt) });
+		const before = JSON.stringify(attempt), first = await f.service({ principal }, 'assignment', f.request);
+		const retry = await f.service({ principal }, 'assignment', f.request);
+		for (const response of [first, retry]) expect(response.authorization).toMatchObject({ assignmentId: attempt.id,
+			providerId: attempt.provider.providerId, attempt: attempt.attempt, mode: 'analysis', publication: 'denied',
+			source: { repositoryId: git.repository, commit: git.commit } });
+		expect(Reflect.get(f.current, 'assignment_attempt_json')).toBe(before); expect(f.store.run).toHaveBeenCalledTimes(1);
+		expect(f.fetchImpl).not.toHaveBeenCalled(); expect(mocks.credential).not.toHaveBeenCalled();
+	});
+	it('denies missing exact canonical source context before pinning or upstream lookup instead of adding authority after issuance', async () => {
+		for (const contextRefs of [[], [{ store: 'git', model: 'repository', id: 'foreign', repository: 'other/repository', commit }]]) {
+			const attempt = assignmentAttemptSchema.parse({ ...canonicalAttempt, workspace: { mode: 'read-only' }, contextRefs,
+				grant: { ...canonicalAttempt.grant, sourceRead: ['example/project'], sourceWrite: [], tools: ['source.read'] } });
+			const f = fixture({ workday_execution_mode: 'simulation', assignment_attempt_json: JSON.stringify(attempt) }), before = structuredClone(f.current);
+			await expect(f.service({ principal }, 'assignment', f.request)).rejects.toMatchObject({ code: 'assignment_source_context_missing', status: 409 });
+			expect(f.current).toEqual(before); expect(f.store.run).not.toHaveBeenCalled(); expect(f.fetchImpl).not.toHaveBeenCalled();
+		}
+	});
   it('binds canonical source authorization to the unchanged frozen ordinal rather than incrementing an operational lifecycle counter', async () => {
     for (const ordinal of [1, 2, 3, Number.MAX_SAFE_INTEGER]) {
       const attempt = assignmentAttemptSchema.parse({ ...canonicalAttempt, attempt: ordinal });
@@ -152,7 +174,7 @@ describe('provider source workspace authorization', () => {
 		const base = { ...row, workday_execution_mode: 'simulation', work_day_id: 'workday',
 			workday_parameters_json: '{"acceptanceCampaignId":"campaign"}', assignment_attempt_json: JSON.stringify(canonicalAttempt) };
 		expect(assignmentSourceMode(base)).toMatchObject({ mode: 'work', acquisition: 'upstream-public', publication: 'simulation-branch',
-			publicationRef: 'simulation/campaign/workday/assignment' });
+			publicationRef: canonicalAttempt.workspace.branch });
 		const dependent = assignmentAttemptSchema.parse(canonicalAttempt);
 		if (dependent.workspace.mode !== 'git') throw new Error('Missing original Git workspace');
 		dependent.workspace.baseCommit = '9'.repeat(40);
@@ -169,7 +191,7 @@ describe('provider source workspace authorization', () => {
 			workday_parameters_json: '{"acceptanceCampaignId":"campaign"}', assignment_attempt_json: JSON.stringify(canonicalAttempt) });
 		const first = await f.service({ principal }, 'assignment', f.request);
 		const second = await f.service({ principal }, 'assignment', f.request);
-		expect(first.authorization).toMatchObject({ acquisition: 'upstream-public', source: { repositoryId: 'repository', commit } });
+		expect(first.authorization).toMatchObject({ acquisition: 'upstream-public', source: { repositoryId: 'example/project', commit } });
 		expect(second.authorization.source.commit).toBe(commit);
 		expect(f.store.run).toHaveBeenCalledTimes(1);
 		expect(mocks.authority).toHaveBeenCalledTimes(4);
@@ -222,7 +244,7 @@ describe('provider source workspace authorization', () => {
 		const planningAttempt = assignmentAttemptSchema.parse({ ...canonicalAttempt,
 			effectiveProfile: { ...canonicalAttempt.effectiveProfile, activity: 'planning', handler: 'planner' },
 			grant: { ...canonicalAttempt.grant, sourceWrite: [], tools: ['source.read'] },
-			contextRefs: [], workspace: { mode: 'treedx', repository: 'library', baseCommit: commit,
+			contextRefs: [...canonicalAttempt.contextRefs], workspace: { mode: 'treedx', repository: 'library', baseCommit: commit,
 				workspaceId: 'planning-workspace', writablePaths: ['notes/planning.mdx'] },
 		});
 		for (let turn = 0; turn < 80; turn++) {
@@ -234,7 +256,7 @@ describe('provider source workspace authorization', () => {
 				expect(response.credential).toBeNull();
 				expect(response.authorization.source.commit).toBe(commit);
 			}
-			expect(f.fetchImpl).toHaveBeenCalledTimes(1);
+			expect(f.fetchImpl).not.toHaveBeenCalled();
 		}
 	});
 

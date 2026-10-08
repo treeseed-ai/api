@@ -10,6 +10,7 @@ import { loadTeamExactDependencyLinks } from '../../../../capacity/services/capa
 import { readExactProposal } from '../../../../governance/executable-proposal.ts';
 import { authorizeCapacityTeam, type CapacityPrincipal } from '../capacity-authorization.ts';
 import { CapacityOperationError } from '../capacity-operation-error.ts';
+import { createAssignmentService } from '../assignment-service.ts';
 import { decodeExecutionEdge, decodeExecutionNode, decodeGraphWatchCursor } from './execution-graph-storage.ts';
 import { workdayContinuationHistory, assignmentBelongsToRun } from '../../../../capacity/services/capacity/workdays/scheduling/workday-continuation.ts';
 
@@ -492,8 +493,7 @@ export function createExecutionGraphService(store: any) {
 			return reconcileExecutionGraph(store, teamId, body);
 		},
 		async assignments(principal: CapacityPrincipal, teamId: string, query: Row) {
-			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
-			return store.listProviderAssignmentsPage(teamId, { limit: Math.min(Math.max(integer(query.limit) || 100, 1), 500), cursor: query.cursor ?? null });
+			return createAssignmentService(store).list(principal, teamId, query);
 		},
 	};
 }

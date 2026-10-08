@@ -1,7 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { dependencyLease } from './dependency-lease-fixture.ts';
+import { createSourceWorkspaceService } from '../../../../../../../../src/api/control-plane/repositories/providers/source/source-workspace-service.ts';
+import { createSourceCredentialRecipient } from '@treeseed/deployment/security/source';
 
 describe('owning SQL lease authority for an admitted dependency assignment', () => {
+	it('native source authorization retains the admitted canonical repository branch and ordinal through exact repeated reads without changing finance', async () => {
+		const f = await dependencyLease();
+		try {
+			if (f.attempt.workspace.mode !== 'git') throw new Error('Original admitted Git workspace required');
+			const workspace = f.attempt.workspace, [owner, name] = workspace.repository.split('/');
+			expect(owner && name).toBeTruthy();
+			await f.query("UPDATE capacity_provider_assignments SET status='leased',lease_state='leased',runner_id='source-runner',lease_token='controlled-source-lease',lease_expires_at=?,attempt_count=? WHERE id=?",
+				[f.attempt.deadline, f.attempt.attempt, f.attempt.id]);
+			const service = createSourceWorkspaceService(f.store, { getProject: async () => ({ id: f.attempt.projectId, teamId: f.attempt.teamId }),
+				listHubRepositories: async () => [{ id: 'database-repository-id', role: 'software', provider: 'github', owner, name, currentBranch: 'staging' }] },
+				{ controlPlaneId: 'https://api.example.invalid', now: () => new Date(f.now), fetchImpl: async () => { throw new Error('Exact local simulation source must not fetch upstream'); } });
+			const request = { runnerId: 'source-runner', leaseToken: 'controlled-source-lease', recipientPublicKey: createSourceCredentialRecipient().publicKey };
+			const principal = { ...f.principal, scopes: ['provider:assignments:read'] }, first = await service({ principal }, f.attempt.id, request);
+			const pinned = await f.snapshot(), retry = await service({ principal }, f.attempt.id, request);
+			for (const response of [first, retry]) {
+				expect(response.authorization).toMatchObject({ assignmentId: f.attempt.id, attempt: f.attempt.attempt,
+					publicationRef: workspace.branch, source: { repositoryId: workspace.repository, commit: workspace.baseCommit } });
+				expect(response.repository.ref).toBe(workspace.baseCommit); expect(response.credential).toBeNull();
+			}
+			expect(await f.snapshot()).toEqual(pinned);
+			expect((await f.repository.get(f.attempt.teamId, f.attempt.id))?.assignmentAttempt).toEqual(f.attempt);
+		} finally { await f.db.close(); }
+	});
 	it('actual account reservation workday proxy and availability reads retain the exact admitted dependency context without new financial writes', async () => {
 		const f = await dependencyLease(); try {
 			const before = await f.snapshot(), authority = await f.evaluate();

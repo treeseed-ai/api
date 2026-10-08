@@ -12,11 +12,29 @@ import { loadTeamExecutableProposalSources } from '../../../../../../src/api/cap
 import { loadProposalBlockingFeedback } from '../../../../../../src/api/capacity/services/capacity/execution/proposal-planning-source.ts';
 import { readyProposal } from '../../../governance/proposals/architecture/ready-proposal-fixture.ts';
 import { reconcileExecutionGraph } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { CapacityOperationError } from '../../../../../../src/api/control-plane/repositories/capacity/capacity-operation-error.ts';
 
 const questionRef = { store: 'treedx', model: 'question', id: 'question', revision: 1,
 	digest: `sha256:${'c'.repeat(64)}`, repository: 'repository', commit: 'b'.repeat(40), path: 'questions/question.mdx' };
 
 describe('executable proposal source selection', () => {
+	it('preserves exact Decision authority failures as owning capacity errors instead of unavailable graph sources', async () => {
+		for (const code of ['governance_decision_content_missing', 'governance_decision_content_invalid', 'governance_decision_repository_changed']) {
+			const proposalRef = { id: 'proposal', repository: 'repository', path: 'proposals/proposal.mdx',
+				commit: 'b'.repeat(40), digest: `sha256:${'a'.repeat(64)}` };
+			const row = { proposal_id: 'proposal', project_id: 'project', active_version: 1,
+				active_content_hash: 'a'.repeat(64), accepted_decision_id: 'decision', proposal_version: 1,
+				decision_record_json: { proposalRef } };
+			const held = structuredClone(row), failure = Object.assign(new Error('Exact Decision authority denied.'), { status: 409, code });
+			const all = vi.fn(async (query: string) => query.includes('FROM governance_proposals') ? [row] : []);
+			exactProposal.mockResolvedValueOnce({ ref: proposalRef, definition: { ...readyProposal(), status: 'decided' } });
+			exactDecision.mockRejectedValueOnce(failure);
+			const outcome = await loadTeamExecutableProposalSources({ all }, 'team').then(() => null, (error: unknown) => error);
+			expect(outcome).toBeInstanceOf(CapacityOperationError);
+			expect(outcome).toMatchObject({ status: 409, code, message: failure.message });
+			expect(row).toEqual(held); expect(failure).toMatchObject({ status: 409, code });
+		}
+	});
 	it('does not clear a graph blocker from a database-only resolution', async () => {
 		const all = vi.fn(async () => [
 			{ id: 'question', evidence_json: { kind: 'question', questionRef, feedbackStatus: 'open' } },

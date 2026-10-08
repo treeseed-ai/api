@@ -1,6 +1,66 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.unreported-closeout-migration-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-closeout-persistence.test.ts
+    testName: "native migration retains unreported ended history as an explicit failed closing workday without fabricating a report or changing valid runs"
+  api.golden.operator-stop-closeout-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workday-stop-reconciliation.test.ts
+    testName: "operator stop retains canonical closing authority without inventing an ended report and permits an unchanged closeout retry"
+  api.golden.operator-stop-closeout-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-closeout-persistence.test.ts
+    testName: "native public operator stop retains the closing Reporter node and canonical reads until its exact completed report and settlement"
+  api.golden.workday-planning-source-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/ready-execution-node.test.ts
+    testName: "retains frozen selected Proposal Git context for workday planning without following later proposal versions"
+  api.golden.workday-planning-source-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-denial-native.test.ts
+    testName: "native workday planning reads frozen Proposal source bytes and denies moved or denied content without changing SQL history"
+  api.golden.source-canonical-identity-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workspaces/source-workspace-service.test.ts
+    testName: "signs the exact canonical Git repository identity rather than its database row id for source-read planning"
+  api.golden.source-exact-context-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workspaces/source-workspace-service.test.ts
+    testName: "denies missing exact canonical source context before pinning or upstream lookup instead of adding authority after issuance"
+  api.golden.source-canonical-identity-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/leasing/dependency-lease-native.test.ts
+    testName: "native source authorization retains the admitted canonical repository branch and ordinal through exact repeated reads without changing finance"
+  api.golden.execution-assignment-filter-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/graph-watch.test.ts
+    testName: "execution assignment listing preserves status and canonical pagination without rewriting inputs or reading after denied authority"
+  api.golden.execution-assignment-filter-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/initial-admission.test.ts
+    testName: "native execution assignment inspection filters every retained status through the original repository without changing admission or financial history"
+  api.golden.execution-decision-error-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/executable-proposal-source.test.ts
+    testName: "preserves exact Decision authority failures as owning capacity errors instead of unavailable graph sources"
+  api.golden.execution-decision-error-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-denial-native.test.ts
+    testName: "native executable intake retains missing Decision authority as a precise capacity denial through concurrent reads and unchanged retry"
   api.golden.execution-report-settlement-required-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
