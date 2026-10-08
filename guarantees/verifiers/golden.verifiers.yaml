@@ -4146,3 +4146,13 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-poll-native.test.ts
     testName: "native claim advances only canonical leased status without inventing execution clocks or changing dependency authority"
+  api.golden.operator-unknown-terminal-time-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-performance.test.ts
+    testName: "requires actual time for an operator-action recovery even when its original active clock never started"
+  api.golden.operator-unknown-terminal-time-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/architecture/terminalization-persistence.test.ts
+    testName: "native deadline terminalization retains unknown operator-action usage and every original budget claim without fabricating zero settlement"
