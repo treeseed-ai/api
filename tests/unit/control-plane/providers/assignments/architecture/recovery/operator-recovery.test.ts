@@ -1,8 +1,34 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createAssignmentService } from '../../../../../../../src/api/control-plane/repositories/capacity/assignment-service.ts';
 import { isAutomaticUnknownZero } from '../../../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
+import { createProviderAssignmentService } from '../../../../../../../src/api/control-plane/repositories/providers/provider-assignment-service.ts';
+import { recoveryAssignment } from '../cancellation-fixture.ts';
 
 describe('authorized unresolved usage recovery', () => {
+	it('reads the exact operator audit for released or disputed consumed reservation authority without invoking productive lifecycle operations', async () => {
+		const assignment: ReturnType<typeof recoveryAssignment> = { ...recoveryAssignment(false), status: 'expired', metadata: { leaseRecovery: { disposition: 'operator-action' } } };
+		const audit = { assignmentId: assignment.id, reservationId: assignment.reservationId, usageStatus: 'unresolved', settled: false,
+			expectedStateVersion: assignment.stateVersion, actorId: 'operator', reason: 'Disputed automatic zero', recoveredAt: '2026-10-08T23:00:00.000Z' };
+		const first = vi.fn().mockResolvedValue({ metadata_json: JSON.stringify(audit) });
+		const unused = vi.fn(async () => { throw new Error('Audit read cannot invoke productive operations'); });
+		const provider = createProviderAssignmentService({ getProviderAssignment: async () => assignment, first,
+			ensureInitialized: unused, run: unused, all: unused, batch: unused,
+			leaseNextProviderAssignment: unused, renewProviderAssignmentLease: unused, returnProviderAssignment: unused,
+			completeProviderAssignment: unused, failProviderAssignment: unused,
+			createCapacityWorkdayRun: unused, tickCapacityWorkdayRun: unused, updateCapacityWorkdayRun: unused });
+		const principal = { principal: { teamId: assignment.teamId, capacityProviderId: assignment.capacityProviderId,
+			membershipId: assignment.membershipId!, scopes: ['provider:assignments:read'] } };
+		const before = structuredClone({ assignment, audit, principal });
+		expect(await provider.show(principal, assignment.id)).toEqual({ ...assignment, unresolvedUsageRecovery: audit });
+		const [sql, params] = first.mock.calls[0]!;
+		expect(params).toEqual([assignment.reservationId, assignment.teamId, assignment.id, assignment.capacityProviderId, assignment.membershipId]);
+		expect(sql).toContain("reservation.state='released'"); expect(sql).toContain("reservation.state='consumed'");
+		expect(sql).toContain("assignment.settlement.disputed");
+		first.mockResolvedValueOnce(null);
+		expect(await provider.show(principal, assignment.id)).toEqual(assignment);
+		await expect(provider.show({ principal: { ...principal.principal, capacityProviderId: 'foreign' } }, assignment.id)).rejects.toMatchObject({ status: 403 });
+		expect(first).toHaveBeenCalledTimes(2); expect(unused).not.toHaveBeenCalled(); expect({ assignment, audit, principal }).toEqual(before);
+	});
 	it('requires exact original deadline zero identities and absent active clock without treating native or malformed facts as disputable', () => {
 		const identity = { team_id: 'team', assignment_id: 'assignment', membership_id: 'member', capacity_provider_id: 'provider',
 			execution_provider_id: 'executor', project_id: 'project', work_day_id: 'workday' };

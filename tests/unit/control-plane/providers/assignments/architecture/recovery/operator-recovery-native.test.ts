@@ -28,6 +28,38 @@ async function nativeRecovery() {
 // PGlite overlap is not separate-server concurrency, native provider charges,
 // authenticated HTTP or physical sandbox/workspace closure proof.
 describe('native unresolved operator recovery', () => {
+	it('native provider read exposes only matching disputed consumed recovery audit and retains original zero settlement and restored claims through repeated reads', async () => {
+		const f = await nativeRecovery(); try {
+			await settleCapacityReservationExactlyOnce(f.owner, { ...terminalUsage, activeSeconds: 0, elapsedSeconds: 0,
+				source: 'capacity_workday_deadline_terminalization', usageActual: undefined });
+			const unused = async () => { throw new Error('Audit read cannot invoke productive operations'); };
+			const repository = new ProviderAssignmentRepository(f.owner);
+			const provider = createProviderAssignmentService({ ...f.owner, getProviderAssignment: (team, id) => repository.get(team, id),
+				leaseNextProviderAssignment: unused, renewProviderAssignmentLease: unused, returnProviderAssignment: unused,
+				completeProviderAssignment: unused, failProviderAssignment: unused,
+				createCapacityWorkdayRun: unused, tickCapacityWorkdayRun: unused, updateCapacityWorkdayRun: unused });
+			const principal = { principal: { teamId: f.assignment.teamId, capacityProviderId: f.assignment.capacityProviderId,
+				membershipId: f.assignment.membershipId!, scopes: ['provider:assignments:read'] } };
+			expect(await provider.show(principal, f.assignment.id)).toEqual(await repository.get('team', f.assignment.id));
+			const recovery = await f.call(), held = await f.snapshot();
+			expect((await f.query('SELECT state FROM capacity_reservations')).rows).toEqual([{ state: 'consumed' }]);
+			const expected = { ...await repository.get('team', f.assignment.id), unresolvedUsageRecovery: recovery };
+			expect(await provider.show(principal, f.assignment.id)).toEqual(expected);
+			expect(await Promise.all([provider.show(principal, f.assignment.id), provider.show(principal, f.assignment.id)])).toEqual([expected, expected]);
+			expect(await f.snapshot()).toEqual(held);
+			const dispute = held.audit.find(value => value.action === 'assignment.settlement.disputed')!;
+			for (const [field, value] of [['team_id', 'foreign'], ['capacity_provider_id', 'foreign'], ['membership_id', 'foreign'],
+				['resource_id', 'foreign'], ['idempotency_key', 'foreign'], ['actor_id', 'foreign'], ['action', 'unrelated']] as const) {
+				await f.query(`UPDATE capacity_audit_events SET ${field}=? WHERE id=?`, [value, dispute.id]);
+				const denied = await f.snapshot();
+				expect(await provider.show(principal, f.assignment.id)).toEqual(await repository.get('team', f.assignment.id));
+				expect(await f.snapshot()).toEqual(denied);
+				await f.query(`UPDATE capacity_audit_events SET ${field}=? WHERE id=?`, [dispute[field], dispute.id]);
+			}
+			await expect(provider.show({ principal: { ...principal.principal, capacityProviderId: 'foreign' } }, f.assignment.id)).rejects.toMatchObject({ status: 403 });
+			expect(await provider.show(principal, f.assignment.id)).toEqual(expected); expect(await f.snapshot()).toEqual(held);
+		} finally { await f.db.close(); }
+	});
 	it('native recovery disputes only original automatic zero settlement and restores original period holds once while retaining all failed and accounting bytes', async () => {
 		for (const policy of ['period', 'actual-settlement']) {
 		const f = await nativeRecovery(); try {

@@ -4181,3 +4181,13 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-native.test.ts
     testName: "native settlement dispute rejects measured foreign moved corrupt and unrelated settlements or claims without accounting changes"
+  api.golden.operator-settlement-dispute-read-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery.test.ts
+    testName: "reads the exact operator audit for released or disputed consumed reservation authority without invoking productive lifecycle operations"
+  api.golden.operator-settlement-dispute-read-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-native.test.ts
+    testName: "native provider read exposes only matching disputed consumed recovery audit and retains original zero settlement and restored claims through repeated reads"
