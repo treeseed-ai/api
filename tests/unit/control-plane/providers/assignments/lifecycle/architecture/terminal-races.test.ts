@@ -34,7 +34,7 @@ describe('terminal races preserve one immutable attempt and prior measured truth
 				const replay = await f.service.fail(principal, f.attempt.id, input), afterReplay = await f.snapshot();
 				checks.push(async () => {
 					expect(outcomes.filter(Boolean)).toHaveLength(1); expect(terminal?.status).toBe('failed'); expect(terminal?.assignmentResult).toEqual(result);
-					expect(terminal?.assignmentAttempt).toEqual(attempt); expect(terminal?.leaseToken).toBeNull(); expect(terminal?.attemptCount).toBe(attempt.attempt);
+					expect(terminal?.assignmentAttempt).toEqual({ ...attempt, status: 'failed', finishedAt: completedAt }); expect(terminal?.leaseToken).toBeNull(); expect(terminal?.attemptCount).toBe(attempt.attempt);
 					expect(finance.usage).toHaveLength(1); expect(finance.ledger).toHaveLength(1); expect(finance.reservations[0]).toMatchObject({ state: 'consumed' });
 					expect(replay).toBeNull(); expect(afterReplay).toEqual(beforeReplay); expect(input).toEqual(held);
 				});
@@ -78,7 +78,7 @@ describe('terminal races preserve one immutable attempt and prior measured truth
 			const results = await Promise.all([f.service.complete(principal, f.attempt.id, input), f.service.complete(principal, f.attempt.id, input)]);
 			const terminal = await f.repository.get('team', f.attempt.id);
 			expect(results.filter(Boolean)).toHaveLength(1); expect(terminal?.assignmentResult).toEqual(f.result);
-			expect(terminal?.assignmentAttempt).toEqual(immutable); expect(terminal?.attemptCount).toBe(immutable.attempt);
+			expect(terminal?.assignmentAttempt).toEqual({ ...immutable, status: 'completed', finishedAt: f.result.completedAt }); expect(terminal?.attemptCount).toBe(immutable.attempt);
 			expect(await financialTruth(f)).toEqual(before);
 			expect(Number((await f.query('SELECT COUNT(*) AS total FROM execution_graph_revisions')).rows[0]!.total) - revision).toBe(1);
 			const snapshot = await f.snapshot(); expect(await f.service.complete(principal, f.attempt.id, input)).toBeNull(); expect(await f.snapshot()).toEqual(snapshot);
@@ -91,7 +91,7 @@ describe('terminal races preserve one immutable attempt and prior measured truth
 			const successes = outcomes.filter(outcome => outcome.status === 'fulfilled' && outcome.value !== null);
 			const terminal = await f.repository.get('team', f.attempt.id);
 			expect(successes).toHaveLength(1); expect(['completed', 'failed']).toContain(terminal?.status);
-			expect(terminal?.assignmentAttempt).toEqual(immutable); expect(terminal?.attemptCount).toBe(immutable.attempt);
+			expect(terminal?.assignmentAttempt).toEqual({ ...immutable, status: terminal?.status, finishedAt: f.result.completedAt }); expect(terminal?.attemptCount).toBe(immutable.attempt);
 			expect(terminal?.leaseToken).toBeNull(); expect(await financialTruth(f)).toEqual(before);
 			if (terminal?.status === 'completed') expect(terminal.assignmentResult).toEqual(f.result);
 		} finally { await f.close(); }
@@ -103,7 +103,7 @@ describe('terminal races preserve one immutable attempt and prior measured truth
 				f.service.return(principal, f.attempt.id, { ...failure, completion: returnedCompletion })]);
 			expect(outcomes.filter(outcome => outcome.status === 'fulfilled' && outcome.value !== null)).toHaveLength(1);
 			const terminal = await f.repository.get('team', f.attempt.id); expect(['completed', 'returned']).toContain(terminal?.status);
-			expect(terminal?.assignmentAttempt).toEqual(immutable); expect(terminal?.attemptCount).toBe(immutable.attempt);
+			expect(terminal?.assignmentAttempt).toEqual({ ...immutable, status: terminal?.status === 'returned' ? 'blocked' : 'completed', finishedAt: f.result.completedAt }); expect(terminal?.attemptCount).toBe(immutable.attempt);
 			expect(await financialTruth(f)).toEqual(before);
 			const beforeReplay = await f.snapshot(); await f.service.return(principal, f.attempt.id, { ...failure, completion: returnedCompletion });
 			expect(await f.snapshot()).toEqual(beforeReplay);
@@ -116,7 +116,7 @@ describe('terminal races preserve one immutable attempt and prior measured truth
 			expect(request.status).toBe('leased'); expect(request.metadata.cancellationRequested).toBe(true);
 			expect(request.assignmentAttempt).toEqual(immutable); expect(await financialTruth(f)).toEqual(measured);
 			const terminal = await f.service.return(principal, f.attempt.id, { ...failure, completion: returnedCompletion });
-			expect(terminal?.assignment.status).toBe('cancelled'); expect(terminal?.assignment.assignmentAttempt).toEqual(immutable);
+			expect(terminal?.assignment.status).toBe('cancelled'); expect(terminal?.assignment.assignmentAttempt).toEqual({ ...immutable, status: 'cancelled', finishedAt: f.result.completedAt });
 			expect(terminal?.assignment.attemptCount).toBe(immutable.attempt); expect(await financialTruth(f)).toEqual(measured);
 			const after = await f.snapshot(); expect(await f.service.return(principal, f.attempt.id, failure)).toBeNull(); expect(await f.snapshot()).toEqual(after);
 		} finally { await f.close(); }
@@ -128,7 +128,7 @@ describe('terminal races preserve one immutable attempt and prior measured truth
 				recoverExpiredProviderAssignments(f.store, { now: '2026-10-02T21:00:02.000Z', teamId: 'team', providerId: 'provider' })]);
 			expect(outcomes.every(outcome => outcome.status === 'fulfilled')).toBe(true);
 			const terminal = await f.repository.get('team', f.attempt.id); expect(terminal?.status).toBe('completed');
-			expect(terminal?.assignmentAttempt).toEqual(immutable); expect(terminal?.attemptCount).toBe(immutable.attempt);
+			expect(terminal?.assignmentAttempt).toEqual({ ...immutable, status: 'completed', finishedAt: f.result.completedAt }); expect(terminal?.attemptCount).toBe(immutable.attempt);
 			expect(await financialTruth(f)).toEqual(before);
 			expect(await recoverExpiredProviderAssignments(f.store, { now: '2026-10-02T21:10:00.000Z', teamId: 'team', providerId: 'provider' }))
 				.toMatchObject({ scanned: 0, recovered: 0 });

@@ -2,7 +2,7 @@ import type { ProviderAssignmentExplanation,ProviderNextAssignmentRequest } from
 import { createHash, randomUUID } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
-import { ProviderAssignmentRepository,serializeProviderAssignmentRow,type DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
+import { ProviderAssignmentRepository,serializeProviderAssignmentRow,advanceAssignmentAttemptLifecycle,type DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import {
 evaluateProviderAssignmentLeaseAuthority,
 type ProviderLeasePrincipal,
@@ -367,7 +367,7 @@ export async function leaseNextProviderAssignment(
 		 SET status = 'leased', lease_state = 'leased', lease_token = ?, lease_expires_at = ?,
 		     lease_renewed_at = ?, runner_id = ?, provider_session_id = COALESCE(?, provider_session_id),
 		     state_version = state_version + 1, claimed_at = COALESCE(claimed_at, ?), metadata_json = ?, capacity_envelope_json = ?,
-		     explanation_json = ?, updated_at = ?
+		     explanation_json = ?, assignment_attempt_json = COALESCE(?, assignment_attempt_json), updated_at = ?
 		 WHERE id = ? AND team_id = ? AND capacity_provider_id = ? AND membership_id = ? AND state_version = ?
 		   AND EXISTS (SELECT 1 FROM capacity_provider_team_memberships membership
 		     JOIN capacity_providers provider ON provider.id = membership.capacity_provider_id
@@ -393,7 +393,8 @@ export async function leaseNextProviderAssignment(
 		   ))`,
 		params: [
 			leaseToken, leaseExpiresAt, now, input.runnerId ?? null, context.session.id, now,
-			JSON.stringify(assignment.metadata ?? {}), JSON.stringify(leasedCapacityEnvelope), JSON.stringify(selectedExplanation), now,
+			JSON.stringify(assignment.metadata ?? {}), JSON.stringify(leasedCapacityEnvelope), JSON.stringify(selectedExplanation),
+			assignment.assignmentAttempt ? JSON.stringify(advanceAssignmentAttemptLifecycle(assignment.assignmentAttempt, 'leased', now)) : null, now,
 			assignment.id, principal.teamId, principal.capacityProviderId, principal.membershipId,
 			assignment.stateVersion, principal.accessTokenId ?? null, principal.accessTokenId ?? null, now,
 			assignment.executionNodeId, assignment.executionNodeId,

@@ -25,9 +25,9 @@ describe('real signed public identity rotation and token revocation SQL', () => 
 			const issued = await f.newToken(), response = await f.request(f.requestBody, { token: issued.token }); expect(response.status).toBe(200);
 			const value: unknown = await response.json(); if (!value || typeof value !== 'object' || !('data' in value)) throw new Error('Original poll missing');
 			expect(CONTROL_PLANE_OPERATIONS.providers.nextAssignment.schema.output.parse(value.data)).toMatchObject({ assignment: {
-				id: f.attempt.id, assignmentAttempt: f.attempt, workspaceContext: { predecessorResults: [f.actor, f.review] } } });
+				id: f.attempt.id, assignmentAttempt: { ...f.attempt, status: 'leased' }, workspaceContext: { predecessorResults: [f.actor, f.review] } } });
 			const leased = await f.repository.get('team', f.attempt.id); expect(leased?.status).toBe('leased');
-			expect(Date.parse(leased?.leaseExpiresAt ?? '')).toBeLessThanOrEqual(Date.parse(f.attempt.deadline)); expect(await f.custody()).toEqual(custody);
+			expect(Date.parse(leased?.leaseExpiresAt ?? '')).toBeLessThanOrEqual(Date.parse(f.attempt.deadline)); expect(await f.custody()).toEqual({ ...custody, attempt: { ...custody.attempt, status: 'leased' } });
 			expect(Date.now()).toBeLessThanOrEqual(Date.parse(f.attempt.deadline));
 		} finally { await f.close(); }
 	});

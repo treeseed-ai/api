@@ -466,7 +466,7 @@ describe('native proposal Decision authority', () => {
 				const winner = winners[0]!; expect({ id: winner.assignment?.id, status: winner.assignment?.status,
 					leaseState: winner.assignment?.leaseState, membershipId: winner.assignment?.membershipId })
 					.toEqual({ id: attempt.id, status: 'leased', leaseState: 'leased', membershipId });
-				expect(winner.assignment?.assignmentAttempt).toEqual(attempt); expect(typeof winner.leaseToken).toBe('string'); expect(Boolean(winner.leaseToken)).toBe(true); expect(winner.assignment?.leaseToken === winner.leaseToken).toBe(true);
+				expect(winner.assignment?.assignmentAttempt).toEqual({ ...attempt, status: 'leased' }); expect(attempt.status).toBe('created'); expect(typeof winner.leaseToken).toBe('string'); expect(Boolean(winner.leaseToken)).toBe(true); expect(winner.assignment?.leaseToken === winner.leaseToken).toBe(true);
 				const expiry = Date.parse(winner.assignment?.leaseExpiresAt ?? ''); expect(expiry).toBeGreaterThan(calledAt); expect(expiry).toBeLessThanOrEqual(Date.parse(attempt.deadline)); expect(Date.now()).toBeLessThanOrEqual(Date.parse(attempt.deadline));
 				for (const loser of claims.filter(value => !value.assignment)) expect(loser.leaseToken).toBeNull();
 				const claimed = await state(); expect(claimed.assignments).toHaveLength(1);

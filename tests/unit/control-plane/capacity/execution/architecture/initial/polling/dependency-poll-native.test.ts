@@ -3,6 +3,16 @@ import { dependencyPoll } from './dependency-poll-fixture.ts';
 import { isDeepStrictEqual } from 'node:util';
 
 describe('original provider poll and competing claim custody', () => {
+	it('native claim advances only canonical leased status without inventing execution clocks or changing dependency authority', async () => {
+		const f = await dependencyPoll(); try {
+			const before = await f.custody(), result = await f.poll();
+			expect(result.assignment?.assignmentAttempt).toEqual({ ...f.attempt, status: 'leased' });
+			const persisted = await f.repository.get(f.principal.teamId, f.attempt.id);
+			expect(persisted?.assignmentAttempt).toEqual(result.assignment?.assignmentAttempt);
+			expect(await f.custody()).toEqual({ ...before, attempt: { ...before.attempt, status: 'leased' } });
+			expect(Date.now()).toBeLessThanOrEqual(Date.parse(f.attempt.deadline));
+		} finally { await f.db.close(); }
+	});
 	it('real original synthesis crossing unchanged availability expiry cannot create a late lease explanation or financial mutation on either requested lane', async () => {
 		const observations=[];
 		for(const boundary of ['synthesis','inventory','explanation-read'])for(const laneId of ['workday','foreign-lane']){
@@ -42,9 +52,9 @@ describe('original provider poll and competing claim custody', () => {
 			const before = await f.custody(), calledAt = Date.now(), result = await f.poll(), receivedAt = Date.now();
 			expect(result.assignment).toMatchObject({ id: f.attempt.id, status: 'leased', leaseState: 'leased', runnerId: f.request.runnerId });
 			expect(result.leaseToken).toBeTruthy(); expect(result.assignment?.leaseToken).toBe(result.leaseToken);
-			expect(result.assignment?.assignmentAttempt).toEqual(f.attempt); expect(result.assignment?.workspaceContext.predecessorResults).toEqual([f.actor, f.review]);
+			expect(result.assignment?.assignmentAttempt).toEqual({ ...f.attempt, status: 'leased' }); expect(result.assignment?.workspaceContext.predecessorResults).toEqual([f.actor, f.review]);
 			const expiry = Date.parse(result.assignment?.leaseExpiresAt ?? ''); expect(expiry).toBeGreaterThan(calledAt); expect(expiry).toBeLessThanOrEqual(Date.parse(f.attempt.deadline));
-			expect(receivedAt).toBeLessThanOrEqual(Date.parse(f.attempt.deadline)); expect(await f.custody()).toEqual(before);
+			expect(receivedAt).toBeLessThanOrEqual(Date.parse(f.attempt.deadline)); expect(await f.custody()).toEqual({ ...before, attempt: { ...before.attempt, status: 'leased' } });
 			const leased = await f.repository.get(f.principal.teamId, f.attempt.id); expect(leased?.leaseToken).toBe(result.leaseToken);
 		} finally { await f.db.close(); }
 	});
@@ -56,7 +66,7 @@ describe('original provider poll and competing claim custody', () => {
 			const winner = winners[0]!; const read = await f.repository.get(f.principal.teamId, f.attempt.id);
 			expect(read?.leaseToken).toBe(winner.leaseToken); expect(read?.runnerId).toBe(winner.assignment?.runnerId);
 			for (const loser of results.filter(result => !result.assignment)) expect(loser.leaseToken).toBeNull();
-			expect(await f.custody()).toEqual(before);
+			expect(await f.custody()).toEqual({ ...before, attempt: { ...before.attempt, status: 'leased' } });
 		} finally { await f.db.close(); }
 	});
 	it('foreign missing closed and malformed availability authorities deny original poll before any lease or synthesis audit mutation', async () => {
@@ -82,7 +92,7 @@ describe('original provider poll and competing claim custody', () => {
 			const history = (await f.query('SELECT * FROM capacity_audit_events ORDER BY id')).rows; expect(history.length).toBeGreaterThan(0);
 			await f.db.exec('DROP TRIGGER interrupt_dependency_lease ON capacity_provider_assignments; DROP FUNCTION interrupt_dependency_lease();');
 			expect(Date.now()).toBeLessThan(Date.parse(f.attempt.deadline)); const retry = await f.poll(); expect(retry.assignment?.id).toBe(f.attempt.id);
-			expect(await f.custody()).toEqual(original); const after = (await f.query('SELECT * FROM capacity_audit_events ORDER BY id')).rows;
+			expect(await f.custody()).toEqual({ ...original, attempt: { ...original.attempt, status: 'leased' } }); const after = (await f.query('SELECT * FROM capacity_audit_events ORDER BY id')).rows;
 			for (const row of history) expect(after).toContainEqual(row);
 		} finally { await f.db.close(); }
 	});

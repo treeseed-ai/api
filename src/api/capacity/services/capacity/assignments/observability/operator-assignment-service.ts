@@ -1,6 +1,6 @@
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
-import { ProviderAssignmentRepository } from '../../../../repositories/capacity/assignments/assignment.ts';
+import { ProviderAssignmentRepository, advanceAssignmentAttemptLifecycle } from '../../../../repositories/capacity/assignments/assignment.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import { releaseCapacityReservationsExactlyOnce } from '../../accounting/settlement-service.ts';
 import { terminalAssignmentAuthority } from '../lifecycle/assignment-terminal-authority.ts';
@@ -62,9 +62,13 @@ export class OperatorAssignmentService {
 			const terminalInput = { code, reason, completion: { disposition: 'cancelled' as const }, output: priorOutput };
 			const output = phaseCancelled ? composeAssignmentLifecycleOutput(terminalInput,
 				terminalPerformance(assignment, terminalInput, 'failed', now, record(settledUsage))) : priorOutput;
+			// Diagnostic cancellation must retain malformed snapshot bytes rather
+			// than manufacturing executable authority for cleanup.
+			const attempt = assignment.assignmentAttempt
+				? JSON.stringify(advanceAssignmentAttemptLifecycle(assignment.assignmentAttempt, 'cancelled', now)) : null;
 			const fenced = await this.database.first(
-				`UPDATE capacity_provider_assignments SET status = 'cancelled', lease_state = 'released', lifecycle_code = ?, lifecycle_reason = ?, failed_at = COALESCE(failed_at, ?), lifecycle_output_json = ?, state_version = state_version + 1, updated_at = ? WHERE id = ? AND team_id = ? AND state_version = ? AND status IN ('pending','returned','expired') AND lease_state IN ('unleased','released','expired') RETURNING id`,
-				[code, reason, now, JSON.stringify(output), now, assignmentId, teamId, assignment.stateVersion],
+				`UPDATE capacity_provider_assignments SET status = 'cancelled', assignment_attempt_json = COALESCE(?, assignment_attempt_json), lease_state = 'released', lifecycle_code = ?, lifecycle_reason = ?, failed_at = COALESCE(failed_at, ?), lifecycle_output_json = ?, state_version = state_version + 1, updated_at = ? WHERE id = ? AND team_id = ? AND state_version = ? AND status IN ('pending','returned','expired') AND lease_state IN ('unleased','released','expired') RETURNING id`,
+				[attempt, code, reason, now, JSON.stringify(output), now, assignmentId, teamId, assignment.stateVersion],
 			);
 			if (!fenced) throw new CapacityGovernanceError('capacity_assignment_cancel_conflict', 'Assignment changed during cancellation.', 409, { assignmentId });
 			assignment = await this.assignments.getForCancellation(teamId, assignmentId);

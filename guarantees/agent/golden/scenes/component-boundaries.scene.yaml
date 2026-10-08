@@ -2382,3 +2382,24 @@ workflow:
   - id: execution-provider-utc-allocation-unit
     action: { verifier: api.golden.execution-provider-utc-allocation-unit }
     expect: { status: passed }
+  - id: execution-canonical-terminal-lifecycle-unit
+    action: { verifier: api.golden.execution-canonical-terminal-lifecycle-unit }
+    expect: { status: passed }
+  - id: execution-canonical-terminal-lifecycle-native
+    action: { verifier: api.golden.execution-canonical-terminal-lifecycle-native }
+    expect: { status: passed }
+  - id: execution-canonical-workday-stop-native
+    action: { verifier: api.golden.execution-canonical-workday-stop-native }
+    expect: { status: passed }
+  - id: execution-canonical-lifecycle-clocks-unit
+    action: { verifier: api.golden.execution-canonical-lifecycle-clocks-unit }
+    expect: { status: passed }
+  - id: execution-canonical-operator-cancel-native
+    action: { verifier: api.golden.execution-canonical-operator-cancel-native }
+    expect: { status: passed }
+  - id: execution-canonical-start-clock-native
+    action: { verifier: api.golden.execution-canonical-start-clock-native }
+    expect: { status: passed }
+  - id: execution-canonical-claim-native
+    action: { verifier: api.golden.execution-canonical-claim-native }
+    expect: { status: passed }

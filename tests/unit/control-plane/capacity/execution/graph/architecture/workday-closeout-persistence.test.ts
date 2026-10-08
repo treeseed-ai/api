@@ -52,19 +52,34 @@ describe('canonical single report at the real lifecycle and SQL boundary', () =>
 			await f.query(`INSERT INTO execution_nodes (id,team_id,project_id,workday_id,kind,source_ref_json,rule_revision,
 				node_revision,agent_class,status,graph_revision_created,graph_revision_updated,created_at,updated_at)
 				VALUES ('closing-report','team','project','workday','reporting','{}',1,1,'renamed-closeout','ready',1,1,?,?)`, [now, now]);
-			const sourceAttempt = JSON.stringify(f.attempt), store = { ...f.owner,
+			const sourceAttempt = structuredClone(f.attempt), store = { ...f.owner,
 				updateCapacityWorkdayRun: f.store.updateCapacityWorkdayRun,
 				getCapacityWorkdayRun: (team: string, id: string) => f.reads.get(team, id),
 				terminalizeCapacityWorkdayAssignments: (team: string, id: string, input: Parameters<typeof terminalizeCapacityWorkdayAssignments>[3]) =>
 					terminalizeCapacityWorkdayAssignments(f.owner, team, id, input) };
 			const service = createWorkdayService(store), principal = { id: 'operator', roles: ['platform_admin'] };
+			const originalClosingAt = appliedWorkdaySchema.parse((await f.reads.get('team', 'workday'))?.parameters.appliedPlan).closingAt;
+			let terminalAttemptBytes: string | undefined;
 			for (let retry = 0; retry < 2; retry++) {
+				const requestedAt = Date.now();
 				const response = await service.stop(principal, 'team', 'workday', { reason: 'retain failed run' });
+				const receivedAt = Date.now(), closing = appliedWorkdaySchema.parse(response.run?.parameters.appliedPlan);
+				if (typeof closing.closingAt !== 'string') throw new Error('Original public stop did not retain its first closing clock.');
+				expect(closing.closingAt).toBe(originalClosingAt);
+				if (retry === 0) {
+					const rows = (await f.query('SELECT failed_at FROM capacity_provider_assignments')).rows;
+					expect(rows).toHaveLength(1); const finishedAt = rows[0]?.failed_at;
+					if (typeof finishedAt !== 'string') throw new Error('Original terminal row did not record its stop clock.');
+					expect(Date.parse(finishedAt)).toBeGreaterThanOrEqual(requestedAt);
+					expect(Date.parse(finishedAt)).toBeLessThanOrEqual(receivedAt);
+					terminalAttemptBytes = JSON.stringify({ ...sourceAttempt, status: 'failed', finishedAt });
+				}
 				expect(response.run).toMatchObject({ status: 'running', parameters: { appliedPlan: { state: 'closing' } } });
 				expect((await f.query('SELECT id,status FROM execution_nodes ORDER BY id')).rows).toEqual([
 					{ id: 'closing-report', status: 'ready' }, { id: 'report-node', status: 'cancelled' }]);
 				expect((await f.query('SELECT assignment_attempt_json FROM capacity_provider_assignments')).rows)
-					.toEqual([{ assignment_attempt_json: sourceAttempt }]);
+					.toEqual([{ assignment_attempt_json: terminalAttemptBytes }]);
+				expect(f.attempt).toEqual(sourceAttempt);
 			}
 			const beforeReport = await f.snapshot();
 			await f.query("UPDATE execution_nodes SET status='completed' WHERE id='closing-report'");

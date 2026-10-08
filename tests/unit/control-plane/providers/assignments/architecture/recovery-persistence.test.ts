@@ -26,7 +26,8 @@ describe('expired assignment recovery through original SQL and transaction autho
 			for (const table of ['capacity_reservations', 'capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_admission_counters', 'capacity_reservation_counter_claims'])
 				expect(after[table]).toEqual(before[table]);
 			const row = (await query('SELECT * FROM capacity_provider_assignments WHERE id=?', [assignment.id])).rows[0]!;
-			expect(JSON.parse(String(row.assignment_attempt_json))).toEqual(assignment.assignmentAttempt);
+			expect(JSON.parse(String(row.assignment_attempt_json))).toEqual({ ...assignment.assignmentAttempt,
+				status: 'expired', finishedAt: now });
 			expect(JSON.parse(String(row.capacity_envelope_json))).toEqual(assignment.capacityEnvelope);
 			expect(row).toMatchObject({ status: 'expired', lease_state: 'expired', lease_token: null, lease_expires_at: null,
 				attempt_count: assignment.attemptCount, state_version: assignment.stateVersion + 1, lifecycle_code: 'expired_lease_execution_usage_unknown' });
@@ -61,7 +62,8 @@ describe('expired assignment recovery through original SQL and transaction autho
 			expect(result).toMatchObject({ scanned: 1, recovered: 1, terminalFailures: 1 });
 			const row = (await query('SELECT attempt_count,assignment_attempt_json,status,lease_token FROM capacity_provider_assignments')).rows[0]!;
 			expect(row.attempt_count).toBe(assignment.attemptCount);
-			expect(JSON.parse(String(row.assignment_attempt_json))).toEqual(assignment.assignmentAttempt);
+			expect(JSON.parse(String(row.assignment_attempt_json))).toEqual({ ...assignment.assignmentAttempt,
+				status: 'failed', finishedAt: cancelNow });
 			expect(row.status).toBe('failed'); expect(row.lease_token).toBeNull();
 			expect((await query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows).toEqual([{ total: 1 }]);
 			expect(await recoverExpiredProviderAssignments(transactionalOwner, { now: cancelNow, teamId: 'team', providerId: 'provider' }))
