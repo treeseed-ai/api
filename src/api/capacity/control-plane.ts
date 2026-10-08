@@ -163,6 +163,10 @@ class CapacityControlPlane {
 			reason: typeof input.reason === 'string' ? input.reason : null,
 		});
 		}
+	async recoverCapacityAssignment(teamId: string, assignmentId: string, input: JsonRecord = {}) {
+		return new OperatorAssignmentService(this.capacityContext,
+			assignment => closeTerminalAssignmentWorkspace(this.capacityContext, assignment)).recover(teamId, assignmentId, input);
+	}
 	async listCapacityReservationsForProjectPage(projectId: string, filters: Parameters<CapacityReservationRepository['listProjectPage']>[1] = {}) {
 			return new CapacityReservationRepository(this.capacityContext).listProjectPage(projectId, filters);
 		}

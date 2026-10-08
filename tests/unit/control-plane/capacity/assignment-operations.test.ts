@@ -5,9 +5,10 @@ import { createAssignmentService } from '../../../../src/api/control-plane/repos
 
 const principal = { id: 'user-1' };
 describe('assignment catalog operations', () => {
-	it('binds only the five operator assignment operations', () => {
-		const assignments = Object.fromEntries(['list', 'show', 'explain', 'cancel', 'retry'].map((name) => [name, vi.fn()])) as any;
+	it('binds only the six operator assignment operations including explicit unresolved recovery', () => {
+		const assignments = Object.fromEntries(['recover', 'list', 'show', 'explain', 'cancel', 'retry'].map((name) => [name, vi.fn()])) as any;
 		expect(createAssignmentOperations({ assignments }).map((operation) => operation.binding)).toEqual([
+			CONTROL_PLANE_OPERATIONS.assignments.recover,
 			CONTROL_PLANE_OPERATIONS.assignments.list, CONTROL_PLANE_OPERATIONS.assignments.show,
 			CONTROL_PLANE_OPERATIONS.assignments.explain, CONTROL_PLANE_OPERATIONS.assignments.cancel,
 			CONTROL_PLANE_OPERATIONS.assignments.retry,

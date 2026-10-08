@@ -9,8 +9,8 @@ import { terminalUsage } from '../../../capacity/accounting/architecture/settlem
 export const workspaceId = 'ws_terminalfixture';
 // REAL native HTTP + official client + original owning SQL. The remote resource
 // is controlled fixture state, NOT a TreeDX server or physical sandbox receipt.
-export async function workspaceCleanupFixture(handleStatus = 'issued') {
-	const base = await cancellationDatabase('returned', true);
+export async function workspaceCleanupFixture(handleStatus = 'issued', unresolved = false) {
+	const base = await cancellationDatabase(unresolved ? 'expired' : 'returned', true);
 	let fault: 'none' | 'denied' | 'open-success' | 'absent' | 'unidentified-404' = 'none', state = 'open', bound = true;
 	const requests: string[] = [];
 	let readResponse: Record<string, unknown> | undefined;
@@ -43,7 +43,9 @@ export async function workspaceCleanupFixture(handleStatus = 'issued') {
 		await base.query(`INSERT INTO treedx_proxy_handles (id,team_id,project_id,assignment_id,repository_id,workspace_id,
 			status,issued_at,created_at,updated_at) VALUES ('handle','team','project',?,'repository',?,?,?,?,?)`,
 			[base.assignment.id, workspaceId, handleStatus, cancelNow, cancelNow, cancelNow]);
-		await settleCapacityReservationExactlyOnce(owner, terminalUsage);
+		if (unresolved) await base.query("UPDATE capacity_provider_assignments SET lease_state='expired',metadata_json=? WHERE id=?",
+			[JSON.stringify({ leaseRecovery: { disposition: 'operator-action' } }), base.assignment.id]);
+		else await settleCapacityReservationExactlyOnce(owner, terminalUsage);
 		const client = new TreeDxClient({ baseUrl, transport: new FetchTransport({ baseUrl }) });
 		return { ...base, owner, client, baseUrl, requests, setFault: (value: typeof fault) => { fault = value; },
 			setReadResponse: (value: Record<string, unknown> | undefined) => { readResponse = value; },
