@@ -2,6 +2,22 @@ import { describe, expect, it, vi } from 'vitest';
 import { createAssignmentService } from '../../../../../../../src/api/control-plane/repositories/capacity/assignment-service.ts';
 
 describe('authorized unresolved usage recovery', () => {
+	it('keeps settlement dispute authority server derived and rejects every caller hold refund settlement or measurement before recovery', async () => {
+		const recoverCapacityAssignment = vi.fn(async (_team, _id, input) => input);
+		const service = createAssignmentService({ recoverCapacityAssignment });
+		const valid = { expectedStateVersion: 3, reason: 'Dispute automatic zero; actual active clock unavailable' };
+		for (const field of ['settlementId', 'dispute', 'restoreAmount', 'releasedAmount', 'counterId', 'claimId', 'activeClock', 'usageSettlement']) {
+			for (const value of [undefined, null, 0, 12, 'original', {}]) {
+				const body = { ...valid, [field]: value }, before = structuredClone(body);
+				await expect(service.recover({ id: 'operator', roles: ['admin'] }, 'team', 'expired', body, 'dispute'))
+					.rejects.toMatchObject({ status: 400, code: 'capacity_recovery_input_invalid' });
+				expect(body).toEqual(before);
+			}
+		}
+		expect(recoverCapacityAssignment).not.toHaveBeenCalled();
+		expect(await service.recover({ id: 'operator', roles: ['admin'] }, 'team', 'expired', valid, 'dispute'))
+			.toEqual({ ...valid, actorId: 'operator', idempotencyKey: 'dispute' });
+	});
 	it('requires team management before unresolved recovery and derives actor and operation identity only from authenticated context', async () => {
 		const recoverCapacityAssignment = vi.fn(async (_team, _id, input) => input);
 		const store = { principalCanAccessTeam: vi.fn(async () => true),

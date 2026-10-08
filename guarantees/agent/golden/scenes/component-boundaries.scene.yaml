@@ -2436,3 +2436,12 @@ workflow:
   - id: operator-unknown-terminal-time-native
     action: { verifier: api.golden.operator-unknown-terminal-time-native }
     expect: { status: passed }
+  - id: operator-settlement-dispute-unit
+    action: { verifier: api.golden.operator-settlement-dispute-unit }
+    expect: { status: passed }
+  - id: operator-settlement-dispute-native
+    action: { verifier: api.golden.operator-settlement-dispute-native }
+    expect: { status: passed }
+  - id: operator-settlement-dispute-denial-native
+    action: { verifier: api.golden.operator-settlement-dispute-denial-native }
+    expect: { status: passed }
