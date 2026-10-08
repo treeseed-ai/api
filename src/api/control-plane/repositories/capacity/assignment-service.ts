@@ -28,7 +28,8 @@ export function createAssignmentService(store: any) {
 		async recover(principal: CapacityPrincipal, teamId: string, assignmentId: string,
 			body: unknown, idempotencyKey?: string) {
 			const parsed = CONTROL_PLANE_OPERATIONS.assignments.recover.schema.body.safeParse(body);
-			if (!parsed.success) throw new CapacityOperationError(400, 'capacity_recovery_input_invalid', 'Recovery requires only an exact state version and a nonempty reason; measurements cannot be supplied.');
+			if (!parsed.success || !parsed.data || typeof parsed.data !== 'object' || Array.isArray(parsed.data))
+				throw new CapacityOperationError(400, 'capacity_recovery_input_invalid', 'Recovery requires only an exact state version and a nonempty reason; measurements cannot be supplied.');
 			const actor = await authorizeCapacityTeam(store, principal, teamId, 'teams:manage:team');
 			try { return await store.recoverCapacityAssignment(teamId, assignmentId,
 				{ ...parsed.data, idempotencyKey: idempotencyKey ?? '', actorId: actor.id }); } catch (error) { translate(error); }

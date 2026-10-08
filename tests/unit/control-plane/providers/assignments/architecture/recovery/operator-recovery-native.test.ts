@@ -19,7 +19,8 @@ async function nativeRecovery() {
 	const service = createAssignmentService({ recoverCapacityAssignment: (team: string, id: string, input: Record<string, unknown>) => operator.recover(team, id, input) });
 	const call = (input: Record<string, unknown> = { expectedStateVersion: 1, reason: 'Active measurement unavailable' }, key = 'native-recovery', team = 'team', id = f.assignment.id) =>
 		service.recover({ id: 'operator', roles: ['admin'] }, team, id, input, key);
-	const snapshot = async () => ({ ...await f.snapshot(), audit: (await f.query('SELECT * FROM capacity_audit_events ORDER BY id')).rows });
+	const snapshot = async (): Promise<Record<string, unknown> & { audit: Record<string, unknown>[] }> =>
+		({ ...await f.snapshot(), audit: (await f.query('SELECT * FROM capacity_audit_events ORDER BY id')).rows });
 	return { ...f, owner, call, snapshot };
 }
 

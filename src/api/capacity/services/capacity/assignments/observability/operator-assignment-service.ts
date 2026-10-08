@@ -33,6 +33,9 @@ export class OperatorAssignmentService {
 		if (!parsed.success || typeof input.actorId !== 'string' || !input.actorId.trim()
 			|| typeof input.idempotencyKey !== 'string') throw new CapacityGovernanceError(
 			'capacity_recovery_input_invalid', 'Recovery requires authenticated actor, exact version, reason and operation identity.', 400);
+		const accepted = record(parsed.data), expectedStateVersion = accepted.expectedStateVersion, reason = accepted.reason;
+		if (typeof expectedStateVersion !== 'number' || typeof reason !== 'string') throw new CapacityGovernanceError(
+			'capacity_recovery_input_invalid', 'Validated recovery identity is unavailable.', 400);
 		const key = idempotencyKey(input.idempotencyKey), actorId = input.actorId;
 		await this.database.ensureInitialized();
 		return capacityTransaction(this.database, async database => {
@@ -42,8 +45,8 @@ export class OperatorAssignmentService {
 			if (audit) {
 				const retained: unknown = JSON.parse(String(audit.metadata_json));
 				const value = record(retained);
-				if (audit.idempotency_key !== key || value.actorId !== actorId || value.reason !== parsed.data.reason
-					|| value.expectedStateVersion !== parsed.data.expectedStateVersion) throw new CapacityGovernanceError(
+				if (audit.idempotency_key !== key || value.actorId !== actorId || value.reason !== reason
+					|| value.expectedStateVersion !== expectedStateVersion) throw new CapacityGovernanceError(
 					'capacity_recovery_idempotency_conflict', 'Original unresolved recovery evidence must be replayed unchanged.', 409);
 				return value;
 			}
@@ -51,7 +54,7 @@ export class OperatorAssignmentService {
 			if (!['expired', 'failed', 'cancelled'].includes(String(row.status)) || row.lease_state === 'leased'
 				|| row.lease_token || row.lease_expires_at || record(metadata.leaseRecovery).disposition !== 'operator-action')
 				throw new CapacityGovernanceError('capacity_recovery_authority_conflict', 'Only a terminal assignment held for operator action can release unresolved capacity.', 409);
-			if (row.state_version !== parsed.data.expectedStateVersion) throw new CapacityGovernanceError(
+			if (row.state_version !== expectedStateVersion) throw new CapacityGovernanceError(
 				'capacity_recovery_version_conflict', 'Assignment state version moved.', 409);
 			const reservation = await database.first('SELECT * FROM capacity_reservations WHERE id=? AND team_id=? FOR UPDATE', [row.reservation_id, teamId]);
 			if (!reservation || reservation.assignment_id !== assignmentId || reservation.membership_id !== row.membership_id
@@ -87,7 +90,7 @@ export class OperatorAssignmentService {
 			}
 			await database.run("UPDATE capacity_reservations SET state='released',updated_at=? WHERE id=? AND team_id=?", [now, reservation.id, teamId]);
 			const result = { assignmentId, reservationId: String(reservation.id), usageStatus: 'unresolved', settled: false,
-				expectedStateVersion: parsed.data.expectedStateVersion, actorId, reason: parsed.data.reason, recoveredAt: now };
+				expectedStateVersion, actorId, reason, recoveredAt: now };
 			await database.run(`INSERT INTO capacity_audit_events (id,team_id,capacity_provider_id,membership_id,actor_type,actor_id,action,resource_type,resource_id,idempotency_key,metadata_json,created_at)
 				VALUES (?,?,?,?,?,?,'assignment.usage.unresolved','capacity_provider_assignment',?,?,?,?)`,
 				[`operator-recovery:${teamId}:${assignmentId}`, teamId, row.capacity_provider_id, row.membership_id, 'user', actorId, assignmentId, key, JSON.stringify(result), now]);
