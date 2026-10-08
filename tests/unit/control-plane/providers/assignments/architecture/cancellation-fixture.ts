@@ -50,7 +50,7 @@ export async function cancellationDatabase(status = 'leased', started = false) {
 					projectAgentClassId: 'isolated-class-row', capacityProviderId: attempt.provider.providerId,
 					executionProviderId: attempt.provider.executionProviderId, reservationId: attempt.reservationId, budget: { ...budget, time } }),
 				JSON.stringify({ operationalState: started ? 'executing' : 'preparing' }), attempt.id]);
-		await fixture.query("UPDATE execution_nodes SET status='running',agent_class=?,node_revision=1 WHERE id='report-node'", [attempt.agentClass]);
+		await fixture.query("UPDATE execution_nodes SET kind='acting',status='running',agent_class=?,node_revision=1 WHERE id='report-node'", [attempt.agentClass]);
 		const assignment = await new ProviderAssignmentRepository(fixture.owner).get('team', attempt.id);
 		if (!assignment) throw new Error('Missing isolated parsed cancellation assignment');
 		return { ...fixture, attempt, assignment };

@@ -8,6 +8,11 @@ import { ControlPlaneStore } from '../../../../../../src/api/persistence/store.t
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
 import { loadTeamExecutableProposalSources } from '../../../../../../src/api/capacity/services/capacity/execution/executable-proposal-source.ts';
 import { CapacityOperationError } from '../../../../../../src/api/control-plane/repositories/capacity/capacity-operation-error.ts';
+import { workItemContext } from '../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
+import { executionNodeSchema } from '@treeseed/sdk/agent-capacity';
+import { candidate } from '../../../capacity/execution/fixtures/assignment-attempt-fixtures.ts';
+import { readFileSync } from 'node:fs';
+import { splitPostgresSqlStatements } from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
 
 async function operationalDecision() {
 	const fixture = await proposalNativeFixture();
@@ -26,6 +31,34 @@ async function operationalDecision() {
 }
 
 describe('native proposal Decision authority', () => {
+	it('native workday planning reads frozen Proposal source bytes and denies moved or denied content without changing SQL history', async () => {
+		const f = await proposalNativeFixture();
+		try {
+			const definition = readyProposal(), git = { store: 'git', model: 'repository', id: 'source', repository: 'example/project', commit: 'a'.repeat(40) };
+			Object.assign(definition.executionPlan.workItems[0]!, { contextRefs: [git] });
+			const published = await f.publish(definition), frozen = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
+				digest: `sha256:${published.digest}`, repository: 'repository', commit: published.commit, path: 'proposals/proposal.mdx' };
+			const ddl = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'))
+				.filter(sql => sql.startsWith('CREATE TABLE "capacity_workday_runs" ('));
+			expect(ddl).toHaveLength(1); await f.query(ddl[0]!);
+			const book = { ...frozen, model: 'book', id: 'core', path: 'books/core.md' };
+			const parameters = { workdayContextByProjectId: { project: book }, planningSourceByProposalId: { proposal: frozen } };
+			await f.query(`INSERT INTO capacity_workday_runs (id,team_id,scenario_id,environment,parameters_json,created_at,updated_at)
+				VALUES ('run','team','native-planning','local',?,'2026-10-08T09:00:00.000Z','2026-10-08T09:00:00.000Z')`, [JSON.stringify(parameters)]);
+			const store = { ...f.store, getGovernanceProposal: (id: string) => f.store.first('SELECT * FROM governance_proposals WHERE id=?', [id]) };
+			const node = executionNodeSchema.parse({ ...candidate.node, kind: 'planning', pairRole: null, workItemId: undefined,
+				workdayId: 'run', workspace: 'treedx', sourceRef: { store: 'postgresql', model: 'workday', id: 'run' } });
+			const held = await f.snapshot(), heldRun = await f.query('SELECT * FROM capacity_workday_runs');
+			for (const refs of await Promise.all([workItemContext(store, node), workItemContext(store, node)])) expect(refs).toEqual([book, frozen, git]);
+			for (const fault of ['moved', 'denied'] as const) {
+				f.setFault(fault); await expect(workItemContext(store, node)).rejects.toThrow();
+				expect(await f.snapshot()).toEqual(held); expect(await f.query('SELECT * FROM capacity_workday_runs')).toEqual(heldRun);
+			}
+			f.setFault('none'); expect(await workItemContext(store, node)).toEqual([book, frozen, git]);
+			expect(f.requests.every(request => request.ref === published.commit && request.path === frozen.path)).toBe(true);
+			expect(await f.snapshot()).toEqual(held); expect(await f.query('SELECT * FROM capacity_workday_runs')).toEqual(heldRun);
+		} finally { await f.close(); }
+	});
 	it('native executable intake retains missing Decision authority as a precise capacity denial through concurrent reads and unchanged retry', async () => {
 		const f = await operationalDecision();
 		try {

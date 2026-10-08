@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
+import { appliedWorkdaySchema, assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import { canonicalStandardsJson } from '@treeseed/sdk/standards';
 import { assignment } from '../../fixtures/assignment.ts';
 import { workdayReportContext } from '../../../../../../../src/api/capacity/services/capacity/assignments/admission/workday-report-context.ts';
@@ -8,8 +8,51 @@ import { advanceLivingWorkday } from '../../../../../../../src/api/capacity/serv
 import { closeoutDatabase, now, reportRef, reportResult } from './closeout-sql-fixture.ts';
 import { settlementDatabase, terminalUsage } from '../../../accounting/architecture/settlement-fixture.ts';
 import { settleCapacityReservationExactlyOnce } from '../../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
+import { cancellationDatabase } from '../../../../providers/assignments/architecture/cancellation-fixture.ts';
+import { createWorkdayService } from '../../../../../../../src/api/control-plane/repositories/capacity/workday-service.ts';
+import { terminalizeCapacityWorkdayAssignments } from '../../../../../../../src/api/capacity/services/capacity/workdays/lifecycle/workday-assignment-terminalization-service.ts';
 
 describe('canonical single report at the real lifecycle and SQL boundary', () => {
+	it('native public operator stop retains the closing Reporter node and canonical reads until its exact completed report and settlement', async () => {
+		const f = await cancellationDatabase('returned', false);
+		try {
+			await f.query("UPDATE execution_nodes SET kind='acting' WHERE id='report-node'");
+			await f.query(`INSERT INTO execution_nodes (id,team_id,project_id,workday_id,kind,source_ref_json,rule_revision,
+				node_revision,agent_class,status,graph_revision_created,graph_revision_updated,created_at,updated_at)
+				VALUES ('closing-report','team','project','workday','reporting','{}',1,1,'renamed-closeout','ready',1,1,?,?)`, [now, now]);
+			const sourceAttempt = JSON.stringify(f.attempt), store = { ...f.owner,
+				updateCapacityWorkdayRun: f.store.updateCapacityWorkdayRun,
+				getCapacityWorkdayRun: (team: string, id: string) => f.reads.get(team, id),
+				terminalizeCapacityWorkdayAssignments: (team: string, id: string, input: Parameters<typeof terminalizeCapacityWorkdayAssignments>[3]) =>
+					terminalizeCapacityWorkdayAssignments(f.owner, team, id, input) };
+			const service = createWorkdayService(store), principal = { id: 'operator', roles: ['platform_admin'] };
+			for (let retry = 0; retry < 2; retry++) {
+				const response = await service.stop(principal, 'team', 'workday', { reason: 'retain failed run' });
+				expect(response.run).toMatchObject({ status: 'running', parameters: { appliedPlan: { state: 'closing' } } });
+				expect((await f.query('SELECT id,status FROM execution_nodes ORDER BY id')).rows).toEqual([
+					{ id: 'closing-report', status: 'ready' }, { id: 'report-node', status: 'cancelled' }]);
+				expect((await f.query('SELECT assignment_attempt_json FROM capacity_provider_assignments')).rows)
+					.toEqual([{ assignment_attempt_json: sourceAttempt }]);
+			}
+			const beforeReport = await f.snapshot();
+			await f.query("UPDATE execution_nodes SET status='completed' WHERE id='closing-report'");
+			const result = { ...reportResult, id: 'result-closeout', assignmentId: 'assignment-closeout' };
+			await f.query(`INSERT INTO capacity_provider_assignments (id,membership_id,team_id,project_id,capacity_provider_id,
+				project_agent_class_id,work_day_id,mode,status,execution_node_id,assignment_result_json,completed_at,created_at,updated_at)
+				VALUES ('assignment-closeout','membership','team','project','provider','renamed-closeout','workday','acting',
+				'completed','closing-report',?,?,?,?)`, [JSON.stringify(result), now, now, now]);
+			await f.query(`INSERT INTO audit_events (id,actor_type,event_type,target_type,target_id,data_json,created_at)
+				VALUES ('closeout-integrated','service','assignment.content.integrated','capacity_provider_assignment','assignment-closeout','{}',?)`, [now]);
+			const run = (await f.reads.get('team', 'workday'))!;
+			const outcome = await advanceLivingWorkday(store, run, new Date().toISOString());
+			expect(outcome).toMatchObject({ status: 'cancelled', plan: { state: 'ended', reportRef } });
+			const terminal = (await f.reads.get('team', 'workday'))!;
+			expect(appliedWorkdaySchema.parse(terminal.parameters.appliedPlan).reportRef).toEqual(reportRef);
+			expect((await advanceLivingWorkday(store, terminal, new Date().toISOString())).changed).toBe(false);
+			for (const table of ['capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_reservations'])
+				expect((await f.query(`SELECT * FROM ${table} ORDER BY 1,2`)).rows).toEqual(beforeReport[table]);
+		} finally { await f.db.close(); }
+	});
 	it('native Reporter snapshot retains the exact original teardown result rather than an absent status scalar without repairing evidence or changing SQL history', async () => {
 		const f = await settlementDatabase(); try {
 			await settleCapacityReservationExactlyOnce(f.owner, { ...terminalUsage });
