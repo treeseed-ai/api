@@ -2400,3 +2400,6 @@ workflow:
   - id: execution-canonical-start-clock-native
     action: { verifier: api.golden.execution-canonical-start-clock-native }
     expect: { status: passed }
+  - id: execution-canonical-claim-native
+    action: { verifier: api.golden.execution-canonical-claim-native }
+    expect: { status: passed }

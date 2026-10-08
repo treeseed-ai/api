@@ -4096,3 +4096,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
     testName: "native execution start records the original canonical running clock once and closeout cannot rewrite it or frozen authority"
+  api.golden.execution-canonical-claim-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-poll-native.test.ts
+    testName: "native claim advances only canonical leased status without inventing execution clocks or changing dependency authority"
