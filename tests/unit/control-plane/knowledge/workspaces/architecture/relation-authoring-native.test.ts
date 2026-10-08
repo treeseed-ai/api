@@ -128,7 +128,7 @@ describe('native ordinary relation creation and indexing', () => {
 	it('real TreeDX authoring denies malformed Note identities and duplicate subject authority across unchanged retries before exact original publication bytes', async () => {
 		const f = await relationAuthoringDatabase(); try {
 			const workspace = await f.create(), before = await f.snapshot(), original = structuredClone(f.note);
-			const missing = { ...f.note }; delete missing.id;
+			const missing = { ...f.note }; Reflect.deleteProperty(missing, 'id');
 			const invalid = [missing, ...['', ' padded', 'internal space', 'é', 'a'.repeat(201), null].flatMap(value =>
 				[{ ...f.note, id: value }, { ...f.note, projectId: value }]),
 				{ ...f.note, subjectRefs: [f.link.from, f.link.from] },

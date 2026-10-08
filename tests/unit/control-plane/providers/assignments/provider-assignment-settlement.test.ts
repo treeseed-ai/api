@@ -38,6 +38,9 @@ describe('provider assignment settlement', () => {
 			returnProviderAssignment: async () => { effects.push('return'); return null; },
 			completeProviderAssignment: async () => { effects.push('complete'); return null; },
 			failProviderAssignment: async () => { effects.push('fail'); return null; },
+			updateCapacityWorkdayRun: async () => { effects.push('update-workday'); return null; },
+			createCapacityWorkdayRun: async () => { effects.push('create-workday'); throw new Error('Unexpected workday creation'); },
+			tickCapacityWorkdayRun: async () => { effects.push('tick-workday'); return {}; },
 		};
 		const original = createProviderAssignmentService(guarded);
 		const methods: Array<(body: Record<string, unknown>) => Promise<unknown>> = [

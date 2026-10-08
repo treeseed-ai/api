@@ -70,7 +70,7 @@ export async function relationAuthoringDatabase(nativePostgres = false) {
 		: lite!.query<Row>(translateControlPlaneSqlToPostgres(sql), params);
 	class Statement {
 		constructor(readonly sql: string, readonly params: unknown[]) {}
-		async run() { const result = await query(this.sql, this.params); return { success: true, meta: {
+		async run() { const result = await query(this.sql, this.params); return { success: true as const, results: result.rows, meta: {
 			changes: 'affectedRows' in result ? result.affectedRows ?? result.rows.length : result.rowCount ?? result.rows.length } }; }
 		async first() { return (await query(this.sql, this.params)).rows[0] ?? null; }
 		async all() { return { results: (await query(this.sql, this.params)).rows }; }
@@ -142,7 +142,7 @@ export async function relationAuthoringDatabase(nativePostgres = false) {
 		input.note.subjectRefs = [input.link.from, input.link.to]; input.note.links = [input.link];
 		const content = `---\n${stringify(input.note)}---\n\nReviewed precursor governs dependent work.\n`;
 		const service = createKnowledgeWorkspaceService(store, { projectCatalog: async () => { throw new Error('Unrelated page catalog is outside relation authoring'); } });
-		const principal = { id: 'operator', roles: ['admin'] };
+		const principal = { id: 'operator', roles: ['admin'], scopes: [], permissions: [] };
 		const create = async (requestId = randomUUID()) => {
 			const workspace = await service.create(principal, 'precursor', { requestId });
 			assert.ok(workspace); workspaces.add(String(workspace.treeDxWorkspaceId)); return workspace;

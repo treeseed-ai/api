@@ -347,6 +347,8 @@ export class ProviderAssignmentLifecycleService {
 				...(input.performance ? { performance: { ...input.performance, disposition: 'cancelled', reason } } : {}) };
 			failure = classifyCapacityFailure(input);
 		}
+		const hasResult = Object.hasOwn(record(input.output), 'assignmentResult') || Object.hasOwn(input, 'assignmentResult');
+		const assignmentResult = hasResult ? validateAssignmentResultCompletion(assignment, record(input), now, 'failed') : undefined;
 		if (input.fallbackOutput) await this.persistFallback(assignment, {
 			...input.fallbackOutput,
 			status: record(input.fallbackOutput).status ?? 'suppressed',
@@ -376,6 +378,7 @@ export class ProviderAssignmentLifecycleService {
 			defaultCode: archived?'discussion_archived':'provider_assignment_failed',
 			defaultReason: archived?'The source Discussion was archived.':'Provider assignment failed.',
 			metadata: { ...record(assignment.metadata), failureClassification: failure },
+			assignmentResult,
 			allowExpiredLease: timeout || phaseCancelled,
 		}, this.store);
 	}

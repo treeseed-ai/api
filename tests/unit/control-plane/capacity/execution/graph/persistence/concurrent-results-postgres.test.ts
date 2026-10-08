@@ -36,8 +36,8 @@ describe('concurrent terminal graph revision custody', () => {
 			}));
 			const store = { db, ensureInitialized: async () => {},
 				run: async (sql: string, params: unknown[] = []) => { await db.prepare(sql).bind(...params).run(); },
-				first: (sql: string, params: unknown[] = []) => db.prepare(sql).bind(...params).first(),
-				all: async (sql: string, params: unknown[] = []) => (await db.prepare(sql).bind(...params).all()).results,
+				first: <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => db.prepare(sql).bind(...params).first<T>(),
+				all: async <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => (await db.prepare(sql).bind(...params).all<T>()).results,
 				batch: (operations: Array<{ query: string; params?: unknown[] }>) => db.batch(operations) };
 			const graph = { teamId: 'team', revision: 1, digest, nodes, edges: [] };
 			const receipt: GraphRevision = { schemaVersion: 'treeseed.graph-revision/v1', teamId: 'team', revision: 1,

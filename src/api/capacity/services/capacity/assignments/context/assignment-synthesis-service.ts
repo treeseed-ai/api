@@ -5,7 +5,7 @@ import { resolveProviderSynthesisContext } from '../../providers/provider-synthe
 import { assignNextReadyExecutionNode } from '../planning/execution/living-execution-assignment.ts';
 import type { LivingExecutionStore } from '../planning/support/living-execution-store.ts';
 
-export interface ProviderSynthesisRequest extends Record<string, unknown> {
+export interface ProviderSynthesisRequest {
 	sessionId?: string | null;
 	providerSessionId?: string | null;
 	environment?: string | null;

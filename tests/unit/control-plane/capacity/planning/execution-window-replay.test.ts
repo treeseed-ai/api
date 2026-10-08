@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import assert from 'node:assert/strict';
 import { compileAssignmentExecutionWindow, compileAssignmentCloseoutWindow, startAssignmentExecutionWindow, startAssignmentCloseoutWindow } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-execution-window-service.ts';
 import { compileAssignmentTimeBudget, beginAssignmentPreparationTimeBudget } from '../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-time-budget.ts';
 
@@ -39,8 +40,12 @@ describe('execution transition replay authority', () => {
     expect(timing.capacityBudget.time.preparationStartedAt).toBeNull();
     const envelope = { requestedSeconds: 180, budget: timing.capacityBudget };
     const replay = beginAssignmentPreparationTimeBudget(envelope, '2026-09-11T12:02:30Z');
-    expect(replay.budget.time.authorityDeadlineAt).toBe(timing.authorityExpiresAt);
-    expect(replay.budget.time.preparationDeadlineAt).toBe('2026-09-11T12:03:30.000Z');
+    const budget = replay.budget;
+    assert.ok(budget && typeof budget === 'object' && 'time' in budget);
+    const time = budget.time;
+    assert.ok(time && typeof time === 'object' && 'authorityDeadlineAt' in time && 'preparationDeadlineAt' in time);
+    expect(time.authorityDeadlineAt).toBe(timing.authorityExpiresAt);
+    expect(time.preparationDeadlineAt).toBe('2026-09-11T12:03:30.000Z');
     const started = compileAssignmentExecutionWindow({ capacityEnvelope: replay, metadata: {} } as never,
       '2026-09-11T12:03:00Z', executionRef);
     expect(started.capacityEnvelope.budget.time.hardDeadlineAt).toBe('2026-09-11T12:06:00.000Z');

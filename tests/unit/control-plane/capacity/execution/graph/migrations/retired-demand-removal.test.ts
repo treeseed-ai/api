@@ -91,7 +91,7 @@ it('refuses to erase conflicting mode-run assignment provenance', async () => {
 			INSERT INTO capacity_workday_events VALUES ('event','different-assignment','retired-run');`);
 		await expect(db.exec(readFileSync('drizzle/control-plane/0038_remove_retired_mode_runs.sql', 'utf8')))
 			.rejects.toThrow(/provenance conflicts/u);
-		expect((await db.query("SELECT to_regclass('public.agent_mode_runs') AS table_name")).rows[0]?.table_name)
+		expect((await db.query<{ table_name: string | null }>("SELECT to_regclass('public.agent_mode_runs') AS table_name")).rows[0]?.table_name)
 			.not.toBeNull();
 	} finally { await db.close(); }
 }, 15_000);
@@ -120,7 +120,7 @@ it('refuses to drop a still-admissible workday envelope', async () => {
 			INSERT INTO workday_capacity_envelopes VALUES ('live','active');`);
 		await expect(db.exec(readFileSync('drizzle/control-plane/0039_remove_workday_capacity_envelopes.sql', 'utf8')))
 			.rejects.toThrow(/must be drained/u);
-		expect((await db.query("SELECT to_regclass('public.workday_capacity_envelopes') AS table_name")).rows[0]?.table_name)
+		expect((await db.query<{ table_name: string | null }>("SELECT to_regclass('public.workday_capacity_envelopes') AS table_name")).rows[0]?.table_name)
 			.not.toBeNull();
 	} finally { await db.close(); }
 }, 15_000);

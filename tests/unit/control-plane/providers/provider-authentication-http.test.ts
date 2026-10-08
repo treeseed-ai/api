@@ -10,7 +10,7 @@ describe('provider HTTP authentication', () => {
 		let oauthCalls = 0;
 		const registry = new OperationRegistry([{ binding: CONTROL_PLANE_OPERATIONS.providers.register,
 			handler: async (_input, context) => ({ authorization: context.requestHeaders?.authorization }) }]);
-		const app = new Hono();
+		const app = new Hono<{ Variables: { capacityProviderAccessAuth: unknown } }>();
 		installControlPlaneProtocolRoutes(app, async () => { oauthCalls += 1; return null; }, undefined, registry);
 		const response = await app.request('/v1/provider-registrations', { method: 'POST',
 			headers: { authorization: 'Treeseed-Registration one-time', 'content-type': 'application/json', 'idempotency-key': 'register-1' }, body: '{}' });
@@ -23,7 +23,7 @@ describe('provider HTTP authentication', () => {
 		let oauthCalls = 0;
 		const registry = new OperationRegistry([{ binding: CONTROL_PLANE_OPERATIONS.providers.createAvailability,
 			handler: async (_input, context) => ({ providerId: (context.providerAuth as any)?.principal?.capacityProviderId }) }]);
-		const app = new Hono();
+		const app = new Hono<{ Variables: { capacityProviderAccessAuth: unknown } }>();
 		app.use('/v1/provider/*', async (context, next) => {
 			context.set('capacityProviderAccessAuth', { principal: { membershipId: 'membership-1', teamId: 'team-1', capacityProviderId: 'provider-1', scopes: ['provider:availability:write'] } });
 			await next();
@@ -41,7 +41,7 @@ describe('provider HTTP authentication', () => {
 		let oauthCalls = 0;
 		const registry = new OperationRegistry([{ binding: CONTROL_PLANE_OPERATIONS.treedx.repositories.create,
 			handler: async (_input, context) => ({ actor: context.providerAuth ? 'provider' : context.principal?.id }) }]);
-		const app = new Hono();
+		const app = new Hono<{ Variables: { capacityProviderAccessAuth: unknown } }>();
 		app.use('/v1/dx/*', async (context, next) => {
 			if (context.req.header('authorization') === 'Bearer tspa_test') context.set('capacityProviderAccessAuth', {
 				principal: { membershipId: 'membership-1', teamId: 'team-1', capacityProviderId: 'provider-1', scopes: ['provider:assignments:write'] },

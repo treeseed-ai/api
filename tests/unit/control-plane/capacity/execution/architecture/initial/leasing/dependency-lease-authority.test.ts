@@ -4,10 +4,10 @@ import { evaluateAssignmentLeaseDeadline } from '../../../../../../../../src/api
 import { beginAssignmentPreparationTimeBudget } from '../../../../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-time-budget.ts';
 
 function eligible(envelope: Record<string, unknown>, now: number) {
-	const assignment: Parameters<typeof evaluateAssignmentLeaseDeadline>[0] = { status: 'pending',
-		capacityEnvelope: { teamId: 'team', projectId: 'project', mode: 'acting' } };
+	const capacityEnvelope = { teamId: 'team', projectId: 'project', mode: 'acting' };
+	const assignment: Parameters<typeof evaluateAssignmentLeaseDeadline>[0] = { status: 'pending', capacityEnvelope };
 	// Intentionally malformed INPUT DTOs reach the real gate, not a fixture validator.
-	Object.assign(assignment.capacityEnvelope, structuredClone(envelope));
+	Object.assign(capacityEnvelope, structuredClone(envelope));
 	try { return evaluateAssignmentLeaseDeadline(assignment, now).eligible; }
 	catch { return false; }
 }

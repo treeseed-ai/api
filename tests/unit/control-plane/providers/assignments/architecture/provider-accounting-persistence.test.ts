@@ -31,7 +31,7 @@ describe('provider incremental terminal and release accounting through original 
 					expect(await snapshot()).toEqual(before); expect(body).toEqual(original); expect(Object.hasOwn(body, 'modeRunId')).toBe(true);
 				}
 			}
-			const body = structuredClone(terminalUsage), original = structuredClone(body);
+			const body = { ...structuredClone(terminalUsage) }, original = structuredClone(body);
 			const first = await service.settle(auth, frozenAttempt.id, body, terminalUsage.settlementKey);
 			expect(first.replayed).toBe(false);
 			const settled = await snapshot();

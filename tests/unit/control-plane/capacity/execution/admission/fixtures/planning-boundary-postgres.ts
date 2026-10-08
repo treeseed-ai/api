@@ -16,7 +16,7 @@ export async function seedPlanningBoundary(db: ReturnType<typeof createControlPl
 	planning.effectiveProfile = { ...planning.effectiveProfile, activity: 'planning', handler: 'planner',
 		permissionCeiling: planning.node.requestedPermissions } as never;
 	const parameters = { scheduledProjectIds: ['project'], appliedPlan: {
-		...(run as { parameters: { appliedPlan: Record<string, unknown> } }).parameters.appliedPlan, startsAt, endsAt,
+		...run.parameters.appliedPlan, startsAt, endsAt,
 		policySnapshot: { durationSeconds: 3600, planningPercent: 100 / 3, allocationWeight: 1,
 			planningTurnMaximumSeconds: 180, maximumConcurrency: 5, communicationConcurrency: 5,
 			projectPercentages: { project: 100 }, agentClassPercentages: { project: { engineer: 100 } } },
@@ -27,7 +27,7 @@ export async function seedPlanningBoundary(db: ReturnType<typeof createControlPl
 		workdays: [{ plan, committedSeconds: 0, planningCommittedSeconds: 0, maximumAdditionalSeconds: 31, actingReady: false }] })[plan.id];
 	if (!opportunity) throw new Error('Original allocator planning opportunity required');
 	const allocated = buildAssignmentAttempt({ candidate: planning as never,
-		run: { ...structuredClone(run as Record<string, unknown>), parameters } as never, principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
+		run: { ...structuredClone(run), parameters } as never, principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 		allocationInputs: { codex: { measurements: [], constraints: [], opportunity } }, providerSessionId: 'session', attempt: 1, now: issuedAt,
 		providers: [{ ...provider, accountingObservation: { modelUsage: observation, capabilityUsage: { [executionCapability]: observation } } }] as never });
 	const attempt = assignmentAttemptSchema.parse({ ...allocated.assignment, id: 'assignment', idempotencyKey: 'assignment',

@@ -56,7 +56,7 @@ describe('communication catalog operations', () => {
 	});
 
 	it('collapses duplicate addresses and keeps an accepted send durable while capacity reconciles', async () => {
-		const create = vi.fn(async () => ({ invocations: [{ blocker: 'communication_supply_unavailable' }] }));
+		const create = vi.fn(async (_principal: unknown, _input: Record<string, unknown>, _key?: string) => ({ invocations: [{ blocker: 'communication_supply_unavailable' }] }));
 		const writes: Array<{ query: string; parameters: unknown[] }> = [];
 		const service = createCommunicationService(store({
 			async getProjectDetails() { return { project: { id: 'project-a', slug: 'sdk', teamId: 'team-a' } }; },
@@ -80,7 +80,7 @@ describe('communication catalog operations', () => {
 	});
 
 	it('expands a bare handle into one project stream per matching team agent', async () => {
-		const create = vi.fn(async () => ({ invocations: [{ blocker: 'communication_supply_unavailable' }] }));
+		const create = vi.fn(async (_principal: unknown, _input: Record<string, unknown>, _key?: string) => ({ invocations: [{ blocker: 'communication_supply_unavailable' }] }));
 		const service = createCommunicationService(store({
 			async listTeamProjects() { return [{ id: 'project-api', slug: 'api', status: 'active' }, { id: 'project-sdk', slug: 'sdk', status: 'active' }]; },
 			async first(query: string, parameters: string[]) {

@@ -71,7 +71,9 @@ describe('actual owning profile inventory and public query', () => {
 			await f.seed(); const before = await f.inventorySnapshot(), response = await f.service.show(f.principal, 'project', 'portable-0');
 			expect(response.agent.definition).toEqual(definition()); expect(validateAgentDefinitionModel(response.agent.definition).ok).toBe(true);
 			expect(response.agent.effectiveActivities.acting).toMatchObject({ handler: 'configured/native-project-handler', origin: 'project-runtime' });
-			expect(response.agent.definition.activityProfiles.acting.parameters).toEqual({ temperature: 0.25 });
+			const acting = response.agent.definition.activityProfiles.acting;
+			expect(acting).toBeDefined(); if (!acting) throw new Error('Original acting profile required');
+			expect(acting.parameters).toEqual({ temperature: 0.25 });
 			expect(await f.service.handler(f.principal, 'project', 'configured/native-project-handler')).toMatchObject({ projectId: 'project', handler: { id: 'configured/native-project-handler', origin: 'project-runtime' } });
 			await f.service.list(f.principal, 'project'); expect(await f.inventorySnapshot()).toEqual(before);
 		} finally { await f.db.close(); }

@@ -63,9 +63,13 @@ describe('provider terminal reporting through original transaction and resource 
 		const native = await completionFixture();
 		try {
 			const before = await native.snapshot(), input = { leaseToken: 'lease-token', output: { assignmentResult: native.result } };
-			for (const status of ['blocked', 'failed'] as const)
-				await expect(native.service.complete(principal, native.assignment.id, { ...input, output: { assignmentResult: { ...native.result, status } } }))
+			for (const status of ['blocked', 'failed'] as const) for (const nested of [false, true]) {
+				const assignmentResult = { ...native.result, status }, supplied = { leaseToken: input.leaseToken,
+					...(nested ? { output: { assignmentResult } } : { assignmentResult }) }, original = structuredClone(supplied);
+				await expect(native.service.complete(principal, native.assignment.id, supplied))
 					.rejects.toMatchObject({ code: 'assignment_content_result_invalid' });
+				expect(supplied).toEqual(original); expect(await native.snapshot()).toEqual(before);
+			}
 			for (const completedAt of [undefined, 'invalid'])
 				await expect(native.service.complete(principal, native.assignment.id, { ...input, output: { assignmentResult: { ...native.result, completedAt } } }))
 					.rejects.toMatchObject({ code: 'assignment_result_invalid' });

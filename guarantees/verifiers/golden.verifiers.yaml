@@ -1,6 +1,56 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-report-settlement-required-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/workday-report-context.test.ts
+    testName: "denies consumed reservation totals without the original matching scoped canonical settlement rather than fabricating closed report evidence"
+  api.golden.execution-report-settlement-required-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/public-record-custody.test.ts
+    testName: "native Reporter denies consumed totals when the retained original settlement moves outside team or workday scope without repairing financial history"
+  api.golden.execution-report-settlement-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/workday-report-context.test.ts
+    testName: "reads original scoped canonical settlement authority rather than inferring settlement from consumed reservation totals"
+  api.golden.execution-report-credential-denial-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/workday-report-context.test.ts
+    testName: "retains noncredential teardown evidence while excluding nested credential custody from the public Reporter snapshot without modifying supplied rows"
+  api.golden.execution-report-teardown-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/workday-report-context.test.ts
+    testName: "snapshots failures, revisions, graph, usage and settlements through existing authority without credentials"
+  api.golden.execution-report-teardown-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-closeout-persistence.test.ts
+    testName: "native Reporter snapshot retains the exact original teardown result rather than an absent status scalar without repairing evidence or changing SQL history"
+  api.golden.execution-canonical-failure-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/completion-clock.test.ts
+    testName: "denies failed and blocked canonical results on the successful completion boundary without changing supplied authority"
+  api.golden.execution-canonical-failure-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "native failure preserves exact canonical failed results and actual settlement once including truthful post-deadline closeout"
+  api.golden.execution-canonical-failure-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "native failure denies malformed foreign and nonfailed canonical results before settlement or graph writes"
+  api.golden.execution-canonical-failure-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "native failed result interruption rolls back settlement and retries the same original result without deleting failure history"
   api.golden.execution-diagnostics-read-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -2756,6 +2806,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-authority.test.ts
     testName: "denies missing malformed and legacy partial provider offers before constructing an immutable governed assignment"
+  api.golden.execution-provider-utc-allocation-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-authority.test.ts
+    testName: "retains the original UTC day and phase bounds for positive whole-second supply and denies subsecond supply without changing governed inputs"
   api.golden.execution-provider-offer-unit-2:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

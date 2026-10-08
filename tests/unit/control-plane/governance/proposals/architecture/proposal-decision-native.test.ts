@@ -78,7 +78,7 @@ describe('native proposal Decision authority', () => {
 			const proposal = await f.store.createGovernanceProposal(f.principal, { id: declaration.id, teamId: 'team', projectId,
 				title: declaration.title, summary: declaration.summary, request: declaration.request,
 				contentProvenance: { repositoryId: repository, contentPath: path, commitSha: commit, digest } });
-			expect(proposal).toBeDefined();
+			expect(proposal).toBeDefined(); assert.ok(proposal);
 			// Bind the supplied native source hash, not a fabricated accepted Decision.
 			await f.query('UPDATE governance_proposals SET active_content_hash=? WHERE id=?', [digest, declaration.id]);
 			await f.query('UPDATE governance_proposal_versions SET content_hash=? WHERE proposal_id=?', [digest, declaration.id]);
@@ -126,7 +126,7 @@ describe('native proposal Decision authority', () => {
 					digest: `sha256:${createHash('sha256').update(questionRaw).digest('hex')}`, repository, commit: questionCommit, path: questionPath };
 				const feedback = await f.store.recordGovernanceEvent({ eventType: 'proposal.discussion', actorType: 'user', actorId: 'independent-input-author',
 					teamId: 'team', projectId, proposalId: declaration.id, proposalVersion: 1, message: question.question,
-					evidence: { kind: 'question', questionRef, contentPath: questionPath, commitSha: questionCommit, digest: questionRef.digest, proposalVersion: 1 } });
+					evidence: { kind: 'question', questionRef, contentPath: questionPath, commitSha: questionCommit, digest: questionRef.digest, proposalVersion: 1 } }); assert.ok(feedback);
 				const readiness = await f.store.governanceProposalReadiness(declaration.id); expect(readiness).toMatchObject({ votingReady: false, executionPlanReady: true, unresolvedBlockerCount: 1 }); expect(readiness!.missingVoting).toContain('resolved blocking questions and concerns');
 				const blocked = await f.snapshot(), blockedEvents = await f.store.all('SELECT * FROM governance_events ORDER BY id');
 				const blockedService = createGovernanceService(f.store, createDiscussionService({ store: f.store, capacity: f.store, sessionEvents: new SessionEventService(f.store) }));
@@ -158,19 +158,19 @@ describe('native proposal Decision authority', () => {
 				await expect(f.store.adminDecideGovernanceProposal(f.principal, declaration.id, input)).rejects.toThrow('controlled Decision projection interruption');
 				const retained = await f.store.all('SELECT * FROM governance_decisions ORDER BY id'); expect(retained).toHaveLength(1);
 				interruptedDecision = retained[0]!; expect(interruptedDecision.status).toBe('creating');
-				expect((await f.store.getGovernanceProposal(declaration.id)).decisionId).toBeNull(); expect((await f.store.all('SELECT * FROM governance_events ORDER BY id')).filter(event => event.event_type === 'decision.created')).toEqual([]);
+				const retainedProposal = await f.store.getGovernanceProposal(declaration.id); assert.ok(retainedProposal); expect(retainedProposal.decisionId).toBeNull(); expect((await f.store.all('SELECT * FROM governance_events ORDER BY id')).filter(event => event.event_type === 'decision.created')).toEqual([]);
 				interruptedRefs = object(await f.client.repositories.refs(repository));
 				await f.db.exec('DROP TRIGGER reject_decision_created ON governance_events; DROP FUNCTION reject_decision_created();');
 				// Retry two real owning calls against the retained native publication.
 				// Each original store uses a different native PostgreSQL pool.
 				for (const result of await Promise.all([f.store.createGovernanceDecisionFromProposal(declaration.id, { actorType: 'user', actorId: f.principal.id }),
-					f.peerStore.createGovernanceDecisionFromProposal(declaration.id, { actorType: 'user', actorId: f.principal.id })])) expect(result.id).toBe(interruptedDecision.id);
+					f.peerStore.createGovernanceDecisionFromProposal(declaration.id, { actorType: 'user', actorId: f.principal.id })])) { assert.ok(result); expect(result.id).toBe(interruptedDecision.id); }
 			}
 			const accepted = await f.store.adminDecideGovernanceProposal(f.principal, declaration.id, input);
 			const receivedAt = Date.now();
-			expect(accepted).toMatchObject({ status: 'accepted', id: declaration.id });
+			expect(accepted).toMatchObject({ status: 'accepted', id: declaration.id }); assert.ok(accepted);
 			const decisionId = String(accepted.decisionId ?? ''); expect(decisionId).not.toBe('');
-			const decision = await f.store.getGovernanceDecision(decisionId); expect(decision).toMatchObject({ status: 'accepted', proposalId: declaration.id, proposalVersion: 1, proposalContentHash: digest });
+			const decision = await f.store.getGovernanceDecision(decisionId); expect(decision).toMatchObject({ status: 'accepted', proposalId: declaration.id, proposalVersion: 1, proposalContentHash: digest }); assert.ok(decision);
 			if (interruptedDecision) {
 				expect(decision.id).toBe(interruptedDecision.id); expect(decision.createdAt).toBe(interruptedDecision.created_at); expect(object(await f.client.repositories.refs(repository))).toEqual(interruptedRefs);
 			}
@@ -222,7 +222,7 @@ describe('native proposal Decision authority', () => {
 			expect(projected.filter(node => node.pairRole === 'actor')).toHaveLength(1); expect(projected.filter(node => node.pairRole === 'reviewer')).toHaveLength(1);
 			for (const node of projected.filter(value => value.pairRole !== null)) {
 				expect(node.sourceRef).toEqual(proposalRef);
-				const authorities = node.authorityRefs.filter(ref => ref.model === 'decision'); expect(authorities).toHaveLength(1);
+				assert.ok(node.authorityRefs); const authorities = node.authorityRefs.filter(ref => ref.model === 'decision'); expect(authorities).toHaveLength(1);
 				const authority = authorities[0]!;
 				expect(authority).toMatchObject({ store: 'treedx', model: 'decision', id: decisionId, repository,
 					path: retainedContent.path, digest: `sha256:${createHash('sha256').update(retainedContent.raw).digest('hex')}` });
@@ -273,7 +273,7 @@ describe('native proposal Decision authority', () => {
 			const currentBinding = readerBefore.bindings.find(binding => binding.project_id === projectId); assert.ok(currentBinding);
 			const projectContextCommit = String(currentBinding.content_repository_ref); expect(projectContextCommit).toMatch(/^[a-f0-9]{40}$/u);
 			expect(readerBefore.assignments).toEqual([]); expect(readerBefore.reservations).toEqual([]); expect(readerBefore.usage).toEqual([]);
-			const actorNode = projected.find(node => node.pairRole === 'actor'); assert.ok(actorNode); expect(actorNode.status).toBe('ready');
+			const actorNode = projected.find(node => node.pairRole === 'actor'); assert.ok(actorNode); assert.ok(actorNode.authorityRefs); assert.ok(typeof actorNode.agentClass === 'string'); expect(actorNode.status).toBe('ready');
 			const actorRow = graph.nodes.find(row => row.id === actorNode.id); assert.ok(actorRow); assert.equal(typeof actorRow.updated_at, 'string');
 			const actorProfile = profileInputs.find(profile => profile.definition.agentClass === actorNode.agentClass); assert.ok(actorProfile);
 			const selectedProfile = actorProfile.definition.activityProfiles.acting; assert.ok(selectedProfile);
@@ -433,6 +433,7 @@ describe('native proposal Decision authority', () => {
 				const compilerBefore = structuredClone(compilerInput), frozen = buildAssignmentAttempt(compilerInput), attempt = frozen.assignment;
 				expect(attempt.sourceRef).toEqual(proposalRef); expect(attempt.authorityRefs).toEqual(actorNode.authorityRefs); expect(attempt.effectiveProfile).toEqual(selectedReady.effectiveProfile); expect(attempt.provider.providerId).toBe(providerId);
 				expect(attempt.limits.maximumSeconds).toBe(3); expect(attempt.deadline).toBe(activePlan.endsAt);
+				assert.ok(typeof selectedReady.readyAt === 'string');
 				const admission = { ...frozen, principal, projectAgentClassId: selectedReady.projectAgentClassId, providerSessionId: opened.id,
 					allocation: { ...frozen.allocation, opportunity, selection: selectFairReadyNode([{ id: actorNode.id, projectId,
 						agentClass: actorNode.agentClass, readyAt: selectedReady.readyAt }], [], activePlan.policySnapshot) },

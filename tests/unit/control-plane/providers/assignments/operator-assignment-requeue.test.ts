@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
 
 const { getAssignment } = vi.hoisted(() => ({ getAssignment: vi.fn() }));
 
@@ -17,10 +18,12 @@ describe('operator assignment requeue', () => {
 			reservationId: 'reservation-1', executionNodeId: 'node-1', executionNodeRevision: 1,
 			stateVersion: 4, metadata: { retained: true },
 		});
+		const unexpected = async () => { throw new Error('Unexpected requeue database operation'); };
 		const database = {
 			ensureInitialized: vi.fn(),
 			first: vi.fn().mockResolvedValue({ node_revision: 2, status: 'ready' }),
-		} as never;
+			run: unexpected, all: unexpected, batch: unexpected,
+		} satisfies CapacityGovernanceDatabase;
 
 		const result = await new OperatorAssignmentService(database).requeue('team-1', 'assignment-1', {
 			idempotencyKey: 'retry-1',

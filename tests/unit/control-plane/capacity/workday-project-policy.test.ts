@@ -9,7 +9,7 @@ describe('capacity workday project library root', () => {
 			metadata_json: '{"library":{"role":"library"}}', created_at: '2026-10-06T00:00:00.000Z', updated_at: '2026-10-06T00:00:00.000Z' };
 		const rows = [null, undefined, row, { ...row, id: 'project-deleted', metadata_json: '{"deletion":{"status":"succeeded"}}' }];
 		const before = structuredClone(rows), reads: Array<{ sql: string; values: unknown[] }> = [];
-		const store = Object.assign(new ControlPlaneStore({}, null), { ensureInitialized: async () => undefined,
+		const store = Object.assign(new ControlPlaneStore({}, { prepare: () => { throw new Error('Unexpected native query in controlled inventory unit'); } }), { ensureInitialized: async () => undefined,
 			all: async (sql: string, values: unknown[]) => { reads.push({ sql, values }); return rows; } });
 		const expected = [{ id: row.id, teamId: row.team_id, slug: row.slug, name: row.name, description: null,
 			metadata: { library: { role: 'library' } }, createdAt: row.created_at, updatedAt: row.updated_at }];

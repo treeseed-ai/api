@@ -4,14 +4,15 @@ import { candidate, permissions, provider, run, sourceRef, gitRef, canonicalOffe
 	conversationCapability, executionCapability, suppliedCapabilityOffer } from './fixtures/assignment-attempt-fixtures.ts';
 import { capabilityOfferDigest } from '@treeseed/sdk/capacity-provider';
 import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
-
+// Typed allocator output is a supplied component input, not native allocation proof.
+const opportunity = canonicalOfferBuildInput().allocationInputs.codex!.opportunity;
 describe('immutable assignment-attempt construction', () => {
 	it('calibrates exact review history without inventing a minimum allocation floor', () => {
 		const review = structuredClone(candidate); Object.assign(review.node, { kind: 'reviewing', pairRole: null, agentClass: 'reviewer', workspace: 'read-only', estimate: { expectedSeconds: 100, maximumSeconds: 165 }, requestedPermissions: { content: { read: ['proposal'], write: [] }, tools: ['source.read', 'verification'] } });
 		Object.assign(review.effectiveProfile, { activity: 'reviewing', handler: 'reviewer', permissionCeiling: review.node.requestedPermissions });
 		const measurements = Array.from({ length: 20 }, (_, index) => ({ id: `review-${index}`, completedAt: new Date(Date.parse('2026-09-13T11:30:00.000Z') + index * 1000).toISOString(), expectedSeconds: 250, allocatedSeconds: 200, activeSeconds: 84, outcome: 'completed' as const }));
-		const build = (item: typeof review, constraints: Array<{ id: string; remainingSeconds: number }> = []) => buildAssignmentAttempt({ candidate: item as never, run, principal: { teamId: 'team', capacityProviderId: 'provider' } as never, allocationInputs: { codex: { measurements, constraints } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1, now: '2026-09-13T12:01:00.000Z' });
-		const original = structuredClone({ review, measurements, run, provider }); for (const item of [review, { ...review, node: { ...review.node, pairRole: 'reviewer' } }]) {
+		const build = (item: typeof review, constraints: Array<{ id: string; remainingSeconds: number }> = []) => buildAssignmentAttempt({ candidate: item as never, run, principal: { teamId: 'team', capacityProviderId: 'provider' } as never, allocationInputs: { codex: { opportunity, measurements, constraints } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1, now: '2026-09-13T12:01:00.000Z' });
+		const original = structuredClone({ review, measurements, run, provider }); for (const item of [review, { ...review, node: { ...review.node, pairRole: 'reviewer' as const } }]) {
 			const result = build(item); expect(result.allocation).toMatchObject({ admitted: true, desiredSeconds: 73, allocatedSeconds: 73,
 				calibration: { measurementIds: measurements.map(({ id }) => id) } });
 			expect(result.allocation).not.toHaveProperty('minimumSeconds'); expect(result.allocation).not.toHaveProperty('observedMinimumSeconds');
@@ -38,11 +39,11 @@ describe('immutable assignment-attempt construction', () => {
 			offers: [suppliedCapabilityOffer('2026-09-13T12:00:00.000Z', conversationCapability, 'codex-conversation')] };
 		const measurements = [{ id: 'successful-short-chat', completedAt: '2026-09-13T11:59:00.000Z',
 			expectedSeconds: 180, allocatedSeconds: 90, activeSeconds: 45, outcome: 'completed' }];
-		const chatRun = structuredClone(run) as { parameters: { appliedPlan: { policySnapshot: { planningTurnMaximumSeconds: number } } } };
+		const chatRun = structuredClone(run);
 		chatRun.parameters.appliedPlan.policySnapshot.planningTurnMaximumSeconds = 180;
 		const build = (now: string) => buildAssignmentAttempt({ candidate: discussion as never, run: chatRun as never,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements, constraints: [] } } as never, providerSessionId: 'session',
+			allocationInputs: { codex: { opportunity, measurements, constraints: [] } } as never, providerSessionId: 'session',
 			providers: [{ ...offered, accountingObservation: { ...offered.accountingObservation,
 				modelUsage: { ...offered.accountingObservation.modelUsage, observedAt: now },
 				capabilityUsage: { [conversationCapability]: { ...offered.accountingObservation.modelUsage, observedAt: now } } } }] as never,
@@ -60,14 +61,14 @@ describe('immutable assignment-attempt construction', () => {
 				lanes: [{ ...provider.lanes[0]!, maxConcurrentRunners: 5 }] };
 			const result = buildAssignmentAttempt({ candidate: candidate as never, run,
 				principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-				allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
+				allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session',
 				providers: [offered] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
 			expect(result.providerConcurrencyLimit).toBe(5);
 		}
 		const offered = { ...provider, availableConcurrency: 0, maxConcurrentRunners: 5 };
 		expect(() => buildAssignmentAttempt({ candidate: candidate as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session',
 			providers: [offered] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' })).toThrow();
 	});
 	it('passes the exact Architecture Book and grants a valid page within that Book', () => {
@@ -84,7 +85,7 @@ describe('immutable assignment-attempt construction', () => {
 		architect.effectiveProfile.permissionCeiling = architect.node.requestedPermissions;
 		const result = buildAssignmentAttempt({ candidate: { ...architect, lineageSourceCommit: '9'.repeat(40) } as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session',
 			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
 		expect(result.assignment.contextRefs).toContainEqual(architecture); expect(result.assignment.grant.contentRead).toContainEqual(architecture);
 		const target = result.assignment.grant.contentWrite[0]!;
@@ -93,7 +94,6 @@ describe('immutable assignment-attempt construction', () => {
 		expect(target.path).toBe(`knowledge/sdk-architecture/${target.id}.md`);
 		expect(result.assignment.workspace).toMatchObject({ mode: 'treedx', writablePaths: [target.path] });
 	});
-
 	it('writes planning content to its project library while retaining Team Library as read-only context', () => {
 		const planning = structuredClone(candidate);
 		planning.node.kind = 'planning';
@@ -110,14 +110,13 @@ describe('immutable assignment-attempt construction', () => {
 		planning.projectContentRepositoryId = 'sdk-library';
 		const result = buildAssignmentAttempt({ candidate: planning as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session',
 			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
 		expect(result.assignment.contextRefs).toContainEqual(team);
 		expect(result.assignment.workspace).toMatchObject({ mode: 'treedx', repository: 'sdk-library', baseCommit: '9'.repeat(40) });
 		expect(result.assignment.grant.contentWrite).toEqual([expect.objectContaining({ repository: 'sdk-library' })]);
 		expect(result.assignment.grant.contentRead).toContainEqual(team);
 	});
-
 	it('rejects a writable TreeDX source bound to another project library', () => {
 		const misplaced = structuredClone(candidate);
 		misplaced.node.workspace = 'treedx';
@@ -126,7 +125,7 @@ describe('immutable assignment-attempt construction', () => {
 		misplaced.effectiveProfile.permissionCeiling = misplaced.node.requestedPermissions;
 		expect(() => buildAssignmentAttempt({ candidate: misplaced as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session',
 			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' }))
 			.toThrow('Writable TreeDX content must belong to the assignment project library.');
 	});
@@ -137,9 +136,9 @@ describe('immutable assignment-attempt construction', () => {
 		exact.node.workspace = 'treedx';
 		exact.node.requestedPermissions = { content: { read: ['proposal', 'book'], write: ['knowledge'] }, tools: ['source.read'] } as never;
 		exact.effectiveProfile.permissionCeiling = exact.node.requestedPermissions;
-		const input = { candidate: { ...exact, lineageSourceCommit: '9'.repeat(40) } as never, run,
+		const input = { candidate: { ...exact, lineageSourceCommit: '9'.repeat(40) }, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session',
 			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' };
 		const held = structuredClone(input), result = buildAssignmentAttempt(input), target = result.assignment.grant.contentWrite[0]!;
 		expect(target.id).toMatch(/^knowledge-[a-f0-9]+$/u); expect(target.path).toBe(`knowledge/sdk-core/${target.id}.md`);
@@ -158,7 +157,7 @@ describe('immutable assignment-attempt construction', () => {
 		architect.effectiveProfile.permissionCeiling = architect.node.requestedPermissions;
 		expect(() => buildAssignmentAttempt({ candidate: architect as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session',
 			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' }))
 			.toThrow(/exact Book reference/u);
 	});
@@ -167,7 +166,7 @@ describe('immutable assignment-attempt construction', () => {
 		const result = buildAssignmentAttempt({
 			candidate: candidate as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T12:00:00.000Z',
 		});
 		expect(result).toMatchObject({
@@ -188,13 +187,13 @@ describe('immutable assignment-attempt construction', () => {
 
 	it('uses the upstream assignment branch only for production custody', () => {
 		const productionRun = { ...run, executionMode: 'production', parameters: {
-			...(run as { parameters: Record<string, unknown> }).parameters,
-			appliedPlan: { ...(run as { parameters: { appliedPlan: Record<string, unknown> } }).parameters.appliedPlan,
+			...run.parameters,
+			appliedPlan: { ...run.parameters.appliedPlan,
 				executionMode: 'production' },
 		} } as never;
 		const result = buildAssignmentAttempt({ candidate: candidate as never, run: productionRun,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session',
 			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
 		expect(result.assignment.workspace).toMatchObject({ branch: `treeseed/assignments/${result.assignment.id}` });
 	});
@@ -211,7 +210,7 @@ describe('immutable assignment-attempt construction', () => {
 		}] as never;
 		const result = buildAssignmentAttempt({ candidate: revised as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T12:00:00.000Z' });
 		expect(result.assignment.workspace).toMatchObject({ baseCommit: '9'.repeat(40) });
 	});
@@ -230,7 +229,7 @@ describe('immutable assignment-attempt construction', () => {
 		] as never;
 		const result = buildAssignmentAttempt({ candidate: { ...revised, lineageSourceCommit: '9'.repeat(40) } as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session',
 			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
 		expect(result.assignment.workspace).toMatchObject({ baseCommit: '9'.repeat(40) });
 	});
@@ -248,7 +247,7 @@ describe('immutable assignment-attempt construction', () => {
 		const result = buildAssignmentAttempt({ candidate: { ...revised,
 			directPredecessorSourceCommit: '8'.repeat(40) } as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session',
 			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
 		expect(result.assignment.workspace).toMatchObject({ baseCommit: '8'.repeat(40) });
 		expect(result.assignment.predecessorResultIds).toEqual(['result-8', 'result-9']);
@@ -265,7 +264,7 @@ describe('immutable assignment-attempt construction', () => {
 		}] as never;
 		const result = buildAssignmentAttempt({ candidate: following as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T12:00:00.000Z' });
 		expect(result.assignment.workspace).toMatchObject({ baseCommit: '9'.repeat(40) });
 	});
@@ -280,7 +279,7 @@ describe('immutable assignment-attempt construction', () => {
 		})) as never;
 		expect(() => buildAssignmentAttempt({ candidate: divergent as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T12:00:00.000Z' })).toThrow(/explicit integration assignment/u);
 	});
 
@@ -300,7 +299,7 @@ describe('immutable assignment-attempt construction', () => {
 		})) as never;
 		const result = buildAssignmentAttempt({ candidate: integration as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never,
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never,
 			attempt: 1, now: '2026-09-13T12:00:00.000Z' });
 		expect(result.assignment.workspace).toMatchObject({ mode: 'git', repository: 'treeseed-ai/sdk', baseCommit: 'c'.repeat(40) });
 		expect(result.assignment.predecessorResultIds).toEqual(['predecessor-8', 'predecessor-9']);
@@ -311,7 +310,7 @@ describe('immutable assignment-attempt construction', () => {
 		expect(() => buildAssignmentAttempt({
 			candidate: candidate as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [{ ...provider, capabilities: [] }] as never,
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [{ ...provider, capabilities: [] }] as never,
 			attempt: 1, now: '2026-09-13T12:00:00.000Z',
 	})).toThrow(/No advertised provider runtime/u);
 	});
@@ -325,7 +324,7 @@ describe('immutable assignment-attempt construction', () => {
 		const result = buildAssignmentAttempt({
 			candidate: candidate as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [{ ...provider, offers: [broad, narrow] }] as never,
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [{ ...provider, offers: [broad, narrow] }] as never,
 			attempt: 1, now: '2026-09-13T12:00:00.000Z',
 		});
 		expect(result.assignment.provider.offerId).toBe('narrow');
@@ -358,7 +357,7 @@ describe('immutable assignment-attempt construction', () => {
 			permissionCeiling: planning.node.requestedPermissions } as never;
 		const result = buildAssignmentAttempt({ candidate: planning as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [{ id: 'short', completedAt: '2026-09-13T11:00:00.000Z',
+			allocationInputs: { codex: { opportunity, measurements: [{ id: 'short', completedAt: '2026-09-13T11:00:00.000Z',
 				expectedSeconds: 60, allocatedSeconds: 60, activeSeconds: 1, outcome: 'completed' }], constraints: [] } },
 			providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T12:00:00.000Z' });
@@ -377,7 +376,7 @@ describe('immutable assignment-attempt construction', () => {
 			permissionCeiling: planning.node.requestedPermissions } as never;
 		const result = buildAssignmentAttempt({ candidate: planning as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [
 				{ id: 'workday-phase-share', remainingSeconds: 30 },
 			] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T12:00:00.000Z' });
@@ -397,7 +396,7 @@ describe('immutable assignment-attempt construction', () => {
 			permissionCeiling: planning.node.requestedPermissions } as never;
 		expect(() => buildAssignmentAttempt({ candidate: planning as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } },
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } },
 			providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T13:00:00.000Z' })).toThrow(/No positive active-time allocation remains/u);
 	});
@@ -430,7 +429,7 @@ describe('immutable assignment-attempt construction', () => {
 		expect(() => buildAssignmentAttempt({
 			candidate: missing as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never,
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never,
 			attempt: 1, now: '2026-09-13T12:00:00.000Z',
 		})).toThrow(/must declare its provider capability demand/u);
 	});
@@ -442,7 +441,7 @@ describe('immutable assignment-attempt construction', () => {
 		expect(() => buildAssignmentAttempt({
 			candidate: elevated as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T12:00:00.000Z',
 		})).toThrow(/outside its effective activity profile/u);
 	});
@@ -454,18 +453,18 @@ describe('immutable assignment-attempt construction', () => {
 		expect(() => buildAssignmentAttempt({
 			candidate: dual as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T12:00:00.000Z',
 		})).toThrow(/Content writes require a TreeDX workspace/u);
 	});
 
 	it('defers instead of extending beyond an exhausted workday window', () => {
 		const nearEnd = structuredClone(candidate);
-		nearEnd.node.estimate.maximumSeconds = 600;
+		nearEnd.node.estimate!.maximumSeconds = 600;
 		expect(() => buildAssignmentAttempt({
 			candidate: nearEnd as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T13:00:00.000Z',
 		})).toThrow('No positive active-time allocation remains');
 	});
@@ -482,7 +481,7 @@ describe('immutable assignment-attempt construction', () => {
 		const communicationProvider = { ...provider, lanes: [{ ...provider.lanes[0]!, id: 'chat', purpose: 'communication' }] };
 		const result = buildAssignmentAttempt({ candidate: chat as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [communicationProvider] as never, attempt: 1,
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [communicationProvider] as never, attempt: 1,
 			now: '2026-09-13T12:00:00.000Z' });
 		expect(result).toMatchObject({ laneId: 'chat', lanePurpose: 'communication', assignment: {
 			effectiveProfile: { activity: 'chat' }, grant: { sourceRead: ['repository-sdk'], contentRead: [
