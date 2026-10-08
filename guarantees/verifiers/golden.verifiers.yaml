@@ -4096,6 +4096,36 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
     testName: "native execution start records the original canonical running clock once and closeout cannot rewrite it or frozen authority"
+  api.golden.operator-unresolved-recovery-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/operator-recovery.test.ts
+    testName: "requires team management before unresolved recovery and derives actor and operation identity only from authenticated context"
+  api.golden.operator-unresolved-recovery-input-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/operator-recovery.test.ts
+    testName: "denies malformed version reason and every caller measurement or actor field before the owning recovery mutation"
+  api.golden.operator-unresolved-recovery-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/operator-recovery-native.test.ts
+    testName: "native operator recovery releases only terminal capacity once and retains unresolved usage report and expired authority without a settlement"
+  api.golden.operator-unresolved-recovery-denial-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/operator-recovery-native.test.ts
+    testName: "native recovery denies active foreign stale measured and mismatched reservation authority without changing retained history"
+  api.golden.operator-unresolved-recovery-overlap-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/operator-recovery-native.test.ts
+    testName: "native overlapping recoveries produce one retained audit and one terminal counter release without rewriting usage"
+  api.golden.operator-unresolved-recovery-interruption-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/operator-recovery-native.test.ts
+    testName: "native late audit interruption rolls back capacity release and exact retry preserves the original failed output"
   api.golden.execution-canonical-claim-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
