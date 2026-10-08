@@ -75,6 +75,12 @@ workflow:
   - id: execution-sdk-closure-unit
     action: { verifier: api.golden.execution-sdk-closure-unit }
     expect: { status: passed }
+  - id: execution-treedx-package-unit
+    action: { verifier: api.golden.execution-treedx-package-unit }
+    expect: { status: passed }
+  - id: execution-workspace-capability-unit
+    action: { verifier: api.golden.execution-workspace-capability-unit }
+    expect: { status: passed }
   - id: execution-sdk-closure-native
     action: { verifier: api.golden.execution-sdk-closure-native }
     expect: { status: passed }

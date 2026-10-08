@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { requireTreeDxOperation, treeDxBoundedScopedPaths, treeDxOperationScope, treeDxPathParameters, treeDxQuery, treeDxScopedPathAllows } from '../../../../src/api/control-plane/treedx/upstream-operation.ts';
 
 describe('authoritative TreeDX upstream operations', () => {
+	it('derives exact current workspace metadata and closeout scope from official capabilities while retaining the exact repository', () => {
+		for (const id of ['getWorkspace', 'closeWorkspace']) {
+			const operation = requireTreeDxOperation(id);
+			expect(operation.requiredCapabilities).toEqual(['files:read', 'workspace:same_actor']);
+			expect(treeDxOperationScope(operation, { path: { workspaceId: 'workspace-owned' } }, ['repo-owned']))
+				.toMatchObject({ repoIds: ['repo-owned'], capabilities: operation.requiredCapabilities });
+		}
+	});
 	it('delegates the complete graph refresh capability closure', () => {
 		const operation = requireTreeDxOperation('refreshRepositoryGraph');
 		expect(operation.requiredCapabilities).toEqual(['files:read', 'git:read', 'graph:refresh']);

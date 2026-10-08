@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
@@ -11,6 +11,40 @@ function object(value: unknown): Record<string, unknown> {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Original workflow object required');
 	return value as Record<string, unknown>;
 }
+
+function packageBytes(root: string, path = ''): Map<string, Buffer> {
+	const result = new Map<string, Buffer>();
+	for (const item of readdirSync(resolve(root, path), { withFileTypes: true })) {
+		if (item.name === 'node_modules') continue;
+		if (item.isSymbolicLink()) throw new Error('Exact package bytes cannot use a symlink fallback');
+		const name = path ? `${path}/${item.name}` : item.name;
+		if (item.isDirectory()) for (const [file, bytes] of packageBytes(root, name)) result.set(file, bytes);
+		else result.set(name, readFileSync(resolve(root, name)));
+	}
+	return result;
+}
+
+it('capacity execution materializes the declared native TreeDX client from its sole pinned verified server checkout', () => {
+	const bytes = readFileSync('package.json'), lockBytes = readFileSync('package-lock.json'), workflowBytes = readFileSync('.github/workflows/verify.yml');
+	const manifest = object(JSON.parse(bytes.toString('utf8'))), packages = object(object(JSON.parse(lockBytes.toString('utf8'))).packages);
+	const version = object(JSON.parse(readFileSync('node_modules/@treeseed/treedx/package.json', 'utf8'))).version;
+	expect(object(manifest.dependencies)['@treeseed/treedx']).toBe(version);
+	expect(object(manifest.overrides)['@treeseed/treedx']).toBe('$@treeseed/treedx');
+	expect(Object.keys(packages).filter(path => path.endsWith('node_modules/@treeseed/treedx'))).toEqual(['node_modules/@treeseed/treedx']);
+	const job = object(object(object(parse(workflowBytes.toString('utf8'))).jobs).verify);
+	if (!Array.isArray(job.steps)) throw new Error('Original native provider workflow required');
+	const steps = job.steps.map(object), checkout = steps.find(step => step.name === 'Checkout exact native TreeDX');
+	expect(object(checkout?.with)).toEqual({ repository: 'treeseed-ai/treedx', ref: '6d358bb2e536af24918f3c33acb2072b9093a603', path: '.treeseed/tools/treedx' });
+	const client = steps.find(step => step.name === 'Materialize the verified native TreeDX client');
+	expect(client).toBeDefined();
+	expect(String(client?.run)).toContain('npm pack ./.treeseed/tools/treedx/packages/ts-sdk --ignore-scripts');
+	expect(String(client?.run)).toContain('npm install --ignore-scripts --no-save --package-lock=false --workspaces=false --no-audit --no-fund ./artifacts/native-treedx-sdk/treeseed-treedx-*.tgz');
+	expect(String(client?.run)).toContain('npm prune --ignore-scripts --no-audit --no-fund --workspaces=false');
+	expect(steps.indexOf(client!)).toBeGreaterThan(steps.findIndex(step => step.name === 'Verify all native TreeDX client SDK prerequisites'));
+	expect(steps.indexOf(client!)).toBeLessThan(steps.findIndex(step => step.run === 'npm run verify:direct'));
+	expect(String(object(steps.find(step => object(step.with ?? {}).name === 'api-source-${{ github.sha }}')?.with).path)).toContain('artifacts/native-treedx-sdk/');
+	expect(readFileSync('package.json')).toEqual(bytes); expect(readFileSync('package-lock.json')).toEqual(lockBytes); expect(readFileSync('.github/workflows/verify.yml')).toEqual(workflowBytes);
+});
 
 it('capacity candidate source delivery reuses the same complete native verification authority before sealing declared artifacts', () => {
 	const source = readFileSync('.github/workflows/publish.yml'), verifySource = readFileSync('.github/workflows/verify.yml');
@@ -33,7 +67,7 @@ it('capacity candidate source delivery reuses the same complete native verificat
 	expect(object(steps.find(step => object(step.with ?? {}).name === 'api-${{ github.sha }}')?.with).path).toBe('source-assets/*.tgz');
 	expect(steps.indexOf(pack!)).toBeGreaterThan(steps.indexOf(tests!));
 	expect(upload).toBeDefined(); expect(steps.indexOf(upload!)).toBeGreaterThan(steps.indexOf(scene!));
-	expect(String(object(upload?.with).path).trim().split(/\s+/u)).toEqual(['source-assets/', 'artifacts/sealed-sdk/']);
+	expect(String(object(upload?.with).path).trim().split(/\s+/u)).toEqual(['source-assets/', 'artifacts/sealed-sdk/', 'artifacts/native-treedx-sdk/']);
 	expect(object(upload?.with)['if-no-files-found']).toBe('error');
 	for (const id of ['candidate-build', 'candidate-seal']) expect(String(object(object(publishing.jobs)[id]).needs)).toBe(id === 'candidate-build' ? 'candidate-source' : 'candidate-build');
 	expect(readFileSync('.github/workflows/publish.yml')).toEqual(source); expect(readFileSync('.github/workflows/verify.yml')).toEqual(verifySource);
@@ -67,6 +101,7 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 	const root = mkdtempSync(resolve(tmpdir(), 'api-capacity-sdk-closure-'));
 	const inputs = new Map(['package.json', 'package-lock.json', 'scripts/build/hydrate-exact-sdk.sh', '.github/workflows/verify.yml'].map(path => [path, readFileSync(path)]));
 	const sdkBytes = readFileSync('node_modules/@treeseed/sdk/package.json');
+	const treeDxBytes = packageBytes('node_modules/@treeseed/treedx');
 	const run = (command: string, args: string[], cwd = root, env: NodeJS.ProcessEnv = process.env) => spawnSync(command, args,
 		{ cwd, env, encoding: 'utf8', timeout: 15_000, maxBuffer: 8 * 1024 * 1024 });
 	const requireSuccess = (result: ReturnType<typeof run>) => {
@@ -85,6 +120,16 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 		if (typeof packed.filename !== 'string') throw new Error('Actual packed SDK filename required');
 		const archive = resolve(root, 'artifacts/sealed-sdk', packed.filename), archiveBytes = readFileSync(archive);
 		requireSuccess(run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--workspaces=false']));
+		// Transport the held official package as controlled native input; the real
+		// workflow supplies it from its exact verified Git checkout, not this fixture.
+		const nativeSource = resolve(root, '.treeseed/tools/treedx/packages/ts-sdk'); mkdirSync(nativeSource, { recursive: true });
+		for (const [path, bytes] of treeDxBytes) { mkdirSync(resolve(nativeSource, path, '..'), { recursive: true }); writeFileSync(resolve(nativeSource, path), bytes); }
+		const nativeWorkflow = object(object(object(parse(readFileSync('.github/workflows/verify.yml', 'utf8'))).jobs).verify);
+		if (!Array.isArray(nativeWorkflow.steps)) throw new Error('Original native materialization steps required');
+		const materialize = nativeWorkflow.steps.map(object).find(step => step.name === 'Materialize the verified native TreeDX client');
+		if (typeof materialize?.run !== 'string') throw new Error('Original checked native TreeDX materialization required');
+		requireSuccess(run('bash', ['-euo', 'pipefail', '-c', materialize.run]));
+		expect(packageBytes(resolve(root, 'node_modules/@treeseed/treedx'))).toEqual(treeDxBytes);
 		const hydrated = run('bash', ['scripts/build/hydrate-exact-sdk.sh', 'artifacts/sealed-sdk', 'install']);
 		requireSuccess(hydrated);
 		// Exercise real SDK-prefix installation residue, then the same owning CI cleanup.
@@ -107,6 +152,9 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 		for (const consumer of ['node_modules/@treeseed/deployment/package.json', 'node_modules/@treeseed/identity/package.json', 'node_modules/@treeseed/deployment/node_modules/@treeseed/identity/package.json']) {
 			expect(createRequire(resolve(root, consumer)).resolve('@treeseed/sdk/agent-capacity')).toBe(publicEntry);
 		}
+		const treeDxEntry = createRequire(resolve(root, 'package.json')).resolve('@treeseed/treedx/treedx/client');
+		expect(createRequire(resolve(root, 'node_modules/@treeseed/sdk/package.json')).resolve('@treeseed/treedx/treedx/client')).toBe(treeDxEntry);
+		expect(packageBytes(resolve(root, 'node_modules/@treeseed/treedx'))).toEqual(treeDxBytes);
 		const sbom = run('npm', ['sbom', '--omit=dev', '--sbom-format', 'cyclonedx']); requireSuccess(sbom);
 		expect(polluted.status).toBe(1); expect(polluted.stdout + polluted.stderr).toContain('extraneous:');
 		const document = object(JSON.parse(sbom.stdout));
@@ -118,6 +166,7 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 		expect(readFileSync(archive)).toEqual(archiveBytes);
 		for (const [path, bytes] of inputs) { expect(readFileSync(path)).toEqual(bytes); expect(readFileSync(resolve(root, path))).toEqual(bytes); }
 		expect(readFileSync('node_modules/@treeseed/sdk/package.json')).toEqual(sdkBytes);
+		expect(packageBytes('node_modules/@treeseed/treedx')).toEqual(treeDxBytes);
 	} finally { rmSync(root, { recursive: true, force: true }); expect(existsSync(root)).toBe(false); }
 });
 
@@ -211,7 +260,7 @@ it('complete provider suites provision the exact native TreeDX engine and origin
 	const steps = job.steps.map(object), checkout = steps.find(step => step.name === 'Checkout exact native TreeDX');
 	expect(checkout?.uses).toBe('actions/checkout@v4');
 	expect(object(checkout?.with)).toEqual({ repository: 'treeseed-ai/treedx',
-		ref: '7e9a896df4040051464d312ea0de96b098b922f5', path: '.treeseed/tools/treedx' });
+		ref: '6d358bb2e536af24918f3c33acb2072b9093a603', path: '.treeseed/tools/treedx' });
 	const start = steps.find(step => step.run === 'node --import tsx scripts/verification/native-treedx.ts start');
 	const stop = steps.find(step => step.run === 'node --import tsx scripts/verification/native-treedx.ts stop');
 	const verify = steps.find(step => step.run === 'npm run verify:direct');
