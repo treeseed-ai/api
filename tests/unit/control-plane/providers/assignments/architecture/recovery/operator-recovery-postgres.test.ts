@@ -7,6 +7,8 @@ import { createAssignmentOperations } from '../../../../../../../src/api/control
 import { OperationRegistry } from '../../../../../../../src/api/control-plane/catalog/operation-registry.ts';
 import { settleCapacityReservationExactlyOnce } from '../../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
 import { terminalUsage } from '../../../../capacity/accounting/architecture/settlement-fixture.ts';
+import { createProviderAssignmentService } from '../../../../../../../src/api/control-plane/repositories/providers/provider-assignment-service.ts';
+import { ProviderAssignmentRepository } from '../../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 
 async function exercisePostgresRecovery(dispute: boolean) {
 		const native = await postgresGraph();
@@ -51,12 +53,24 @@ async function exercisePostgresRecovery(dispute: boolean) {
 				claims: (await native.left.pool.query('SELECT * FROM capacity_reservation_counter_claims ORDER BY reservation_id,counter_id')).rows,
 				counters: (await native.left.pool.query('SELECT * FROM capacity_admission_counters ORDER BY id')).rows });
 			const original = await accounting();
+			const reads: Array<(recovery: unknown) => Promise<void>> = [];
 			const calls = [native.left, native.right].map(db => {
 				const store = { db, ensureInitialized: async () => {},
 					run: async (sql: string, params: unknown[] = []) => { await db.prepare(sql).bind(...params).run(); },
 					first: <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => db.prepare(sql).bind(...params).first<T>(),
 					all: async <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => (await db.prepare(sql).bind(...params).all<T>()).results,
 					batch: (operations: Array<{ query: string; params?: unknown[] }>) => db.batch(operations) };
+				const repository = new ProviderAssignmentRepository(store);
+				const unused = async () => { throw new Error('Provider audit read cannot invoke productive lifecycle'); };
+				const provider = createProviderAssignmentService({ ...store, getProviderAssignment: (team, id) => repository.get(team, id),
+					leaseNextProviderAssignment: unused, renewProviderAssignmentLease: unused, returnProviderAssignment: unused,
+					completeProviderAssignment: unused, failProviderAssignment: unused,
+					createCapacityWorkdayRun: unused, tickCapacityWorkdayRun: unused, updateCapacityWorkdayRun: unused });
+				reads.push(async recovery => {
+					const principal = { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership', scopes: ['provider:assignments:read'] } };
+					expect(await provider.show(principal, 'assignment-report')).toEqual({
+						...await repository.get('team', 'assignment-report'), unresolvedUsageRecovery: recovery });
+				});
 				const operator = new OperatorAssignmentService(store);
 				const service = createAssignmentService({ ...store, recoverCapacityAssignment: (team: string, id: string, body: Record<string, unknown>) => operator.recover(team, id, body) });
 				const registry = new OperationRegistry(createAssignmentOperations({ assignments: service }));
@@ -88,6 +102,7 @@ async function exercisePostgresRecovery(dispute: boolean) {
 				expect(after.counters.find(value => value.id === 'concurrency')).toEqual(original.counters.find(value => value.id === 'concurrency'));
 			}
 			const final = await accounting(), finalAudit = (await audit()).rows;
+			await Promise.all(reads.map(read => read(results[0])));
 			expect(await calls[0]!()).toEqual(results[0]);
 			expect(await accounting()).toEqual(final); expect((await audit()).rows).toEqual(finalAudit);
 		} finally { await native.close(); }
