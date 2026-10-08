@@ -145,7 +145,7 @@ export async function advanceLivingWorkday(store: CapacityGovernanceDatabase & {
 		if (reports.length > 0 && reports.every((row) => terminalNodeStates.has(String(row.status)))
 			&& reservationsSettled) {
 			const reference = await completedReportRef(store, run, reports, now);
-			status = reference ? 'completed' : 'failed';
+			status = reference ? (run.summary.outcome === 'operator_stopped' ? 'cancelled' : 'completed') : 'failed';
 			if (reference) next = { ...next, state: 'ended', endedAt: next.endedAt ?? now, reportRef: reference };
 			completedAt = completedAt ?? now;
 		}

@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: unreported-closeout-migration-native
+    action: { verifier: api.golden.unreported-closeout-migration-native }
+    expect: { status: passed }
   - id: operator-stop-closeout-unit
     action: { verifier: api.golden.operator-stop-closeout-unit }
     expect: { status: passed }

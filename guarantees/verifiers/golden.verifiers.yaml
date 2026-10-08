@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.unreported-closeout-migration-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-closeout-persistence.test.ts
+    testName: "native migration retains unreported ended history as an explicit failed closing workday without fabricating a report or changing valid runs"
   api.golden.operator-stop-closeout-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

@@ -192,10 +192,22 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 	if (node.workdayId && source.store === 'postgresql' && source.model === 'workday') {
 		const row = await store.first('SELECT parameters_json FROM capacity_workday_runs WHERE team_id=? AND id=? LIMIT 1',
 			[node.teamId,node.workdayId]);
-		const context = record(record(row?.parameters_json).workdayContextByProjectId)[node.projectId];
+		const parameters = record(row?.parameters_json);
+		const context = record(parameters.workdayContextByProjectId)[node.projectId];
 		if (!context) throw new CapacityGovernanceError('execution_node_workday_context_missing',
 			`Node ${node.id} lacks an exact project context reference.`, 409);
-		return [context as ExactEntityReference];
+		const resolved: ExactEntityReference[] = [context as ExactEntityReference];
+		for (const [id, reference] of Object.entries(record(parameters.planningSourceByProposalId))) {
+			const proposal = await store.getGovernanceProposal(id);
+			if (!proposal || text(proposal.teamId ?? proposal.team_id) !== node.teamId) throw new CapacityGovernanceError(
+				'execution_node_workday_source_missing', `Node ${node.id} selected proposal is unavailable.`, 409);
+			if (text(proposal.projectId ?? proposal.project_id) !== node.projectId) continue;
+			const exact = await readExactProposal(store, proposal, reference as ExactEntityReference);
+			const workItemRefs = array(record(exact.definition.executionPlan).workItems)
+				.flatMap(item => array(record(item).contextRefs));
+			resolved.push(exact.ref, ...await canonicalProposalContextRefs(store, node, workItemRefs));
+		}
+		return resolved;
 	}
 	if (source.store !== 'treedx' || !source.repository || !source.commit || !source.path) {
 		throw new CapacityGovernanceError('execution_node_source_invalid', `Node ${node.id} lacks exact proposal provenance.`, 409);

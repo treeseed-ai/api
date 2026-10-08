@@ -69,12 +69,10 @@ export function createWorkdayService(store: any, diagnosticEnvelopes?: Diagnosti
 				const closing = await store.getCapacityWorkdayRun(teamId, runId);
 				if (!closing) throw new CapacityOperationError(404, 'workday_not_found', 'Workday not found after terminalization.');
 				await store.updateCapacityWorkdayRun(teamId, runId, {
-					status: 'cancelled', completedAt: now,
-					parameters: { ...closing.parameters, appliedPlan: { ...closing.parameters.appliedPlan, state: 'ended', endedAt: now } },
 					summary: { outcome: 'operator_stopped', reason, terminalization },
 				});
 				// Stopping must remain available when the current proposal graph is invalid.
-				// The workday is already terminal, so a failed refresh cannot admit new work.
+				// Closing blocks ordinary admissions; only required closeout remains eligible.
 				let reconciliation: { status: 'current' | 'deferred'; code?: string } = { status: 'current' };
 				try { await reconcileExecutionGraph(store, teamId); }
 				catch (error) {

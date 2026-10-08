@@ -210,6 +210,9 @@ export async function terminalizeCapacityWorkdayAssignments(
 			 JOIN capacity_workday_runs run ON run.id = assignment.work_day_id AND run.team_id = assignment.team_id
 			 WHERE assignment.team_id = ? AND run.id = ?
 			   AND assignment.status NOT IN ('completed', 'failed', 'expired', 'cancelled')
+			   AND NOT (run.status='running' AND COALESCE(run.parameters_json::jsonb#>>'{appliedPlan,state}', '')='closing'
+			     AND EXISTS (SELECT 1 FROM execution_nodes node WHERE node.team_id=assignment.team_id
+			       AND node.id=assignment.execution_node_id AND node.kind='reporting'))
 			   AND NOT (? > ? AND assignment.status = 'leased' AND assignment.lease_state = 'leased'
 			     AND assignment.lease_token IS NOT NULL AND assignment.lease_expires_at IS NOT NULL AND assignment.lease_expires_at > ?)
 			 ORDER BY assignment.created_at ASC, assignment.id ASC
@@ -279,7 +282,10 @@ export async function terminalizeCapacityWorkdayAssignments(
 	}
 	await database.run(
 		`UPDATE execution_nodes SET status='cancelled',updated_at=?
-		 WHERE team_id=? AND workday_id=? AND status IN ('proposed','blocked','ready')`,
+		 WHERE team_id=? AND workday_id=? AND status IN ('proposed','blocked','ready')
+		   AND NOT (kind='reporting' AND EXISTS (SELECT 1 FROM capacity_workday_runs run
+		     WHERE run.team_id=execution_nodes.team_id AND run.id=execution_nodes.workday_id AND run.status='running'
+		     AND run.parameters_json::jsonb#>>'{appliedPlan,state}'='closing'))`,
 		[now, teamId, runId],
 	);
 	await releaseUnsettledTerminalAssignments(database, teamId, runId, now, input);

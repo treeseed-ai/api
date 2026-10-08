@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { appliedWorkdaySchema, assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import { canonicalStandardsJson } from '@treeseed/sdk/standards';
 import { assignment } from '../../fixtures/assignment.ts';
@@ -13,6 +14,37 @@ import { createWorkdayService } from '../../../../../../../src/api/control-plane
 import { terminalizeCapacityWorkdayAssignments } from '../../../../../../../src/api/capacity/services/capacity/workdays/lifecycle/workday-assignment-terminalization-service.ts';
 
 describe('canonical single report at the real lifecycle and SQL boundary', () => {
+	it('native migration retains unreported ended history as an explicit failed closing workday without fabricating a report or changing valid runs', async () => {
+		const f = await closeoutDatabase();
+		try {
+			const run = (await f.reads.get('team', 'workday'))!;
+			const invalid = { ...appliedWorkdaySchema.parse(run.parameters.appliedPlan), state: 'ended', endedAt: now };
+			await f.query("UPDATE capacity_workday_runs SET status='cancelled',completed_at=?,parameters_json=?,error_json=?", [now,
+				JSON.stringify({ ...run.parameters, appliedPlan: invalid }), JSON.stringify({ originalFailure: 'retained' })]);
+			const original = (await f.query('SELECT * FROM capacity_workday_runs')).rows[0]!;
+			const heldAssignments = (await f.query('SELECT * FROM capacity_provider_assignments')).rows;
+			const heldAudit = (await f.query('SELECT * FROM audit_events')).rows;
+			await expect(f.reads.get('team', 'workday')).rejects.toThrow('An ended workday requires');
+			const migration = readFileSync('drizzle/control-plane/0046_repair_unreported_workday_closeout.sql', 'utf8');
+			await f.db.exec(migration);
+			const repaired = (await f.reads.get('team', 'workday'))!;
+			expect(repaired).toMatchObject({ status: 'failed', completedAt: now,
+				error: { originalFailure: 'retained', code: 'workday_closeout_report_missing', unreportedEndedPlan: invalid } });
+			expect(appliedWorkdaySchema.parse(repaired.parameters.appliedPlan)).toMatchObject({ state: 'closing', closingAt: now });
+			expect(repaired.parameters.appliedPlan).not.toHaveProperty('reportRef');
+			expect(repaired.parameters.appliedPlan).not.toHaveProperty('endedAt');
+			const retained = (await f.query('SELECT * FROM capacity_workday_runs')).rows;
+			await f.db.exec(migration); expect((await f.query('SELECT * FROM capacity_workday_runs')).rows).toEqual(retained);
+			for (const column of ['summary_json', 'report_refs_json', 'completed_at', 'created_at', 'updated_at'])
+				expect(retained[0]![column]).toEqual(original[column]);
+			await f.query('UPDATE capacity_workday_runs SET status=?,parameters_json=?', ['completed',
+				JSON.stringify({ ...run.parameters, appliedPlan: { ...invalid, reportRef } })]);
+			const valid = (await f.query('SELECT * FROM capacity_workday_runs')).rows;
+			await f.db.exec(migration); expect((await f.query('SELECT * FROM capacity_workday_runs')).rows).toEqual(valid);
+			expect((await f.query('SELECT * FROM capacity_provider_assignments')).rows).toEqual(heldAssignments);
+			expect((await f.query('SELECT * FROM audit_events')).rows).toEqual(heldAudit);
+		} finally { await f.db.close(); }
+	});
 	it('native public operator stop retains the closing Reporter node and canonical reads until its exact completed report and settlement', async () => {
 		const f = await cancellationDatabase('returned', false);
 		try {
