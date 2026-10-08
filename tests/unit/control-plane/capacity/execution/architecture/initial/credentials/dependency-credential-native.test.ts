@@ -32,6 +32,8 @@ describe('real public credential rotation authorization exchange and dependency 
 			const polled = CONTROL_PLANE_OPERATIONS.providers.nextAssignment.schema.output.parse(value.data);
 			expect(polled).toMatchObject({ assignment: {
 				id: f.attempt.id, assignmentAttempt: { ...f.attempt, status: 'leased' }, workspaceContext: { predecessorResults: [f.actor, f.review] } } });
+			if (!polled.assignment || typeof polled.assignment !== 'object' || !('assignmentAttempt' in polled.assignment))
+				throw new Error('Original authenticated poll did not expose its canonical attempt.');
 			expect(polled.assignment?.assignmentAttempt).toEqual({ ...f.attempt, status: 'leased' }); expect(f.attempt.status).toBe('created');
 			const leased = await f.repository.get('team', f.attempt.id); expect(leased?.status).toBe('leased'); expect(Date.parse(leased?.leaseExpiresAt ?? '')).toBeLessThanOrEqual(Date.parse(f.attempt.deadline));
 			for (const old of before.credentials) expect(state.credentials).toContainEqual(old); for (const old of before.audit) expect(state.audit).toContainEqual(old);
