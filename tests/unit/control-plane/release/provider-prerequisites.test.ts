@@ -24,6 +24,12 @@ function packageBytes(root: string, path = ''): Map<string, Buffer> {
 	return result;
 }
 
+function expectPackageBytes(root: string, expected: Map<string, Buffer>): void {
+	const actual = packageBytes(root);
+	expect([...actual.keys()]).toEqual([...expected.keys()]);
+	for (const [path, bytes] of expected) expect(actual.get(path)?.equals(bytes), path).toBe(true);
+}
+
 it('capacity execution materializes the declared native TreeDX client from its sole pinned verified server checkout', () => {
 	const bytes = readFileSync('package.json'), lockBytes = readFileSync('package-lock.json'), workflowBytes = readFileSync('.github/workflows/verify.yml');
 	const manifest = object(JSON.parse(bytes.toString('utf8'))), packages = object(object(JSON.parse(lockBytes.toString('utf8'))).packages);
@@ -151,7 +157,10 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 		const materialize = nativeWorkflow.steps.map(object).find(step => step.name === 'Materialize the verified native TreeDX client');
 		if (typeof materialize?.run !== 'string') throw new Error('Original checked native TreeDX materialization required');
 		requireSuccess(run('bash', ['-euo', 'pipefail', '-c', materialize.run]));
-		expect(packageBytes(resolve(root, 'node_modules/@treeseed/treedx'))).toEqual(treeDxBytes);
+		const nativeArchives = readdirSync(resolve(root, 'artifacts/native-treedx-sdk')).filter(path => path.endsWith('.tgz'));
+		expect(nativeArchives).toHaveLength(1);
+		const nativeArchive = resolve(root, 'artifacts/native-treedx-sdk', nativeArchives[0]!), nativeArchiveBytes = readFileSync(nativeArchive);
+		expectPackageBytes(resolve(root, 'node_modules/@treeseed/treedx'), treeDxBytes);
 		const hydrate = (directory: string, name = '@treeseed/sdk') => run(process.execPath, ['--import', 'tsx', 'scripts/build/hydrate-exact-dependency.ts', directory, 'install', name]);
 		const hydrated = hydrate('artifacts/sealed-sdk');
 		requireSuccess(hydrated);
@@ -179,7 +188,7 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 		}
 		const treeDxEntry = createRequire(resolve(root, 'package.json')).resolve('@treeseed/treedx/treedx/client');
 		expect(createRequire(resolve(root, 'node_modules/@treeseed/sdk/package.json')).resolve('@treeseed/treedx/treedx/client')).toBe(treeDxEntry);
-		expect(packageBytes(resolve(root, 'node_modules/@treeseed/treedx'))).toEqual(treeDxBytes);
+		expectPackageBytes(resolve(root, 'node_modules/@treeseed/treedx'), treeDxBytes);
 		const sbom = run('npm', ['sbom', '--omit=dev', '--sbom-format', 'cyclonedx']); requireSuccess(sbom);
 		expect(polluted.status).toBe(1); expect(polluted.stdout + polluted.stderr).toContain('extraneous:');
 		const document = object(JSON.parse(sbom.stdout));
@@ -197,16 +206,24 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 			const held = readFileSync(badArchive), denied = hydrate(badRoot, '@treeseed/treedx');
 			expect(denied.error).toBeUndefined(); expect(denied.signal).toBeNull(); expect(denied.status).toBe(1);
 			expect(denied.stdout + denied.stderr).toContain('Exact package identity'); expect(readFileSync(badArchive)).toEqual(held);
-			expect(packageBytes(resolve(root, 'node_modules/@treeseed/treedx'))).toEqual(treeDxBytes);
-			expect(packageBytes(resolve(root, 'node_modules/@treeseed/sdk'))).toEqual(retainedSdk);
+			expectPackageBytes(resolve(root, 'node_modules/@treeseed/treedx'), treeDxBytes);
+			expectPackageBytes(resolve(root, 'node_modules/@treeseed/sdk'), retainedSdk);
 		}
 		const absent = hydrate('missing-archive', '@treeseed/treedx'); expect(absent.status).toBe(1); expect(existsSync(resolve(root, 'missing-archive'))).toBe(false);
+		const duplicate = resolve(root, 'duplicate-archives'); mkdirSync(duplicate); cpSync(nativeArchive, resolve(duplicate, 'treeseed-treedx-first.tgz')); cpSync(nativeArchive, resolve(duplicate, 'treeseed-treedx-second.tgz'));
+		const ambiguous = hydrate(duplicate, '@treeseed/treedx'); expect(ambiguous.status).toBe(1); expect(ambiguous.stderr).toContain('Multiple exact dependency archives');
+		const links = resolve(root, 'linked-archive'), linkSource = resolve(root, 'linked-source'); mkdirSync(links); mkdirSync(resolve(linkSource, 'package'), { recursive: true });
+		writeFileSync(resolve(linkSource, 'package/package.json'), treeDxBytes.get('package.json')!); symlinkSync('/outside-candidate', resolve(linkSource, 'package/dist'));
+		requireSuccess(run('tar', ['-czf', resolve(links, 'treeseed-treedx-linked.tgz'), '-C', linkSource, 'package']));
+		const unsafe = hydrate(links, '@treeseed/treedx'); expect(unsafe.status).toBe(1); expect(unsafe.stderr).toContain('only ordinary files and directories');
+		expectPackageBytes(resolve(root, 'node_modules/@treeseed/treedx'), treeDxBytes); expectPackageBytes(resolve(root, 'node_modules/@treeseed/sdk'), retainedSdk);
 		requireSuccess(hydrate('artifacts/native-treedx-sdk', '@treeseed/treedx'));
-		expect(packageBytes(resolve(root, 'node_modules/@treeseed/treedx'))).toEqual(treeDxBytes);
+		expectPackageBytes(resolve(root, 'node_modules/@treeseed/treedx'), treeDxBytes);
+		expect(readFileSync(nativeArchive)).toEqual(nativeArchiveBytes);
 		expect(readFileSync(archive)).toEqual(archiveBytes);
 		for (const [path, bytes] of inputs) { expect(readFileSync(path)).toEqual(bytes); expect(readFileSync(resolve(root, path))).toEqual(bytes); }
 		expect(readFileSync('node_modules/@treeseed/sdk/package.json')).toEqual(sdkBytes);
-		expect(packageBytes('node_modules/@treeseed/treedx')).toEqual(treeDxBytes);
+		expectPackageBytes('node_modules/@treeseed/treedx', treeDxBytes);
 	} finally { console.info(JSON.stringify({ hydrationCommands: durations })); rmSync(root, { recursive: true, force: true }); expect(existsSync(root)).toBe(false); }
 });
 

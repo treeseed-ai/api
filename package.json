@@ -20,6 +20,7 @@
   },
   "overrides": {
     "@treeseed/sdk": "$@treeseed/sdk",
+    "@treeseed/treedx": "$@treeseed/treedx",
     "libsodium": "0.7.15",
     "libsodium-sumo": "0.7.15"
   },
@@ -73,7 +74,7 @@
     "@treeseed/deployment": "https://github.com/treeseed-ai/deployment/releases/download/0.1.0-rc.321/treeseed-deployment-runtime-0.1.0-rc.321.tgz",
     "@treeseed/identity": "0.1.0-rc.19",
     "@treeseed/sdk": "git+https://github.com/treeseed-ai/sdk.git#dff6758d0cdebe42da6d0b936e4c862dd6d63b2d",
-    "@treeseed/treedx": "0.3.0-rc.17",
+    "@treeseed/treedx": "0.3.0-rc.18",
     "drizzle-orm": "^0.45.2",
     "hono": "4.13.3",
     "libsodium-wrappers": "0.7.15",
