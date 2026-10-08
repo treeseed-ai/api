@@ -16,7 +16,7 @@ async function credential(response: Response) {
 describe('real public credential rotation authorization exchange and dependency poll', () => {
 	it('actual authenticated credential rotation and signed exchange issue one exact generation and its token polls the unchanged dependency attempt', async () => {
 		const f = await dependencyCredential(); try {
-			const custody = await f.custody(), before = await f.credentialState(); expect((await f.evaluate()).eligible).toBe(true);
+			const custody = await f.custody(), before = await f.credentialState(); expect(custody.attempt).toEqual(f.attempt); expect((await f.evaluate()).eligible).toBe(true);
 			expect(before.credentials.find(row => row.id === 'token-credential')?.status).toBe('revoked'); expect(before.tokens.every(row => row.status === 'revoked')).toBe(true);
 			const issued = await credential(await f.exchange());
 			const publicIdentity = Object.fromEntries(['membershipId', 'teamId', 'providerId', 'issuanceGeneration', 'status', 'scopes', 'rotatedFromCredentialId'].map(key => [key, issued.data[key]]));
@@ -35,7 +35,7 @@ describe('real public credential rotation authorization exchange and dependency 
 			expect(polled.assignment?.assignmentAttempt).toEqual({ ...f.attempt, status: 'leased' }); expect(f.attempt.status).toBe('created');
 			const leased = await f.repository.get('team', f.attempt.id); expect(leased?.status).toBe('leased'); expect(Date.parse(leased?.leaseExpiresAt ?? '')).toBeLessThanOrEqual(Date.parse(f.attempt.deadline));
 			for (const old of before.credentials) expect(state.credentials).toContainEqual(old); for (const old of before.audit) expect(state.audit).toContainEqual(old);
-			expect(await f.custody()).toEqual(custody); expect(Date.now()).toBeLessThanOrEqual(Date.parse(f.attempt.deadline));
+			expect(await f.custody()).toEqual({ ...custody, attempt: { ...f.attempt, status: 'leased' } }); expect(Date.now()).toBeLessThanOrEqual(Date.parse(f.attempt.deadline));
 		} finally { await f.close(); }
 	});
 	it('missing unapproved foreign revoked stale and malformed public exchange authority denies without credential issuance or financial changes', async () => {

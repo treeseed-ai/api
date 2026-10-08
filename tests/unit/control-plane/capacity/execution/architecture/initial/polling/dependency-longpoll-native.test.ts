@@ -9,6 +9,7 @@ describe('actual authenticated longpoll wake revalidation and failure cleanup', 
 		const f = await dependencyLongpoll(gate);
 		try {
 			const input = structuredClone(f.body), custody = await f.custody(), pending = f.start();
+			expect(custody.attempt).toEqual(f.attempt);
 			await beforeOriginalDeadline(f.subscription, f.attempt.deadline);
 			expect(f.polls()).toBe(1); expect(f.listenerCounts()).toEqual({ subscribed: 1, unsubscribed: 0 });
 			// Retain the completed initial poll's legitimate native synthesis audit
@@ -39,7 +40,7 @@ describe('actual authenticated longpoll wake revalidation and failure cleanup', 
 			expect(row?.assignmentAttempt).toEqual({ ...f.attempt, status: 'leased' }); expect(f.attempt.status).toBe('created');
 			expect(row?.status).toBe('leased'); expect(Date.parse(row?.leaseExpiresAt ?? '')).toBeLessThanOrEqual(Date.parse(f.attempt.deadline));
 			expect(f.polls()).toBe(2); expect(f.pollInputs()).toEqual([input, retryInput]);
-			expect(f.listenerCounts()).toEqual({ subscribed: 1, unsubscribed: 1 }); expect(await f.custody()).toEqual(custody);
+			expect(f.listenerCounts()).toEqual({ subscribed: 1, unsubscribed: 1 }); expect(await f.custody()).toEqual({ ...custody, attempt: { ...f.attempt, status: 'leased' } });
 			const afterRetry = await f.revocationState();
 			for (const old of afterEvent.audit) expect(afterRetry.audit).toContainEqual(old);
 			expect(afterRetry.sessionEvents).toEqual(afterEvent.sessionEvents); expect(f.body).toEqual(input); expect(retry).toEqual(retryInput);

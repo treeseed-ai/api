@@ -58,16 +58,21 @@ describe('canonical single report at the real lifecycle and SQL boundary', () =>
 				terminalizeCapacityWorkdayAssignments: (team: string, id: string, input: Parameters<typeof terminalizeCapacityWorkdayAssignments>[3]) =>
 					terminalizeCapacityWorkdayAssignments(f.owner, team, id, input) };
 			const service = createWorkdayService(store), principal = { id: 'operator', roles: ['platform_admin'] };
+			const originalClosingAt = appliedWorkdaySchema.parse((await f.reads.get('team', 'workday'))?.parameters.appliedPlan).closingAt;
 			let terminalAttemptBytes: string | undefined;
 			for (let retry = 0; retry < 2; retry++) {
 				const requestedAt = Date.now();
 				const response = await service.stop(principal, 'team', 'workday', { reason: 'retain failed run' });
 				const receivedAt = Date.now(), closing = appliedWorkdaySchema.parse(response.run?.parameters.appliedPlan);
 				if (typeof closing.closingAt !== 'string') throw new Error('Original public stop did not retain its first closing clock.');
+				expect(closing.closingAt).toBe(originalClosingAt);
 				if (retry === 0) {
-					expect(Date.parse(closing.closingAt)).toBeGreaterThanOrEqual(requestedAt);
-					expect(Date.parse(closing.closingAt)).toBeLessThanOrEqual(receivedAt);
-					terminalAttemptBytes = JSON.stringify({ ...sourceAttempt, status: 'failed', finishedAt: closing.closingAt });
+					const rows = (await f.query('SELECT failed_at FROM capacity_provider_assignments')).rows;
+					expect(rows).toHaveLength(1); const finishedAt = rows[0]?.failed_at;
+					if (typeof finishedAt !== 'string') throw new Error('Original terminal row did not record its stop clock.');
+					expect(Date.parse(finishedAt)).toBeGreaterThanOrEqual(requestedAt);
+					expect(Date.parse(finishedAt)).toBeLessThanOrEqual(receivedAt);
+					terminalAttemptBytes = JSON.stringify({ ...sourceAttempt, status: 'failed', finishedAt });
 				}
 				expect(response.run).toMatchObject({ status: 'running', parameters: { appliedPlan: { state: 'closing' } } });
 				expect((await f.query('SELECT id,status FROM execution_nodes ORDER BY id')).rows).toEqual([
