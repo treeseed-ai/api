@@ -71,7 +71,7 @@ describe('native unresolved operator recovery', () => {
 				["UPDATE capacity_ledger_entries SET assignment_id='foreign'", "UPDATE capacity_ledger_entries SET assignment_id='assignment-report'"],
 				["UPDATE capacity_usage_actuals SET input_tokens=1", "UPDATE capacity_usage_actuals SET input_tokens=NULL"],
 				["UPDATE capacity_usage_actuals SET native_usage_json='{\"tokens\":1}'", "UPDATE capacity_usage_actuals SET native_usage_json='{}'"],
-				["UPDATE capacity_reservation_counter_claims SET released_amount=3 WHERE counter_id='seconds'", "UPDATE capacity_reservation_counter_claims SET released_amount=2 WHERE counter_id='seconds'"],
+				["UPDATE capacity_reservation_counter_claims SET released_amount=1 WHERE counter_id='seconds'", "UPDATE capacity_reservation_counter_claims SET released_amount=2 WHERE counter_id='seconds'"],
 				["UPDATE capacity_admission_counters SET team_id='foreign' WHERE id='seconds'", "UPDATE capacity_admission_counters SET team_id='team' WHERE id='seconds'"],
 			] as const;
 			for (const [change, restore] of variants) {
