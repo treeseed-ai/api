@@ -84,7 +84,16 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 		if (accepted && stable(recordedRef) !== stable(exact.ref)) throw new CapacityOperationError(
 			409, 'proposal_decision_ref_stale', 'The accepted decision does not match the current exact proposal revision.');
 		const selectedProjectId = text(row.project_id);
-		const decision = accepted ? await readExactDecision(store, { ...row, id: row.accepted_decision_id }) : null;
+		let decision: Awaited<ReturnType<typeof readExactDecision>> | null = null;
+		if (accepted) {
+			try { decision = await readExactDecision(store, { ...row, id: row.accepted_decision_id }); }
+			catch (error) {
+				if (error instanceof CapacityOperationError) throw error;
+				const failure = error as { status?: number; code?: string };
+				throw new CapacityOperationError(failure.status ?? 500, failure.code ?? 'governance_decision_content_unavailable',
+					error instanceof Error ? error.message : 'The accepted Decision could not be read.');
+			}
+		}
 		sources.push({
 			teamId, projectId: selectedProjectId, repository: exact.ref.repository!, path: exact.ref.path!, commit: exact.ref.commit!,
 			digest: exact.ref.digest!, proposalRevision: Number(accepted ? row.proposal_version : row.active_version),

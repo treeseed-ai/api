@@ -3,6 +3,22 @@ import type { GraphRevision } from '@treeseed/sdk/agent-capacity';
 import { graphProjection, livingGraphDatabase } from './living-graph-fixture.ts';
 import { createExecutionGraphService } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 
+it('execution assignment listing preserves status and canonical pagination without rewriting inputs or reading after denied authority', async () => {
+	const calls: unknown[] = [], output = { items: [], page: { limit: 2, hasMore: false, nextCursor: null } };
+	const store = { listProviderAssignmentsPage: async (team: string, query: unknown) => { calls.push({ team, query }); return output; } };
+	const service = createExecutionGraphService(store), principal = { id: 'operator', roles: ['admin'] };
+	for (const status of ['pending', 'leased', 'running', 'returned', 'completed', 'failed', 'cancelled', 'unknown']) {
+		const input = { status, limit: 2 }, held = structuredClone(input);
+		await expect(service.assignments(principal, 'team', input)).resolves.toEqual(output);
+		expect(calls.at(-1)).toMatchObject({ team: 'team', query: { status, limit: 2, cursor: null } });
+		expect(input).toEqual(held);
+	}
+	const before = structuredClone(calls);
+	await expect(service.assignments(undefined, 'team', { status: 'running' })).rejects.toMatchObject({ status: 401, code: 'authentication_required' });
+	await expect(service.assignments(principal, 'team', { status: 'running', cursor: 'malformed' })).rejects.toMatchObject({ status: 400, code: 'capacity_page_invalid' });
+	expect(calls).toEqual(before);
+});
+
 async function history() {
 	const f = await livingGraphDatabase();
 	try {

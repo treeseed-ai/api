@@ -3,6 +3,18 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-assignment-filter-unit
+    action: { verifier: api.golden.execution-assignment-filter-unit }
+    expect: { status: passed }
+  - id: execution-assignment-filter-native
+    action: { verifier: api.golden.execution-assignment-filter-native }
+    expect: { status: passed }
+  - id: execution-decision-error-unit
+    action: { verifier: api.golden.execution-decision-error-unit }
+    expect: { status: passed }
+  - id: execution-decision-error-native
+    action: { verifier: api.golden.execution-decision-error-native }
+    expect: { status: passed }
   - id: execution-report-settlement-required-unit
     action: { verifier: api.golden.execution-report-settlement-required-unit }
     expect: { status: passed }

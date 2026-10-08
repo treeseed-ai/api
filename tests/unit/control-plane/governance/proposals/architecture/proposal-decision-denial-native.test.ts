@@ -6,6 +6,8 @@ import { proposalNativeFixture } from './proposal-native-fixture.ts';
 import { readyProposal } from './ready-proposal-fixture.ts';
 import { ControlPlaneStore } from '../../../../../../src/api/persistence/store.ts';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
+import { loadTeamExecutableProposalSources } from '../../../../../../src/api/capacity/services/capacity/execution/executable-proposal-source.ts';
+import { CapacityOperationError } from '../../../../../../src/api/control-plane/repositories/capacity/capacity-operation-error.ts';
 
 async function operationalDecision() {
 	const fixture = await proposalNativeFixture();
@@ -24,6 +26,28 @@ async function operationalDecision() {
 }
 
 describe('native proposal Decision authority', () => {
+	it('native executable intake retains missing Decision authority as a precise capacity denial through concurrent reads and unchanged retry', async () => {
+		const f = await operationalDecision();
+		try {
+			await f.query("UPDATE governance_proposals SET decision_id='decision' WHERE id='proposal'");
+			const before = await f.snapshot();
+			const observations = await Promise.allSettled([
+				loadTeamExecutableProposalSources(f.store, 'team'), loadTeamExecutableProposalSources(f.store, 'team'),
+			]);
+			observations.push((await Promise.allSettled([loadTeamExecutableProposalSources(f.store, 'team')]))[0]!);
+			for (const outcome of observations) {
+				expect(outcome.status).toBe('rejected');
+				if (outcome.status === 'rejected') {
+					expect(outcome.reason).toBeInstanceOf(CapacityOperationError);
+					expect(outcome.reason).toMatchObject({ status: 409, code: 'governance_decision_content_missing',
+						message: 'The accepted decision lacks exact classed TreeDX content.' });
+				}
+			}
+			expect(f.requests).toHaveLength(3);
+			expect(f.requests.every(request => request.path === 'proposals/proposal.mdx')).toBe(true);
+			expect(await f.snapshot()).toEqual(before);
+		} finally { await f.close(); }
+	});
 	it('native governance evaluation retains interrupted electorate history and rejects absent readback before a fresh unchanged retry can close the proposal', async () => {
 		const f = await relationAuthoringDatabase(true);
 		try {
