@@ -199,9 +199,10 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 		expect(readFileSync(resolve(root, 'node_modules/@treeseed/sdk/package.json'))).toEqual(sdkBytes);
 		// Invalid supplied archives must deny before touching either selected payload.
 		const retainedSdk = packageBytes(resolve(root, 'node_modules/@treeseed/sdk'));
-		for (const [index, version] of ['0.0.0', String(object(JSON.parse(sdkBytes.toString('utf8'))).version)].entries()) {
+		for (const [index, version] of ['0.0.0', String(object(JSON.parse(sdkBytes.toString('utf8'))).version), String(object(JSON.parse(treeDxBytes.get('package.json')!.toString('utf8'))).version)].entries()) {
 			const badRoot = resolve(root, `invalid-${index}`), content = resolve(badRoot, 'package'); mkdirSync(content, { recursive: true });
-			writeFileSync(resolve(content, 'package.json'), JSON.stringify({ name: index === 0 ? '@treeseed/treedx' : '@treeseed/sdk', version }));
+			writeFileSync(resolve(content, 'package.json'), JSON.stringify({ name: index === 1 ? '@treeseed/sdk' : '@treeseed/treedx', version }));
+			if (index === 2) writeFileSync(resolve(content, 'dist'), 'not a built directory');
 			const badArchive = resolve(badRoot, 'treeseed-treedx-invalid.tgz'); requireSuccess(run('tar', ['-czf', badArchive, '-C', badRoot, 'package']));
 			const held = readFileSync(badArchive), denied = hydrate(badRoot, '@treeseed/treedx');
 			expect(denied.error).toBeUndefined(); expect(denied.signal).toBeNull(); expect(denied.status).toBe(1);
