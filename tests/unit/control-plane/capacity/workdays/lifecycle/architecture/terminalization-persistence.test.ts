@@ -3,6 +3,7 @@ import { terminalizeCapacityWorkdayAssignments } from '../../../../../../../src/
 import { settleCapacityReservationExactlyOnce } from '../../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
 import { cancellationDatabase, cancelNow } from '../../../../providers/assignments/architecture/cancellation-fixture.ts';
 import { terminalUsage } from '../../../accounting/architecture/settlement-fixture.ts';
+import { ProviderAssignmentRepository } from '../../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 
 afterEach(() => vi.useRealTimers());
 function clock() { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(cancelNow)); }
@@ -10,6 +11,26 @@ function clock() { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new 
 // Supplied clocks/usage are not provider-generated measurements, authenticated
 // transport, independent PostgreSQL connections or physical teardown evidence.
 describe('workday terminalization retains actual assignment and settlement custody', () => {
+	it('native workday stop advances canonical terminal metadata without changing admitted authority or replaying settlement', async () => {
+		for (const started of [false, true]) {
+			const native = await cancellationDatabase('returned', started);
+			try {
+				clock();
+				if (started) await settleCapacityReservationExactlyOnce(native.owner, terminalUsage);
+				const repository = new ProviderAssignmentRepository(native.owner), before = await repository.get('team', native.assignment.id);
+				if (!before?.assignmentAttempt) throw new Error('Missing original full canonical attempt');
+				await terminalizeCapacityWorkdayAssignments(native.owner, 'team', 'workday', { now: cancelNow });
+				const after = await repository.get('team', before.id);
+				expect(after?.status).toBe('failed');
+				expect(after?.assignmentAttempt).toEqual({ ...before.assignmentAttempt, status: 'failed', finishedAt: cancelNow });
+				expect(after?.attemptCount).toBe(before.attemptCount);
+				const terminal = await native.snapshot();
+				await terminalizeCapacityWorkdayAssignments(native.owner, 'team', 'workday', { now: '2026-10-02T21:00:05.000Z' });
+				expect(await native.snapshot()).toEqual(terminal);
+				expect((await native.query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows).toEqual([{ total: 1 }]);
+			} finally { await native.db.close(); }
+		}
+	});
 	it('preserves an unexpired provider lease while cancelling only unclaimed nodes in its workday', async () => {
 		const { db, owner, query, snapshot, attempt } = await cancellationDatabase();
 		try {
@@ -53,7 +74,8 @@ describe('workday terminalization retains actual assignment and settlement custo
 			await terminalizeCapacityWorkdayAssignments(owner, 'team', 'workday', { now: cancelNow });
 			expect(await snapshot()).toEqual(before);
 			expect((await query('SELECT assignment_attempt_json,attempt_count,lease_token,lease_state,lease_expires_at,lease_renewed_at,runner_id FROM capacity_provider_assignments')).rows)
-				.toEqual([{ assignment_attempt_json: JSON.stringify(assignment.assignmentAttempt), attempt_count: 1, lease_token: null,
+				.toEqual([{ assignment_attempt_json: JSON.stringify({ ...assignment.assignmentAttempt,
+					status: 'failed', finishedAt: cancelNow }), attempt_count: 1, lease_token: null,
 					lease_state: 'released', lease_expires_at: null, lease_renewed_at: null, runner_id: null }]);
 			expect((await query('SELECT active_seconds,elapsed_seconds FROM capacity_usage_actuals')).rows).toEqual([{ active_seconds: 2, elapsed_seconds: 3 }]);
 			expect((await query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows).toEqual([{ total: 1 }]);

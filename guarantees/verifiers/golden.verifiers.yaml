@@ -4076,3 +4076,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
     testName: "native terminal transitions persist canonical lifecycle metadata with exact frozen authority and immutable replay"
+  api.golden.execution-canonical-workday-stop-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/architecture/terminalization-persistence.test.ts
+    testName: "native workday stop advances canonical terminal metadata without changing admitted authority or replaying settlement"

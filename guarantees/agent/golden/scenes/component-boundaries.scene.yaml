@@ -2388,3 +2388,6 @@ workflow:
   - id: execution-canonical-terminal-lifecycle-native
     action: { verifier: api.golden.execution-canonical-terminal-lifecycle-native }
     expect: { status: passed }
+  - id: execution-canonical-workday-stop-native
+    action: { verifier: api.golden.execution-canonical-workday-stop-native }
+    expect: { status: passed }
