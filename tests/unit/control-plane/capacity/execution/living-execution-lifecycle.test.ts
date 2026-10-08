@@ -3,6 +3,7 @@ import { livingExecutionLifecycleOperations } from '../../../../../src/api/capac
 import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
 import { recoveryAssignment } from '../../providers/assignments/architecture/cancellation-fixture.ts';
+import { advanceAssignmentAttemptLifecycle } from '../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 
 const digest = `sha256:${'a'.repeat(64)}`, commit = 'b'.repeat(40);
 const sourceRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1, digest,
@@ -15,6 +16,23 @@ const row = (id: string, status: string, pairRole: 'actor' | 'reviewer' = 'actor
 	graph_revision_created: 1, graph_revision_updated: 1 });
 
 describe('living execution result projection', () => {
+	it('canonical lifecycle advances preserve first execution and terminal clocks without manufacturing either during lease preparation', () => {
+		const attempt = recoveryAssignment(false).assignmentAttempt;
+		if (!attempt) throw new Error('Missing original complete attempt');
+		const original = structuredClone(attempt), startedAt = '2026-10-02T21:00:00.500Z', finishedAt = '2026-10-02T21:00:02.000Z';
+		const leased = advanceAssignmentAttemptLifecycle(attempt, 'leased', startedAt);
+		expect(leased).toEqual({ ...original, status: 'leased' });
+		const running = advanceAssignmentAttemptLifecycle(leased, 'running', startedAt);
+		expect(running).toEqual({ ...original, status: 'running', startedAt });
+		expect(advanceAssignmentAttemptLifecycle(running, 'running', finishedAt)).toEqual(running);
+		for (const status of ['completed', 'blocked', 'failed', 'cancelled', 'expired'] as const) {
+			const terminal = advanceAssignmentAttemptLifecycle(running, status, finishedAt);
+			expect(terminal).toEqual({ ...original, status, startedAt, finishedAt });
+			expect(advanceAssignmentAttemptLifecycle(terminal, status, '2026-10-02T21:00:03.000Z')).toEqual(terminal);
+			expect(assignmentAttemptSchema.parse(terminal)).toEqual(terminal);
+		}
+		expect(attempt).toEqual(original);
+	});
 	it('advances only canonical terminal lifecycle metadata while preserving every frozen assignment field', async () => {
 		const store: CapacityGovernanceDatabase = {
 			ensureInitialized: async () => undefined, first: async () => null, all: async () => [],

@@ -2391,3 +2391,9 @@ workflow:
   - id: execution-canonical-workday-stop-native
     action: { verifier: api.golden.execution-canonical-workday-stop-native }
     expect: { status: passed }
+  - id: execution-canonical-lifecycle-clocks-unit
+    action: { verifier: api.golden.execution-canonical-lifecycle-clocks-unit }
+    expect: { status: passed }
+  - id: execution-canonical-operator-cancel-native
+    action: { verifier: api.golden.execution-canonical-operator-cancel-native }
+    expect: { status: passed }

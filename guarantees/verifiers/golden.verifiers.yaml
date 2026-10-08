@@ -4081,3 +4081,13 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workdays/lifecycle/architecture/terminalization-persistence.test.ts
     testName: "native workday stop advances canonical terminal metadata without changing admitted authority or replaying settlement"
+  api.golden.execution-canonical-lifecycle-clocks-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-execution-lifecycle.test.ts
+    testName: "canonical lifecycle advances preserve first execution and terminal clocks without manufacturing either during lease preparation"
+  api.golden.execution-canonical-operator-cancel-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/cancellation-persistence.test.ts
+    testName: "native operator cancellation advances only canonical terminal metadata and retains exact failed history on replay"
