@@ -2,8 +2,34 @@ import { describe, expect, it } from 'vitest';
 import { appliedWorkdaySchema } from '@treeseed/sdk/agent-capacity';
 import { schedulingInputs } from './relation-scheduling-fixture.ts';
 import { buildAssignmentAttempt } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
+import { canonicalOfferBuildInput } from '../../../capacity/execution/fixtures/assignment-attempt-fixtures.ts';
 
 describe('cross-project dependent assignment construction', () => {
+	it('retains the original UTC day and phase bounds for positive whole-second supply and denies subsecond supply without changing governed inputs', () => {
+		for (const [now, seconds, deadline] of [
+			['2026-10-04T12:00:00.000Z', 3, '2026-10-04T12:00:40.000Z'],
+			['2026-10-04T23:59:58.999Z', 1, '2026-10-05T00:00:00.000Z'],
+			['2026-10-04T23:59:59.000Z', 1, '2026-10-05T00:00:00.000Z'],
+			['2026-10-05T00:00:00.000Z', 3, '2026-10-05T00:00:40.000Z'],
+		] as const) {
+			const input = canonicalOfferBuildInput(now), before = structuredClone(input), result = buildAssignmentAttempt(input);
+			expect(result.allocation.allocatedSeconds).toBe(seconds);
+			expect(result.assignment.deadline).toBe(deadline);
+			expect(result.assignment.limits.maximumSeconds).toBe(seconds);
+			expect(input).toEqual(before);
+		}
+		for (const now of ['2026-10-04T23:59:59.001Z', '2026-10-04T23:59:59.999Z']) {
+			const input = canonicalOfferBuildInput(now), before = structuredClone(input);
+			expect(() => buildAssignmentAttempt(input)).toThrowError(expect.objectContaining({
+				status: 409, code: 'capacity_assignment_allocation_deferred',
+				details: { nodeId: input.candidate.node.id, providers: [{ providerId: 'codex', allocation: expect.objectContaining({
+					admitted: false, allocatedSeconds: 0, limitingConstraint: 'utc-day-window',
+					constraints: expect.arrayContaining([{ id: 'utc-day-window', remainingSeconds: (Date.parse('2026-10-05T00:00:00.000Z') - Date.parse(now)) / 1000 }]),
+				}) }] },
+			}));
+			expect(input).toEqual(before);
+		}
+	});
 	it('selects only the explicit primary repository for writes in either citation order and denies absent or ambiguous primary authority without rewriting inputs', () => {
 		for (const reversed of [false, true]) {
 			const input = schedulingInputs(); input.candidate.sourceRepositories = ['treeseed-ai/sdk'];

@@ -2806,6 +2806,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-authority.test.ts
     testName: "denies missing malformed and legacy partial provider offers before constructing an immutable governed assignment"
+  api.golden.execution-provider-utc-allocation-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-authority.test.ts
+    testName: "retains the original UTC day and phase bounds for positive whole-second supply and denies subsecond supply without changing governed inputs"
   api.golden.execution-provider-offer-unit-2:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
