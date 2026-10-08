@@ -1,6 +1,26 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-assignment-filter-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/graph-watch.test.ts
+    testName: "execution assignment listing preserves status and canonical pagination without rewriting inputs or reading after denied authority"
+  api.golden.execution-assignment-filter-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/initial-admission.test.ts
+    testName: "native execution assignment inspection filters every retained status through the original repository without changing admission or financial history"
+  api.golden.execution-decision-error-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/executable-proposal-source.test.ts
+    testName: "preserves exact Decision authority failures as owning capacity errors instead of unavailable graph sources"
+  api.golden.execution-decision-error-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-denial-native.test.ts
+    testName: "native executable intake retains missing Decision authority as a precise capacity denial through concurrent reads and unchanged retry"
   api.golden.execution-report-settlement-required-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

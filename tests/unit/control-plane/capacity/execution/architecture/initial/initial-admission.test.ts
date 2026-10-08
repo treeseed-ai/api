@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, type ProviderAssignment } from '@treeseed/sdk/agent-capacity';
 import { initialAdmission, invalidAdmissionBindings } from './initial-admission-fixture.ts';
 import { CapacityGovernanceError } from '../../../../../../../src/api/capacity/database.ts';
 import { canonicalOfferBuildInput } from '../../fixtures/assignment-attempt-fixtures.ts';
@@ -11,6 +11,33 @@ import { createExecutionGraphService, persistExecutionGraph } from '../../../../
 import type { GraphRevision } from '@treeseed/sdk/agent-capacity';
 
 describe('initial living assignment native admission', () => {
+	it('native execution assignment inspection filters every retained status through the original repository without changing admission or financial history', async () => {
+		const f = await initialAdmission();
+		try {
+			await f.admit();
+			const service = createExecutionGraphService({ ...f.store,
+				listProviderAssignmentsPage: (team: string, filters: Parameters<typeof f.repository.list>[1]) => f.repository.list(team, filters) });
+			const principal = { id: 'operator', roles: ['admin'] };
+			// Status substitutions are controlled persisted inputs, not provider
+			// completion/usage/settlement or executed transition evidence.
+			for (const status of ['pending', 'leased', 'running', 'returned', 'completed', 'failed', 'cancelled']) {
+				await f.query('UPDATE capacity_provider_assignments SET status=? WHERE id=?', [status, f.attempt.id]);
+				const before = await f.snapshot();
+				for (const selected of [status, 'unknown']) {
+					const input = { status: selected, limit: 1 }, held = structuredClone(input);
+					for (const page of await Promise.all([service.assignments(principal, 'team', input), service.assignments(principal, 'team', input)])) {
+						expect(page.items.map((item: ProviderAssignment) => ({ id: item.id, status: item.status }))).toEqual(selected === status ? [{ id: f.attempt.id, status }] : []);
+						expect(page.page).toEqual({ limit: 1, hasMore: false, nextCursor: null });
+					}
+					expect(input).toEqual(held);
+				}
+				await expect(service.assignments(principal, 'foreign-team', { status })).resolves.toMatchObject({ items: [] });
+				await expect(service.assignments(undefined, 'team', { status })).rejects.toMatchObject({ status: 401 });
+				await expect(service.assignments(principal, 'team', { status, cursor: 'malformed' })).rejects.toMatchObject({ status: 400, code: 'capacity_page_invalid' });
+				expect(await f.snapshot()).toEqual(before);
+			}
+		} finally { await f.db.close(); }
+	});
 	it('native compiler admission preserves only primary Git writes and exact foreign read citations through reservation concurrent replay and denied authority', async () => {
 		for (const reversed of [false, true]) {
 			const f = await initialAdmission();
