@@ -5,6 +5,38 @@ import { principal, report, returnedCompletion, fixture, returnFixture, completi
 // REAL owning SQL/transaction boundary with supplied clocks and usage.
 afterEach(() => vi.useRealTimers());
 describe('provider terminal reporting through original transaction and resource custody', () => {
+	it('native terminal transitions persist canonical lifecycle metadata with exact frozen authority and immutable replay', async () => {
+		for (const status of ['completed', 'failed', 'cancelled', 'returned'] as const) {
+			const native = status === 'returned' ? await returnFixture() : await completionFixture();
+			try {
+				if (status === 'cancelled') await native.query('UPDATE capacity_provider_assignments SET metadata_json=? WHERE id=?',
+					[JSON.stringify({ ...native.assignment.metadata, cancellationRequested: true }), native.assignment.id]);
+				const before = await native.repository.get('team', native.assignment.id);
+				if (!before?.assignmentAttempt) throw new Error('Missing complete native canonical attempt');
+				const input = { leaseToken: 'lease-token', activeSeconds: 1, elapsedSeconds: 2,
+					completion: returnedCompletion, ...(status === 'completed' && 'result' in native
+						? { output: { assignmentResult: native.result } } : {}) }, original = structuredClone(input);
+				const transition = () => status === 'completed' ? native.service.complete(principal, before.id, input)
+					: status === 'failed' ? native.service.fail(principal, before.id, { ...input, retryable: false })
+						: native.service.return(principal, before.id, input);
+				const result = await transition(), persisted = await native.repository.get('team', before.id);
+				const expected = { ...before.assignmentAttempt, status: status === 'returned' ? 'blocked' : status,
+					finishedAt: '2026-10-02T21:00:02.000Z' };
+				expect(result?.assignment.status).toBe(status);
+				expect(result?.assignment.assignmentAttempt).toEqual(expected);
+				expect(persisted?.assignmentAttempt).toEqual(expected);
+				const raw = (await native.query('SELECT assignment_attempt_json FROM capacity_provider_assignments WHERE id=?', [before.id])).rows[0];
+				expect(JSON.parse(String(raw?.assignment_attempt_json))).toEqual(expected);
+				expect(persisted?.attemptCount).toBe(before.attemptCount);
+				const terminal = await native.snapshot(), graph = (await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows;
+				await expect(transition()).resolves.toBeNull();
+				expect(await native.snapshot()).toEqual(terminal);
+				expect((await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows).toEqual(graph);
+				expect(input).toEqual(original);
+				expect((await native.query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows).toEqual([{ total: 1 }]);
+			} finally { await native.close(); }
+		}
+	});
 	it('denies completed result clocks outside the immutable attempt and actual reporting interval without state mutation', async () => {
 		const observations: boolean[] = [];
 		for (const clock of ['2026-10-02T20:59:59.000Z', '2026-10-02T21:00:02.001Z', '2026-10-02T21:00:04.000Z']) {
@@ -90,7 +122,8 @@ describe('provider terminal reporting through original transaction and resource 
 			const result = await native.service.return(principal, before.id, input);
 			const node = (await native.query('SELECT status,node_revision FROM execution_nodes WHERE id=?', [native.attempt.nodeId])).rows[0];
 			expect(result?.assignment.status).toBe('returned'); expect(input).toEqual(original);
-			expect(result?.assignment.assignmentAttempt).toEqual(before.assignmentAttempt);
+			expect(result?.assignment.assignmentAttempt).toEqual({ ...before.assignmentAttempt,
+				status: 'blocked', finishedAt: '2026-10-02T21:00:02.000Z' });
 			expect({ ordinal: result?.assignment.attemptCount, node }).toEqual({ ordinal: before.attemptCount,
 				node: { status: 'ready', node_revision: native.attempt.nodeRevision + 1 } });
 		} finally { await native.close(); }
@@ -151,7 +184,8 @@ describe('provider terminal reporting through original transaction and resource 
 			expect(result?.assignment.leaseToken).toBeNull();
 			expect((await native.query('SELECT active_seconds,elapsed_seconds FROM capacity_usage_actuals')).rows).toEqual([{ active_seconds: 2, elapsed_seconds: 3 }]);
 			expect(report).toEqual(input);
-			expect(result?.assignment.assignmentAttempt).toEqual(before.assignmentAttempt);
+			expect(result?.assignment.assignmentAttempt).toEqual({ ...before.assignmentAttempt,
+				status: 'failed', finishedAt: '2026-10-02T21:00:04.000Z' });
 			expect(result?.assignment.attemptCount).toBe(before.attemptCount);
 		} finally { await native.close(); }
 	});

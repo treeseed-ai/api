@@ -4066,3 +4066,13 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/release/provider-prerequisites.test.ts
     testName: "capacity candidate source delivery reuses the same complete native verification authority before sealing declared artifacts"
+  api.golden.execution-canonical-terminal-lifecycle-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-execution-lifecycle.test.ts
+    testName: "advances only canonical terminal lifecycle metadata while preserving every frozen assignment field"
+  api.golden.execution-canonical-terminal-lifecycle-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
+    testName: "native terminal transitions persist canonical lifecycle metadata with exact frozen authority and immutable replay"
