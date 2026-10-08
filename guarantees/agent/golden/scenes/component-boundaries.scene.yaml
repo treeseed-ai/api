@@ -2337,3 +2337,6 @@ workflow:
   - id: execution-publisher-prerequisite-unit
     action: { verifier: api.golden.execution-publisher-prerequisite-unit }
     expect: { status: passed }
+  - id: execution-provider-utc-allocation-unit
+    action: { verifier: api.golden.execution-provider-utc-allocation-unit }
+    expect: { status: passed }
