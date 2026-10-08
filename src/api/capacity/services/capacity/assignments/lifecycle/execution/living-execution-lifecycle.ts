@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { AssignmentResult, ExecutionEdge, ExecutionNode } from '@treeseed/sdk/agent-capacity';
 import type { DurableProviderAssignment } from '../../../../../repositories/capacity/assignments/assignment.ts';
+import { advanceAssignmentAttemptLifecycle } from '../../../../../repositories/capacity/assignments/assignment.ts';
 import type { CapacityGovernanceDatabase } from '../../../../../database.ts';
 import { decodeExecutionEdge, decodeExecutionNode } from '../../../../../../control-plane/repositories/capacity/execution/execution-graph-storage.ts';
 import { capacityTransaction } from '../../../../../transaction.ts';
@@ -87,6 +88,17 @@ export async function livingExecutionLifecycleOperations(input: {
 		: status === 'completed' ? 'completed'
 			: status === 'cancelled' ? 'cancelled' : 'failed';
 	const operations: Operation[] = [];
+	// Only lifecycle metadata advances on the canonical snapshot. Keep every
+	// admitted authority field exact and write alongside the root/node transition
+	// on its locked connection; never synthesize a terminal status at read time.
+	if (assignment.assignmentAttempt) operations.push({
+		query: `UPDATE capacity_provider_assignments SET assignment_attempt_json=?,updated_at=?
+			WHERE id=? AND team_id=? AND assignment_attempt_json::jsonb=?::jsonb`,
+		params: [JSON.stringify(advanceAssignmentAttemptLifecycle(assignment.assignmentAttempt,
+			status === 'returned' ? 'blocked' : status === 'completed' ? 'completed'
+				: status === 'cancelled' ? 'cancelled' : 'failed', now)), now,
+			assignment.id, assignment.teamId, JSON.stringify(assignment.assignmentAttempt)],
+	});
 	if (input.result) operations.push({
 		query: `UPDATE capacity_provider_assignments SET assignment_result_json=?,updated_at=?
 			WHERE id=? AND team_id=? AND execution_node_id=? AND execution_node_revision=?`,

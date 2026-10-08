@@ -4066,3 +4066,38 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/release/provider-prerequisites.test.ts
     testName: "capacity candidate source delivery reuses the same complete native verification authority before sealing declared artifacts"
+  api.golden.execution-canonical-terminal-lifecycle-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-execution-lifecycle.test.ts
+    testName: "advances only canonical terminal lifecycle metadata while preserving every frozen assignment field"
+  api.golden.execution-canonical-terminal-lifecycle-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
+    testName: "native terminal transitions persist canonical lifecycle metadata with exact frozen authority and immutable replay"
+  api.golden.execution-canonical-workday-stop-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/architecture/terminalization-persistence.test.ts
+    testName: "native workday stop advances canonical terminal metadata without changing admitted authority or replaying settlement"
+  api.golden.execution-canonical-lifecycle-clocks-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-execution-lifecycle.test.ts
+    testName: "canonical lifecycle advances preserve first execution and terminal clocks without manufacturing either during lease preparation"
+  api.golden.execution-canonical-operator-cancel-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/cancellation-persistence.test.ts
+    testName: "native operator cancellation advances only canonical terminal metadata and retains exact failed history on replay"
+  api.golden.execution-canonical-start-clock-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
+    testName: "native execution start records the original canonical running clock once and closeout cannot rewrite it or frozen authority"
+  api.golden.execution-canonical-claim-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-poll-native.test.ts
+    testName: "native claim advances only canonical leased status without inventing execution clocks or changing dependency authority"

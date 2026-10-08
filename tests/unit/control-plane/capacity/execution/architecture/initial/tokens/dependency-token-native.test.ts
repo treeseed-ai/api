@@ -28,10 +28,10 @@ describe('real signed issuance HTTP and dependency poll custody', () => {
 			const response = await f.request(f.requestBody, { token: issued.token }); expect(response.status).toBe(200);
 			const envelope: unknown = await response.json(); if (!envelope || typeof envelope !== 'object' || !('data' in envelope)) throw new Error('Public poll data missing');
 			expect(CONTROL_PLANE_OPERATIONS.providers.nextAssignment.schema.output.parse(envelope.data)).toMatchObject({ assignment: {
-				id: f.attempt.id, assignmentAttempt: f.attempt, workspaceContext: { predecessorResults: [f.actor, f.review] } } });
+				id: f.attempt.id, assignmentAttempt: { ...f.attempt, status: 'leased' }, workspaceContext: { predecessorResults: [f.actor, f.review] } } });
 			const leased = await f.repository.get(f.principal.teamId, f.attempt.id); expect(leased?.status).toBe('leased');
 			expect(Date.parse(leased?.leaseExpiresAt ?? '')).toBeLessThanOrEqual(Date.parse(f.attempt.deadline));
-			expect(Date.now()).toBeLessThanOrEqual(Date.parse(f.attempt.deadline)); expect(await f.custody()).toEqual(before);
+			expect(Date.now()).toBeLessThanOrEqual(Date.parse(f.attempt.deadline)); expect(await f.custody()).toEqual({ ...before, attempt: { ...before.attempt, status: 'leased' } });
 		} finally { await f.close(); }
 	});
 	it('invalid credentials signed request mutations moved identity and revoked membership deny issuance without nonce token audit or assignment changes', async () => {

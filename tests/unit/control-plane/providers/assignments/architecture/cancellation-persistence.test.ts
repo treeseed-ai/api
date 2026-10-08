@@ -12,6 +12,22 @@ function atNow() { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new 
 // No authenticated HTTP, provider-generated clocks/usage, physical teardown,
 // or separate PostgreSQL connection concurrency is claimed.
 describe('cancellation retains productive and financial authority through original SQL', () => {
+	it('native operator cancellation advances only canonical terminal metadata and retains exact failed history on replay', async () => {
+		const native = await cancellationDatabase('returned', true);
+		try {
+			atNow(); await settleCapacityReservationExactlyOnce(native.owner, terminalUsage);
+			const before = await new ProviderAssignmentRepository(native.owner).get('team', native.assignment.id);
+			if (!before?.assignmentAttempt) throw new Error('Missing original canonical attempt');
+			const service = new OperatorAssignmentService(native.owner), input = { idempotencyKey: 'canonical-cancellation' };
+			const original = structuredClone(input), result = await service.cancel('team', before.id, input);
+			expect(result.assignmentAttempt).toEqual({ ...before.assignmentAttempt, status: 'cancelled', finishedAt: cancelNow });
+			expect(result.attemptCount).toBe(before.attemptCount);
+			const terminal = await native.snapshot();
+			await service.cancel('team', before.id, input);
+			expect(await native.snapshot()).toEqual(terminal); expect(input).toEqual(original);
+			expect((await native.query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows).toEqual([{ total: 1 }]);
+		} finally { await native.db.close(); }
+	});
 	it('requests active lease cancellation without terminalizing releasing or rewriting its immutable attempt', async () => {
 		const { db, owner, query, assignment, attempt, snapshot } = await cancellationDatabase();
 		try {

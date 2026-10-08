@@ -65,7 +65,7 @@ describe('real public provider poll HTTP and original SQL custody', () => {
 			const response = await f.request(); expect(response.status).toBe(200);
 			const envelope: unknown = await response.json();
 			if (!envelope || typeof envelope !== 'object' || !('data' in envelope)) throw new Error('Original public data envelope missing');
-			expect(CONTROL_PLANE_OPERATIONS.providers.nextAssignment.schema.output.parse(envelope.data)).toMatchObject({ assignment: { id: f.attempt.id, assignmentAttempt: f.attempt } });
+			expect(CONTROL_PLANE_OPERATIONS.providers.nextAssignment.schema.output.parse(envelope.data)).toMatchObject({ assignment: { id: f.attempt.id, assignmentAttempt: { ...f.attempt, status: 'leased' } } });
 		} finally { await f.db.close(); }
 	});
 	it('real token authentication and public catalog return the exact leased attempt with both predecessor results and no finance rewrite', async () => {
@@ -74,12 +74,12 @@ describe('real public provider poll HTTP and original SQL custody', () => {
 			const envelope: unknown = await response.json(); expect(envelope).toHaveProperty('data');
 			if (!envelope || typeof envelope !== 'object' || !('data' in envelope)) throw new Error('Public data envelope missing');
 			const result = CONTROL_PLANE_OPERATIONS.providers.nextAssignment.schema.output.parse(envelope.data);
-			expect(result).toMatchObject({ assignment: { id: f.attempt.id, assignmentAttempt: f.attempt,
+			expect(result).toMatchObject({ assignment: { id: f.attempt.id, assignmentAttempt: { ...f.attempt, status: 'leased' },
 				workspaceContext: { predecessorResults: [f.actor, f.review] } } });
 			const row = await f.repository.get(f.principal.teamId, f.attempt.id);
 			expect(result).toMatchObject({ leaseToken: row?.leaseToken }); expect(row?.status).toBe('leased');
 			expect(Date.parse(row?.leaseExpiresAt ?? '')).toBeLessThanOrEqual(Date.parse(f.attempt.deadline));
-			expect(Date.now()).toBeLessThanOrEqual(Date.parse(f.attempt.deadline)); expect(await f.custody()).toEqual(before);
+			expect(Date.now()).toBeLessThanOrEqual(Date.parse(f.attempt.deadline)); expect(await f.custody()).toEqual({ ...before, attempt: { ...before.attempt, status: 'leased' } });
 			expect((await f.query("SELECT last_used_at FROM capacity_provider_access_tokens WHERE id='public-poll-token'")).rows[0]?.last_used_at).toBeTruthy();
 		} finally { await f.db.close(); }
 	});
@@ -108,7 +108,7 @@ describe('real public provider poll HTTP and original SQL custody', () => {
 			for (const reply of replies) { expect(reply.status).toBe(200); const envelope: unknown = await reply.json();
 				if (!envelope || typeof envelope !== 'object' || !('data' in envelope)) throw new Error('Public data envelope missing');
 				results.push(CONTROL_PLANE_OPERATIONS.providers.nextAssignment.schema.output.parse(envelope.data)); }
-			expect(results.filter(result => result.assignment)).toHaveLength(1); expect(await f.custody()).toEqual(before);
+			expect(results.filter(result => result.assignment)).toHaveLength(1); expect(await f.custody()).toEqual({ ...before, attempt: { ...before.attempt, status: 'leased' } });
 			const row = await f.repository.get(f.principal.teamId, f.attempt.id);
 			for (const result of results) if (result.assignment) expect(result.leaseToken).toBe(row?.leaseToken); else expect(result.leaseToken).toBeNull();
 		} finally { await f.db.close(); }
@@ -135,7 +135,7 @@ describe('real public provider poll HTTP and original SQL custody', () => {
 			const history = (await f.query('SELECT * FROM capacity_audit_events ORDER BY id')).rows; expect(history.length).toBeGreaterThan(0);
 			await f.db.exec('DROP TRIGGER interrupt_public_poll ON capacity_provider_assignments; DROP FUNCTION interrupt_public_poll();');
 			expect(Date.now()).toBeLessThan(Date.parse(f.attempt.deadline)); expect((await f.request()).status).toBe(200);
-			expect(await f.custody()).toEqual(before); const after = (await f.query('SELECT * FROM capacity_audit_events ORDER BY id')).rows;
+			expect(await f.custody()).toEqual({ ...before, attempt: { ...before.attempt, status: 'leased' } }); const after = (await f.query('SELECT * FROM capacity_audit_events ORDER BY id')).rows;
 			for (const row of history) expect(after).toContainEqual(row);
 		} finally { await f.db.close(); }
 	});
