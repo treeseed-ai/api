@@ -196,7 +196,7 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 		expect(document.components.length).toBeGreaterThan(0);
 		const sdks = document.components.map(object).filter(component => component.name === '@treeseed/sdk' || component.name === 'sdk' && component.group === '@treeseed');
 		expect(sdks).toHaveLength(1); expect(sdks[0]?.version).toBe(packed.version);
-		expect(readFileSync(resolve(root, 'node_modules/@treeseed/sdk/package.json'))).toEqual(sdkBytes);
+		expect(readFileSync(resolve(root, 'node_modules/@treeseed/sdk/package.json')).equals(sdkBytes)).toBe(true);
 		// Invalid supplied archives must deny before touching either selected payload.
 		const retainedSdk = packageBytes(resolve(root, 'node_modules/@treeseed/sdk'));
 		for (const [index, version] of ['0.0.0', String(object(JSON.parse(sdkBytes.toString('utf8'))).version), String(object(JSON.parse(treeDxBytes.get('package.json')!.toString('utf8'))).version)].entries()) {
@@ -206,7 +206,7 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 			const badArchive = resolve(badRoot, 'treeseed-treedx-invalid.tgz'); requireSuccess(run('tar', ['-czf', badArchive, '-C', badRoot, 'package']));
 			const held = readFileSync(badArchive), denied = hydrate(badRoot, '@treeseed/treedx');
 			expect(denied.error).toBeUndefined(); expect(denied.signal).toBeNull(); expect(denied.status).toBe(1);
-			expect(denied.stdout + denied.stderr).toContain('Exact package identity'); expect(readFileSync(badArchive)).toEqual(held);
+			expect(denied.stdout + denied.stderr).toContain('Exact package identity'); expect(readFileSync(badArchive).equals(held), badArchive).toBe(true);
 			expectPackageBytes(resolve(root, 'node_modules/@treeseed/treedx'), treeDxBytes);
 			expectPackageBytes(resolve(root, 'node_modules/@treeseed/sdk'), retainedSdk);
 		}
@@ -220,10 +220,15 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 		expectPackageBytes(resolve(root, 'node_modules/@treeseed/treedx'), treeDxBytes); expectPackageBytes(resolve(root, 'node_modules/@treeseed/sdk'), retainedSdk);
 		requireSuccess(hydrate('artifacts/native-treedx-sdk', '@treeseed/treedx'));
 		expectPackageBytes(resolve(root, 'node_modules/@treeseed/treedx'), treeDxBytes);
-		expect(readFileSync(nativeArchive)).toEqual(nativeArchiveBytes);
-		expect(readFileSync(archive)).toEqual(archiveBytes);
-		for (const [path, bytes] of inputs) { expect(readFileSync(path)).toEqual(bytes); expect(readFileSync(resolve(root, path))).toEqual(bytes); }
-		expect(readFileSync('node_modules/@treeseed/sdk/package.json')).toEqual(sdkBytes);
+		// Native Buffer equality checks every untrimmed byte without expanding
+		// archives and lockfiles into generic deep-comparison object graphs.
+		expect(readFileSync(nativeArchive).equals(nativeArchiveBytes), nativeArchive).toBe(true);
+		expect(readFileSync(archive).equals(archiveBytes), archive).toBe(true);
+		for (const [path, bytes] of inputs) {
+			expect(readFileSync(path).equals(bytes), path).toBe(true);
+			expect(readFileSync(resolve(root, path)).equals(bytes), resolve(root, path)).toBe(true);
+		}
+		expect(readFileSync('node_modules/@treeseed/sdk/package.json').equals(sdkBytes)).toBe(true);
 		expectPackageBytes('node_modules/@treeseed/treedx', treeDxBytes);
 	} finally { console.info(JSON.stringify({ hydrationCommands: durations })); rmSync(root, { recursive: true, force: true }); expect(existsSync(root)).toBe(false); }
 });
