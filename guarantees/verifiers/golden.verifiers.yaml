@@ -121,6 +121,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/release/provider-prerequisites.test.ts
     testName: capacity execution dependency closure selects the sole exact SDK authority for every transitive consumer
+  api.golden.execution-treedx-package-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/provider-prerequisites.test.ts
+    testName: capacity execution materializes the declared native TreeDX client from its sole pinned verified server checkout
+  api.golden.execution-workspace-capability-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/upstream-operation.test.ts
+    testName: derives exact current workspace metadata and closeout scope from official capabilities while retaining the exact repository
   api.golden.execution-sdk-closure-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
