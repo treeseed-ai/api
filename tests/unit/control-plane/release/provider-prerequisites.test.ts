@@ -38,8 +38,26 @@ it('capacity execution materializes the declared native TreeDX client from its s
 	const client = steps.find(step => step.name === 'Materialize the verified native TreeDX client');
 	expect(client).toBeDefined();
 	expect(String(client?.run)).toContain('npm pack ./.treeseed/tools/treedx/packages/ts-sdk --ignore-scripts');
-	expect(String(client?.run)).toContain('npm install --ignore-scripts --no-save --package-lock=false --workspaces=false --no-audit --no-fund ./artifacts/native-treedx-sdk/treeseed-treedx-*.tgz');
 	expect(String(client?.run)).toContain('npm prune --ignore-scripts --no-audit --no-fund --workspaces=false');
+	const hydration = 'node --import tsx scripts/build/hydrate-exact-dependency.ts';
+	expect(String(client?.run)).toContain(`${hydration} artifacts/sealed-sdk install`);
+	expect(String(client?.run)).toContain(`${hydration} artifacts/native-treedx-sdk install @treeseed/treedx`);
+	expect(String(client?.run).indexOf('npm prune')).toBeLessThan(String(client?.run).indexOf(hydration));
+	expect(existsSync('scripts/build/hydrate-exact-sdk.sh')).toBe(false);
+	for (const path of ['Dockerfile', 'Dockerfile.api', 'Dockerfile.operations-runner']) {
+		const docker = readFileSync(path, 'utf8');
+		expect(docker).toContain(`${hydration} artifacts/sealed-sdk install`);
+		expect(docker).toContain(`${hydration} artifacts/native-treedx-sdk install @treeseed/treedx`);
+		expect(docker).not.toContain('hydrate-exact-sdk.sh');
+	}
+	const publishing = object(object(parse(readFileSync('.github/workflows/publish.yml', 'utf8'))).jobs);
+	for (const [name, root] of [['candidate-seal', 'release-assets'], ['promote', 'candidate']]) {
+		const entry = object(publishing[name!]); if (!Array.isArray(entry.steps)) throw new Error('Original candidate hydration steps required');
+		const commands = entry.steps.map(object).map(step => String(step.run ?? '')).join('\n');
+		expect(commands).toContain(`${hydration} ${root} install`);
+		expect(commands).toContain(`${hydration} ${root} install @treeseed/treedx`);
+		expect(commands).not.toContain('hydrate-exact-sdk.sh');
+	}
 	expect(steps.indexOf(client!)).toBeGreaterThan(steps.findIndex(step => step.name === 'Verify all native TreeDX client SDK prerequisites'));
 	expect(steps.indexOf(client!)).toBeLessThan(steps.findIndex(step => step.run === 'npm run verify:direct'));
 	expect(String(object(steps.find(step => object(step.with ?? {}).name === 'api-source-${{ github.sha }}')?.with).path)).toContain('artifacts/native-treedx-sdk/');
@@ -54,7 +72,7 @@ it('capacity candidate source delivery reuses the same complete native verificat
 	expect(candidate.secrets).toBe('inherit'); expect(candidate).not.toHaveProperty('steps'); expect(candidate).not.toHaveProperty('services');
 	expect(object(verify.on)).toHaveProperty('workflow_call');
 	const job = object(object(verify.jobs).verify); if (!Array.isArray(job.steps)) throw new Error('Original complete Verify steps required');
-	const steps = job.steps.map(object), download = steps.find(step => step.run === './scripts/build/hydrate-exact-sdk.sh artifacts/sealed-sdk download');
+	const steps = job.steps.map(object), download = steps.find(step => step.run === 'node --import tsx scripts/build/hydrate-exact-dependency.ts artifacts/sealed-sdk download');
 	const tests = steps.find(step => step.run === 'npm run verify:direct');
 	const scene = steps.find(step => typeof step.uses === 'string' && step.uses.includes('/run-scenes@'));
 	const pack = steps.find(step => step.name === 'Pack verified artifact');
@@ -83,7 +101,7 @@ it('capacity execution dependency closure selects the sole exact SDK authority f
 	expect(Object.keys(packages).filter(path => path.endsWith('node_modules/@treeseed/sdk'))).toEqual(['node_modules/@treeseed/sdk']);
 	expect(object(object(packages['']).dependencies)['@treeseed/sdk']).toBe(authority);
 	expect(String(sdk.resolved).split('#')[1]).toBe(String(authority).split('#')[1]);
-	expect(readFileSync('scripts/build/hydrate-exact-sdk.sh', 'utf8')).not.toContain('node_modules/@treeseed/deployment/node_modules/@treeseed/sdk');
+	expect(readFileSync('scripts/build/hydrate-exact-dependency.ts', 'utf8')).not.toContain('node_modules/@treeseed/deployment/node_modules/@treeseed/sdk');
 	const job = object(object(object(parse(readFileSync('.github/workflows/verify.yml', 'utf8'))).jobs).verify);
 	if (!Array.isArray(job.steps)) throw new Error('Original verification steps required');
 	const installers = job.steps.map(object).filter(step => typeof step.uses === 'string' && step.uses.includes('/install-exact-sdk@'));
@@ -99,11 +117,15 @@ it('capacity execution dependency closure selects the sole exact SDK authority f
 
 it('native capacity candidate hydration preserves exact SDK bytes and admits only a complete valid dependency tree and SBOM', () => {
 	const root = mkdtempSync(resolve(tmpdir(), 'api-capacity-sdk-closure-'));
-	const inputs = new Map(['package.json', 'package-lock.json', 'scripts/build/hydrate-exact-sdk.sh', '.github/workflows/verify.yml'].map(path => [path, readFileSync(path)]));
+	const inputs = new Map(['package.json', 'package-lock.json', 'scripts/build/hydrate-exact-dependency.ts', '.github/workflows/verify.yml'].map(path => [path, readFileSync(path)]));
 	const sdkBytes = readFileSync('node_modules/@treeseed/sdk/package.json');
 	const treeDxBytes = packageBytes('node_modules/@treeseed/treedx');
-	const run = (command: string, args: string[], cwd = root, env: NodeJS.ProcessEnv = process.env) => spawnSync(command, args,
-		{ cwd, env, encoding: 'utf8', timeout: 15_000, maxBuffer: 8 * 1024 * 1024 });
+	const durations: Array<{ command: string; milliseconds: number }> = [];
+	const run = (command: string, args: string[], cwd = root, env: NodeJS.ProcessEnv = process.env) => {
+		const start = performance.now();
+		const result = spawnSync(command, args, { cwd, env, encoding: 'utf8', timeout: 15_000, maxBuffer: 8 * 1024 * 1024 });
+		durations.push({ command: `${command} ${args.join(' ')}`, milliseconds: performance.now() - start }); return result;
+	};
 	const requireSuccess = (result: ReturnType<typeof run>) => {
 		expect(result.error).toBeUndefined(); expect(result.signal).toBeNull(); expect(result.status, result.stdout + result.stderr).toBe(0);
 	};
@@ -130,7 +152,8 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 		if (typeof materialize?.run !== 'string') throw new Error('Original checked native TreeDX materialization required');
 		requireSuccess(run('bash', ['-euo', 'pipefail', '-c', materialize.run]));
 		expect(packageBytes(resolve(root, 'node_modules/@treeseed/treedx'))).toEqual(treeDxBytes);
-		const hydrated = run('bash', ['scripts/build/hydrate-exact-sdk.sh', 'artifacts/sealed-sdk', 'install']);
+		const hydrate = (directory: string, name = '@treeseed/sdk') => run(process.execPath, ['--import', 'tsx', 'scripts/build/hydrate-exact-dependency.ts', directory, 'install', name]);
+		const hydrated = hydrate('artifacts/sealed-sdk');
 		requireSuccess(hydrated);
 		// Exercise real SDK-prefix installation residue, then the same owning CI cleanup.
 		const installArgs = ['install', '--prefix', 'node_modules/@treeseed/sdk', '--ignore-scripts', '--no-save', '--package-lock=false', '--no-audit', '--no-fund'];
@@ -147,6 +170,8 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 		const prune = workflow.steps.map(object).find(step => step.run === 'npm prune --ignore-scripts --no-audit --no-fund --workspaces=false');
 		if (typeof prune?.run !== 'string') throw new Error('Original owning dependency cleanup required');
 		requireSuccess(run('bash', ['-euo', 'pipefail', '-c', prune.run]));
+		requireSuccess(hydrate('artifacts/sealed-sdk'));
+		requireSuccess(hydrate('artifacts/native-treedx-sdk', '@treeseed/treedx'));
 		const tree = run('npm', ['ls', '--all', '--omit=dev', '--json']); requireSuccess(tree);
 		const publicEntry = createRequire(resolve(root, 'package.json')).resolve('@treeseed/sdk/agent-capacity');
 		for (const consumer of ['node_modules/@treeseed/deployment/package.json', 'node_modules/@treeseed/identity/package.json', 'node_modules/@treeseed/deployment/node_modules/@treeseed/identity/package.json']) {
@@ -163,11 +188,26 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 		const sdks = document.components.map(object).filter(component => component.name === '@treeseed/sdk' || component.name === 'sdk' && component.group === '@treeseed');
 		expect(sdks).toHaveLength(1); expect(sdks[0]?.version).toBe(packed.version);
 		expect(readFileSync(resolve(root, 'node_modules/@treeseed/sdk/package.json'))).toEqual(sdkBytes);
+		// Invalid supplied archives must deny before touching either selected payload.
+		const retainedSdk = packageBytes(resolve(root, 'node_modules/@treeseed/sdk'));
+		for (const [index, version] of ['0.0.0', String(object(JSON.parse(sdkBytes.toString('utf8'))).version)].entries()) {
+			const badRoot = resolve(root, `invalid-${index}`), content = resolve(badRoot, 'package'); mkdirSync(content, { recursive: true });
+			writeFileSync(resolve(content, 'package.json'), JSON.stringify({ name: index === 0 ? '@treeseed/treedx' : '@treeseed/sdk', version }));
+			const badArchive = resolve(badRoot, 'treeseed-treedx-invalid.tgz'); requireSuccess(run('tar', ['-czf', badArchive, '-C', badRoot, 'package']));
+			const held = readFileSync(badArchive), denied = hydrate(badRoot, '@treeseed/treedx');
+			expect(denied.error).toBeUndefined(); expect(denied.signal).toBeNull(); expect(denied.status).toBe(1);
+			expect(denied.stdout + denied.stderr).toContain('Exact package identity'); expect(readFileSync(badArchive)).toEqual(held);
+			expect(packageBytes(resolve(root, 'node_modules/@treeseed/treedx'))).toEqual(treeDxBytes);
+			expect(packageBytes(resolve(root, 'node_modules/@treeseed/sdk'))).toEqual(retainedSdk);
+		}
+		const absent = hydrate('missing-archive', '@treeseed/treedx'); expect(absent.status).toBe(1); expect(existsSync(resolve(root, 'missing-archive'))).toBe(false);
+		requireSuccess(hydrate('artifacts/native-treedx-sdk', '@treeseed/treedx'));
+		expect(packageBytes(resolve(root, 'node_modules/@treeseed/treedx'))).toEqual(treeDxBytes);
 		expect(readFileSync(archive)).toEqual(archiveBytes);
 		for (const [path, bytes] of inputs) { expect(readFileSync(path)).toEqual(bytes); expect(readFileSync(resolve(root, path))).toEqual(bytes); }
 		expect(readFileSync('node_modules/@treeseed/sdk/package.json')).toEqual(sdkBytes);
 		expect(packageBytes('node_modules/@treeseed/treedx')).toEqual(treeDxBytes);
-	} finally { rmSync(root, { recursive: true, force: true }); expect(existsSync(root)).toBe(false); }
+	} finally { console.info(JSON.stringify({ hydrationCommands: durations })); rmSync(root, { recursive: true, force: true }); expect(existsSync(root)).toBe(false); }
 });
 
 it('every capacity execution component step explicitly requires passed evidence from its original verifier', () => {
