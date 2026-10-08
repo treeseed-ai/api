@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { executePostgresBatch } from '../../../../../../src/api/support/control-plane-postgres.ts';
-import { OperatorAssignmentService } from '../../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
-import { createAssignmentService } from '../../../../../../src/api/control-plane/repositories/capacity/assignment-service.ts';
-import { cancellationDatabase } from './cancellation-fixture.ts';
-import { terminalUsage } from '../../../capacity/accounting/architecture/settlement-fixture.ts';
-import { settleCapacityReservationExactlyOnce } from '../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
+import { executePostgresBatch } from '../../../../../../../src/api/support/control-plane-postgres.ts';
+import { OperatorAssignmentService } from '../../../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
+import { createAssignmentService } from '../../../../../../../src/api/control-plane/repositories/capacity/assignment-service.ts';
+import { cancellationDatabase } from '../cancellation-fixture.ts';
+import { terminalUsage } from '../../../../capacity/accounting/architecture/settlement-fixture.ts';
+import { settleCapacityReservationExactlyOnce } from '../../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
 
 async function nativeRecovery() {
 	const f = await cancellationDatabase('expired');
@@ -64,8 +64,23 @@ describe('native unresolved operator recovery', () => {
 			await f.query("UPDATE capacity_reservations SET assignment_id='foreign' WHERE id='reservation'");
 			const foreign = await f.snapshot(); await expect(f.call()).rejects.toMatchObject({ status: 409 }); expect(await f.snapshot()).toEqual(foreign);
 			await f.query("UPDATE capacity_reservations SET assignment_id=? WHERE id='reservation'", [f.assignment.id]);
+			const originalExecutor = f.attempt.provider.executionProviderId;
+			await f.query("UPDATE capacity_reservations SET execution_provider_id='foreign' WHERE id='reservation'");
+			const movedExecutor = await f.snapshot(); let executorDenial: unknown;
+			try { await f.call(); } catch (error) { executorDenial = error; }
+			const executorAfter = await f.snapshot();
+			await f.query("UPDATE capacity_reservations SET execution_provider_id=? WHERE id='reservation'", [originalExecutor]);
+			expect(executorDenial).toMatchObject({ status: 409 }); expect(executorAfter).toEqual(movedExecutor);
 			await settleCapacityReservationExactlyOnce(f.owner, terminalUsage);
 			const measured = await f.snapshot(); await expect(f.call()).rejects.toMatchObject({ status: 409 }); expect(await f.snapshot()).toEqual(measured);
+		} finally { await f.db.close(); }
+	});
+	it('native unresolved recovery refuses an orphan counter claim rather than silently releasing an unaccounted reservation', async () => {
+		const f = await nativeRecovery(); try {
+			await f.query("DELETE FROM capacity_admission_counters WHERE id='concurrency'");
+			const before = await f.snapshot();
+			await expect(f.call()).rejects.toMatchObject({ status: 409, code: 'capacity_recovery_counter_conflict' });
+			expect(await f.snapshot()).toEqual(before);
 		} finally { await f.db.close(); }
 	});
 	it('native overlapping recoveries produce one retained audit and one terminal counter release without rewriting usage', async () => {

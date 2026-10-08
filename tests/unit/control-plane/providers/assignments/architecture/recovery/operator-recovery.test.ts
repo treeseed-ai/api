@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createAssignmentService } from '../../../../../../src/api/control-plane/repositories/capacity/assignment-service.ts';
+import { createAssignmentService } from '../../../../../../../src/api/control-plane/repositories/capacity/assignment-service.ts';
 
 describe('authorized unresolved usage recovery', () => {
 	it('requires team management before unresolved recovery and derives actor and operation identity only from authenticated context', async () => {

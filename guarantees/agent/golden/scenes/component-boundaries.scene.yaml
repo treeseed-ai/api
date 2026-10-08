@@ -2400,6 +2400,15 @@ workflow:
   - id: execution-canonical-start-clock-native
     action: { verifier: api.golden.execution-canonical-start-clock-native }
     expect: { status: passed }
+  - id: operator-unresolved-recovery-postgres-native
+    action: { verifier: api.golden.operator-unresolved-recovery-postgres-native }
+    expect: { status: passed }
+  - id: operator-unresolved-recovery-counter-native
+    action: { verifier: api.golden.operator-unresolved-recovery-counter-native }
+    expect: { status: passed }
+  - id: operator-unresolved-recovery-workspace-native
+    action: { verifier: api.golden.operator-unresolved-recovery-workspace-native }
+    expect: { status: passed }
   - id: operator-unresolved-recovery-unit
     action: { verifier: api.golden.operator-unresolved-recovery-unit }
     expect: { status: passed }
