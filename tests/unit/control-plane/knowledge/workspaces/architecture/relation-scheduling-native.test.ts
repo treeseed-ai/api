@@ -94,7 +94,10 @@ describe('native publication to owning scheduler candidate input', () => {
 			await f.publish(); await f.completeInputs();
 			// All native content/schema setup precedes this new supplied admission
 			// input. This is not a refresh of an executing assignment or lease.
-			const now = new Date().toISOString(), startsAt = new Date(Date.parse(now) - 721_000).toISOString();
+			// This logical admission uses supplied provider/clock authority, not an
+			// authenticated wall-clock observation. Keep its positive input away
+			// from UTC rollover; the companion boundary case proves subsecond denial.
+			const now = canonicalOfferBuildInput().now, startsAt = new Date(Date.parse(now) - 721_000).toISOString();
 			const plan = { ...compileWorkday({ id: f.currentRun.id, teamId: f.currentRun.teamId, policyId: 'default', policyRevision: 1,
 				executionMode: 'simulation', startsAt, agentIds: [], policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 3600, planningPercent: 20,
 					maximumConcurrency: 1, communicationConcurrency: 1, projectPercentages: { precursor: 90, dependent: 10 } } }), state: 'active' as const };
@@ -141,6 +144,7 @@ describe('native publication to owning scheduler candidate input', () => {
 			const before = await f.snapshot(), supplied = structuredClone({ providers, principal, parameters });
 			const observation = object(await assignNextReadyExecutionNode(f.capacity, principal, 'session', providers, now)), admitted = object(observation.assignment);
 			const attempt = assignmentAttemptSchema.parse(admitted.assignmentAttempt); expect(attempt.projectId).toBe('dependent');
+			expect(attempt.limits.maximumSeconds).toBe(3); expect(attempt.deadline).toBe(plan.endsAt);
 			const selection = object(object(object(admitted.explanation).metadata).allocation).selection;
 			const expected = eligible.map(value => {
 				const node = object(value.node);
