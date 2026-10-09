@@ -29,7 +29,7 @@ it('native production API archive retains exact acceptance bytes and loads its o
   expect(`sha512-${createHash('sha512').update(bytes).digest('base64')}`).toBe(packed!.integrity);
   expect(`sha512-${createHash('sha512').update(sdkBytes).digest('base64')}`).toBe(sdk!.integrity);
   // npm's existing override binds the sole held SDK archive rather than resolving a second Git copy.
-  writeFileSync(resolve(root,'package.json'),JSON.stringify({private:true,type:'module',dependencies:{'@treeseed/sdk':`file:${sdkArchive}`},overrides:{'@treeseed/sdk':'$@treeseed/sdk'}}));
+  writeFileSync(resolve(root,'package.json'),JSON.stringify({private:true,type:'module',dependencies:{'@treeseed/api':`file:${archive}`,'@treeseed/sdk':`file:${sdkArchive}`},overrides:{'@treeseed/sdk':'$@treeseed/sdk'}}));
   await execute('npm',['install','--prefix',root,'--omit=dev','--ignore-scripts','--package-lock=false','--no-save','--no-audit','--no-fund',archive,sdkArchive],root);
   const installed=resolve(root,'node_modules/@treeseed/api');expect(realpathSync(installed)).toBe(installed);expect(lstatSync(installed).isSymbolicLink()).toBe(false);
   for(const path of ['src','node_modules/@treeseed/sdk'])expect(existsSync(resolve(installed,path))).toBe(false);
