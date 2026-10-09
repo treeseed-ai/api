@@ -217,7 +217,15 @@ describe('living admission in disposable PostgreSQL', () => {
 			expect(published.usage[0]).toMatchObject({ assignmentId: winner.id, assignmentAttempt: winner.attempt, workDayId: winner.workdayId,
 				accountingMode: 'aggregate', activeSeconds: 2, elapsedSeconds: 4, inputTokens: 7, outputTokens: 3, nativeUsage: settlement.usageActual.nativeUsage });
 			expect(published.ledger.map(value => value.id)).toEqual(retained.ledger.map(value => value.id));
-			expect(published.ledger).toEqual([settled[0]!.entry]);
+			const durableLedger = retained.ledger[0]!, metadata = JSON.parse(String(durableLedger.metadata_json));
+			expect(settled[0]!.entry).toEqual(durableLedger);
+			const { usageSettlement, ...publicMetadata } = metadata;
+			expect(published.ledger).toEqual([{ id: durableLedger.id, settlementKey: settlement.settlementKey,
+				membershipId: settlement.membershipId, capacityProviderId: winner.provider.providerId, reservationId: winner.reservationId,
+				assignmentId: winner.id, mode: 'acting', teamId: winner.teamId, projectId: winner.projectId, workDayId: winner.workdayId,
+				taskId: durableLedger.task_id, phase: 'task_completed_actual_settlement', activeSeconds: settlement.activeSeconds,
+				elapsedSeconds: settlement.elapsedSeconds, providerUnits: settlement.providerUnits, usd: settlement.usd, source: settlement.source,
+				metadata: publicMetadata, createdAt: durableLedger.created_at, usageSettlement }]);
 			expect(published.ledger[0]!.usageSettlement).toMatchObject({ assignmentId: winner.id, reservationId: winner.reservationId,
 				actualSeconds: 2, idempotencyKey: settlement.settlementKey, teamId: winner.teamId, projectId: winner.projectId, workdayId: winner.workdayId });
 			for (const change of [{ activeSeconds: 3 }, { elapsedSeconds: 5 }, { providerUnits: 0.5 }, { usd: 0.002 },
