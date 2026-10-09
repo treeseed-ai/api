@@ -3,6 +3,15 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: standalone-chat-source-unit
+    action: { verifier: api.golden.standalone-chat-source-unit }
+    expect: { status: passed }
+  - id: standalone-chat-source-denial-unit
+    action: { verifier: api.golden.standalone-chat-source-denial-unit }
+    expect: { status: passed }
+  - id: standalone-chat-source-native
+    action: { verifier: api.golden.standalone-chat-source-native }
+    expect: { status: passed }
   - id: team-key-lock-unit
     action: { verifier: api.golden.team-key-lock-unit }
     expect: { status: passed }
