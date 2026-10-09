@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: team-key-lock-unit
+    action: { verifier: api.golden.team-key-lock-unit }
+    expect: { status: passed }
+  - id: team-key-lock-native
+    action: { verifier: api.golden.team-key-lock-native }
+    expect: { status: passed }
   - id: unreported-closeout-migration-native
     action: { verifier: api.golden.unreported-closeout-migration-native }
     expect: { status: passed }

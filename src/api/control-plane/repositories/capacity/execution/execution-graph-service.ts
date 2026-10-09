@@ -199,7 +199,7 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 	if (!validateExecutionGraph(graph.nodes, graph.edges).ok) throw new CapacityOperationError(422, 'execution_graph_invalid', 'Only canonical execution graphs can be persisted.');
 	const now = revisionRecord.createdAt;
 	const operations: Array<{ query: string; params: unknown[] }> = [{
-		query: 'SELECT id FROM teams WHERE id=? FOR UPDATE', params: [graph.teamId],
+		query: 'SELECT id FROM teams WHERE id=? FOR NO KEY UPDATE', params: [graph.teamId],
 	}, { query: 'SELECT id FROM execution_nodes WHERE team_id=? ORDER BY id FOR UPDATE', params: [graph.teamId],
 	}, {
 		query: `INSERT INTO execution_graph_revisions

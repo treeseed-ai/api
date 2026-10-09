@@ -6,6 +6,19 @@ import { persistExecutionGraph } from '../../../../../../../../src/api/control-p
 import { emptyLivingGraph, graphNode, graphProfiles, graphProjection, graphSource, graphState } from './living-graph-fixture.ts';
 
 describe('complete governed living graph contract authoring', () => {
+  it('serializes graph writers without taking a team key lock that blocks reservation foreign keys', async () => {
+    const projection = graphProjection(), graph = graphState(projection), current = emptyLivingGraph();
+    const receipt = { ...projection.revision, graphDigest: graph.digest };
+    const before = structuredClone({ graph, current, receipt });
+    let operations: Array<{ query: string; params: unknown[] }> = [];
+    await persistExecutionGraph({
+      batch: async (values: typeof operations) => { operations = structuredClone(values); },
+      first: async () => ({ revision: graph.revision, graph_digest: graph.digest }),
+    }, graph, current, receipt);
+    expect(operations[0]).toEqual({ query: 'SELECT id FROM teams WHERE id=? FOR NO KEY UPDATE', params: [graph.teamId] });
+    expect(operations[1]).toEqual({ query: 'SELECT id FROM execution_nodes WHERE team_id=? ORDER BY id FOR UPDATE', params: [graph.teamId] });
+    expect({ graph, current, receipt }).toEqual(before);
+  });
 	it('rejects retired work-item output selectors before projection without changing exact governed source or configured profile authority', () => {
 		const source = graphSource(), original = graphProjection([source]);
 		for (const output of [undefined, null, '', {}, [], { model: 'knowledge', id: 'selected' }]) {
