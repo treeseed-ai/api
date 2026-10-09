@@ -20,6 +20,8 @@ import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-tr
 import { selectAssignmentSourceRepository } from '../capacity/assignments/context/source-repository.ts';
 import { readExactProposal } from '../../../governance/executable-proposal.ts';
 import { workdayLineageSql } from '../capacity/workdays/scheduling/workday-continuation.ts';
+import { resolveGitHubSourceAuthority } from '../../../../security/provider-credential-authority.ts';
+import { resolveAuthorizedSourceCommit } from '../../../control-plane/repositories/providers/source/source-pin.ts';
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {
@@ -186,6 +188,16 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 			const workItemRefs = array(record(exact.definition.executionPlan).workItems)
 				.flatMap((workItem) => array(record(workItem).contextRefs));
 			resolved.push(exact.ref, ...await canonicalProposalContextRefs(store, node, workItemRefs));
+		}
+		// A standalone conversation has no Proposal to supply its source revision.
+		// Freeze the configured source before issuance, never in the provider grant.
+		if (node.requestedPermissions?.tools.includes('source.read') && !resolved.some(reference => reference.store === 'git')) {
+			const repository = selectAssignmentSourceRepository(await store.listHubRepositories(node.projectId));
+			const fetchImpl: typeof fetch | undefined = store.config?.fetchImpl;
+			const credential = await resolveGitHubSourceAuthority({ store, teamId: node.teamId, owner: repository.owner,
+				repository: repository.name, required: false, fetchImpl });
+			const commit = await resolveAuthorizedSourceCommit(repository, credential?.token, fetchImpl);
+			resolved.push({ store: 'git', model: 'repository', id: repository.id, repository: `${repository.owner}/${repository.name}`, commit });
 		}
 		return resolved;
 	}
