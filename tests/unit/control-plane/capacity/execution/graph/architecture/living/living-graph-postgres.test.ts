@@ -6,7 +6,65 @@ import { postgresGraph } from './living-postgres-fixture.ts';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { verifyDatabaseMigrations } from '../../../../../../../../src/api/support/verify-database-migrations.ts';
+import { executePostgresBatch } from '../../../../../../../../src/api/support/control-plane-postgres.ts';
+import { ProviderAssignmentLifecycleService } from '../../../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-lifecycle-service.ts';
+import { ProviderAssignmentRepository } from '../../../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
+import type { PoolClient } from 'pg';
 describe('independent PostgreSQL connection graph custody', () => {
+  it('native graph and failure-report writers allow independent team foreign-key readers while excluding competing graph writers', async () => {
+    const f = await postgresGraph();
+    try {
+      const observations: Array<{ component: string; mode: string; outcome: string }> = [];
+      let component = 'graph';
+      const transaction = <T>(apply: (client: PoolClient) => Promise<T>) => f.left.transaction(async client => {
+        const intercepted = new Proxy(client, { get(target, key) {
+          if (key !== 'query') { const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value; }
+          return async (sql: string, params: unknown[] = []) => {
+            const result = await target.query(sql, params);
+            if (/^SELECT id FROM teams WHERE id=\$1 FOR /u.test(sql)) {
+              const reader = await f.right.pool.connect();
+              try {
+                for (const mode of ['KEY SHARE', 'NO KEY UPDATE']) {
+                  await reader.query('BEGIN');
+                  let outcome = 'acquired';
+                  try { await reader.query(`SELECT id FROM teams WHERE id=$1 FOR ${mode} NOWAIT`, ['team']); }
+                  catch (error) { outcome = String((error as { code?: unknown }).code); }
+                  finally { await reader.query('ROLLBACK'); }
+                  observations.push({ component, mode, outcome });
+                }
+              } finally { reader.release(); }
+            }
+            return result;
+          };
+        } });
+        return apply(intercepted);
+      });
+      const store = { ...f.stores[0], db: { transaction }, ensureInitialized: async () => {},
+        run: async (sql: string, params: unknown[] = []) => { await f.left.prepare(sql).bind(...params).run(); },
+        batch: (operations: Array<{ query: string; params?: unknown[] }>) => transaction(client => executePostgresBatch(client, operations)),
+      };
+      const projection = graphProjection(), graph = graphState(projection), held = structuredClone(graph);
+      await persistExecutionGraph(store, graph, emptyLivingGraph(), { ...projection.revision, graphDigest: graph.digest });
+      const before = await f.snapshot();
+      const repository = new ProviderAssignmentRepository(store);
+      const unused = async () => { throw new Error('Missing-assignment closeout must not fabricate evidence or workday writes'); };
+      component = 'failure-report';
+      const service = new ProviderAssignmentLifecycleService({ ...store,
+        getProviderAssignment: repository.get.bind(repository), recordAgentFallbackOutput: unused,
+        recordProviderAssignmentExplanation: unused, updateCapacityWorkdayRun: unused });
+      expect(await service.fail({ teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider' }, 'missing',
+        { code: 'agent_kernel_failed', retryable: false })).toBeNull();
+      expect(observations).toEqual([
+        { component: 'graph', mode: 'KEY SHARE', outcome: 'acquired' },
+        { component: 'graph', mode: 'NO KEY UPDATE', outcome: '55P03' },
+        { component: 'failure-report', mode: 'KEY SHARE', outcome: 'acquired' },
+        { component: 'failure-report', mode: 'NO KEY UPDATE', outcome: '55P03' },
+      ]);
+      for (const actual of f.stores) expect(await createExecutionGraphService(actual).show(f.principal, 'team', {})).toEqual(graph);
+      expect(await f.snapshot()).toEqual(before); expect(graph).toEqual(held);
+      // Native PG lock/FK compatibility, not whole provider admission, measured usage or managed closure.
+    } finally { await f.close(); }
+  }, 30_000);
 	it('full PostgreSQL cutover removes duplicated output storage while independent graph reads and concurrent replay preserve exact authority', async () => {
 		const f = await postgresGraph(); try {
 			for (const db of [f.left, f.right]) expect((await db.pool.query("SELECT column_name FROM information_schema.columns WHERE table_name='execution_nodes' AND column_name='output_json'")).rows).toEqual([]);

@@ -16,7 +16,7 @@ export async function commitLivingExecutionLifecycle(
 	transaction?: CapacityGovernanceDatabase,
 ): Promise<boolean> {
 	const apply = async (database: CapacityGovernanceDatabase) => {
-		await database.run('SELECT id FROM teams WHERE id=? FOR UPDATE', [input.assignment.teamId]);
+		await database.run('SELECT id FROM teams WHERE id=? FOR NO KEY UPDATE', [input.assignment.teamId]);
 		const assignment = input.assignment;
 		if (!assignment.assignmentAttempt || assignment.graphRevision !== assignment.assignmentAttempt.graphRevision
 			|| assignment.executionNodeId !== assignment.assignmentAttempt.nodeId
