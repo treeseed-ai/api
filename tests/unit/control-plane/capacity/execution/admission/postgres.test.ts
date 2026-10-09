@@ -12,6 +12,8 @@ import { ControlPlaneStore } from '../../../../../../src/api/persistence/store.t
 import { CapacityReservationRepository } from '../../../../../../src/api/capacity/repositories/capacity/accounting/reservation.ts';
 import { CapacityLedgerRepository } from '../../../../../../src/api/capacity/repositories/capacity/accounting/ledger.ts';
 import { listTaskUsageActualsPage } from '../../../../../../src/api/capacity/repositories/capacity/accounting/task-usage.ts';
+import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
+import { verifyNativeInventory } from '../../../../../acceptance/execution-inventory.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 describe('living admission in disposable PostgreSQL', () => {
@@ -101,14 +103,20 @@ describe('living admission in disposable PostgreSQL', () => {
 				: { node_id: attempt.nodeId, status: 'ready', assignment_id: null, reservation_id: null, authority: null,
 					lease_state: null, execution_node_revision: null, graph_revision: null }));
 			const publicInventory = async () => {
+				const [nativeAssignments, nativeReservations, nativeUsage, nativeLedger] = await Promise.all([
+					'capacity_provider_assignments', 'capacity_reservations', 'capacity_usage_actuals', 'capacity_ledger_entries',
+				].map(table => peerDatabase.pool.query(`SELECT * FROM ${table} WHERE work_day_id=$1 AND project_id=$2`, ['workday', 'project'])));
 				const [assignments, reservations, usage, ledger] = await Promise.all([
-					new ProviderAssignmentRepository(peerAccounting).list('team', { workdayId: 'workday', limit: 1 }),
-					new CapacityReservationRepository(peerAccounting).listProjectPage('project', { workDayId: 'workday', limit: 1 }),
-					listTaskUsageActualsPage(peerAccounting, 'project', { workDayId: 'workday', limit: 1 }),
-					new CapacityLedgerRepository(peerAccounting).listProjectPage('project', { workDayId: 'workday', limit: 1 }),
+					verifyNativeInventory(nativeAssignments!.rows, cursor => new ProviderAssignmentRepository(peerAccounting)
+						.list('team', { workdayId: 'workday', limit: 1, cursor: decodeCapacityPageCursor(cursor) }), 1),
+					verifyNativeInventory(nativeReservations!.rows, cursor => new CapacityReservationRepository(peerAccounting)
+						.listProjectPage('project', { workDayId: 'workday', limit: 1, cursor: decodeCapacityPageCursor(cursor) }), 1),
+					verifyNativeInventory(nativeUsage!.rows, cursor => listTaskUsageActualsPage(peerAccounting, 'project',
+						{ workDayId: 'workday', limit: 1, cursor: decodeCapacityPageCursor(cursor) }), 1),
+					verifyNativeInventory(nativeLedger!.rows, cursor => new CapacityLedgerRepository(peerAccounting)
+						.listProjectPage('project', { workDayId: 'workday', limit: 1, cursor: decodeCapacityPageCursor(cursor) }), 1),
 				]);
-				for (const page of [assignments, reservations, usage, ledger]) expect(page.page).toEqual({ limit: 1, hasMore: false, nextCursor: null });
-				return { assignments: assignments.items, reservations: reservations.items, usage: usage.items, ledger: ledger.items };
+				return { assignments, reservations, usage, ledger };
 			};
 			const issuedPublic = await publicInventory();
 			expect(issuedPublic.assignments.map(value => value.assignmentAttempt)).toEqual([winner]);

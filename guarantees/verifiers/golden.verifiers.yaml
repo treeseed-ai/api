@@ -1,6 +1,21 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.native-inventory-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
+    testName: "reads exactly every native identity through complete public pages without changing original observations"
+  api.golden.native-inventory-denials-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
+    testName: "denies malformed missing duplicated reordered foreign truncated or interrupted public inventories without repairing failed pages"
+  api.golden.native-inventory-authority-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
+    testName: "denies incomplete ambiguous native authority before querying the public boundary"
   api.golden.installed-assets-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
