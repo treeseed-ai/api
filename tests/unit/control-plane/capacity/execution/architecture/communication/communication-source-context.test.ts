@@ -1,10 +1,10 @@
 import { createServer } from 'node:http';
 import { describe, expect, it, vi } from 'vitest';
 import { agentDefinitionSchema } from '@treeseed/sdk/agent-capacity';
-import { workItemContext } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
-import { projectCommunicationInvocations } from '../../../../../src/api/capacity/policy/execution/communication-execution-projector.ts';
-import { ControlPlaneStore } from '../../../../../src/api/persistence/store.ts';
-import { postgresGraph } from './graph/architecture/living/living-postgres-fixture.ts';
+import { workItemContext } from '../../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
+import { projectCommunicationInvocations } from '../../../../../../../src/api/capacity/policy/execution/communication-execution-projector.ts';
+import { ControlPlaneStore } from '../../../../../../../src/api/persistence/store.ts';
+import { postgresGraph } from '../../graph/architecture/living/living-postgres-fixture.ts';
 
 const commit = 'a'.repeat(40);
 const repository = { id: 'software', role: 'software', provider: 'github', owner: 'example', name: 'project', currentBranch: 'staging' };
