@@ -5,9 +5,12 @@ import { OperatorAssignmentService } from '../../../../../../../src/api/capacity
 import { createAssignmentService } from '../../../../../../../src/api/control-plane/repositories/capacity/assignment-service.ts';
 import { createAssignmentOperations } from '../../../../../../../src/api/control-plane/catalog/capacity/assignments.ts';
 import { OperationRegistry } from '../../../../../../../src/api/control-plane/catalog/operation-registry.ts';
+import { settleCapacityReservationExactlyOnce } from '../../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
+import { terminalUsage } from '../../../../capacity/accounting/architecture/settlement-fixture.ts';
+import { createProviderAssignmentService } from '../../../../../../../src/api/control-plane/repositories/providers/provider-assignment-service.ts';
+import { ProviderAssignmentRepository } from '../../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 
-describe('unresolved recovery with independent native PostgreSQL connections', () => {
-	it('native PostgreSQL public recovery rolls back an interrupted audit then serializes independent matching operator calls without measurements or historical rewrites', async () => {
+async function exercisePostgresRecovery(dispute: boolean) {
 		const native = await postgresGraph();
 		try {
 			// Controlled original owning fixture inputs, not fabricated provider charges.
@@ -22,8 +25,10 @@ describe('unresolved recovery with independent native PostgreSQL connections', (
 				await native.left.pool.query(`INSERT INTO capacity_execution_providers (id,capacity_provider_id,display_name,adapter,native_unit,max_concurrent_runners,created_at,updated_at) VALUES ($1,'provider','Controlled executor','codex','seconds',1,$2,$2)`, [supplied.attempt.provider.executionProviderId, now]);
 				await supplied.query("UPDATE capacity_provider_assignments SET lease_state='expired',metadata_json=? WHERE id=?",
 					[JSON.stringify({ leaseRecovery: { disposition: 'operator-action' } }), supplied.assignment.id]);
+				if (dispute) await settleCapacityReservationExactlyOnce(supplied.owner, { ...terminalUsage,
+					activeSeconds: 0, elapsedSeconds: 0, source: 'capacity_workday_deadline_terminalization', usageActual: undefined });
 				for (const table of ['capacity_workday_runs', 'execution_nodes', 'capacity_reservations', 'capacity_provider_assignments',
-					'capacity_admission_counters', 'capacity_reservation_counter_claims']) {
+					'capacity_admission_counters', 'capacity_reservation_counter_claims', ...(dispute ? ['capacity_usage_actuals', 'capacity_ledger_entries'] : [])]) {
 					const current = await native.left.pool.query<{ column_name: string }>('SELECT column_name FROM information_schema.columns WHERE table_schema=\'public\' AND table_name=$1', [table]);
 					const names = new Set(current.rows.map(column => column.column_name));
 					for (const row of (await supplied.query(`SELECT * FROM ${table}`)).rows) {
@@ -41,12 +46,31 @@ describe('unresolved recovery with independent native PostgreSQL connections', (
 			const audit = () => native.left.pool.query('SELECT * FROM capacity_audit_events ORDER BY id');
 			const assignments = () => native.left.pool.query('SELECT * FROM capacity_provider_assignments ORDER BY id');
 			const held = (await assignments()).rows;
+			const accounting = async () => ({
+				reservation: (await native.left.pool.query('SELECT * FROM capacity_reservations ORDER BY id')).rows,
+				usage: (await native.left.pool.query('SELECT * FROM capacity_usage_actuals ORDER BY id')).rows,
+				ledger: (await native.left.pool.query('SELECT * FROM capacity_ledger_entries ORDER BY id')).rows,
+				claims: (await native.left.pool.query('SELECT * FROM capacity_reservation_counter_claims ORDER BY reservation_id,counter_id')).rows,
+				counters: (await native.left.pool.query('SELECT * FROM capacity_admission_counters ORDER BY id')).rows });
+			const original = await accounting();
+			const reads: Array<(recovery: unknown) => Promise<void>> = [];
 			const calls = [native.left, native.right].map(db => {
 				const store = { db, ensureInitialized: async () => {},
 					run: async (sql: string, params: unknown[] = []) => { await db.prepare(sql).bind(...params).run(); },
 					first: <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => db.prepare(sql).bind(...params).first<T>(),
 					all: async <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => (await db.prepare(sql).bind(...params).all<T>()).results,
 					batch: (operations: Array<{ query: string; params?: unknown[] }>) => db.batch(operations) };
+				const repository = new ProviderAssignmentRepository(store);
+				const unused = async () => { throw new Error('Provider audit read cannot invoke productive lifecycle'); };
+				const provider = createProviderAssignmentService({ ...store, getProviderAssignment: (team, id) => repository.get(team, id),
+					leaseNextProviderAssignment: unused, renewProviderAssignmentLease: unused, returnProviderAssignment: unused,
+					completeProviderAssignment: unused, failProviderAssignment: unused,
+					createCapacityWorkdayRun: unused, tickCapacityWorkdayRun: unused, updateCapacityWorkdayRun: unused });
+				reads.push(async recovery => {
+					const principal = { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership', scopes: ['provider:assignments:read'] } };
+					expect(await provider.show(principal, 'assignment-report')).toEqual({
+						...await repository.get('team', 'assignment-report'), unresolvedUsageRecovery: recovery });
+				});
 				const operator = new OperatorAssignmentService(store);
 				const service = createAssignmentService({ ...store, recoverCapacityAssignment: (team: string, id: string, body: Record<string, unknown>) => operator.recover(team, id, body) });
 				const registry = new OperationRegistry(createAssignmentOperations({ assignments: service }));
@@ -58,17 +82,37 @@ describe('unresolved recovery with independent native PostgreSQL connections', (
 				CREATE TRIGGER interrupt_operator_recovery BEFORE INSERT ON capacity_audit_events FOR EACH ROW EXECUTE FUNCTION interrupt_operator_recovery();`);
 			await expect(calls[0]!()).rejects.toThrow('independent audit interruption');
 			expect((await assignments()).rows).toEqual(held); expect((await audit()).rows).toEqual([]);
+			expect(await accounting()).toEqual(original);
 			expect((await native.left.pool.query('SELECT id,committed_amount FROM capacity_admission_counters ORDER BY id')).rows)
-				.toEqual([{ id: 'concurrency', committed_amount: 1 }, { id: 'seconds', committed_amount: 2 }]);
+				.toEqual([{ id: 'concurrency', committed_amount: dispute ? 0 : 1 }, { id: 'seconds', committed_amount: dispute ? 0 : 2 }]);
 			await native.left.pool.query('DROP TRIGGER interrupt_operator_recovery ON capacity_audit_events');
 			const results = await Promise.all(calls.map(call => call())); expect(results[0]).toEqual(results[1]);
-			expect(results[0]).toMatchObject({ usageStatus: 'unresolved', settled: false }); expect((await audit()).rows).toHaveLength(1);
+			expect(results[0]).toMatchObject({ usageStatus: 'unresolved', settled: false }); expect((await audit()).rows).toHaveLength(dispute ? 2 : 1);
 			expect((await assignments()).rows).toEqual(held);
 			expect((await native.left.pool.query('SELECT id,committed_amount FROM capacity_admission_counters ORDER BY id')).rows)
 				.toEqual([{ id: 'concurrency', committed_amount: 0 }, { id: 'seconds', committed_amount: 2 }]);
-			expect((await native.left.pool.query('SELECT * FROM capacity_usage_actuals')).rows).toEqual([]);
-			expect((await native.left.pool.query('SELECT * FROM capacity_ledger_entries')).rows).toEqual([]);
+			expect((await native.left.pool.query('SELECT * FROM capacity_usage_actuals ORDER BY id')).rows).toEqual(original.usage);
+			expect((await native.left.pool.query('SELECT * FROM capacity_ledger_entries ORDER BY id')).rows).toEqual(original.ledger);
+			if (dispute) {
+				const after = await accounting(); expect(after.reservation).toEqual(original.reservation);
+				const audits = (await audit()).rows, retained = audits.find(value => value.action === 'assignment.settlement.disputed');
+				expect(JSON.parse(String(retained?.metadata_json))).toEqual({ originalLedger: original.ledger, originalUsage: original.usage, originalClaims: original.claims });
+				expect(after.claims.map(value => ({ counter: value.counter_id, released: value.released_amount })))
+					.toEqual([{ counter: 'concurrency', released: 1 }, { counter: 'seconds', released: 0 }]);
+				expect(after.counters.find(value => value.id === 'concurrency')).toEqual(original.counters.find(value => value.id === 'concurrency'));
+			}
+			const final = await accounting(), finalAudit = (await audit()).rows;
+			await Promise.all(reads.map(read => read(results[0])));
 			expect(await calls[0]!()).toEqual(results[0]);
+			expect(await accounting()).toEqual(final); expect((await audit()).rows).toEqual(finalAudit);
 		} finally { await native.close(); }
+}
+
+describe('unresolved recovery with independent native PostgreSQL connections', () => {
+	it('native PostgreSQL public recovery rolls back an interrupted audit then serializes independent matching operator calls without measurements or historical rewrites', async () => {
+		await exercisePostgresRecovery(false);
+	});
+	it('native PostgreSQL settlement dispute restores only original holds after atomic audit rollback and independent matching calls without rewriting zero history', async () => {
+		await exercisePostgresRecovery(true);
 	});
 });

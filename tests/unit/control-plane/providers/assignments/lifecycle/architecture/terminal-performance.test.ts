@@ -5,6 +5,26 @@ import { recoveryAssignment, cancelNow } from '../../architecture/cancellation-f
 // UNIT of the owning performance projection; supplied clocks and measurements
 // are not provider-generated usage or an independent timing receipt.
 describe('truthful terminal performance projection', () => {
+	it('requires actual time for an operator-action recovery even when its original active clock never started', () => {
+		for (const reasonCode of ['expired_lease_execution_usage_unknown', 'expired_lease_side_effect_evidence_present',
+			'expired_lease_financial_transition_uncertain']) {
+			const item = recoveryAssignment(false);
+			item.metadata = { ...item.metadata, leaseRecovery: { disposition: 'operator-action', reasonCode } };
+			const before = structuredClone(item);
+			for (const measurements of [{}, { elapsed_seconds: 1 }, { active_seconds: 0 }]) {
+				expect(() => terminalPerformance(item, { completion: { disposition: 'cancelled' } }, 'failed', cancelNow, measurements))
+					.toThrowError(expect.objectContaining({ code: 'provider_assignment_usage_required', status: 409 }));
+				expect(item).toEqual(before);
+			}
+			const measured = { active_seconds: 2, elapsed_seconds: 3 }, held = structuredClone(measured);
+			expect(terminalPerformance(item, {}, 'failed', cancelNow, measured).actual)
+				.toMatchObject({ activeSeconds: 2, elapsedSeconds: 3 });
+			expect(measured).toEqual(held); expect(item).toEqual(before);
+		}
+		// Truly unstarted, unclassified work retains the existing zero-release contract.
+		expect(terminalPerformance(recoveryAssignment(false), {}, 'failed', cancelNow).actual)
+			.toMatchObject({ activeSeconds: 0, elapsedSeconds: 0 });
+	});
 	it('retains supplied measured terminal time and arbitrary class without rewriting the frozen assignment', () => {
 		const item = recoveryAssignment(true), before = structuredClone(item);
 		const result = terminalPerformance(item, {}, 'failed', cancelNow, { active_seconds: 2, elapsed_seconds: 3, input_tokens: 7 });

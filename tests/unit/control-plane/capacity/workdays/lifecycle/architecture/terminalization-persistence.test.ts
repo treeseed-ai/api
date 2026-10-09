@@ -11,6 +11,41 @@ function clock() { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new 
 // Supplied clocks/usage are not provider-generated measurements, authenticated
 // transport, independent PostgreSQL connections or physical teardown evidence.
 describe('workday terminalization retains actual assignment and settlement custody', () => {
+	it('native deadline terminalization retains unknown operator-action usage and every original budget claim without fabricating zero settlement', async () => {
+		for (const status of ['expired', 'failed', 'cancelled']) {
+		for (const reservationState of ['reserved', 'consuming']) {
+			const f = await cancellationDatabase(status, false);
+			try {
+				clock();
+				await f.query("UPDATE capacity_reservations SET state=? WHERE id='reservation'", [reservationState]);
+				await f.query(`UPDATE capacity_provider_assignments SET lifecycle_code='expired_lease_execution_usage_unknown',
+					lifecycle_output_json=?,metadata_json=? WHERE id=?`, [
+					JSON.stringify({ report: 'retained-native-candidate', usage: { elapsedSeconds: 1 } }),
+					JSON.stringify({ leaseRecovery: { disposition: 'operator-action', reasonCode: 'expired_lease_execution_usage_unknown' } }),
+					f.assignment.id]);
+				const before = await f.snapshot(), input = { now: cancelNow, settlementKeyPrefix: 'workday-deadline',
+					source: 'capacity_workday_deadline_terminalization' }, held = structuredClone(input);
+				const denied = await Promise.allSettled([terminalizeCapacityWorkdayAssignments(f.owner, 'team', 'workday', input),
+					terminalizeCapacityWorkdayAssignments(f.owner, 'team', 'workday', input)]);
+				for (const result of denied) {
+					expect(result.status).toBe('rejected');
+					if (result.status === 'rejected') expect(result.reason)
+						.toMatchObject({ code: 'provider_assignment_usage_required', status: 409 });
+				}
+				expect(await f.snapshot()).toEqual(before); expect(input).toEqual(held);
+				expect((await f.query('SELECT state,settlement_token FROM capacity_reservations')).rows)
+					.toEqual([{ state: reservationState, settlement_token: null }]);
+				expect((await f.query('SELECT counter_id,released_amount FROM capacity_reservation_counter_claims ORDER BY counter_id')).rows)
+					.toEqual([{ counter_id: 'concurrency', released_amount: 0 }, { counter_id: 'seconds', released_amount: 0 }]);
+				expect((await f.query('SELECT COUNT(*) AS total FROM capacity_usage_actuals')).rows).toEqual([{ total: 0 }]);
+				expect((await f.query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows).toEqual([{ total: 0 }]);
+				await expect(terminalizeCapacityWorkdayAssignments(f.owner, 'team', 'workday', input))
+					.rejects.toMatchObject({ code: 'provider_assignment_usage_required', status: 409 });
+				expect(await f.snapshot()).toEqual(before);
+			} finally { await f.db.close(); }
+		}
+		}
+	});
 	it('native workday stop advances canonical terminal metadata without changing admitted authority or replaying settlement', async () => {
 		for (const started of [false, true]) {
 			const native = await cancellationDatabase('returned', started);

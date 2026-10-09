@@ -44,9 +44,12 @@ export function terminalPerformance(
 	const completion = record(input.completion);
 	const usage = record(input.usage);
 	const started = Boolean(record(candidate.time).executionStartedAt);
+	// Lease recovery already classified this execution as requiring an operator.
+	// A missing active-clock start is unknown usage, not proof of no execution.
+	const requiresMeasurement = started || record(metadata.leaseRecovery).disposition === 'operator-action';
 	const seconds = (value: unknown, field: string): number => {
 		if (value === undefined || value === null) {
-			if (!started) return 0;
+			if (!requiresMeasurement) return 0;
 			throw new CapacityGovernanceError('provider_assignment_usage_required', `Executed assignment requires measured ${field}.`, 409);
 		}
 		if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new CapacityGovernanceError(

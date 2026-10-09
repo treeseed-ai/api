@@ -28,6 +28,96 @@ async function nativeRecovery() {
 // PGlite overlap is not separate-server concurrency, native provider charges,
 // authenticated HTTP or physical sandbox/workspace closure proof.
 describe('native unresolved operator recovery', () => {
+	it('native provider read exposes only matching disputed consumed recovery audit and retains original zero settlement and restored claims through repeated reads', async () => {
+		const f = await nativeRecovery(); try {
+			await settleCapacityReservationExactlyOnce(f.owner, { ...terminalUsage, activeSeconds: 0, elapsedSeconds: 0,
+				source: 'capacity_workday_deadline_terminalization', usageActual: undefined });
+			const unused = async () => { throw new Error('Audit read cannot invoke productive operations'); };
+			const repository = new ProviderAssignmentRepository(f.owner);
+			const provider = createProviderAssignmentService({ ...f.owner, getProviderAssignment: (team, id) => repository.get(team, id),
+				leaseNextProviderAssignment: unused, renewProviderAssignmentLease: unused, returnProviderAssignment: unused,
+				completeProviderAssignment: unused, failProviderAssignment: unused,
+				createCapacityWorkdayRun: unused, tickCapacityWorkdayRun: unused, updateCapacityWorkdayRun: unused });
+			const principal = { principal: { teamId: f.assignment.teamId, capacityProviderId: f.assignment.capacityProviderId,
+				membershipId: f.assignment.membershipId!, scopes: ['provider:assignments:read'] } };
+			expect(await provider.show(principal, f.assignment.id)).toEqual(await repository.get('team', f.assignment.id));
+			const recovery = await f.call(), held = await f.snapshot();
+			expect((await f.query('SELECT state FROM capacity_reservations')).rows).toEqual([{ state: 'consumed' }]);
+			const expected = { ...await repository.get('team', f.assignment.id), unresolvedUsageRecovery: recovery };
+			expect(await provider.show(principal, f.assignment.id)).toEqual(expected);
+			expect(await Promise.all([provider.show(principal, f.assignment.id), provider.show(principal, f.assignment.id)])).toEqual([expected, expected]);
+			expect(await f.snapshot()).toEqual(held);
+			const dispute = held.audit.find(value => value.action === 'assignment.settlement.disputed')!;
+			for (const [field, value] of [['team_id', 'foreign'], ['capacity_provider_id', 'foreign'], ['membership_id', 'foreign'],
+				['resource_id', 'foreign'], ['idempotency_key', 'foreign'], ['actor_id', 'foreign'], ['action', 'unrelated']] as const) {
+				await f.query(`UPDATE capacity_audit_events SET ${field}=? WHERE id=?`, [value, dispute.id]);
+				const denied = await f.snapshot();
+				expect(await provider.show(principal, f.assignment.id)).toEqual(await repository.get('team', f.assignment.id));
+				expect(await f.snapshot()).toEqual(denied);
+				await f.query(`UPDATE capacity_audit_events SET ${field}=? WHERE id=?`, [dispute[field], dispute.id]);
+			}
+			await expect(provider.show({ principal: { ...principal.principal, capacityProviderId: 'foreign' } }, f.assignment.id)).rejects.toMatchObject({ status: 403 });
+			expect(await provider.show(principal, f.assignment.id)).toEqual(expected); expect(await f.snapshot()).toEqual(held);
+		} finally { await f.db.close(); }
+	});
+	it('native recovery disputes only original automatic zero settlement and restores original period holds once while retaining all failed and accounting bytes', async () => {
+		for (const policy of ['period', 'actual-settlement']) {
+		const f = await nativeRecovery(); try {
+			await f.query("UPDATE capacity_reservation_counter_claims SET release_policy=? WHERE counter_id='seconds'", [policy]);
+			await f.query("UPDATE capacity_admission_counters SET committed_amount=3 WHERE id='seconds'");
+			await settleCapacityReservationExactlyOnce(f.owner, { ...terminalUsage, activeSeconds: 0, elapsedSeconds: 0,
+				source: 'capacity_workday_deadline_terminalization', usageActual: undefined });
+			const before = await f.snapshot();
+			expect((await f.query('SELECT id,committed_amount FROM capacity_admission_counters ORDER BY id')).rows)
+				.toEqual([{ id: 'concurrency', committed_amount: 0 }, { id: 'seconds', committed_amount: 1 }]);
+			await f.db.exec(`CREATE FUNCTION interrupt_dispute() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'retained dispute interruption'; END $$;
+				CREATE TRIGGER interrupt_dispute BEFORE INSERT ON capacity_audit_events FOR EACH ROW EXECUTE FUNCTION interrupt_dispute();`);
+			await expect(f.call()).rejects.toThrow('retained dispute interruption');
+			expect(await f.snapshot()).toEqual(before);
+			await f.db.exec('DROP TRIGGER interrupt_dispute ON capacity_audit_events');
+			const results = await Promise.all([f.call(), f.call()]); expect(results[0]).toEqual(results[1]);
+			expect(results[0]).toMatchObject({ usageStatus: 'unresolved', settled: false, expectedStateVersion: 1 });
+			const after = await f.snapshot();
+			for (const table of ['capacity_provider_assignments', 'capacity_reservations', 'capacity_usage_actuals', 'capacity_ledger_entries'])
+				expect(after[table]).toEqual(before[table]);
+			expect((await f.query('SELECT id,committed_amount FROM capacity_admission_counters ORDER BY id')).rows)
+				.toEqual([{ id: 'concurrency', committed_amount: 0 }, { id: 'seconds', committed_amount: 3 }]);
+			expect((await f.query('SELECT counter_id,released_amount FROM capacity_reservation_counter_claims ORDER BY counter_id')).rows)
+				.toEqual([{ counter_id: 'concurrency', released_amount: 1 }, { counter_id: 'seconds', released_amount: 0 }]);
+			const disputes = after.audit.filter(row => row.action === 'assignment.settlement.disputed'); expect(disputes).toHaveLength(1);
+			const retained = JSON.parse(String(disputes[0]!.metadata_json));
+			expect(retained.originalLedger).toEqual(before.capacity_ledger_entries);
+			expect(retained.originalUsage).toEqual(before.capacity_usage_actuals);
+			expect(retained.originalClaims).toEqual(before.capacity_reservation_counter_claims);
+			expect(after.audit.filter(row => row.action === 'assignment.usage.unresolved')).toHaveLength(1);
+			expect(await f.call()).toEqual(results[0]); expect(await f.snapshot()).toEqual(after);
+			await expect(f.call(undefined, 'changed-dispute')).rejects.toMatchObject({ status: 409 });
+			expect(await f.snapshot()).toEqual(after);
+		} finally { await f.db.close(); }
+		}
+	});
+	it('native settlement dispute rejects measured foreign moved corrupt and unrelated settlements or claims without accounting changes', async () => {
+		const f = await nativeRecovery(); try {
+			await settleCapacityReservationExactlyOnce(f.owner, { ...terminalUsage, activeSeconds: 0, elapsedSeconds: 0,
+				source: 'capacity_workday_deadline_terminalization', usageActual: undefined });
+			const variants = [
+				["UPDATE capacity_ledger_entries SET source='provider_actual'", "UPDATE capacity_ledger_entries SET source='capacity_workday_deadline_terminalization'"],
+				["UPDATE capacity_ledger_entries SET active_seconds=1", "UPDATE capacity_ledger_entries SET active_seconds=0"],
+				["UPDATE capacity_ledger_entries SET elapsed_seconds=1", "UPDATE capacity_ledger_entries SET elapsed_seconds=0"],
+				["UPDATE capacity_ledger_entries SET assignment_id='foreign'", "UPDATE capacity_ledger_entries SET assignment_id='assignment-report'"],
+				["UPDATE capacity_usage_actuals SET input_tokens=1", "UPDATE capacity_usage_actuals SET input_tokens=NULL"],
+				["UPDATE capacity_usage_actuals SET native_usage_json='{\"tokens\":1}'", "UPDATE capacity_usage_actuals SET native_usage_json='{}'"],
+				["UPDATE capacity_reservation_counter_claims SET released_amount=1 WHERE counter_id='seconds'", "UPDATE capacity_reservation_counter_claims SET released_amount=2 WHERE counter_id='seconds'"],
+				["UPDATE capacity_admission_counters SET team_id='foreign' WHERE id='seconds'", "UPDATE capacity_admission_counters SET team_id='team' WHERE id='seconds'"],
+			] as const;
+			for (const [change, restore] of variants) {
+				await f.query(change); const held = await f.snapshot();
+				await expect(f.call()).rejects.toMatchObject({ status: 409 }); expect(await f.snapshot()).toEqual(held);
+				await f.query(restore);
+			}
+			expect(await f.call()).toMatchObject({ usageStatus: 'unresolved', settled: false });
+		} finally { await f.db.close(); }
+	});
 	it('native operator recovery releases only terminal capacity once and retains unresolved usage report and expired authority without a settlement', async () => {
 		const f = await nativeRecovery(); try {
 			const before = await f.snapshot(), first = await f.call();

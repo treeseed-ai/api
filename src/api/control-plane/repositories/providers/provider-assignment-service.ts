@@ -197,7 +197,12 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 				JOIN capacity_reservations reservation ON reservation.id=?
 				WHERE audit.team_id=? AND audit.resource_id=? AND audit.capacity_provider_id=? AND audit.membership_id=?
 				AND audit.action='assignment.usage.unresolved' AND reservation.team_id=audit.team_id
-				AND reservation.assignment_id=audit.resource_id AND reservation.state='released'`,
+				AND reservation.assignment_id=audit.resource_id AND (reservation.state='released'
+					OR (reservation.state='consumed' AND EXISTS (SELECT 1 FROM capacity_audit_events dispute
+						WHERE dispute.action='assignment.settlement.disputed' AND dispute.team_id=audit.team_id
+						AND dispute.resource_id=audit.resource_id AND dispute.capacity_provider_id=audit.capacity_provider_id
+						AND dispute.membership_id=audit.membership_id AND dispute.idempotency_key=audit.idempotency_key
+						AND dispute.actor_id=audit.actor_id AND dispute.actor_type=audit.actor_type)))`,
 				[assignment.reservationId, actor.teamId, assignmentId, actor.capacityProviderId, actor.membershipId]);
 			if (!audit) return assignment;
 			return { ...assignment, unresolvedUsageRecovery: JSON.parse(String(audit.metadata_json)) };
