@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { expect, it } from 'vitest';
 import ts from 'typescript';
 
-const assets=['treeseed.package.yaml','guarantees/verifiers/golden.verifiers.yaml','tests/acceptance/execution-schema.ts'];
+const assets=['treeseed.package.yaml','guarantees/verifiers/golden.verifiers.yaml','tests/acceptance/execution-schema.ts','tests/acceptance/execution-inventory.ts'];
 const execute=async(command:string,args:string[],cwd=process.cwd())=>(await promisify(execFile)(command,args,{cwd,encoding:'utf8',maxBuffer:8*1024*1024})).stdout;
 type Packed={filename:string;integrity:string;files:Array<{path:string}>};
 
@@ -16,7 +16,8 @@ it('ships the existing selected API definitions and acceptance asset with only p
  expect(packed).toBeDefined();const paths=new Set(packed!.files.map(file=>file.path));
  const source=ts.createSourceFile('execution-schema.ts',readFileSync('tests/acceptance/execution-schema.ts','utf8'),ts.ScriptTarget.Latest,true);
  const privateImports=source.statements.flatMap(statement=>ts.isImportDeclaration(statement)&&ts.isStringLiteral(statement.moduleSpecifier)&&statement.moduleSpecifier.text.includes('/src/')?[statement.moduleSpecifier.text]:[]);
- expect({missing:assets.filter(path=>!paths.has(path)),privateImports}).toEqual({missing:[],privateImports:[]});
+ const checkoutCliPaths:string[]=[];const visit=(node:ts.Node)=>{if(ts.isStringLiteral(node)&&node.text.includes('packages/cli/'))checkoutCliPaths.push(node.text);ts.forEachChild(node,visit);};visit(source);
+ expect({missing:assets.filter(path=>!paths.has(path)),privateImports,checkoutCliPaths}).toEqual({missing:[],privateImports:[],checkoutCliPaths:[]});
 });
 
 it('native production API archive retains exact acceptance bytes and loads its owning published runtime contracts without source or development dependencies',async()=>{
