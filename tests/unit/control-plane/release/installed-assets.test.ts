@@ -33,7 +33,10 @@ it('native production API archive retains exact acceptance bytes and loads its o
   await execute('npm',['install','--prefix',root,'--omit=dev','--ignore-scripts','--package-lock=false','--no-save','--no-audit','--no-fund',archive,sdkArchive],root);
   const installed=resolve(root,'node_modules/@treeseed/api');expect(realpathSync(installed)).toBe(installed);expect(lstatSync(installed).isSymbolicLink()).toBe(false);
   for(const path of ['src','node_modules/@treeseed/sdk'])expect(existsSync(resolve(installed,path))).toBe(false);
-  for(const path of ['vitest','tsx','typescript'])expect(existsSync(resolve(root,'node_modules',path))).toBe(false);
+  for(const path of ['vitest','tsx'])expect(existsSync(resolve(root,'node_modules',path)),path).toBe(false);
+  const sdkManifest=JSON.parse(readFileSync(resolve(root,'node_modules/@treeseed/sdk/package.json'),'utf8')) as {dependencies:Record<string,string>};
+  expect(sdkManifest.dependencies.typescript).toBeDefined();
+  await execute('npm',['ls','--all','--omit=dev','--json'],root);
   for(const path of assets)expect(readFileSync(resolve(installed,path)),path).toEqual(readFileSync(path));
   writeFileSync(resolve(root,'consumer.ts'),`import assert from 'node:assert/strict';
 import {resolveApiDatabaseUrl} from './node_modules/@treeseed/api/dist/api/configuration/runtime-config.js';
