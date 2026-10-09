@@ -4096,8 +4096,98 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
     testName: "native execution start records the original canonical running clock once and closeout cannot rewrite it or frozen authority"
+  api.golden.operator-unresolved-recovery-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-postgres.test.ts
+    testName: "native PostgreSQL public recovery rolls back an interrupted audit then serializes independent matching operator calls without measurements or historical rewrites"
+  api.golden.operator-unresolved-recovery-counter-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-native.test.ts
+    testName: "native unresolved recovery refuses an orphan counter claim rather than silently releasing an unaccounted reservation"
+  api.golden.operator-unresolved-recovery-workspace-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-workspace.test.ts
+    testName: "native unresolved recovery denies open foreign and denied workspace readback then releases capacity only after exact native closure without usage"
+  api.golden.operator-unresolved-recovery-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery.test.ts
+    testName: "requires team management before unresolved recovery and derives actor and operation identity only from authenticated context"
+  api.golden.operator-unresolved-recovery-input-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery.test.ts
+    testName: "denies malformed version reason and every caller measurement or actor field before the owning recovery mutation"
+  api.golden.operator-unresolved-recovery-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-native.test.ts
+    testName: "native operator recovery releases only terminal capacity once and retains unresolved usage report and expired authority without a settlement"
+  api.golden.operator-unresolved-recovery-denial-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-native.test.ts
+    testName: "native recovery denies active foreign stale measured and mismatched reservation authority without changing retained history"
+  api.golden.operator-unresolved-recovery-overlap-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-native.test.ts
+    testName: "native overlapping recoveries produce one retained audit and one terminal counter release without rewriting usage"
+  api.golden.operator-unresolved-recovery-interruption-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-native.test.ts
+    testName: "native late audit interruption rolls back capacity release and exact retry preserves the original failed output"
   api.golden.execution-canonical-claim-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-poll-native.test.ts
     testName: "native claim advances only canonical leased status without inventing execution clocks or changing dependency authority"
+  api.golden.operator-unknown-terminal-time-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-performance.test.ts
+    testName: "requires actual time for an operator-action recovery even when its original active clock never started"
+  api.golden.operator-unknown-terminal-time-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/architecture/terminalization-persistence.test.ts
+    testName: "native deadline terminalization retains unknown operator-action usage and every original budget claim without fabricating zero settlement"
+  api.golden.operator-settlement-dispute-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery.test.ts
+    testName: "keeps settlement dispute authority server derived and rejects every caller hold refund settlement or measurement before recovery"
+  api.golden.operator-settlement-dispute-authority-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery.test.ts
+    testName: "requires exact original deadline zero identities and absent active clock without treating native or malformed facts as disputable"
+  api.golden.operator-settlement-dispute-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-postgres.test.ts
+    testName: "native PostgreSQL settlement dispute restores only original holds after atomic audit rollback and independent matching calls without rewriting zero history"
+  api.golden.operator-settlement-dispute-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-native.test.ts
+    testName: "native recovery disputes only original automatic zero settlement and restores original period holds once while retaining all failed and accounting bytes"
+  api.golden.operator-settlement-dispute-denial-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-native.test.ts
+    testName: "native settlement dispute rejects measured foreign moved corrupt and unrelated settlements or claims without accounting changes"
+  api.golden.operator-settlement-dispute-read-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery.test.ts
+    testName: "reads the exact operator audit for released or disputed consumed reservation authority without invoking productive lifecycle operations"
+  api.golden.operator-settlement-dispute-read-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-native.test.ts
+    testName: "native provider read exposes only matching disputed consumed recovery audit and retains original zero settlement and restored claims through repeated reads"

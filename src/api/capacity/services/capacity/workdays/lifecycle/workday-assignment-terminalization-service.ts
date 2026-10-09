@@ -130,7 +130,7 @@ async function releaseUnsettledTerminalAssignments(
 			   AND settlement.phase = 'task_completed_actual_settlement'
 			 WHERE assignment.team_id = ? AND run.id = ?
 			   AND assignment.status IN ('failed', 'expired', 'cancelled')
-			   AND reservation.state = 'reserved'
+			   AND reservation.state IN ('reserved', 'consuming')
 			   AND settlement.id IS NULL
 			 ORDER BY assignment.created_at ASC, assignment.id ASC
 			 LIMIT ?`,

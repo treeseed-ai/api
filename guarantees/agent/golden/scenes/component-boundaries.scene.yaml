@@ -2400,6 +2400,60 @@ workflow:
   - id: execution-canonical-start-clock-native
     action: { verifier: api.golden.execution-canonical-start-clock-native }
     expect: { status: passed }
+  - id: operator-unresolved-recovery-postgres-native
+    action: { verifier: api.golden.operator-unresolved-recovery-postgres-native }
+    expect: { status: passed }
+  - id: operator-unresolved-recovery-counter-native
+    action: { verifier: api.golden.operator-unresolved-recovery-counter-native }
+    expect: { status: passed }
+  - id: operator-unresolved-recovery-workspace-native
+    action: { verifier: api.golden.operator-unresolved-recovery-workspace-native }
+    expect: { status: passed }
+  - id: operator-unresolved-recovery-unit
+    action: { verifier: api.golden.operator-unresolved-recovery-unit }
+    expect: { status: passed }
+  - id: operator-unresolved-recovery-input-unit
+    action: { verifier: api.golden.operator-unresolved-recovery-input-unit }
+    expect: { status: passed }
+  - id: operator-unresolved-recovery-native
+    action: { verifier: api.golden.operator-unresolved-recovery-native }
+    expect: { status: passed }
+  - id: operator-unresolved-recovery-denial-native
+    action: { verifier: api.golden.operator-unresolved-recovery-denial-native }
+    expect: { status: passed }
+  - id: operator-unresolved-recovery-overlap-native
+    action: { verifier: api.golden.operator-unresolved-recovery-overlap-native }
+    expect: { status: passed }
+  - id: operator-unresolved-recovery-interruption-native
+    action: { verifier: api.golden.operator-unresolved-recovery-interruption-native }
+    expect: { status: passed }
   - id: execution-canonical-claim-native
     action: { verifier: api.golden.execution-canonical-claim-native }
+    expect: { status: passed }
+  - id: operator-unknown-terminal-time-unit
+    action: { verifier: api.golden.operator-unknown-terminal-time-unit }
+    expect: { status: passed }
+  - id: operator-unknown-terminal-time-native
+    action: { verifier: api.golden.operator-unknown-terminal-time-native }
+    expect: { status: passed }
+  - id: operator-settlement-dispute-unit
+    action: { verifier: api.golden.operator-settlement-dispute-unit }
+    expect: { status: passed }
+  - id: operator-settlement-dispute-authority-unit
+    action: { verifier: api.golden.operator-settlement-dispute-authority-unit }
+    expect: { status: passed }
+  - id: operator-settlement-dispute-postgres-native
+    action: { verifier: api.golden.operator-settlement-dispute-postgres-native }
+    expect: { status: passed }
+  - id: operator-settlement-dispute-native
+    action: { verifier: api.golden.operator-settlement-dispute-native }
+    expect: { status: passed }
+  - id: operator-settlement-dispute-denial-native
+    action: { verifier: api.golden.operator-settlement-dispute-denial-native }
+    expect: { status: passed }
+  - id: operator-settlement-dispute-read-unit
+    action: { verifier: api.golden.operator-settlement-dispute-read-unit }
+    expect: { status: passed }
+  - id: operator-settlement-dispute-read-native
+    action: { verifier: api.golden.operator-settlement-dispute-read-native }
     expect: { status: passed }

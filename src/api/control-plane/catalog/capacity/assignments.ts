@@ -8,6 +8,7 @@ function result<T>(call: () => T | Promise<T>) { return Promise.resolve().then(c
 	throw error;
 }); }
 export function createAssignmentOperations({ assignments }: AssignmentOperationDependencies): BoundOperation[] { return [
+	{ binding: CONTROL_PLANE_OPERATIONS.assignments.recover, handler: (input, context) => result(() => assignments.recover(context.principal, input.path.teamId, input.path.assignmentId, input.body, context.idempotencyKey)) },
 	{ binding: CONTROL_PLANE_OPERATIONS.assignments.list, handler: (input, context) => result(() => assignments.list(context.principal, input.path.teamId, input.query as Record<string, unknown>)) },
 	{ binding: CONTROL_PLANE_OPERATIONS.assignments.show, handler: (input, context) => result(() => assignments.show(context.principal, input.path.teamId, input.path.assignmentId)) },
 	{ binding: CONTROL_PLANE_OPERATIONS.assignments.explain, handler: (input, context) => result(() => assignments.explain(context.principal, input.path.teamId, input.path.assignmentId)) },
