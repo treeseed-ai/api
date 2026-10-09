@@ -1,6 +1,21 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.standalone-chat-source-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/communication-source-context.test.ts
+    testName: "freezes configured source-read Git context before issuing an arbitrary configured chat assignment"
+  api.golden.standalone-chat-source-denial-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/communication-source-context.test.ts
+    testName: "denies ambiguous source and rejected or malformed upstream revisions without repairing communication input"
+  api.golden.standalone-chat-source-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/communication-source-context.test.ts
+    testName: "native PostgreSQL and HTTP freeze standalone chat source while denials and unchanged retry preserve all stored input bytes"
   api.golden.team-key-lock-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
