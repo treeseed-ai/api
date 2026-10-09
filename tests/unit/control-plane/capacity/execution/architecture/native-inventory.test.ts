@@ -15,6 +15,8 @@ describe('independent native producer inventory reconciliation', () => {
 		expect(await verifyNativeInventory(supplied, value => { calls.push(value); return received[calls.length - 1]; }, 1)).toEqual(rows);
 		expect(calls).toEqual([undefined, cursor]); expect(supplied).toEqual(native); expect(received).toEqual(pages);
 		expect(await verifyNativeInventory([], () => ({ items: [], page: { limit: 1, hasMore: false, nextCursor: null } }), 1)).toEqual([]);
+		const ascending = [...rows].reverse(), next = encodeCapacityPageCursor({ id: 'first', createdAt: clock }); let index = 0;
+		expect(await verifyNativeInventory(native, () => ({ items: [ascending[index++]], page: { limit: 1, hasMore: index < 2, nextCursor: index < 2 ? next : null } }), 1, 'ascending')).toEqual(ascending);
 	});
 	it('denies malformed missing duplicated reordered foreign truncated or interrupted public inventories without repairing failed pages', async () => {
 		for (const replacement of [undefined, null, {}, { items: rows }, { items: [], page: pages[0]!.page },
