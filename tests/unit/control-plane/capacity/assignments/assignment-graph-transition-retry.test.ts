@@ -51,7 +51,7 @@ describe('concurrent assignment graph completion', () => {
 		await commitLivingExecutionLifecycle(input(store), operations);
 		expect(transaction).toHaveBeenCalledTimes(2);
 		expect(attempts.map(queries => queries[0]?.query)).toEqual([
-			'SELECT id FROM teams WHERE id=$1 FOR UPDATE', 'SELECT id FROM teams WHERE id=$1 FOR UPDATE',
+			'SELECT id FROM teams WHERE id=$1 FOR NO KEY UPDATE', 'SELECT id FROM teams WHERE id=$1 FOR NO KEY UPDATE',
 		]);
 		expect(attempts.map(queries => queries.find(row => row.query.includes('INSERT INTO execution_graph_revisions'))?.params[1]))
 			.toEqual([11, 12]);

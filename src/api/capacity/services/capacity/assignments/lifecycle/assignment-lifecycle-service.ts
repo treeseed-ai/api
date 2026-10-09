@@ -318,7 +318,8 @@ export class ProviderAssignmentLifecycleService {
 	private async withLockedAssignment<T>(principal: ProviderLeasePrincipal, assignmentId: string,
 		apply: (service: ProviderAssignmentLifecycleService) => Promise<T>): Promise<T> {
 		return capacityTransaction(this.store, async database => {
-			await database.run('SELECT id FROM teams WHERE id=? FOR UPDATE', [principal.teamId]);
+			// Serialize team projection without blocking admission's foreign-key key-share lock.
+			await database.run('SELECT id FROM teams WHERE id=? FOR NO KEY UPDATE', [principal.teamId]);
 			await database.run('SELECT id FROM capacity_provider_assignments WHERE id=? AND team_id=? FOR UPDATE', [assignmentId, principal.teamId]);
 			const repository = new ProviderAssignmentRepository(database);
 			const evidence = new CapacityRuntimeEvidenceRepository(database);

@@ -399,7 +399,7 @@ describe('normalized living execution graph persistence', () => {
 		};
 		await persistExecutionGraph(store, next, graph(1), revision(2, next.digest));
 		expect(operations.some((operation) => operation.query.includes('estimate_json=excluded.estimate_json'))).toBe(true);
-		expect(operations[0]?.query).toBe('SELECT id FROM teams WHERE id=? FOR UPDATE');
+		expect(operations[0]?.query).toBe('SELECT id FROM teams WHERE id=? FOR NO KEY UPDATE');
 		expect(operations[1]?.query).toContain('FOR UPDATE');
 		expect(operations[2]?.query).toContain('COALESCE(MAX(revision),0)');
 		expect(operations[2]?.query).toContain('ON CONFLICT (team_id,revision) DO NOTHING');
