@@ -3,6 +3,18 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-start-unit
+    action: { verifier: api.golden.execution-start-unit }
+    expect: { status: passed }
+  - id: execution-start-denials-unit
+    action: { verifier: api.golden.execution-start-denials-unit }
+    expect: { status: passed }
+  - id: execution-start-producer-native
+    action: { verifier: api.golden.execution-start-producer-native }
+    expect: { status: passed }
+  - id: execution-start-postgres-native
+    action: { verifier: api.golden.execution-start-postgres-native }
+    expect: { status: passed }
   - id: normal-sdk-schema-samples-unit
     action: { verifier: api.golden.normal-sdk-schema-samples-unit }
     expect: { status: passed }

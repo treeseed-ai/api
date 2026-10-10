@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { executionWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory } from './execution-inventory.ts';
+import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory } from './execution-inventory.ts';
 
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
@@ -26,7 +26,7 @@ function installedCli(): string {
 
 async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Promise<void> {
 	const started = Date.now(), deadline = started + 120_000;
-	const { id } = executionWorkdayStart(), team = process.env.TREESEED_ACCEPTANCE_TEAM;
+	const start = executionWorkdayStart(), { id } = start, team = process.env.TREESEED_ACCEPTANCE_TEAM;
 	const workspace = process.env.TREESEED_DEVELOPMENT_WORKSPACE_ROOT;
 	assert.ok(id && /^workday-[a-f0-9-]+$/u.test(id) && team && workspace, 'ACCEPTANCE_SCHEMA_INPUT: Actual workday, team and held workspace required');
 	assert.ok(['local', 'staging'].includes(process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? ''),
@@ -110,6 +110,7 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 				const nativeInventory = async (sql: string, parameters: unknown[]) => {
 					const rows = (await client.query(sql, parameters)).rows; nativeInventories.push({ sql, parameters, rows }); return rows;
 				};
+				await verifyRetainedWorkdayStart(start, run, nativeInventory);
 				const inventory = (native: unknown, args: string[], direction: 'ascending' | 'descending' = 'descending') => verifyNativeInventory(native, cursor => {
 					const returned = read([...args, '--limit', '200', ...(cursor ? ['--cursor', cursor] : [])]);
 					inventoryReads.push({ args, cursor, returned }); return returned;
@@ -315,6 +316,8 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 				assert.deepEqual((await fresh.query('SELECT * FROM capacity_workday_runs WHERE id=$1', [id])).rows, held.run);
 				for (const inventory of held.nativeInventories as Array<{ sql: string; parameters: unknown[]; rows: unknown[] }>)
 					assert.deepEqual((await fresh.query(inventory.sql, inventory.parameters)).rows, inventory.rows);
+				await verifyRetainedWorkdayStart(start, object(read(['workdays', 'show', id]).run),
+					async (sql, parameters) => (await fresh.query(sql, parameters)).rows);
 				assert.equal(typeof held.membershipSql, 'string');
 				assert.deepEqual((await fresh.query(String(held.membershipSql), [id])).rows, held.memberships);
 				assert.deepEqual((await fresh.query('SELECT * FROM treeseed_control_plane_schema_migrations ORDER BY name')).rows, held.ledger);
@@ -332,7 +335,7 @@ test('Actual normal SDK workday retains complete clean migration and canonical p
 	{ timeout: 120_000 }, () => verifyManagedExecutionSchema(false));
 
 async function verifyManagedModelExecution(requireUnfinished: boolean): Promise<void> {
-	const deadline = Date.now() + 120_000, { id } = executionWorkdayStart();
+	const deadline = Date.now() + 120_000, start = executionWorkdayStart(), { id } = start;
 	const team = process.env.TREESEED_ACCEPTANCE_TEAM, workspace = process.env.TREESEED_DEVELOPMENT_WORKSPACE_ROOT;
 	assert.ok(id && /^workday-[a-f0-9-]+$/u.test(id) && team && workspace, 'ACCEPTANCE_DIAGNOSTICS_INPUT: Exact actual workday team and workspace required');
 	assert.ok(['local', 'staging'].includes(process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? ''), 'ACCEPTANCE_DIAGNOSTICS_SCOPE: Explicit non-production environment required');
@@ -359,6 +362,7 @@ async function verifyManagedModelExecution(requireUnfinished: boolean): Promise<
 			await client.query('BEGIN TRANSACTION READ ONLY');
 			try {
 				assert.deepEqual((await client.query('SHOW transaction_read_only')).rows, [{ transaction_read_only: 'on' }]);
+				const startRows = await verifyRetainedWorkdayStart(start, run, async (sql, parameters) => (await client.query(sql, parameters)).rows);
 				const assignments = (await client.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1 ORDER BY id', [id])).rows;
 				const events = (await client.query('SELECT * FROM capacity_workday_events WHERE run_id=$1 ORDER BY event_index,id', [id])).rows;
 				assert.ok(assignments.length > 0 && events.length > 0, 'ACCEPTANCE_DIAGNOSTICS_EMPTY: Actual native inventory required');
@@ -472,6 +476,8 @@ async function verifyManagedModelExecution(requireUnfinished: boolean): Promise<
 				for (const observation of contentReads) assert.ok(isDeepStrictEqual(read(observation.args), observation.value));
 				for (const value of publicReads) assert.ok(isDeepStrictEqual(read(['assignments', 'show', value.id]), value.value));
 				assert.ok(isDeepStrictEqual(read(['workdays', 'show', id]), workday));
+				assert.deepEqual(await verifyRetainedWorkdayStart(start, object(read(['workdays', 'show', id]).run),
+					async (sql, parameters) => (await client.query(sql, parameters)).rows), startRows);
 				assert.ok(isDeepStrictEqual((await client.query('SELECT * FROM capacity_workday_events WHERE run_id=$1 ORDER BY event_index,id', [id])).rows, events));
 				assert.ok(isDeepStrictEqual((await client.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1 ORDER BY id', [id])).rows, assignments));
 			} finally { await client.query('ROLLBACK'); }
