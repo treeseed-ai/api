@@ -4241,3 +4241,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-native.test.ts
     testName: "native provider read exposes only matching disputed consumed recovery audit and retains original zero settlement and restored claims through repeated reads"
+  api.golden.installed-assets-interruption-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/installed-assets.test.ts
+    testName: "native archive command interruption closes its entire owned subprocess group before scoped fixture cleanup without a later passing observation"

@@ -2487,3 +2487,6 @@ workflow:
   - id: operator-settlement-dispute-read-native
     action: { verifier: api.golden.operator-settlement-dispute-read-native }
     expect: { status: passed }
+  - id: installed-assets-interruption-native
+    action: { verifier: api.golden.installed-assets-interruption-native }
+    expect: { status: passed }

@@ -1,20 +1,36 @@
 import { createHash } from 'node:crypto';
-import { execFile } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { promisify } from 'node:util';
 import { expect, it } from 'vitest';
 import ts from 'typescript';
 
 const assets=['treeseed.package.yaml','guarantees/verifiers/golden.verifiers.yaml','tests/acceptance/execution-schema.ts','tests/acceptance/execution-inventory.ts'];
-const execute=async(command:string,args:string[],cwd=process.cwd())=>{
- const startedAt=new Date().toISOString(),started=performance.now();writeSync(1,JSON.stringify({installedAssetCommand:{command,args,startedAt}})+'\n');
- try{const result=await promisify(execFile)(command,args,{cwd,encoding:'utf8',maxBuffer:8*1024*1024});
-  writeSync(1,JSON.stringify({installedAssetCommand:{command,args,startedAt,completedAt:new Date().toISOString(),elapsedMs:performance.now()-started,status:'passed'}})+'\n');return result.stdout;
- }catch(error){writeSync(1,JSON.stringify({installedAssetCommand:{command,args,startedAt,completedAt:new Date().toISOString(),elapsedMs:performance.now()-started,status:'failed'}})+'\n');throw error;}
-};
-type Packed={filename:string;integrity:string;files:Array<{path:string}>};
+const execute=(command:string,args:string[],cwd=process.cwd(),signal?:AbortSignal,env=process.env):Promise<string>=>new Promise((accept,reject)=>{
+ const startedAt=new Date().toISOString(),started=performance.now();
+ if(signal?.aborted){reject(new Error('Native archive command interrupted before launch'));return;}
+ writeSync(1,JSON.stringify({installedAssetCommand:{command,args,startedAt}})+'\n');
+ const child=spawn(command,args,{cwd,env,detached:process.platform!=='win32',stdio:['ignore','pipe','pipe']});
+ let stdout='',stderr='',size=0,failure:Error|undefined;
+ const terminate=()=>{if(child.pid)try{if(process.platform==='win32')child.kill('SIGKILL');else process.kill(-child.pid,'SIGKILL');}
+  catch(error){if((error as NodeJS.ErrnoException).code!=='ESRCH')failure??=error as Error;}};
+ const abort=()=>{failure??=new Error('Native archive command interrupted');terminate();};
+ signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
+ for(const [stream,kind] of [[child.stdout,'stdout'],[child.stderr,'stderr']] as const)stream.on('data',(bytes:Buffer)=>{
+  size+=bytes.length;if(size>8*1024*1024){failure??=new Error('Native archive command exceeded its original output bound');terminate();return;}
+  if(kind==='stdout')stdout+=bytes.toString('utf8');else stderr+=bytes.toString('utf8');
+ });
+ child.once('error',error=>{failure??=error;terminate();});
+ child.once('close',(code,exitSignal)=>{
+  signal?.removeEventListener('abort',abort);
+  if(code!==0||exitSignal)failure??=new Error(stderr.trim()||`Native archive command failed: ${command} code=${code} signal=${exitSignal}`);
+  writeSync(1,JSON.stringify({installedAssetCommand:{command,args,startedAt,completedAt:new Date().toISOString(),elapsedMs:performance.now()-started,
+   exitCode:code,signal:exitSignal,status:failure?'failed':'passed'}})+'\n');
+  if(failure)reject(failure);else accept(stdout);
+ });
+});
+type Packed={name:string;filename:string;integrity:string;files:Array<{path:string}>};
 
 it('ships the existing selected API definitions and acceptance asset with only published runtime module dependencies',async()=>{
  const [packed]=JSON.parse(await execute('npm',['pack','--dry-run','--ignore-scripts','--json'])) as Packed[];
@@ -26,23 +42,25 @@ it('ships the existing selected API definitions and acceptance asset with only p
 });
 
 it('native production API archive retains exact acceptance bytes and loads its owning published runtime contracts without source or development dependencies',async()=>{
- const root=mkdtempSync(resolve(tmpdir(),'api-installed-assets-'));
+ const root=mkdtempSync(resolve(tmpdir(),'api-installed-assets-')),controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),28_000);
+ const run=(command:string,args:string[],cwd=process.cwd(),env=process.env)=>execute(command,args,cwd,controller.signal,env);
  try{
-  const [sdk]=JSON.parse(await execute('npm',['pack','./node_modules/@treeseed/sdk','--ignore-scripts','--json','--pack-destination',root])) as Packed[];
-  const [packed]=JSON.parse(await execute('npm',['pack','--ignore-scripts','--json','--pack-destination',root])) as Packed[];
+  const archives=JSON.parse(await run('npm',['pack','./node_modules/@treeseed/sdk','.','--ignore-scripts','--json','--pack-destination',root])) as Packed[];
+  expect(archives).toHaveLength(2);const sdk=archives.find(value=>value.name==='@treeseed/sdk'),packed=archives.find(value=>value.name==='@treeseed/api');
   expect(sdk).toBeDefined();expect(packed).toBeDefined();const sdkArchive=resolve(root,sdk!.filename),archive=resolve(root,packed!.filename);
   const bytes=readFileSync(archive),sdkBytes=readFileSync(sdkArchive);
   expect(`sha512-${createHash('sha512').update(bytes).digest('base64')}`).toBe(packed!.integrity);
   expect(`sha512-${createHash('sha512').update(sdkBytes).digest('base64')}`).toBe(sdk!.integrity);
   // npm's existing override binds the sole held SDK archive rather than resolving a second Git copy.
   writeFileSync(resolve(root,'package.json'),JSON.stringify({private:true,type:'module',dependencies:{'@treeseed/api':`file:${archive}`,'@treeseed/sdk':`file:${sdkArchive}`},overrides:{'@treeseed/sdk':'$@treeseed/sdk'}}));
-  await execute('npm',['install','--prefix',root,'--omit=dev','--ignore-scripts','--package-lock=false','--no-save','--no-audit','--no-fund',archive,sdkArchive],root);
+  await run('npm',['install','--prefer-offline','--prefix',root,'--omit=dev','--ignore-scripts','--package-lock=false','--no-save','--no-audit','--no-fund',archive,sdkArchive],root);
   const installed=resolve(root,'node_modules/@treeseed/api');expect(realpathSync(installed)).toBe(installed);expect(lstatSync(installed).isSymbolicLink()).toBe(false);
   for(const path of ['src','node_modules/@treeseed/sdk'])expect(existsSync(resolve(installed,path))).toBe(false);
   for(const path of ['vitest','tsx'])expect(existsSync(resolve(root,'node_modules',path)),path).toBe(false);
   const sdkManifest=JSON.parse(readFileSync(resolve(root,'node_modules/@treeseed/sdk/package.json'),'utf8')) as {dependencies:Record<string,string>};
   expect(sdkManifest.dependencies.typescript).toBeDefined();
-  await execute('npm',['ls','--all','--omit=dev','--json'],root);
+  await run('npm',['ls','--all','--omit=dev','--json'],root);
   for(const path of assets)expect(readFileSync(resolve(installed,path)),path).toEqual(readFileSync(path));
   writeFileSync(resolve(root,'consumer.ts'),`import assert from 'node:assert/strict';
 import {resolveApiDatabaseUrl} from './node_modules/@treeseed/api/dist/api/configuration/runtime-config.js';
@@ -54,11 +72,11 @@ assert.throws(()=>createDiagnosticEnvelopeService({}));assert.equal(typeof verif
 console.log(JSON.stringify({installedRuntimeContracts:'passed'}));\n`);
   const env=process.env.TREESEED_DIAGNOSTICS_ENCRYPTION_KEY_FILE;
   // The consumer denies absent custody; it never receives a host credential path.
-  const result=await promisify(execFile)(process.execPath,['consumer.ts'],{cwd:root,encoding:'utf8',env:{...process.env,TREESEED_DIAGNOSTICS_ENCRYPTION_KEY_FILE:''}});
-  expect(JSON.parse(result.stdout)).toEqual({installedRuntimeContracts:'passed'});expect(process.env.TREESEED_DIAGNOSTICS_ENCRYPTION_KEY_FILE).toBe(env);
+  const result=await run(process.execPath,['consumer.ts'],root,{...process.env,TREESEED_DIAGNOSTICS_ENCRYPTION_KEY_FILE:''});
+  expect(JSON.parse(result)).toEqual({installedRuntimeContracts:'passed'});expect(process.env.TREESEED_DIAGNOSTICS_ENCRYPTION_KEY_FILE).toBe(env);
   expect(readFileSync(archive)).toEqual(bytes);expect(readFileSync(sdkArchive)).toEqual(sdkBytes);
-  console.log(JSON.stringify({archive:packed!.filename,sha256:createHash('sha256').update(bytes).digest('hex'),sdkSha256:createHash('sha256').update(sdkBytes).digest('hex'),installedRuntimeContracts:'passed'}));
- }finally{rmSync(root,{recursive:true,force:true});expect(existsSync(root)).toBe(false);}
+  controller.signal.throwIfAborted();console.log(JSON.stringify({archive:packed!.filename,sha256:createHash('sha256').update(bytes).digest('hex'),sdkSha256:createHash('sha256').update(sdkBytes).digest('hex'),installedRuntimeContracts:'passed'}));
+ }finally{clearTimeout(timer);controller.abort();rmSync(root,{recursive:true,force:true});expect(existsSync(root)).toBe(false);}
 });
 
 it('native archive command interruption closes its entire owned subprocess group before scoped fixture cleanup without a later passing observation',async()=>{
