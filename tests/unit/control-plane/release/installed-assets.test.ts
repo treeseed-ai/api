@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { expect, it } from 'vitest';
+import { afterAll, expect, it } from 'vitest';
 import ts from 'typescript';
 
 const assets=['treeseed.package.yaml','guarantees/verifiers/golden.verifiers.yaml','tests/acceptance/execution-schema.ts','tests/acceptance/execution-inventory.ts'];
@@ -33,15 +33,22 @@ const execute=(command:string,args:string[],cwd=process.cwd(),signal?:AbortSigna
 type Packed={name:string;filename:string;integrity:string;files:Array<{path:string}>};
 let apiInspected=false;
 let heldApiArchive:{root:string;packed:Packed;bytes:Buffer}|undefined;
+afterAll(()=>{if(heldApiArchive){rmSync(heldApiArchive.root,{recursive:true,force:true});expect(existsSync(heldApiArchive.root)).toBe(false);heldApiArchive=undefined;}});
 
 it('ships the existing selected API definitions and acceptance asset with only published runtime module dependencies',async()=>{
- const [packed]=JSON.parse(await execute('npm',['pack','--dry-run','--ignore-scripts','--json'])) as Packed[];
+ const root=mkdtempSync(resolve(tmpdir(),'api-inspected-archive-')),controller=new AbortController(),timer=setTimeout(()=>controller.abort(),25_000);let retained=false;
+ try{
+ const [packed]=JSON.parse(await execute('npm',['pack','--ignore-scripts','--json','--pack-destination',root],process.cwd(),controller.signal)) as Packed[];
  expect(packed).toBeDefined();const paths=new Set(packed!.files.map(file=>file.path));
  const source=ts.createSourceFile('execution-schema.ts',readFileSync('tests/acceptance/execution-schema.ts','utf8'),ts.ScriptTarget.Latest,true);
  const privateImports=source.statements.flatMap(statement=>ts.isImportDeclaration(statement)&&ts.isStringLiteral(statement.moduleSpecifier)&&statement.moduleSpecifier.text.includes('/src/')?[statement.moduleSpecifier.text]:[]);
  const checkoutCliPaths:string[]=[];const visit=(node:ts.Node)=>{if(ts.isStringLiteral(node)&&node.text.includes('packages/cli/'))checkoutCliPaths.push(node.text);ts.forEachChild(node,visit);};visit(source);
  expect({missing:assets.filter(path=>!paths.has(path)),privateImports,checkoutCliPaths}).toEqual({missing:[],privateImports:[],checkoutCliPaths:[]});
+ expect(packed!.name).toBe('@treeseed/api');const bytes=readFileSync(resolve(root,packed!.filename));
+ expect(`sha512-${createHash('sha512').update(bytes).digest('base64')}`).toBe(packed!.integrity);
+ heldApiArchive={root,packed:packed!,bytes};retained=true;
  apiInspected=true;
+ }finally{clearTimeout(timer);controller.abort();if(!retained){rmSync(root,{recursive:true,force:true});expect(existsSync(root)).toBe(false);}}
 });
 
 it('native production API archive retains exact acceptance bytes and loads its owning published runtime contracts without source or development dependencies',async()=>{
@@ -50,10 +57,11 @@ it('native production API archive retains exact acceptance bytes and loads its o
  const run=(command:string,args:string[],cwd=process.cwd(),env=process.env)=>execute(command,args,cwd,controller.signal,env);
  try{
   expect(!apiInspected||heldApiArchive,'The same invocation must retain its actual inspected API archive rather than repeat native API packaging').toBeTruthy();
-  const archives=JSON.parse(await run('npm',['pack','./node_modules/@treeseed/sdk','.','--ignore-scripts','--json','--pack-destination',root])) as Packed[];
-  expect(archives).toHaveLength(2);const sdk=archives.find(value=>value.name==='@treeseed/sdk'),packed=archives.find(value=>value.name==='@treeseed/api');
-  expect(sdk).toBeDefined();expect(packed).toBeDefined();const sdkArchive=resolve(root,sdk!.filename),archive=resolve(root,packed!.filename);
+  const archives=JSON.parse(await run('npm',['pack','./node_modules/@treeseed/sdk',...(heldApiArchive?[]:['.']),'--ignore-scripts','--json','--pack-destination',root])) as Packed[];
+  expect(archives).toHaveLength(heldApiArchive?1:2);const sdk=archives.find(value=>value.name==='@treeseed/sdk'),packed=heldApiArchive?.packed??archives.find(value=>value.name==='@treeseed/api');
+  expect(sdk).toBeDefined();expect(packed).toBeDefined();const sdkArchive=resolve(root,sdk!.filename),archive=resolve(heldApiArchive?.root??root,packed!.filename);
   const bytes=readFileSync(archive),sdkBytes=readFileSync(sdkArchive);
+  if(heldApiArchive)expect(bytes.equals(heldApiArchive.bytes)).toBe(true);
   expect(`sha512-${createHash('sha512').update(bytes).digest('base64')}`).toBe(packed!.integrity);
   expect(`sha512-${createHash('sha512').update(sdkBytes).digest('base64')}`).toBe(sdk!.integrity);
   // npm's existing override binds the sole held SDK archive rather than resolving a second Git copy.
@@ -83,7 +91,9 @@ console.log(JSON.stringify({installedRuntimeContracts:'passed'}));\n`);
   observation={archive:packed!.filename,sha256:createHash('sha256').update(bytes).digest('hex'),sdkSha256:createHash('sha256').update(sdkBytes).digest('hex'),installedRuntimeContracts:'passed'};
  }catch(error){originalFailure=error;throw error;}finally{
   clearTimeout(timer);controller.abort();
-  try{await execute('/usr/bin/rm',['-rf','--',root],tmpdir(),AbortSignal.timeout(Math.max(1,Math.floor(deadline-performance.now()))));expect(existsSync(root)).toBe(false);}
+  try{const roots=[root,...(heldApiArchive?[heldApiArchive.root]:[])];
+   await execute('/usr/bin/rm',['-rf','--',...roots],tmpdir(),AbortSignal.timeout(Math.max(1,Math.floor(deadline-performance.now()))));
+   for(const directory of roots)expect(existsSync(directory)).toBe(false);heldApiArchive=undefined;}
   catch(cleanupFailure){if(originalFailure)throw new AggregateError([originalFailure,cleanupFailure],'Original archive proof and bounded scoped cleanup both failed');throw cleanupFailure;}
  }
  expect(observation).toBeDefined();console.log(JSON.stringify(observation));
