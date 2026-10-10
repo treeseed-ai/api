@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { verifyNativeInventory } from './execution-inventory.ts';
+import { requireNativeAdmissionSamples, verifyNativeInventory } from './execution-inventory.ts';
 
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
@@ -277,8 +277,7 @@ test('Actual managed execution uses the complete clean migration inventory and e
 					} else assert.ok(visible.assignmentResult === null || visible.assignmentResult === undefined);
 					observations.push({ id: value.id, value: visible });
 				}
-				assert.ok(prioritizedWork > 0, 'ACCEPTANCE_PRIORITY_EMPTY: Actual governed nonzero priority must be exercised, not only default-zero replay');
-				assert.ok(calibratedWork > 0, 'ACCEPTANCE_CALIBRATION_EMPTY: Actual historical calibration is required, not only cold-start IDs');
+				requireNativeAdmissionSamples(prioritizedWork, calibratedWork);
 				for (const observation of calibrationHistory.values()) assert.deepEqual(
 					(await client.query(observation.sql, observation.parameters)).rows, observation.rows);
 				for (const observation of prioritySources.values()) assert.deepEqual(read(observation.args), observation.returned);

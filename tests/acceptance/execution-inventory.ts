@@ -7,6 +7,12 @@ function row(value: unknown): Row {
 	return value as Row;
 }
 
+/** Additional samples required by the existing native architecture case. */
+export function requireNativeAdmissionSamples(prioritizedWork: number, calibratedWork: number): void {
+	assert.ok(prioritizedWork > 0, 'ACCEPTANCE_PRIORITY_EMPTY: Actual governed nonzero priority must be exercised, not only default-zero replay');
+	assert.ok(calibratedWork > 0, 'ACCEPTANCE_CALIBRATION_EMPTY: Actual historical calibration is required, not only cold-start IDs');
+}
+
 /** Independent owning SQL inventory bounds public reads; matching read-backs alone cannot prove completeness. */
 export async function verifyNativeInventory(native: unknown, fetch: (cursor?: string) => unknown | Promise<unknown>, limit: number,
 	direction: 'ascending' | 'descending' = 'descending'): Promise<Row[]> {
