@@ -1,19 +1,28 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { createRequire } from 'node:module';
 import { isDeepStrictEqual } from 'node:util';
 import test from 'node:test';
 import pg from 'pg';
 import { encryptedEnvelopeSchema } from '@treeseed/sdk/security';
-import { createDiagnosticEnvelopeService } from '../../src/security/diagnostic-envelope.ts';
+import { createDiagnosticEnvelopeService } from '../../dist/security/diagnostic-envelope.js';
 import { assignmentAttemptSchema, assignmentResultSchema, selectFairReadyNode, workdayPolicySchema, calibrateAssignmentSeconds, type AllocationMeasurement } from '@treeseed/sdk/agent-capacity';
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
-import { resolveApiDatabaseUrl } from '../../src/api/configuration/runtime-config.ts';
-import { verifyDatabaseMigrations } from '../../src/api/support/verify-database-migrations.ts';
+import { resolveApiDatabaseUrl } from '../../dist/api/configuration/runtime-config.js';
+import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database-migrations.js';
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
+import { verifyNativeInventory } from './execution-inventory.ts';
+
+function installedCli(): string {
+	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
+	const binary = JSON.parse(readFileSync(manifest, 'utf8')).bin?.trsd;
+	assert.ok(typeof binary === 'string' && binary, 'ACCEPTANCE_SCHEMA_CLI: Installed CLI public binary required');
+	return resolve(dirname(manifest), binary);
+}
 
 test('Actual managed execution uses the complete clean migration inventory and exact canonical assignment rows without retired scheduling authorities or read-time repair', { timeout: 120_000 }, async () => {
 	const started = Date.now(), deadline = started + 120_000;
@@ -28,7 +37,7 @@ test('Actual managed execution uses the complete clean migration inventory and e
 	assert.ok(connectionString, 'ACCEPTANCE_SCHEMA_DATABASE: Original binding resolution failed');
 	if (!process.env.TREESEED_DATABASE_URL_FILE?.trim()) assert.ok(['localhost', '127.0.0.1'].includes(new URL(connectionString).hostname),
 		'ACCEPTANCE_SCHEMA_SCOPE: Explicit URL must select local PostgreSQL; managed files retain original validation');
-	const cli = resolve(workspace, 'packages/cli/dist/cli/main.js'), cliBytes = readFileSync(cli);
+	const cli = installedCli(), cliBytes = readFileSync(cli);
 	const root = resolve('drizzle/control-plane');
 	const sources = readdirSync(root).filter(name => name.endsWith('.sql')).sort().map(name => ({ name, bytes: readFileSync(resolve(root, name)) }));
 	assert.ok(sources.length > 0, 'ACCEPTANCE_SCHEMA_SOURCE: Complete owning migration inventory required');
@@ -96,6 +105,37 @@ test('Actual managed execution uses the complete clean migration inventory and e
 				assert.equal(nativeRun.length, 1); assert.equal(nativeRun[0].team_id, run.teamId); assert.equal(nativeRun[0].status, run.status);
 				const assignments = (await client.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1 ORDER BY id', [id])).rows;
 				assert.ok(assignments.length > 0, 'ACCEPTANCE_SCHEMA_EMPTY: Actual managed assignment inventory required');
+				const inventoryReads: Array<{ args: string[]; cursor?: string; returned: Record<string, unknown> }> = [];
+				const nativeInventories: Array<{ sql: string; parameters: unknown[]; rows: unknown[] }> = [];
+				const nativeInventory = async (sql: string, parameters: unknown[]) => {
+					const rows = (await client.query(sql, parameters)).rows; nativeInventories.push({ sql, parameters, rows }); return rows;
+				};
+				const inventory = (native: unknown, args: string[], direction: 'ascending' | 'descending' = 'descending') => verifyNativeInventory(native, cursor => {
+					const returned = read([...args, '--limit', '200', ...(cursor ? ['--cursor', cursor] : [])]);
+					inventoryReads.push({ args, cursor, returned }); return returned;
+				}, 200, direction);
+				const publicAssignments = await inventory(assignments, ['assignments', 'list', '--workday', id]);
+				const nativeEvents = await nativeInventory('SELECT * FROM capacity_workday_events WHERE run_id=$1 AND team_id=$2 ORDER BY id', [id, run.teamId]);
+				assert.ok(nativeEvents.length > 0, 'ACCEPTANCE_NATIVE_INVENTORY: Actual transition history required');
+				const publicEvents = await inventory(nativeEvents, ['workdays', 'events', 'list', id], 'ascending');
+				for (const visible of publicEvents) {
+					const native = nativeEvents.find(value => value.id === visible.id); assert.ok(native);
+					for (const [key, column] of [['runId','run_id'], ['teamId','team_id'], ['assignmentId','assignment_id'], ['eventIndex','event_index'],
+						['eventType','event_type'], ['status','status']] as const) assert.equal(visible[key], native[column]);
+				}
+				for (const project of new Set(assignments.map(value => String(value.project_id)))) {
+					for (const [table, command] of [['capacity_usage_actuals','usage'], ['capacity_ledger_entries','ledger']] as const) {
+						const native = await nativeInventory(`SELECT * FROM ${table} WHERE work_day_id=$1 AND project_id=$2 ORDER BY id`, [id, project]);
+						const visible = await inventory(native, ['capacity', command, '--project', project, '--workday', id]);
+						for (const value of visible) {
+							const stored = native.find(record => record.id === value.id); assert.ok(stored);
+							assert.equal(value.assignmentId, stored.assignment_id); assert.equal(value.workDayId, id);
+							assert.equal(value.activeSeconds, stored.active_seconds); assert.equal(value.elapsedSeconds, stored.elapsed_seconds);
+							if (command === 'usage') assert.deepEqual(value.nativeUsage, JSON.parse(stored.native_usage_json));
+							else if (stored.phase === 'task_completed_actual_settlement') assert.deepEqual(value.usageSettlement, JSON.parse(stored.metadata_json).usageSettlement);
+						}
+					}
+				}
 				const membershipSql = `SELECT id,team_id,capacity_provider_id FROM capacity_provider_team_memberships membership
 					WHERE EXISTS (SELECT 1 FROM capacity_provider_assignments assignment WHERE assignment.work_day_id=$1
 						AND assignment.membership_id=membership.id) ORDER BY id`;
@@ -111,6 +151,7 @@ test('Actual managed execution uses the complete clean migration inventory and e
 					assert.deepEqual(byMembership.get(value.membership_id), { id: value.membership_id, team_id: value.team_id,
 						capacity_provider_id: value.capacity_provider_id }, 'ACCEPTANCE_PROVIDER_MEMBERSHIP: Assignment team and provider must match its owning membership');
 					const visible = read(['assignments', 'show', value.id]);
+					assert.deepEqual(publicAssignments.find(record => record.id === value.id), visible);
 					assert.equal(visible.id, value.id); assert.equal(visible.workDayId, id); assert.equal(visible.teamId, run.teamId); assert.equal(visible.status, value.status);
 					assert.equal(visible.membershipId, value.membership_id); assert.equal(visible.capacityProviderId, value.capacity_provider_id);
 					assert.equal(Object.hasOwn(visible, 'modeRunId'), false, 'ACCEPTANCE_SCHEMA_RETIRED_IDENTITY: Public assignment retains a retired mode-run alias');
@@ -242,6 +283,7 @@ test('Actual managed execution uses the complete clean migration inventory and e
 					(await client.query(observation.sql, observation.parameters)).rows, observation.rows);
 				for (const observation of prioritySources.values()) assert.deepEqual(read(observation.args), observation.returned);
 				for (const observation of observations) assert.deepEqual(read(['assignments', 'show', observation.id]), observation.value);
+				for (const { args, cursor, returned } of inventoryReads) assert.deepEqual(read([...args, '--limit', '200', ...(cursor ? ['--cursor', cursor] : [])]), returned);
 				for (const name of ['agent-author', 'capacity-plan-create', 'checkpoint-integrate', 'content-integrate', 'content-abandon']) {
 					const remaining = deadline - Date.now(); assert.ok(remaining > 0, 'ACCEPTANCE_SCHEMA_DEADLINE: Original bound elapsed');
 					// Plan-only even on regression: this scene does not authorize an obsolete mutation against a managed database.
@@ -259,7 +301,7 @@ test('Actual managed execution uses the complete clean migration inventory and e
 				assert.deepEqual((await client.query('SELECT * FROM capacity_workday_runs WHERE id=$1', [id])).rows, nativeRun);
 				assert.deepEqual((await client.query('SELECT * FROM treeseed_control_plane_schema_migrations ORDER BY name')).rows, ledger);
 				assert.deepEqual((await client.query(membershipSql, [id])).rows, memberships);
-				held = { catalog: before, assignments, run: nativeRun, ledger, memberships, membershipSql };
+				held = { catalog: before, assignments, run: nativeRun, ledger, memberships, membershipSql, nativeInventories };
 			} finally { await client.query('ROLLBACK'); }
 		} finally { client.release(); }
 		assert.ok(held);
@@ -272,6 +314,8 @@ test('Actual managed execution uses the complete clean migration inventory and e
 				assert.deepEqual((await fresh.query("SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' ORDER BY table_name,column_name")).rows, held.catalog);
 				assert.deepEqual((await fresh.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1 ORDER BY id', [id])).rows, held.assignments);
 				assert.deepEqual((await fresh.query('SELECT * FROM capacity_workday_runs WHERE id=$1', [id])).rows, held.run);
+				for (const inventory of held.nativeInventories as Array<{ sql: string; parameters: unknown[]; rows: unknown[] }>)
+					assert.deepEqual((await fresh.query(inventory.sql, inventory.parameters)).rows, inventory.rows);
 				assert.equal(typeof held.membershipSql, 'string');
 				assert.deepEqual((await fresh.query(String(held.membershipSql), [id])).rows, held.memberships);
 				assert.deepEqual((await fresh.query('SELECT * FROM treeseed_control_plane_schema_migrations ORDER BY name')).rows, held.ledger);
@@ -292,7 +336,7 @@ async function verifyManagedModelExecution(requireUnfinished: boolean): Promise<
 	assert.ok(process.env.TREESEED_DATABASE_URL?.trim() || process.env.TREESEED_DATABASE_URL_FILE?.trim(), 'ACCEPTANCE_DIAGNOSTICS_DATABASE: Explicit original binding required');
 	const connectionString = resolveApiDatabaseUrl(process.env); assert.ok(connectionString);
 	if (!process.env.TREESEED_DATABASE_URL_FILE?.trim()) assert.ok(['localhost', '127.0.0.1'].includes(new URL(connectionString).hostname));
-	const cli = resolve(workspace, 'packages/cli/dist/cli/main.js'), bytes = readFileSync(cli);
+	const cli = installedCli(), bytes = readFileSync(cli);
 	const object = (value: unknown): Record<string, unknown> => {
 		assert.ok(value && typeof value === 'object' && !Array.isArray(value), 'ACCEPTANCE_DIAGNOSTICS_OBJECT: Exact readable object required');
 		return Object.fromEntries(Object.entries(value));

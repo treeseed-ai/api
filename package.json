@@ -28,6 +28,9 @@
     "README.md",
     "dist",
     "drizzle/control-plane",
+    "treeseed.package.yaml",
+    "guarantees",
+    "tests/acceptance",
     "LICENSE",
     "COMMERCIAL.md"
   ],

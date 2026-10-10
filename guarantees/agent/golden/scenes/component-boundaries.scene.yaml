@@ -3,6 +3,21 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: native-inventory-unit
+    action: { verifier: api.golden.native-inventory-unit }
+    expect: { status: passed }
+  - id: native-inventory-denials-unit
+    action: { verifier: api.golden.native-inventory-denials-unit }
+    expect: { status: passed }
+  - id: native-inventory-authority-unit
+    action: { verifier: api.golden.native-inventory-authority-unit }
+    expect: { status: passed }
+  - id: installed-assets-unit
+    action: { verifier: api.golden.installed-assets-unit }
+    expect: { status: passed }
+  - id: installed-assets-native
+    action: { verifier: api.golden.installed-assets-native }
+    expect: { status: passed }
   - id: standalone-chat-source-unit
     action: { verifier: api.golden.standalone-chat-source-unit }
     expect: { status: passed }
@@ -2471,4 +2486,16 @@ workflow:
     expect: { status: passed }
   - id: operator-settlement-dispute-read-native
     action: { verifier: api.golden.operator-settlement-dispute-read-native }
+    expect: { status: passed }
+  - id: installed-assets-interruption-native
+    action: { verifier: api.golden.installed-assets-interruption-native }
+    expect: { status: passed }
+  - id: installed-assets-stream-native
+    action: { verifier: api.golden.installed-assets-stream-native }
+    expect: { status: passed }
+  - id: archive-ownership-unit
+    action: { verifier: api.golden.archive-ownership-unit }
+    expect: { status: passed }
+  - id: archive-ownership-native
+    action: { verifier: api.golden.archive-ownership-native }
     expect: { status: passed }

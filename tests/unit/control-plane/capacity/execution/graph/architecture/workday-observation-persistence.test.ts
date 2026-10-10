@@ -6,6 +6,7 @@ import type { CapacityGovernanceDatabase } from '../../../../../../../src/api/ca
 import { createWorkdayService } from '../../../../../../../src/api/control-plane/repositories/capacity/workday-service.ts';
 import { splitPostgresSqlStatements } from '../../../../../../../src/api/persistence/postgres-sql-statements.ts';
 import { closeoutDatabase } from './closeout-sql-fixture.ts';
+import { verifyNativeInventory } from '../../../../../../acceptance/execution-inventory.ts';
 
 async function fixture() {
 	const base = await closeoutDatabase();
@@ -34,6 +35,9 @@ describe('real workday observation service and original SQL event custody', () =
 				eventType: 'graph.revision', status: index === 50 ? 'failed' : 'recorded', title: null, message: null,
 				parameters: {}, context: { graphRevision: index }, refs: {}, metadata: {}, createdAt: '2026-10-02T21:00:00Z' });
 			const before = await query('SELECT * FROM capacity_workday_events ORDER BY event_index');
+			const inventory = await verifyNativeInventory(before.rows, cursor => service.events(principal, 'team', 'workday', { cursor, limit: 50 }), 50, 'ascending');
+			expect(inventory.map(event => event.eventIndex)).toEqual(Array.from({ length: 51 }, (_, index) => index));
+			expect(inventory.at(-1)).toMatchObject({ id: 'event-050', status: 'failed' });
 			const counters = await query('SELECT next_event_index FROM capacity_workday_runs');
 			const shown = await service.show(principal, 'team', 'workday');
 			expect(shown.events).toHaveLength(50); expect(shown.eventPage.hasMore).toBe(true);

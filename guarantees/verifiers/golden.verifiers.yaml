@@ -1,6 +1,31 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.native-inventory-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
+    testName: "reads exactly every native identity through complete public pages without changing original observations"
+  api.golden.native-inventory-denials-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
+    testName: "denies malformed missing duplicated reordered foreign truncated or interrupted public inventories without repairing failed pages"
+  api.golden.native-inventory-authority-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
+    testName: "denies incomplete ambiguous native authority before querying the public boundary"
+  api.golden.installed-assets-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/installed-assets.test.ts
+    testName: "ships the existing selected API definitions and acceptance asset with only published runtime module dependencies"
+  api.golden.installed-assets-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/installed-assets.test.ts
+    testName: "native production API archive retains exact acceptance bytes and loads its owning published runtime contracts without source or development dependencies"
   api.golden.standalone-chat-source-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -4216,3 +4241,23 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-native.test.ts
     testName: "native provider read exposes only matching disputed consumed recovery audit and retains original zero settlement and restored claims through repeated reads"
+  api.golden.installed-assets-interruption-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/installed-assets.test.ts
+    testName: "native archive command interruption closes its entire owned subprocess group before scoped fixture cleanup without a later passing observation"
+  api.golden.installed-assets-stream-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/installed-assets.test.ts
+    testName: "native archive commands retain split UTF8 and literal arguments and reject original nonzero or unavailable subprocesses"
+  api.golden.archive-ownership-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/suite-resource-ownership.test.ts
+    testName: "retains every owning test and original bounds while native archive installation has exclusive file ownership"
+  api.golden.archive-ownership-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/suite-resource-ownership-native.test.ts
+    testName: "native unchanged owning Vitest configuration finishes archive ownership before retaining simultaneous database workers and complete reports"

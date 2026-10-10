@@ -9,6 +9,11 @@ import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity
 import { buildProviderAssignmentExplanation } from '../../../../../../src/api/capacity/services/capacity/assignments/observability/assignment-explanation-service.ts';
 import { settleCapacityReservationExactlyOnce } from '../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
 import { ControlPlaneStore } from '../../../../../../src/api/persistence/store.ts';
+import { CapacityReservationRepository } from '../../../../../../src/api/capacity/repositories/capacity/accounting/reservation.ts';
+import { CapacityLedgerRepository } from '../../../../../../src/api/capacity/repositories/capacity/accounting/ledger.ts';
+import { listTaskUsageActualsPage } from '../../../../../../src/api/capacity/repositories/capacity/accounting/task-usage.ts';
+import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
+import { verifyNativeInventory } from '../../../../../acceptance/execution-inventory.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 describe('living admission in disposable PostgreSQL', () => {
@@ -31,6 +36,9 @@ describe('living admission in disposable PostgreSQL', () => {
 			// Original full migrations above own initialization; don't seed an
 			// unrelated portfolio while reading this freshly allocated database.
 			accounting.initializationPromise = peerAccounting.initializationPromise = Promise.resolve();
+			const connections = await Promise.all([database, peerDatabase].map(owner => owner.pool.query('SELECT pg_backend_pid() AS pid,current_database() AS name')));
+			expect(connections.map(result => result.rows[0].name)).toEqual([name, name]);
+			expect(connections[0]!.rows[0].pid).not.toBe(connections[1]!.rows[0].pid);
 			const now = assignment.createdAt;
 			await database.pool.query(`INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ('team','team','Team',$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO capacity_workday_runs (id,team_id,status,execution_mode,created_at,updated_at)
@@ -66,7 +74,7 @@ describe('living admission in disposable PostgreSQL', () => {
 				graph_revision_created,graph_revision_updated,created_at,updated_at) VALUES (?,?,?,?,?,?,?,1,1,'engineer','ready',1,2,?,?)`)
 				.bind(attempt.nodeId, attempt.teamId, attempt.projectId, attempt.workdayId, 'acting',
 					JSON.stringify(attempt.sourceRef), JSON.stringify(attempt.authorityRefs), attempt.createdAt, attempt.createdAt).run();
-			const run = (attempt: typeof attempts[number]) => admitLivingExecutionAssignment(store as never, {
+			const run = (attempt: typeof attempts[number], owner: Parameters<typeof admitLivingExecutionAssignment>[0] = store as never) => admitLivingExecutionAssignment(owner, {
 				principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
 				assignment: attempt, allocation: { ...calculateAssignmentAllocation({ estimate: attempt.estimate, measurements: [],
 					constraints: [{ id: 'model-day', remainingSeconds: 3 }] }),
@@ -76,13 +84,47 @@ describe('living admission in disposable PostgreSQL', () => {
 				projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'codex', laneId: 'workday', lanePurpose: 'workday',
 				executionKind: 'workday', workdayConcurrencyLimit: 1, predecessorResults: [], treedxProxyHandle: { id: `tdx-${attempt.id}` }, now: attempt.createdAt,
 			});
-			const results = await Promise.allSettled(attempts.map(run));
+			const results = await Promise.allSettled(attempts.map((attempt, index) => run(attempt, index === 0 ? store as never : peerAccounting)));
 			expect(results.filter(result => result.status === 'fulfilled'), results.map(result => result.status === 'rejected' ? String(result.reason) : 'admitted').join('\n')).toHaveLength(1);
 			const counters = await database.pool.query('SELECT committed_amount FROM capacity_admission_counters');
 			expect(counters.rows).toEqual([{ committed_amount: 4 }, { committed_amount: 4 }]);
 			expect((await database.pool.query('SELECT count(*)::int AS count FROM capacity_reservations')).rows[0].count).toBe(1);
 			const winner = attempts[results.findIndex(result => result.status === 'fulfilled')]!;
 			await run(winner);
+			const nativeIssuance = await peerDatabase.pool.query(`SELECT node.id AS node_id,node.status,
+				assignment.id AS assignment_id,reservation.id AS reservation_id,assignment.assignment_attempt_json::jsonb AS authority,
+				assignment.lease_state,assignment.execution_node_revision,assignment.graph_revision
+				FROM execution_nodes node LEFT JOIN capacity_provider_assignments assignment ON assignment.execution_node_id=node.id
+				LEFT JOIN capacity_reservations reservation ON reservation.id=assignment.reservation_id AND reservation.assignment_id=assignment.id
+				WHERE node.workday_id='workday' ORDER BY node.id`);
+			expect(nativeIssuance.rows).toEqual(attempts.map(attempt => attempt.id === winner.id
+				? { node_id: attempt.nodeId, status: 'assigned', assignment_id: attempt.id, reservation_id: attempt.reservationId,
+					authority: attempt, lease_state: 'unleased', execution_node_revision: attempt.nodeRevision, graph_revision: attempt.graphRevision }
+				: { node_id: attempt.nodeId, status: 'ready', assignment_id: null, reservation_id: null, authority: null,
+					lease_state: null, execution_node_revision: null, graph_revision: null }));
+			const publicInventory = async () => {
+				const [nativeAssignments, nativeReservations, nativeUsage, nativeLedger] = await Promise.all([
+					'capacity_provider_assignments', 'capacity_reservations', 'capacity_usage_actuals', 'capacity_ledger_entries',
+				].map(table => peerDatabase.pool.query(`SELECT * FROM ${table} WHERE work_day_id=$1 AND project_id=$2`, ['workday', 'project'])));
+				const [assignments, reservations, usage, ledger] = await Promise.all([
+					verifyNativeInventory(nativeAssignments!.rows, cursor => new ProviderAssignmentRepository(peerAccounting)
+						.list('team', { workdayId: 'workday', limit: 1, cursor: decodeCapacityPageCursor(cursor) }), 1),
+					verifyNativeInventory(nativeReservations!.rows, cursor => new CapacityReservationRepository(peerAccounting)
+						.listProjectPage('project', { workDayId: 'workday', limit: 1, cursor: decodeCapacityPageCursor(cursor) }), 1),
+					verifyNativeInventory(nativeUsage!.rows, cursor => listTaskUsageActualsPage(peerAccounting, 'project',
+						{ workDayId: 'workday', limit: 1, cursor: decodeCapacityPageCursor(cursor) }), 1),
+					verifyNativeInventory(nativeLedger!.rows, cursor => new CapacityLedgerRepository(peerAccounting)
+						.listProjectPage('project', { workDayId: 'workday', limit: 1, cursor: decodeCapacityPageCursor(cursor) }), 1),
+				]);
+				return { assignments, reservations, usage, ledger };
+			};
+			const issuedPublic = await publicInventory();
+			expect(issuedPublic.assignments.map(value => value.assignmentAttempt)).toEqual([winner]);
+			expect(issuedPublic.reservations).toMatchObject([{ id: winner.reservationId, assignmentId: winner.id, state: 'reserved',
+				teamId: winner.teamId, projectId: winner.projectId, workDayId: winner.workdayId, reservedSeconds: winner.limits.maximumSeconds }]);
+			expect(issuedPublic.reservations).toHaveLength(1); expect(issuedPublic.usage).toEqual([]); expect(issuedPublic.ledger).toEqual([]);
+			expect((await new ProviderAssignmentRepository(peerAccounting).list('other-team', { workdayId: 'workday' })).items).toEqual([]);
+			expect((await new ProviderAssignmentRepository(peerAccounting).list('team', { workdayId: 'other-workday' })).items).toEqual([]);
 			// Both admissions observed absence, but the winner committed and was
 			// leased/pinned before the losing SQL batch acquired the workday lock.
 			const custody = { sourceWorkspace: { exactCommit: 'a'.repeat(40) }, retained: 'winner' };
@@ -144,6 +186,7 @@ describe('living admission in disposable PostgreSQL', () => {
 				nodes: (await reader.pool.query('SELECT * FROM execution_nodes ORDER BY id')).rows,
 			});
 			const beforeFailure = await state(); expect(await state(peerDatabase)).toEqual(beforeFailure);
+			const publicBeforeFailure = await publicInventory();
 			// Last-write failure in the SAME allocated native database: original
 			// usage/counter adjustments have been attempted, and must roll back.
 			await database.pool.query(`CREATE FUNCTION admission_settlement_failure() RETURNS trigger LANGUAGE plpgsql AS
@@ -152,6 +195,7 @@ describe('living admission in disposable PostgreSQL', () => {
 				FOR EACH ROW EXECUTE FUNCTION admission_settlement_failure()`);
 			await expect(settleCapacityReservationExactlyOnce(accounting, settlement)).rejects.toMatchObject({ code: 'P0001' });
 			expect(await state()).toEqual(beforeFailure); expect(await state(peerDatabase)).toEqual(beforeFailure);
+			expect(await publicInventory()).toEqual(publicBeforeFailure);
 			expect(settlement).toEqual(originalSettlement);
 			await database.pool.query('DROP TRIGGER admission_settlement_failure ON capacity_ledger_entries');
 			await database.pool.query('DROP FUNCTION admission_settlement_failure()');
@@ -171,6 +215,27 @@ describe('living admission in disposable PostgreSQL', () => {
 			expect(retained.counters.map(counter => counter.committed_amount)).toEqual([10, 10]);
 			expect(retained.assignments).toEqual(beforeFailure.assignments); expect(retained.nodes).toEqual(beforeFailure.nodes); expect(retained.proxies).toEqual(beforeFailure.proxies);
 			expect(JSON.parse(String(retained.usage[0]!.native_usage_json))).toEqual(settlement.usageActual.nativeUsage);
+			const published = await publicInventory();
+			expect(published.assignments.map(value => value.id)).toEqual(retained.assignments.map(value => value.id));
+			expect(published.assignments.map(value => value.assignmentAttempt)).toEqual([winner]);
+			expect(published.reservations.map(value => value.id)).toEqual(retained.reservations.map(value => value.id));
+			expect(published.reservations[0]).toMatchObject({ assignmentId: winner.id, state: 'consumed', activeSeconds: 2, elapsedSeconds: 4,
+				consumedProviderUnits: 0.25, consumedUsd: 0.001 });
+			expect(published.usage.map(value => value.id)).toEqual(retained.usage.map(value => value.id));
+			expect(published.usage[0]).toMatchObject({ assignmentId: winner.id, assignmentAttempt: winner.attempt, workDayId: winner.workdayId,
+				accountingMode: 'aggregate', activeSeconds: 2, elapsedSeconds: 4, inputTokens: 7, outputTokens: 3, nativeUsage: settlement.usageActual.nativeUsage });
+			expect(published.ledger.map(value => value.id)).toEqual(retained.ledger.map(value => value.id));
+			const durableLedger = retained.ledger[0]!, metadata = JSON.parse(String(durableLedger.metadata_json));
+			expect(settled[0]!.entry).toEqual(durableLedger);
+			const { usageSettlement, ...publicMetadata } = metadata;
+			expect(published.ledger).toEqual([{ id: durableLedger.id, settlementKey: settlement.settlementKey,
+				membershipId: settlement.membershipId, capacityProviderId: winner.provider.providerId, reservationId: winner.reservationId,
+				assignmentId: winner.id, mode: 'acting', teamId: winner.teamId, projectId: winner.projectId, workDayId: winner.workdayId,
+				taskId: durableLedger.task_id, phase: 'task_completed_actual_settlement', activeSeconds: settlement.activeSeconds,
+				elapsedSeconds: settlement.elapsedSeconds, providerUnits: settlement.providerUnits, usd: settlement.usd, source: settlement.source,
+				metadata: publicMetadata, createdAt: durableLedger.created_at, usageSettlement }]);
+			expect(published.ledger[0]!.usageSettlement).toMatchObject({ assignmentId: winner.id, reservationId: winner.reservationId,
+				actualSeconds: 2, idempotencyKey: settlement.settlementKey, teamId: winner.teamId, projectId: winner.projectId, workdayId: winner.workdayId });
 			for (const change of [{ activeSeconds: 3 }, { elapsedSeconds: 5 }, { providerUnits: 0.5 }, { usd: 0.002 },
 				{ usageActual: { ...settlement.usageActual, nativeUsage: { tokens: 11, providerSeconds: 0.25 } } }]) {
 				const changed = { ...settlement, ...change }, unchanged = structuredClone(changed);
@@ -182,6 +247,7 @@ describe('living admission in disposable PostgreSQL', () => {
 			expect(settled.find(value => value.replayed === false)?.replayed).toBe(false);
 			expect((await settleCapacityReservationExactlyOnce(store as never, settlement)).replayed).toBe(true);
 			expect(await state()).toEqual(retained); expect(await state(peerDatabase)).toEqual(retained); expect(settlement).toEqual(originalSettlement);
+			expect(await publicInventory()).toEqual(published);
 			expect((await database.pool.query(`SELECT count(*)::int AS count FROM capacity_ledger_entries
 				WHERE reservation_id=$1 AND phase='task_completed_actual_settlement'`, [winner.reservationId])).rows[0].count).toBe(1);
 			expect((await database.pool.query(`SELECT count(*)::int AS count FROM capacity_usage_actuals
