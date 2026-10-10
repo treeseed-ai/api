@@ -31,6 +31,8 @@ const execute=(command:string,args:string[],cwd=process.cwd(),signal?:AbortSigna
  });
 });
 type Packed={name:string;filename:string;integrity:string;files:Array<{path:string}>};
+let apiInspected=false;
+let heldApiArchive:{root:string;packed:Packed;bytes:Buffer}|undefined;
 
 it('ships the existing selected API definitions and acceptance asset with only published runtime module dependencies',async()=>{
  const [packed]=JSON.parse(await execute('npm',['pack','--dry-run','--ignore-scripts','--json'])) as Packed[];
@@ -39,6 +41,7 @@ it('ships the existing selected API definitions and acceptance asset with only p
  const privateImports=source.statements.flatMap(statement=>ts.isImportDeclaration(statement)&&ts.isStringLiteral(statement.moduleSpecifier)&&statement.moduleSpecifier.text.includes('/src/')?[statement.moduleSpecifier.text]:[]);
  const checkoutCliPaths:string[]=[];const visit=(node:ts.Node)=>{if(ts.isStringLiteral(node)&&node.text.includes('packages/cli/'))checkoutCliPaths.push(node.text);ts.forEachChild(node,visit);};visit(source);
  expect({missing:assets.filter(path=>!paths.has(path)),privateImports,checkoutCliPaths}).toEqual({missing:[],privateImports:[],checkoutCliPaths:[]});
+ apiInspected=true;
 });
 
 it('native production API archive retains exact acceptance bytes and loads its owning published runtime contracts without source or development dependencies',async()=>{
@@ -46,6 +49,7 @@ it('native production API archive retains exact acceptance bytes and loads its o
  const deadline=performance.now()+30_000,timer=setTimeout(()=>controller.abort(),25_000);let originalFailure:unknown,observation:Record<string,string>|undefined;
  const run=(command:string,args:string[],cwd=process.cwd(),env=process.env)=>execute(command,args,cwd,controller.signal,env);
  try{
+  expect(!apiInspected||heldApiArchive,'The same invocation must retain its actual inspected API archive rather than repeat native API packaging').toBeTruthy();
   const archives=JSON.parse(await run('npm',['pack','./node_modules/@treeseed/sdk','.','--ignore-scripts','--json','--pack-destination',root])) as Packed[];
   expect(archives).toHaveLength(2);const sdk=archives.find(value=>value.name==='@treeseed/sdk'),packed=archives.find(value=>value.name==='@treeseed/api');
   expect(sdk).toBeDefined();expect(packed).toBeDefined();const sdkArchive=resolve(root,sdk!.filename),archive=resolve(root,packed!.filename);
