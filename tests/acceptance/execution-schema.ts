@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { requireNativeAdmissionSamples, verifyNativeInventory } from './execution-inventory.ts';
+import { executionWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory } from './execution-inventory.ts';
 
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
@@ -26,7 +26,7 @@ function installedCli(): string {
 
 async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Promise<void> {
 	const started = Date.now(), deadline = started + 120_000;
-	const id = process.env.TREESEED_ACCEPTANCE_WORKDAY_ID, team = process.env.TREESEED_ACCEPTANCE_TEAM;
+	const { id } = executionWorkdayStart(), team = process.env.TREESEED_ACCEPTANCE_TEAM;
 	const workspace = process.env.TREESEED_DEVELOPMENT_WORKSPACE_ROOT;
 	assert.ok(id && /^workday-[a-f0-9-]+$/u.test(id) && team && workspace, 'ACCEPTANCE_SCHEMA_INPUT: Actual workday, team and held workspace required');
 	assert.ok(['local', 'staging'].includes(process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? ''),
@@ -332,7 +332,7 @@ test('Actual normal SDK workday retains complete clean migration and canonical p
 	{ timeout: 120_000 }, () => verifyManagedExecutionSchema(false));
 
 async function verifyManagedModelExecution(requireUnfinished: boolean): Promise<void> {
-	const deadline = Date.now() + 120_000, id = process.env.TREESEED_ACCEPTANCE_WORKDAY_ID;
+	const deadline = Date.now() + 120_000, { id } = executionWorkdayStart();
 	const team = process.env.TREESEED_ACCEPTANCE_TEAM, workspace = process.env.TREESEED_DEVELOPMENT_WORKSPACE_ROOT;
 	assert.ok(id && /^workday-[a-f0-9-]+$/u.test(id) && team && workspace, 'ACCEPTANCE_DIAGNOSTICS_INPUT: Exact actual workday team and workspace required');
 	assert.ok(['local', 'staging'].includes(process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? ''), 'ACCEPTANCE_DIAGNOSTICS_SCOPE: Explicit non-production environment required');

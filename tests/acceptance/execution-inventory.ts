@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 
 type Row = Record<string, unknown>;
+
+/** Resolve the original explicit run input at the shared managed observation boundary. */
+export function executionWorkdayStart(environment: NodeJS.ProcessEnv = process.env): { id: string | undefined } {
+	return { id: environment.TREESEED_ACCEPTANCE_WORKDAY_ID };
+}
 function row(value: unknown): Row {
 	assert.ok(value && typeof value === 'object' && !Array.isArray(value), 'ACCEPTANCE_NATIVE_INVENTORY: Explicit object required');
 	return value as Row;
