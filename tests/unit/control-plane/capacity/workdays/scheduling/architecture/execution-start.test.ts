@@ -10,6 +10,8 @@ it('isolated managed API verifier resolves the original retained SDK start witho
 		const before = structuredClone(f.environment);
 		expect(executionWorkdayStart(f.environment).id).toBe(f.receipt.workdayId);
 		expect(f.environment).toEqual(before);
+		expect(() => Reflect.apply(executionWorkdayStart, undefined, [{ TREESEED_ACCEPTANCE_WORKDAY_ID: f.receipt.workdayId }, true]),
+			'Normal SDK cannot substitute an explicit advanced-case ID for the original frozen receipt').toThrow();
 	} finally { f.close(); }
 });
 
