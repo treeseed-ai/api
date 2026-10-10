@@ -1,7 +1,9 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 import { resolve } from 'node:path';
 
 const sdkSource = process.env.TREESEED_SDK_SOURCE_ROOT;
+const owningTests = 'tests/unit/control-plane/**/*.test.ts';
+const archiveTests = 'tests/unit/control-plane/release/installed-assets.test.ts';
 
 export default defineConfig({
 	resolve: { alias: sdkSource ? {
@@ -12,7 +14,10 @@ export default defineConfig({
 	test: {
 		fileParallelism: true,
 		maxWorkers: 2,
-		include: ['tests/unit/control-plane/**/*.test.ts'],
 		testTimeout: 30_000,
+		projects: [
+			{ extends: true, test: { name: 'archive', include: [archiveTests], fileParallelism: false, sequence: { groupOrder: 1 } } },
+			{ extends: true, test: { name: 'control-plane', include: [owningTests], exclude: [...configDefaults.exclude, archiveTests], sequence: { groupOrder: 2 } } },
+		],
 	},
 });

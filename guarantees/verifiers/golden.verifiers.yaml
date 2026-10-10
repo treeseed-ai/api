@@ -4251,3 +4251,13 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/release/installed-assets.test.ts
     testName: "native archive commands retain split UTF8 and literal arguments and reject original nonzero or unavailable subprocesses"
+  api.golden.archive-ownership-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/suite-resource-ownership.test.ts
+    testName: "retains every owning test and original bounds while native archive installation has exclusive file ownership"
+  api.golden.archive-ownership-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/suite-resource-ownership-native.test.ts
+    testName: "native unchanged owning Vitest configuration finishes archive ownership before retaining simultaneous database workers and complete reports"

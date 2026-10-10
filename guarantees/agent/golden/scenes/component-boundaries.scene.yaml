@@ -2493,3 +2493,9 @@ workflow:
   - id: installed-assets-stream-native
     action: { verifier: api.golden.installed-assets-stream-native }
     expect: { status: passed }
+  - id: archive-ownership-unit
+    action: { verifier: api.golden.archive-ownership-unit }
+    expect: { status: passed }
+  - id: archive-ownership-native
+    action: { verifier: api.golden.archive-ownership-native }
+    expect: { status: passed }
