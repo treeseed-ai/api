@@ -1,6 +1,26 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-start-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/execution-start.test.ts
+    testName: "isolated managed API verifier resolves the original retained SDK start without inherited environment mutation or run discovery"
+  api.golden.execution-start-denials-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/execution-start.test.ts
+    testName: "denies malformed missing redirected foreign or conflicting API start authority and retains failed bytes unchanged"
+  api.golden.execution-start-producer-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/execution-start.test.ts
+    testName: "actual owning public preflight and start produce the base64url digests consumed unchanged by isolated API verification"
+  api.golden.execution-start-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/execution-start-postgres.test.ts
+    testName: "native PostgreSQL independently binds retained start and public run across concurrent reads denial interruption and exact retry without mutation"
   api.golden.normal-sdk-schema-samples-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
