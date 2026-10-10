@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: normal-sdk-schema-samples-unit
+    action: { verifier: api.golden.normal-sdk-schema-samples-unit }
+    expect: { status: passed }
+  - id: normal-sdk-schema-samples-denials-unit
+    action: { verifier: api.golden.normal-sdk-schema-samples-denials-unit }
+    expect: { status: passed }
   - id: native-inventory-unit
     action: { verifier: api.golden.native-inventory-unit }
     expect: { status: passed }
