@@ -2490,3 +2490,6 @@ workflow:
   - id: installed-assets-interruption-native
     action: { verifier: api.golden.installed-assets-interruption-native }
     expect: { status: passed }
+  - id: installed-assets-stream-native
+    action: { verifier: api.golden.installed-assets-stream-native }
+    expect: { status: passed }

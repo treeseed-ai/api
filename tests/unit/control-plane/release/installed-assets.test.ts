@@ -17,9 +17,9 @@ const execute=(command:string,args:string[],cwd=process.cwd(),signal?:AbortSigna
   catch(error){if((error as NodeJS.ErrnoException).code!=='ESRCH')failure??=error as Error;}};
  const abort=()=>{failure??=new Error('Native archive command interrupted');terminate();};
  signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
- for(const [stream,kind] of [[child.stdout,'stdout'],[child.stderr,'stderr']] as const)stream.on('data',(bytes:Buffer)=>{
-  size+=bytes.length;if(size>8*1024*1024){failure??=new Error('Native archive command exceeded its original output bound');terminate();return;}
-  if(kind==='stdout')stdout+=bytes.toString('utf8');else stderr+=bytes.toString('utf8');
+ for(const [stream,kind] of [[child.stdout,'stdout'],[child.stderr,'stderr']] as const)stream.setEncoding('utf8').on('data',(text:string)=>{
+  size+=Buffer.byteLength(text,'utf8');if(size>8*1024*1024){failure??=new Error('Native archive command exceeded its original output bound');terminate();return;}
+  if(kind==='stdout')stdout+=text;else stderr+=text;
  });
  child.once('error',error=>{failure??=error;terminate();});
  child.once('close',(code,exitSignal)=>{
@@ -43,7 +43,7 @@ it('ships the existing selected API definitions and acceptance asset with only p
 
 it('native production API archive retains exact acceptance bytes and loads its owning published runtime contracts without source or development dependencies',async()=>{
  const root=mkdtempSync(resolve(tmpdir(),'api-installed-assets-')),controller=new AbortController();
- const timer=setTimeout(()=>controller.abort(),28_000);
+ const deadline=performance.now()+30_000,timer=setTimeout(()=>controller.abort(),25_000);let originalFailure:unknown,observation:Record<string,string>|undefined;
  const run=(command:string,args:string[],cwd=process.cwd(),env=process.env)=>execute(command,args,cwd,controller.signal,env);
  try{
   const archives=JSON.parse(await run('npm',['pack','./node_modules/@treeseed/sdk','.','--ignore-scripts','--json','--pack-destination',root])) as Packed[];
@@ -74,9 +74,15 @@ console.log(JSON.stringify({installedRuntimeContracts:'passed'}));\n`);
   // The consumer denies absent custody; it never receives a host credential path.
   const result=await run(process.execPath,['consumer.ts'],root,{...process.env,TREESEED_DIAGNOSTICS_ENCRYPTION_KEY_FILE:''});
   expect(JSON.parse(result)).toEqual({installedRuntimeContracts:'passed'});expect(process.env.TREESEED_DIAGNOSTICS_ENCRYPTION_KEY_FILE).toBe(env);
-  expect(readFileSync(archive)).toEqual(bytes);expect(readFileSync(sdkArchive)).toEqual(sdkBytes);
-  controller.signal.throwIfAborted();console.log(JSON.stringify({archive:packed!.filename,sha256:createHash('sha256').update(bytes).digest('hex'),sdkSha256:createHash('sha256').update(sdkBytes).digest('hex'),installedRuntimeContracts:'passed'}));
- }finally{clearTimeout(timer);controller.abort();rmSync(root,{recursive:true,force:true});expect(existsSync(root)).toBe(false);}
+  expect(readFileSync(archive).equals(bytes)).toBe(true);expect(readFileSync(sdkArchive).equals(sdkBytes)).toBe(true);
+  controller.signal.throwIfAborted();expect(performance.now()).toBeLessThan(deadline-5000);
+  observation={archive:packed!.filename,sha256:createHash('sha256').update(bytes).digest('hex'),sdkSha256:createHash('sha256').update(sdkBytes).digest('hex'),installedRuntimeContracts:'passed'};
+ }catch(error){originalFailure=error;throw error;}finally{
+  clearTimeout(timer);controller.abort();
+  try{await execute('/usr/bin/rm',['-rf','--',root],tmpdir(),AbortSignal.timeout(Math.max(1,Math.floor(deadline-performance.now()))));expect(existsSync(root)).toBe(false);}
+  catch(cleanupFailure){if(originalFailure)throw new AggregateError([originalFailure,cleanupFailure],'Original archive proof and bounded scoped cleanup both failed');throw cleanupFailure;}
+ }
+ expect(observation).toBeDefined();console.log(JSON.stringify(observation));
 });
 
 it('native archive command interruption closes its entire owned subprocess group before scoped fixture cleanup without a later passing observation',async()=>{
@@ -85,6 +91,8 @@ it('native archive command interruption closes its entire owned subprocess group
  try{
   writeFileSync(resolve(root,'grandchild.ts'),`import {writeFileSync} from 'node:fs';writeFileSync('grandchild.pid',String(process.pid));setTimeout(()=>writeFileSync('late-write','unauthorized after interruption'),1000);`);
   writeFileSync(resolve(root,'child.ts'),`import {spawn} from 'node:child_process';import {writeFileSync} from 'node:fs';writeFileSync('child.pid',String(process.pid));spawn(process.execPath,['grandchild.ts'],{stdio:'inherit'});setTimeout(()=>{},1000);`);
+  await expect(execute(process.execPath,['child.ts'],root,AbortSignal.abort())).rejects.toThrow('interrupted before launch');
+  expect(existsSync(resolve(root,'child.pid'))).toBe(false);
   const running=execute(process.execPath,['child.ts'],root,controller.signal);
   const ready=Date.now()+2000;
   while(!existsSync(resolve(root,'grandchild.pid'))){expect(Date.now()).toBeLessThan(ready);await new Promise(accept=>setTimeout(accept,10));}

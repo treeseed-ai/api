@@ -4246,3 +4246,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/release/installed-assets.test.ts
     testName: "native archive command interruption closes its entire owned subprocess group before scoped fixture cleanup without a later passing observation"
+  api.golden.installed-assets-stream-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/release/installed-assets.test.ts
+    testName: "native archive commands retain split UTF8 and literal arguments and reject original nonzero or unavailable subprocesses"
