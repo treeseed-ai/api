@@ -21,8 +21,10 @@ function retainedBytes(path: string): Buffer {
 }
 
 /** SDK children consume the original API receipt; advanced cases retain explicit IDs. */
-export function executionWorkdayStart(environment: NodeJS.ProcessEnv = process.env): ExecutionStart {
+export function executionWorkdayStart(environment: NodeJS.ProcessEnv = process.env, requireRetained = false): ExecutionStart {
+	assert.equal(typeof requireRetained, 'boolean', 'ACCEPTANCE_EXECUTION_START: Exact managed case scope required');
 	const explicit = environment.TREESEED_ACCEPTANCE_WORKDAY_ID, path = environment.TREESEED_ACCEPTANCE_FREEZE_PATH;
+	if (requireRetained) assert.ok(path, 'ACCEPTANCE_EXECUTION_START: Normal SDK requires its original frozen start receipt');
 	if (explicit !== undefined) assert.match(explicit, /^workday-[a-f0-9-]+$/u, 'ACCEPTANCE_EXECUTION_START: Invalid explicit workday');
 	if (path === undefined) {
 		assert.ok(explicit, 'ACCEPTANCE_EXECUTION_START: Explicit run or frozen SDK input required');

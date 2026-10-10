@@ -26,7 +26,7 @@ function installedCli(): string {
 
 async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Promise<void> {
 	const started = Date.now(), deadline = started + 120_000;
-	const start = executionWorkdayStart(), { id } = start, team = process.env.TREESEED_ACCEPTANCE_TEAM;
+	const start = executionWorkdayStart(process.env, !requireObservedSamples), { id } = start, team = process.env.TREESEED_ACCEPTANCE_TEAM;
 	const workspace = process.env.TREESEED_DEVELOPMENT_WORKSPACE_ROOT;
 	assert.ok(id && /^workday-[a-f0-9-]+$/u.test(id) && team && workspace, 'ACCEPTANCE_SCHEMA_INPUT: Actual workday, team and held workspace required');
 	assert.ok(['local', 'staging'].includes(process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? ''),
