@@ -99,3 +99,16 @@ it('native archive command interruption closes its entire owned subprocess group
   rmSync(root,{recursive:true,force:true});expect(existsSync(root)).toBe(false);
  }
 });
+
+it('native archive commands retain split UTF8 and literal arguments and reject original nonzero or unavailable subprocesses',async()=>{
+ const root=mkdtempSync(resolve(tmpdir(),'api-asset-stream-'));
+ try{
+  writeFileSync(resolve(root,'stream.ts'),`import {writeFileSync} from 'node:fs';writeFileSync('arguments.json',JSON.stringify(process.argv.slice(2)));process.stdout.write(Buffer.from([0xce]));setTimeout(()=>process.stdout.write(Buffer.from([0xbb])),100);`);
+  const literal='$(touch unauthorized-command)';
+  expect(await execute(process.execPath,['stream.ts',literal],root)).toBe('λ');
+  expect(JSON.parse(readFileSync(resolve(root,'arguments.json'),'utf8'))).toEqual([literal]);expect(existsSync(resolve(root,'unauthorized-command'))).toBe(false);
+  writeFileSync(resolve(root,'failure.ts'),`process.stderr.write('original subprocess failure');process.exitCode=7;`);
+  await expect(execute(process.execPath,['failure.ts'],root)).rejects.toThrow('original subprocess failure');
+  await expect(execute(resolve(root,'unavailable-executable'),[],root)).rejects.toThrow(/ENOENT/u);
+ }finally{rmSync(root,{recursive:true,force:true});expect(existsSync(root)).toBe(false);}
+});
