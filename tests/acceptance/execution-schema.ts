@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { verifyNativeInventory } from './execution-inventory.ts';
+import { requireNativeAdmissionSamples, verifyNativeInventory } from './execution-inventory.ts';
 
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
@@ -24,7 +24,7 @@ function installedCli(): string {
 	return resolve(dirname(manifest), binary);
 }
 
-test('Actual managed execution uses the complete clean migration inventory and exact canonical assignment rows without retired scheduling authorities or read-time repair', { timeout: 120_000 }, async () => {
+async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Promise<void> {
 	const started = Date.now(), deadline = started + 120_000;
 	const id = process.env.TREESEED_ACCEPTANCE_WORKDAY_ID, team = process.env.TREESEED_ACCEPTANCE_TEAM;
 	const workspace = process.env.TREESEED_DEVELOPMENT_WORKSPACE_ROOT;
@@ -277,8 +277,7 @@ test('Actual managed execution uses the complete clean migration inventory and e
 					} else assert.ok(visible.assignmentResult === null || visible.assignmentResult === undefined);
 					observations.push({ id: value.id, value: visible });
 				}
-				assert.ok(prioritizedWork > 0, 'ACCEPTANCE_PRIORITY_EMPTY: Actual governed nonzero priority must be exercised, not only default-zero replay');
-				assert.ok(calibratedWork > 0, 'ACCEPTANCE_CALIBRATION_EMPTY: Actual historical calibration is required, not only cold-start IDs');
+				requireNativeAdmissionSamples(prioritizedWork, calibratedWork, requireObservedSamples);
 				for (const observation of calibrationHistory.values()) assert.deepEqual(
 					(await client.query(observation.sql, observation.parameters)).rows, observation.rows);
 				for (const observation of prioritySources.values()) assert.deepEqual(read(observation.args), observation.returned);
@@ -326,7 +325,11 @@ test('Actual managed execution uses the complete clean migration inventory and e
 	assert.deepEqual(readdirSync(root).filter(name => name.endsWith('.sql')).sort(), sources.map(value => value.name));
 	for (const source of sources) assert.deepEqual(readFileSync(resolve(root, source.name)), source.bytes);
 	assert.ok(Date.now() <= deadline, 'ACCEPTANCE_SCHEMA_DEADLINE: Original observation bound elapsed');
-});
+}
+test('Actual managed execution uses the complete clean migration inventory and exact canonical assignment rows without retired scheduling authorities or read-time repair',
+	{ timeout: 120_000 }, () => verifyManagedExecutionSchema(true));
+test('Actual normal SDK workday retains complete clean migration and canonical public native inventories with genuine cold start and default zero priority allowed',
+	{ timeout: 120_000 }, () => verifyManagedExecutionSchema(false));
 
 async function verifyManagedModelExecution(requireUnfinished: boolean): Promise<void> {
 	const deadline = Date.now() + 120_000, id = process.env.TREESEED_ACCEPTANCE_WORKDAY_ID;

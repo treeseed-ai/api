@@ -13,7 +13,7 @@ import { CapacityReservationRepository } from '../../../../../../src/api/capacit
 import { CapacityLedgerRepository } from '../../../../../../src/api/capacity/repositories/capacity/accounting/ledger.ts';
 import { listTaskUsageActualsPage } from '../../../../../../src/api/capacity/repositories/capacity/accounting/task-usage.ts';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { verifyNativeInventory } from '../../../../../acceptance/execution-inventory.ts';
+import { requireNativeAdmissionSamples, verifyNativeInventory } from '../../../../../acceptance/execution-inventory.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 describe('living admission in disposable PostgreSQL', () => {
@@ -120,6 +120,16 @@ describe('living admission in disposable PostgreSQL', () => {
 			};
 			const issuedPublic = await publicInventory();
 			expect(issuedPublic.assignments.map(value => value.assignmentAttempt)).toEqual([winner]);
+			// This direct native admission fixture has default priority and no
+			// historical measurements. The separate architecture case retains its
+			// additional sample minima; normal schema proof may genuinely cold-start.
+			const explanation = issuedPublic.assignments[0]!.explanation as { metadata: { allocation: { calibration: { measurementIds: string[]; multiplier: number } } } };
+			const cold = explanation.metadata;
+			expect(cold.allocation.calibration.measurementIds).toEqual([]);
+			expect(cold.allocation.calibration.multiplier).toBe(winner.estimate.maximumSeconds / winner.estimate.expectedSeconds);
+			expect(() => requireNativeAdmissionSamples(0, cold.allocation.calibration.measurementIds.length, false)).not.toThrow();
+			expect(() => requireNativeAdmissionSamples(0, cold.allocation.calibration.measurementIds.length)).toThrow('ACCEPTANCE_PRIORITY_EMPTY');
+			expect(await Promise.all([publicInventory(), publicInventory()])).toEqual([issuedPublic, issuedPublic]);
 			expect(issuedPublic.reservations).toMatchObject([{ id: winner.reservationId, assignmentId: winner.id, state: 'reserved',
 				teamId: winner.teamId, projectId: winner.projectId, workDayId: winner.workdayId, reservedSeconds: winner.limits.maximumSeconds }]);
 			expect(issuedPublic.reservations).toHaveLength(1); expect(issuedPublic.usage).toEqual([]); expect(issuedPublic.ledger).toEqual([]);

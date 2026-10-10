@@ -1,6 +1,21 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.normal-sdk-schema-samples-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/schema-samples.test.ts
+    testName: "normal SDK schema accepts cold start and default zero samples while original architecture proof still requires both measured controls"
+  api.golden.normal-sdk-schema-samples-denials-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/schema-samples.test.ts
+    testName: "denies missing malformed negative fractional or unbounded native sample counts and unknown case scope without converting failed observations"
+  api.golden.execution-normal-sdk-clean-schema-live-1:
+    kind: nodeTestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/acceptance/execution-schema.ts
+    testName: "Actual normal SDK workday retains complete clean migration and canonical public native inventories with genuine cold start and default zero priority allowed"
   api.golden.native-inventory-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

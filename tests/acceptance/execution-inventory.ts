@@ -7,6 +7,17 @@ function row(value: unknown): Row {
 	return value as Row;
 }
 
+/** Sample minima supplement the architecture case; SDK may genuinely cold-start.
+ * Both cases still replay every stored priority/calibration input independently. */
+export function requireNativeAdmissionSamples(prioritizedWork: number, calibratedWork: number, requireObservedSamples = true): void {
+	assert.equal(typeof requireObservedSamples, 'boolean', 'ACCEPTANCE_SCHEMA_SAMPLES: Explicit case scope required');
+	for (const count of [prioritizedWork, calibratedWork]) assert.ok(Number.isSafeInteger(count) && count >= 0,
+		'ACCEPTANCE_SCHEMA_SAMPLES: Complete nonnegative observed sample counts required');
+	if (!requireObservedSamples) return;
+	assert.ok(prioritizedWork > 0, 'ACCEPTANCE_PRIORITY_EMPTY: Actual governed nonzero priority must be exercised, not only default-zero replay');
+	assert.ok(calibratedWork > 0, 'ACCEPTANCE_CALIBRATION_EMPTY: Actual historical calibration is required, not only cold-start IDs');
+}
+
 /** Independent owning SQL inventory bounds public reads; matching read-backs alone cannot prove completeness. */
 export async function verifyNativeInventory(native: unknown, fetch: (cursor?: string) => unknown | Promise<unknown>, limit: number,
 	direction: 'ascending' | 'descending' = 'descending'): Promise<Row[]> {
