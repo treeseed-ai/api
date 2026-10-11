@@ -10,14 +10,14 @@ import { canonicalWorkdayShares } from '../../dist/api/capacity/services/capacit
 type Row = Record<string, unknown>;
 
 /** Original preflight owns the resolved policy; current team defaults may advance later. */
-export function verifyNativeWorkdayPolicy(native: Row[], run: { id?: unknown; teamId?: unknown; executionMode?: unknown; parameters?: unknown }, preflight: { id?: unknown; intentDigest?: unknown }, projects: Array<{ id: string; slug?: string | null }>): void {
+export function verifyNativeWorkdayPolicy(native: Row[], run: { id?: unknown; teamId?: unknown; executionMode?: unknown; parameters?: unknown }, preflight: unknown, projects: Array<{ id: string; slug?: string | null }>): void {
 	assert.equal(native.length, 1, 'ACCEPTANCE_NATIVE_WORKDAY_POLICY: One original preflight required');
-	const record = native[0]!;
+	const record = native[0]!, held = row(preflight);
 	assert.equal(record.team_id, run.teamId); assert.equal(record.operation, 'workday.preflight');
-	assert.equal(record.resource_type, 'workday_preflight'); assert.equal(record.resource_id, preflight.id);
-	assert.equal(record.idempotency_key, preflight.id); assert.equal(record.request_digest, preflight.intentDigest);
+	assert.equal(record.resource_type, 'workday_preflight'); assert.equal(record.resource_id, held.id);
+	assert.equal(record.idempotency_key, held.id); assert.equal(record.request_digest, held.intentDigest);
 	const stored = row(JSON.parse(String(record.response_json))), receipt = row(stored.receipt), intent = row(stored.intent);
-	assert.deepEqual(receipt, preflight, 'ACCEPTANCE_NATIVE_WORKDAY_POLICY: Original retained preflight drift');
+	assert.deepEqual(receipt, held, 'ACCEPTANCE_NATIVE_WORKDAY_POLICY: Original retained preflight drift');
 	const { preflightDigest, ...payload } = receipt;
 	assert.equal(preflightDigest, `sha256:${sha256(canonicalJson(payload))}`);
 	assert.equal(receipt.intentDigest, `sha256:${sha256(canonicalJson(intent))}`);
