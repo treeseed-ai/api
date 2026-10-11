@@ -8,6 +8,21 @@ import { serializeCapacityReservationRow } from '../../dist/api/capacity/reposit
 
 type Row = Record<string, unknown>;
 
+/** Arguments for the existing schema reader; source paths and refs stay caller-owned. */
+export function executionCliReadArguments(args: readonly string[], team: string): string[] {
+	if (args[0] === 'library') return [...args, '--json'];
+	return [...args, '--server', 'local', '--team', team, '--json'];
+}
+
+/** Original public library response consumed by priority source verification. */
+export function executionLibraryResult(value: Row): unknown {
+	const result = value.result;
+	assert.ok(result && typeof result === 'object' && !Array.isArray(result)
+		&& Object.hasOwn(result, 'ok') && Reflect.get(result, 'ok') === true,
+		'ACCEPTANCE_LIBRARY_RESULT: Supported successful public library result required');
+	return result;
+}
+
 /** Shared original assignment assertion for native owner and managed read-back. */
 export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: Row,
 	reservations: unknown) {

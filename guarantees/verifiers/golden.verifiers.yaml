@@ -1,6 +1,21 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.schema-library-result-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/schema-samples.test.ts
+    testName: "schema priority source retains the single supported public library result and rejects raw compatibility fallback without repair"
+  api.golden.schema-library-read-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/schema-samples.test.ts
+    testName: "schema reader retains exact public library ref without unsupported server or team selectors through repeated readback"
+  api.golden.schema-team-read-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/schema-samples.test.ts
+    testName: "schema reader preserves original local server and team scope on canonical workday assignment and inventory reads"
   api.golden.execution-start-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
