@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createExecutionGraphService, persistExecutionGraph } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
-import { emptyLivingGraph, graphNode, graphProjection, graphSource, graphState } from './living-graph-fixture.ts';
+import { authoredGraphFixture, expectAuthoredGraphPairs, emptyLivingGraph, graphNode, graphProjection, graphSource, graphState } from './living-graph-fixture.ts';
+import { decodeExecutionNode, decodeExecutionEdge } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-storage.ts';
 import { applyOperationalState } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
 import { postgresGraph } from './living-postgres-fixture.ts';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -207,10 +208,17 @@ describe('independent PostgreSQL connection graph custody', () => {
 	it('matching concurrent graph writes have one durable revision and repeated independent reads remain unchanged', async () => {
 		const f = await postgresGraph();
 		try {
-			const projection = graphProjection(), graph = graphState(projection), receipt = { ...projection.revision, graphDigest: graph.digest };
+			const fixture = authoredGraphFixture(), held = structuredClone(fixture);
+			const projection = graphProjection([fixture.source]), graph = graphState(projection), receipt = { ...projection.revision, graphDigest: graph.digest };
 			await Promise.all(f.stores.map(store => persistExecutionGraph(store, graph, emptyLivingGraph(), receipt)));
 			const before = await f.snapshot(); expect(before.revisions).toHaveLength(1);
-			for (const store of f.stores) expect(await createExecutionGraphService(store).show(f.principal, 'team', {})).toEqual(graph);
+			expect(before.nodes).toHaveLength(graph.nodes.length); expect(before.edges).toHaveLength(graph.edges.length);
+			expectAuthoredGraphPairs({ nodes: before.nodes.map(decodeExecutionNode), edges: before.edges.map(decodeExecutionEdge) }, fixture);
+			for (const store of f.stores) {
+				const observed = await createExecutionGraphService(store).show(f.principal, 'team', {});
+				expect(observed).toEqual(graph); expectAuthoredGraphPairs(observed, fixture);
+			}
+			expect(fixture).toEqual(held); expect(before.assignments).toEqual([]); expect(before.reservations).toEqual([]);
 			expect(await f.snapshot()).toEqual(before);
 		} finally { await f.close(); }
 	}, 30_000);

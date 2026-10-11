@@ -3,7 +3,7 @@ import { projectTeamExecutionGraph } from '../../../../../../../../src/api/capac
 import { applyOperationalState, recoverIncompleteReviewCycles } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
 import { decodeExecutionNode } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-storage.ts';
 import { persistExecutionGraph } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
-import { emptyLivingGraph, graphNode, graphProfiles, graphProjection, graphSource, graphState } from './living-graph-fixture.ts';
+import { authoredGraphFixture, expectAuthoredGraphPairs, emptyLivingGraph, graphNode, graphProfiles, graphProjection, graphSource, graphState } from './living-graph-fixture.ts';
 
 describe('complete governed living graph contract authoring', () => {
   it('serializes graph writers without taking a team key lock that blocks reservation foreign keys', async () => {
@@ -197,9 +197,11 @@ describe('complete governed living graph contract authoring', () => {
 		expect(exhausted).toEqual(before); expect(before.nodes.map(node => node.id)).toEqual(revised.nodes.map(node => node.id));
 	});
 	it('keeps one team graph and exact project identities deterministic under source permutation', () => {
-		const sources = [graphSource(), graphSource('second')], before = structuredClone(sources);
+		const fixture = authoredGraphFixture(), sources = [fixture.source, graphSource('second')], before = structuredClone(sources);
 		const first = graphProjection(sources), second = graphProjection([...sources].reverse());
 		expect(second).toEqual(first); expect(sources).toEqual(before);
+		expectAuthoredGraphPairs(first, fixture); expectAuthoredGraphPairs(second, fixture);
+		expect(first.nodes.filter(node => node.projectId === 'second' && node.pairRole)).toHaveLength(4);
 		expect(new Set(first.nodes.map(node => node.id)).size).toBe(first.nodes.length);
 		expect(first.edges.every(edge => first.nodes.find(node => node.id === edge.fromNodeId)?.projectId === first.nodes.find(node => node.id === edge.toNodeId)?.projectId)).toBe(true);
 	});
