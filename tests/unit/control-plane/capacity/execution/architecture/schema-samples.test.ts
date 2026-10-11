@@ -100,6 +100,11 @@ it('native Workday readback reconciles original applied plan with independently 
 		const failed = structuredClone({ changed, visible });
 		expect(() => verifyNativeWorkdayReadback(changed, visible, shares)).toThrow(); expect({ changed, visible }).toEqual(failed);
 	}
+	for (const change of [{ id: ` ${plan.id} ` }, { teamId: ` ${plan.teamId} ` }, { policyId: ` ${plan.policyId} ` }]) {
+		const changed = [{ ...native[0]!, parameters_json: JSON.stringify({ durationSeconds: 600, appliedPlan: { ...plan, ...change } }) }];
+		const failed = structuredClone(changed);
+		expect.soft(() => verifyNativeWorkdayReadback(changed, run, shares)).toThrow('ACCEPTANCE_NATIVE_WORKDAY'); expect(changed).toEqual(failed);
+	}
 	expect(() => verifyNativeWorkdayReadback(native, run)).toThrow('Independent reservation shares required');
 	expect(() => verifyNativeWorkdayReadback(native, run, [...shares, shares[0]!])).toThrow();
 	verifyNativeWorkdayReadback(native, run, shares);
