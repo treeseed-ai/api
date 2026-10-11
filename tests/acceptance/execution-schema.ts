@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, executionCliReadArguments, executionLibraryResult } from './execution-inventory.ts';
+import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback } from './execution-inventory.ts';
 
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
@@ -102,7 +102,6 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 				const ledger = (await client.query<{ name: string }>('SELECT * FROM treeseed_control_plane_schema_migrations ORDER BY name')).rows;
 				assert.deepEqual(ledger.map(value => value.name), sources.map(value => value.name));
 				const nativeRun = (await client.query('SELECT * FROM capacity_workday_runs WHERE id=$1', [id])).rows;
-				assert.equal(nativeRun.length, 1); assert.equal(nativeRun[0].team_id, run.teamId); assert.equal(nativeRun[0].status, run.status);
 				const assignments = (await client.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1 ORDER BY id', [id])).rows;
 				assert.ok(assignments.length > 0, 'ACCEPTANCE_SCHEMA_EMPTY: Actual managed assignment inventory required');
 				const inventoryReads: Array<{ args: string[]; cursor?: string; returned: Record<string, unknown> }> = [];
@@ -110,6 +109,12 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 				const nativeInventory = async (sql: string, parameters: unknown[]) => {
 					const rows = (await client.query(sql, parameters)).rows; nativeInventories.push({ sql, parameters, rows }); return rows;
 				};
+				const admittedShares = await nativeInventory(`SELECT reservation.project_id,node.agent_class,
+					SUM(reservation.requested_seconds) AS admitted_seconds FROM capacity_reservations reservation
+					JOIN capacity_provider_assignments assignment ON assignment.id=reservation.assignment_id AND assignment.team_id=reservation.team_id
+					JOIN execution_nodes node ON node.id=assignment.execution_node_id AND node.team_id=assignment.team_id
+					WHERE reservation.team_id=$1 AND reservation.work_day_id=$2 GROUP BY reservation.project_id,node.agent_class`, [team, id]);
+				verifyNativeWorkdayReadback(nativeRun, run, admittedShares);
 				await verifyRetainedWorkdayStart(start, run, nativeInventory);
 				const inventory = (native: unknown, args: string[], direction: 'ascending' | 'descending' = 'descending') => verifyNativeInventory(native, cursor => {
 					const returned = read([...args, '--limit', '200', ...(cursor ? ['--cursor', cursor] : [])]);

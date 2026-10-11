@@ -3,6 +3,18 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: native-workday-mode-unit
+    action: { verifier: api.golden.native-workday-mode-unit }
+    expect: { status: passed }
+  - id: native-workday-mode-denials-unit
+    action: { verifier: api.golden.native-workday-mode-denials-unit }
+    expect: { status: passed }
+  - id: native-workday-parameters-denials-unit
+    action: { verifier: api.golden.native-workday-parameters-denials-unit }
+    expect: { status: passed }
+  - id: native-workday-reservation-shares-unit
+    action: { verifier: api.golden.native-workday-reservation-shares-unit }
+    expect: { status: passed }
   - id: schema-library-result-unit
     action: { verifier: api.golden.schema-library-result-unit }
     expect: { status: passed }

@@ -1,12 +1,45 @@
 import assert from 'node:assert/strict';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, assignmentResultSchema, appliedWorkdaySchema } from '@treeseed/sdk/agent-capacity';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { canonicalJson, sha256 } from '../../dist/api/capacity/security.js';
 import { serializeCapacityReservationRow } from '../../dist/api/capacity/repositories/capacity/accounting/reservation.js';
 
 type Row = Record<string, unknown>;
+
+/** Compare original native authority with public Workday and derived reservation receipts. */
+export function verifyNativeWorkdayReadback(native: Row[], run: { id?: unknown; teamId?: unknown; status?: unknown; executionMode?: unknown; parameters?: unknown }, admittedShares?: Row[]): void {
+	assert.equal(native.length, 1); assert.equal(native[0]!.team_id, run.teamId); assert.equal(native[0]!.status, run.status);
+	assert.equal(native[0]!.id, run.id, 'ACCEPTANCE_NATIVE_WORKDAY: Original Workday identity required');
+	assert.ok(run.executionMode === 'simulation' || run.executionMode === 'production', 'ACCEPTANCE_NATIVE_WORKDAY: Exact sole mode required');
+	assert.equal(native[0]!.execution_mode, run.executionMode, 'ACCEPTANCE_NATIVE_WORKDAY: Native and public mode disagree');
+	assert.equal(typeof native[0]!.parameters_json, 'string');
+	const parameters: unknown = JSON.parse(native[0]!.parameters_json as string);
+	assert.ok(parameters && typeof parameters === 'object' && !Array.isArray(parameters), 'ACCEPTANCE_NATIVE_WORKDAY: Original parameters object required');
+	assert.ok(!Object.hasOwn(parameters, 'executionMode'), 'ACCEPTANCE_NATIVE_WORKDAY: Duplicate parameter mode forbidden');
+	const expected = structuredClone(parameters) as Row;
+	if (expected.appliedPlan) {
+		const plan = appliedWorkdaySchema.parse(expected.appliedPlan);
+		assert.deepEqual(plan, expected.appliedPlan, 'ACCEPTANCE_NATIVE_WORKDAY: Original native applied plan must already be canonical without normalization');
+		assert.equal(plan.id, run.id); assert.equal(plan.teamId, run.teamId); assert.equal(plan.executionMode, run.executionMode);
+		assert.ok(admittedShares, 'ACCEPTANCE_NATIVE_WORKDAY: Independent reservation shares required');
+		const projects: Record<string, number> = {}, classes: Record<string, number> = {};
+		const seen = new Set<string>();
+		for (const share of admittedShares) {
+			assert.ok(typeof share.project_id === 'string' && share.project_id && typeof share.agent_class === 'string' && share.agent_class);
+			const key = JSON.stringify([share.project_id, share.agent_class]); assert.ok(!seen.has(key)); seen.add(key);
+			const raw = share.admitted_seconds;
+			assert.ok((typeof raw === 'number' || (typeof raw === 'string' && /^\d+(?:\.\d+)?$/u.test(raw)))
+				&& Number.isFinite(Number(raw)) && Number(raw) >= 0, 'ACCEPTANCE_NATIVE_WORKDAY: Measured reservation total required');
+			const seconds = Number(raw), agentClass = `${share.project_id}:${share.agent_class}`;
+			projects[share.project_id] = (projects[share.project_id] ?? 0) + seconds;
+			classes[agentClass] = (classes[agentClass] ?? 0) + seconds;
+		}
+		expected.appliedPlan = { ...plan, admittedSecondsByProject: projects, admittedSecondsByAgentClass: classes };
+	}
+	assert.deepEqual(run.parameters, expected, 'ACCEPTANCE_NATIVE_WORKDAY: Public parameters differ from original native authority and reservation totals');
+}
 
 /** Arguments for the existing schema reader; source paths and refs stay caller-owned. */
 export function executionCliReadArguments(args: readonly string[], team: string): string[] {

@@ -5,7 +5,9 @@ import { createControlPlanePostgresDatabase } from '../../../../../../src/api/su
 import { CapacityWorkdayRunService } from '../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 import { loadCommunicationInvocations } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { projectCommunicationInvocations } from '../../../../../../src/api/capacity/policy/execution/communication-execution-projector.ts';
-import { agentDefinitionSchema } from '@treeseed/sdk/agent-capacity';
+import { CapacityWorkdayRunRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
+import { verifyNativeWorkdayReadback } from '../../../../../acceptance/execution-inventory.ts';
+import { compileWorkday, DEFAULT_WORKDAY_POLICY, agentDefinitionSchema } from '@treeseed/sdk/agent-capacity';
 
 describe('concurrent local execution in PostgreSQL', () => {
 	it('preserves production and simulation workdays when another workday or conversation starts', async () => {
@@ -18,6 +20,13 @@ describe('concurrent local execution in PostgreSQL', () => {
 		await admin.query(`CREATE DATABASE "${name}"`);
 		connection.pathname = `/${name}`;
 		const database = createControlPlanePostgresDatabase(connection.href, { migrationMode: 'apply' });
+		const observer = new pg.Pool({ connectionString: connection.href });
+		// Pool.end resolves after removing clients, before their sockets necessarily close.
+		// Keep every independent owning connection until its actual native end event.
+		const disconnected: Promise<void>[] = [];
+		for (const pool of [database.pool, observer]) pool.on('connect', client => {
+			disconnected.push(new Promise<void>(closed => client.once('end', closed)));
+		});
 		try {
 			await database.migrate();
 			const now = new Date().toISOString();
@@ -39,6 +48,39 @@ describe('concurrent local execution in PostgreSQL', () => {
 			]) await service.create('team', { id, executionMode, executionKind, capacityProviderId: 'provider', environment: 'local', status: 'running', startedAt: now, parameters: { durationSeconds: 600, allocationWeight: 1, planningPercent: 20 } });
 			expect((await database.pool.query('SELECT id,status,error_json FROM capacity_workday_runs ORDER BY id')).rows)
 				.toEqual(['api', 'chat', 'production', 'sdk'].map(id => ({ id, status: 'running', error_json: '{}' })));
+			const repository = new CapacityWorkdayRunRepository(store as never);
+			for (const id of ['production', 'sdk']) {
+				const initial = await repository.get('team', id); expect(initial).not.toBeNull();
+				const plan = compileWorkday({ id, teamId: 'team', policyId: 'default', policyRevision: 1, executionMode: initial!.executionMode,
+					startsAt: now, agentIds: [], policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 600, maximumConcurrency: 1, communicationConcurrency: 1 } });
+				await service.update('team', id, { parameters: { ...initial!.parameters, appliedPlan: plan } });
+				const original = await repository.get('team', id); expect(original).not.toBeNull();
+				const shares = async () => (await observer.query(`SELECT reservation.project_id,node.agent_class,
+					SUM(reservation.requested_seconds) AS admitted_seconds FROM capacity_reservations reservation
+					JOIN capacity_provider_assignments assignment ON assignment.id=reservation.assignment_id AND assignment.team_id=reservation.team_id
+					JOIN execution_nodes node ON node.id=assignment.execution_node_id AND node.team_id=assignment.team_id
+					WHERE reservation.team_id=$1 AND reservation.work_day_id=$2 GROUP BY reservation.project_id,node.agent_class`, ['team', id])).rows;
+				const read = async () => (await observer.query('SELECT * FROM capacity_workday_runs WHERE team_id=$1 AND id=$2', ['team', id])).rows;
+				const native = await read(), before = structuredClone({ native, original });
+				await Promise.all(Array.from({ length: 4 }, async () => verifyNativeWorkdayReadback(await read(), (await repository.get('team', id))!, await shares())));
+				for (const input of [{ executionMode: original!.executionMode === 'simulation' ? 'production' : 'simulation' },
+					{ parameters: { ...original!.parameters, executionMode: original!.executionMode } }]) {
+					const held = structuredClone(input);
+					await expect(service.update('team', id, input)).rejects.toThrow();
+					expect(input).toEqual(held); expect(await read()).toEqual(native);
+					const retry = await repository.get('team', id); expect(retry).toEqual(original);
+					verifyNativeWorkdayReadback(await read(), retry!, await shares());
+				}
+				// These are retained observer failures, never writes to owning state.
+				for (const changed of [{ ...native[0], execution_mode: original!.executionMode === 'simulation' ? 'production' : 'simulation' },
+					{ ...native[0], id: 'foreign' }, { ...native[0], parameters_json: '{}' },
+					{ ...native[0], parameters_json: JSON.stringify({ ...initial!.parameters, appliedPlan: { ...plan, id: ` ${plan.id} ` } }) }]) {
+					const failed = structuredClone(changed), observedShares = await shares(); expect.soft(() => verifyNativeWorkdayReadback([changed], original!, observedShares)).toThrow();
+					expect(changed).toEqual(failed); expect(await read()).toEqual(native);
+					verifyNativeWorkdayReadback(await read(), (await repository.get('team', id))!, await shares());
+				}
+				expect({ native, original }).toEqual(before);
+			}
 			expect(store.scheduleCapacityWorkdayRun).toHaveBeenCalledTimes(4);
 			expect(store.closeCapacityWorkdayAdmission).not.toHaveBeenCalled();
 			expect(store.terminalizeCapacityWorkdayAssignments).not.toHaveBeenCalled();
@@ -68,9 +110,15 @@ describe('concurrent local execution in PostgreSQL', () => {
 			expect(projected.nodes.filter(node => node.workdayId === 'sdk')).toHaveLength(8);
 			expect(projected.nodes.map(node => node.sourceRef.id)).toEqual(sources.map(source => source.id).sort());
 		} finally {
-			await database.pool.end();
-			await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`);
-			await admin.end();
+			try {
+				await observer.end();
+				await database.pool.end();
+				await Promise.all(disconnected);
+				expect((await admin.query('SELECT pid FROM pg_stat_activity WHERE datname=$1', [name])).rows).toEqual([]);
+			} finally {
+				try { await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`); }
+				finally { await admin.end(); }
+			}
 		}
 	}, 30_000);
 });
