@@ -21,6 +21,12 @@ describe('concurrent local execution in PostgreSQL', () => {
 		connection.pathname = `/${name}`;
 		const database = createControlPlanePostgresDatabase(connection.href, { migrationMode: 'apply' });
 		const observer = new pg.Pool({ connectionString: connection.href });
+		// Pool.end resolves after removing clients, before their sockets necessarily close.
+		// Keep every independent owning connection until its actual native end event.
+		const disconnected: Promise<void>[] = [];
+		for (const pool of [database.pool, observer]) pool.on('connect', client => {
+			disconnected.push(new Promise<void>(closed => client.once('end', closed)));
+		});
 		try {
 			await database.migrate();
 			const now = new Date().toISOString();
@@ -104,10 +110,15 @@ describe('concurrent local execution in PostgreSQL', () => {
 			expect(projected.nodes.filter(node => node.workdayId === 'sdk')).toHaveLength(8);
 			expect(projected.nodes.map(node => node.sourceRef.id)).toEqual(sources.map(source => source.id).sort());
 		} finally {
-			await observer.end();
-			await database.pool.end();
-			await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`);
-			await admin.end();
+			try {
+				await observer.end();
+				await database.pool.end();
+				await Promise.all(disconnected);
+				expect((await admin.query('SELECT pid FROM pg_stat_activity WHERE datname=$1', [name])).rows).toEqual([]);
+			} finally {
+				try { await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`); }
+				finally { await admin.end(); }
+			}
 		}
 	}, 30_000);
 });
