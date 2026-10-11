@@ -162,7 +162,7 @@ describe('living admission in disposable PostgreSQL', () => {
 			const issuedState = async () => Object.fromEntries(await Promise.all([
 				'capacity_workday_runs', 'execution_nodes', 'capacity_provider_assignments', 'capacity_reservations',
 				'capacity_admission_counters', 'capacity_reservation_counter_claims', 'capacity_usage_actuals', 'capacity_ledger_entries',
-			].map(async table => [table, (await peerDatabase.pool.query(`SELECT * FROM ${table} ORDER BY id`)).rows])));
+			].map(async table => [table, (await peerDatabase.pool.query(`SELECT * FROM ${table} ORDER BY ${table === 'capacity_reservation_counter_claims' ? 'reservation_id,counter_id' : 'id'}`)).rows])));
 			const beforePolicy = await issuedState(), leasedPublic = await publicInventory();
 			const profiles = createWorkdayProfileService(accounting), principal = { id: 'owner', roles: ['admin'] };
 			const frozenProfile = await profiles.profilesShow(principal, 'team', 'default');

@@ -4,7 +4,7 @@ import { executionWorkdayStart, verifyRetainedWorkdayStart } from '../../../../.
 import { executionStartFixture } from './execution-start-fixture.ts';
 import { workdayStartDatabase } from './workday-start-fixture.ts';
 import { appliedWorkdaySchema } from '@treeseed/sdk/agent-capacity';
-import { verifyNativeWorkdayReadback } from '../../../../../../acceptance/execution-inventory.ts';
+import { verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy } from '../../../../../../acceptance/execution-inventory.ts';
 
 it('isolated managed API verifier resolves the original retained SDK start without inherited environment mutation or run discovery', () => {
 	const f = executionStartFixture();
@@ -93,18 +93,26 @@ it('real public allocation overrides preserve team defaults and existing Workday
 		const profile = await f.publicService.profilesShow(f.principal, 'team', 'default');
 		const team = await f.all('SELECT * FROM teams ORDER BY id');
 		const allocation = { planningPercent: 40, allocationWeight: 2, planningTurnMaximumSeconds: 10,
-			projectPercentages: { project: 3 }, agentClassPercentages: { project: { 'boundary-planner': 4 } } };
+			projectPercentages: { 'arbitrary-project': 3 }, agentClassPercentages: { 'arbitrary-project': { 'boundary-planner': 4 } } };
 		const intent = { ...f.intent, allocation }, originalIntent = structuredClone(intent);
 		const preflight = await f.publicService.preflight(f.principal, 'team', intent), key = 'policy-override-start';
 		const started = await f.start(preflight, key), run = await f.store.getCapacityWorkdayRun('team', started.workdayId);
 		if (!run) throw new Error('Actual original Workday required');
 		const plan = appliedWorkdaySchema.parse(run.parameters.appliedPlan);
 		expect(plan.policyRevision).toBe(profile.revision); expect(plan.policyId).toBe('default');
-		expect(plan.policySnapshot).toEqual({ ...profile.policy, ...allocation, durationSeconds: intent.durationSeconds });
+		expect(plan.policySnapshot).toEqual({ ...profile.policy, ...allocation, durationSeconds: intent.durationSeconds,
+			projectPercentages: { project: 3 }, agentClassPercentages: { project: { 'boundary-planner': 4 } } });
 		expect(await f.all('SELECT * FROM teams ORDER BY id')).toEqual(team);
 		expect(await f.publicService.profilesShow(f.principal, 'team', 'default')).toEqual(profile);
 		const issued = await f.snapshot(), native = await f.all('SELECT * FROM capacity_workday_runs WHERE id=?', [run.id]);
 		verifyNativeWorkdayReadback(native, run, []);
+		const originalPreflight = await f.all("SELECT * FROM capacity_operation_receipts WHERE operation='workday.preflight' AND resource_id=?", [preflight.id]);
+		const projects = await f.all<{ id: string; slug: string }>('SELECT id,slug FROM projects WHERE team_id=?', ['team']);
+		verifyNativeWorkdayPolicy(originalPreflight, run, preflight, projects);
+		for (const changed of [{ policyRevision: plan.policyRevision + 1 }, { policySnapshot: { ...plan.policySnapshot, planningPercent: 50 } }]) {
+			const visible = { ...run, parameters: { ...run.parameters, appliedPlan: { ...plan, ...changed } } }, held = structuredClone(visible);
+			expect(() => verifyNativeWorkdayPolicy(originalPreflight, visible, preflight, projects)).toThrow(); expect(visible).toEqual(held);
+		}
 		const policy = { ...profile.policy, planningPercent: 60, allocationWeight: 3 };
 		expect(await f.publicService.profilesUpdate(f.principal, 'team', 'default', { policy }, String(profile.revision)))
 			.toEqual({ ...profile, revision: profile.revision + 1, policy });
@@ -112,6 +120,7 @@ it('real public allocation overrides preserve team defaults and existing Workday
 			.rejects.toMatchObject({ code: 'workday_profile_precondition_failed' });
 		expect(await f.snapshot()).toEqual(issued);
 		expect(await f.store.getCapacityWorkdayRun('team', run.id)).toEqual(run);
+		verifyNativeWorkdayPolicy(originalPreflight, run, preflight, projects);
 		expect(await f.start(preflight, key)).toEqual(started); expect(await f.snapshot()).toEqual(issued);
 		const next = await f.preflight();
 		expect(next.profileGeneration).toBe(profile.revision + 1);

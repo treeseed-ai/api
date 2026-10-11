@@ -90,9 +90,10 @@ it('native Workday readback reconciles original applied plan with independently 
 		executionMode: 'simulation', startsAt: '2026-09-16T12:00:00.000Z', agentIds: [], policy: { ...DEFAULT_WORKDAY_POLICY,
 			durationSeconds: 600, maximumConcurrency: 1, communicationConcurrency: 1 } });
 	const shares = [{ project_id: 'sdk', agent_class: 'engineer', admitted_seconds: '180' }, { project_id: 'sdk', agent_class: 'tester', admitted_seconds: '90' }];
-	const run = { id: plan.id, teamId: plan.teamId, status: 'completed', executionMode: 'simulation', parameters: { durationSeconds: 600,
+	const parameters = { ...plan.policySnapshot, policyId: 'default', profileId: 'default', policyRevision: 1 };
+	const run = { id: plan.id, teamId: plan.teamId, status: 'completed', executionMode: 'simulation', parameters: { ...parameters,
 		appliedPlan: { ...plan, admittedSecondsByProject: { sdk: 270 }, admittedSecondsByAgentClass: { 'sdk:engineer': 180, 'sdk:tester': 90 } } } };
-	const native = [{ id: run.id, team_id: run.teamId, status: run.status, execution_mode: run.executionMode, parameters_json: JSON.stringify({ durationSeconds: 600, appliedPlan: plan }) }];
+	const native = [{ id: run.id, team_id: run.teamId, status: run.status, execution_mode: run.executionMode, parameters_json: JSON.stringify({ ...parameters, appliedPlan: plan }) }];
 	const before = structuredClone({ native, run, shares });
 	for (const change of [{ id: 'foreign' }, { teamId: 'foreign' }, { executionMode: 'production' }]) {
 		const changed = [{ ...native[0]!, parameters_json: JSON.stringify({ durationSeconds: 600, appliedPlan: { ...plan, ...change } }) }];

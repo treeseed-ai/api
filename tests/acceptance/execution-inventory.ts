@@ -1,12 +1,36 @@
 import assert from 'node:assert/strict';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { assignmentAttemptSchema, assignmentResultSchema, appliedWorkdaySchema } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, assignmentResultSchema, appliedWorkdaySchema, workdayPolicySchema } from '@treeseed/sdk/agent-capacity';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { canonicalJson, sha256 } from '../../dist/api/capacity/security.js';
 import { serializeCapacityReservationRow } from '../../dist/api/capacity/repositories/capacity/accounting/reservation.js';
+import { canonicalWorkdayShares } from '../../dist/api/capacity/services/capacity/workdays/scheduling/workday-scheduling-service.js';
 
 type Row = Record<string, unknown>;
+
+/** Original preflight owns the resolved policy; current team defaults may advance later. */
+export function verifyNativeWorkdayPolicy(native: Row[], run: Row, preflight: Row, projects: Array<{ id: string; slug?: string | null }>): void {
+	assert.equal(native.length, 1, 'ACCEPTANCE_NATIVE_WORKDAY_POLICY: One original preflight required');
+	const record = native[0]!;
+	assert.equal(record.team_id, run.teamId); assert.equal(record.operation, 'workday.preflight');
+	assert.equal(record.resource_type, 'workday_preflight'); assert.equal(record.resource_id, preflight.id);
+	assert.equal(record.idempotency_key, preflight.id); assert.equal(record.request_digest, preflight.intentDigest);
+	const stored = row(JSON.parse(String(record.response_json))), receipt = row(stored.receipt), intent = row(stored.intent);
+	assert.deepEqual(receipt, preflight, 'ACCEPTANCE_NATIVE_WORKDAY_POLICY: Original retained preflight drift');
+	const { preflightDigest, ...payload } = receipt;
+	assert.equal(preflightDigest, `sha256:${sha256(canonicalJson(payload))}`);
+	assert.equal(receipt.intentDigest, `sha256:${sha256(canonicalJson(intent))}`);
+	assert.equal(receipt.teamId, run.teamId); assert.equal(receipt.profileId, 'default'); assert.equal(intent.profileId, 'default');
+	const input = row(stored.runInput), parameters = row(input.parameters), plan = appliedWorkdaySchema.parse(row(run.parameters).appliedPlan);
+	assert.equal(input.id, run.id); assert.equal(input.executionMode, run.executionMode);
+	assert.equal(parameters.policyId, 'default'); assert.equal(parameters.profileId, 'default');
+	assert.equal(plan.policyId, parameters.policyId); assert.equal(plan.policyRevision, parameters.policyRevision);
+	assert.equal(plan.policyRevision, receipt.profileGeneration); assert.equal(receipt.profileVersion, `revision-${plan.policyRevision}`);
+	const original = Object.fromEntries(Object.keys(plan.policySnapshot).map(key => [key, parameters[key]]));
+	const policy = workdayPolicySchema.parse({ ...original, ...canonicalWorkdayShares(parameters, projects) });
+	assert.deepEqual(plan.policySnapshot, policy, 'ACCEPTANCE_NATIVE_WORKDAY_POLICY: Issued policy differs from original preflight');
+}
 
 /** Compare original native authority with public Workday and derived reservation receipts. */
 export function verifyNativeWorkdayReadback(native: Row[], run: { id?: unknown; teamId?: unknown; status?: unknown; executionMode?: unknown; parameters?: unknown }, admittedShares?: Row[]): void {
@@ -23,6 +47,12 @@ export function verifyNativeWorkdayReadback(native: Row[], run: { id?: unknown; 
 		const plan = appliedWorkdaySchema.parse(expected.appliedPlan);
 		assert.deepEqual(plan, expected.appliedPlan, 'ACCEPTANCE_NATIVE_WORKDAY: Original native applied plan must already be canonical without normalization');
 		assert.equal(plan.id, run.id); assert.equal(plan.teamId, run.teamId); assert.equal(plan.executionMode, run.executionMode);
+		assert.equal(plan.policyId, 'default', 'ACCEPTANCE_NATIVE_WORKDAY_POLICY: Canonical default required');
+		assert.equal(expected.policyId, plan.policyId, 'ACCEPTANCE_NATIVE_WORKDAY_POLICY: Policy identity drift');
+		assert.equal(expected.profileId, plan.policyId, 'ACCEPTANCE_NATIVE_WORKDAY_POLICY: Profile identity drift');
+		assert.equal(expected.policyRevision, plan.policyRevision, 'ACCEPTANCE_NATIVE_WORKDAY_POLICY: Issued policy revision drift');
+		for (const [key, value] of Object.entries(plan.policySnapshot)) assert.deepEqual(expected[key], value,
+			`ACCEPTANCE_NATIVE_WORKDAY_POLICY: Original resolved ${key} drift`);
 		assert.ok(admittedShares, 'ACCEPTANCE_NATIVE_WORKDAY: Independent reservation shares required');
 		const projects: Record<string, number> = {}, classes: Record<string, number> = {};
 		const seen = new Set<string>();
