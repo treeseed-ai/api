@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { expect } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import { parse } from 'yaml';
 import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
@@ -51,6 +52,40 @@ export function graphProfiles(projectIds = ['project']): Record<string, AgentDef
 	]));
 }
 export const emptyLivingGraph = (): TeamGraph => ({ teamId: 'team', revision: 0, digest: '', nodes: [], edges: [] });
+export function authoredGraphFixture() {
+	const source = graphSource();
+	const workItems = Array.from({ length: 6 }, (_, index) => {
+		const workspace = index % 2 ? 'git' : 'treedx';
+		return { ...readyWorkItem(), id: `authored-${index}`, agentClass: index % 2 ? 'boundary-verifier' : 'boundary-author',
+			workspace, contextRefs: [{ store: workspace, model: 'repository', id: source.projectId,
+				repository: workspace === 'git' ? `${source.projectId}-source` : source.repository, commit: source.commit }],
+			estimate: { expectedSeconds: 120 + index, maximumSeconds: 240 + index },
+			reviewEstimate: { expectedSeconds: 60 + index, maximumSeconds: 120 + index } };
+	});
+	source.frontmatter.executionPlan = { workItems };
+	return { source, workItems };
+}
+export function expectAuthoredGraphPairs(graph: Pick<TeamGraph, 'nodes' | 'edges'>, fixture: ReturnType<typeof authoredGraphFixture>) {
+	const { source, workItems } = fixture, decision = source.decision;
+	if (!decision) throw new Error('Exact controlled Decision input required.');
+	const sourceRef = { store: 'treedx', model: 'proposal', id: source.frontmatter.id, revision: source.proposalRevision,
+		digest: source.digest, repository: source.repository, commit: source.commit, path: source.path };
+	const authorityRefs = [{ store: 'treedx', model: 'decision', id: decision.id, revision: decision.revision,
+		digest: decision.digest, repository: decision.repository, commit: decision.commit, path: decision.path }];
+	const nodes = graph.nodes.filter(node => node.projectId === source.projectId && node.pairRole);
+	expect(nodes).toHaveLength(12); expect(new Set(nodes.map(node => node.id)).size).toBe(12);
+	for (const item of workItems) {
+		const actors = nodes.filter(node => node.workItemId === item.id && node.pairRole === 'actor');
+		const reviewers = nodes.filter(node => node.workItemId === item.id && node.pairRole === 'reviewer');
+		expect(actors).toHaveLength(1); expect(reviewers).toHaveLength(1);
+		const exact = { teamId: source.teamId, projectId: source.projectId, workItemId: item.id,
+			sourceRef, authorityRefs, maximumReviewCycles: item.maximumReviewCycles };
+		expect(actors[0]).toMatchObject({ ...exact, kind: 'acting', agentClass: item.agentClass, workspace: item.workspace, estimate: item.estimate });
+		expect(reviewers[0]).toMatchObject({ ...exact, kind: 'reviewing', agentClass: 'reviewer', workspace: 'treedx', estimate: item.reviewEstimate });
+		const pairs = graph.edges.filter(edge => edge.fromNodeId === actors[0]!.id && edge.toNodeId === reviewers[0]!.id && edge.provenance === 'review-pair');
+		expect(pairs).toHaveLength(1); expect(pairs[0]).toMatchObject({ teamId: source.teamId, sourceRef });
+	}
+}
 export function graphProjection(sources = [graphSource()], revision = 1, profiles = graphProfiles(sources.map(source => source.projectId))) {
 	return projectTeamExecutionGraph({ teamId: 'team', revision, sources, profiles, createdAt: '2026-10-03T00:00:00.000Z' });
 }

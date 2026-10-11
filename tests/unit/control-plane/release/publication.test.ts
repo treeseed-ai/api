@@ -16,7 +16,7 @@ describe('managed API release publication', () => {
 		expect(workflow.jobs.verify.env.TREESEED_TEST_POSTGRES_URL).toBe('postgres://postgres:migration-test-only@127.0.0.1:5432/postgres');
 		expect(verify?.env?.TREESEED_TEST_POSTGRES_URL).toBeUndefined();
 		expect(scene?.env?.TREESEED_TEST_POSTGRES_URL).toBeUndefined();
-		expect(workflow.jobs.verify.services.postgres).toBeDefined();expect(scene?.uses).toBe('treeseed-ai/reviewer/.github/actions/run-scenes@108f153b18896e62cd0fb7507c2fa78c4ffaec36');
+		expect(workflow.jobs.verify.services.postgres).toBeDefined();expect(scene?.uses).toBe('treeseed-ai/reviewer/.github/actions/run-scenes@e60ad2581e7ff041f058af04bd810796fea748f9');
 		expect(steps.indexOf(verify!)).toBeLessThan(steps.indexOf(scene!));
 		const manifest=JSON.parse(readFileSync('package.json','utf8')) as {scripts:Record<string,string>};
 		expect(manifest.scripts.test).toBe('npm run test:control-plane');
