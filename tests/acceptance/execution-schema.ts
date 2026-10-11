@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory } from './execution-inventory.ts';
+import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback } from './execution-inventory.ts';
 
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
@@ -117,6 +117,7 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 				}, 200, direction);
 				const publicAssignments = await inventory(assignments, ['assignments', 'list', '--workday', id]);
 				const nativeEvents = await nativeInventory('SELECT * FROM capacity_workday_events WHERE run_id=$1 AND team_id=$2 ORDER BY id', [id, run.teamId]);
+				const reservations = await nativeInventory('SELECT * FROM capacity_reservations WHERE work_day_id=$1 ORDER BY id', [id]);
 				assert.ok(nativeEvents.length > 0, 'ACCEPTANCE_NATIVE_INVENTORY: Actual transition history required');
 				const publicEvents = await inventory(nativeEvents, ['workdays', 'events', 'list', id], 'ascending');
 				for (const visible of publicEvents) {
@@ -148,19 +149,11 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 				const prioritySources = new Map<string, { args: string[]; returned: Record<string, unknown> }>(); let prioritizedWork = 0, calibratedWork = 0;
 				const calibrationHistory = new Map<string, { sql: string; parameters: unknown[]; rows: unknown[] }>();
 				for (const value of assignments) {
-					assert.equal(value.team_id, run.teamId); assert.equal(typeof value.id, 'string');
 					assert.deepEqual(byMembership.get(value.membership_id), { id: value.membership_id, team_id: value.team_id,
 						capacity_provider_id: value.capacity_provider_id }, 'ACCEPTANCE_PROVIDER_MEMBERSHIP: Assignment team and provider must match its owning membership');
 					const visible = read(['assignments', 'show', value.id]);
 					assert.deepEqual(publicAssignments.find(record => record.id === value.id), visible);
-					assert.equal(visible.id, value.id); assert.equal(visible.workDayId, id); assert.equal(visible.teamId, run.teamId); assert.equal(visible.status, value.status);
-					assert.equal(visible.membershipId, value.membership_id); assert.equal(visible.capacityProviderId, value.capacity_provider_id);
-					assert.equal(Object.hasOwn(visible, 'modeRunId'), false, 'ACCEPTANCE_SCHEMA_RETIRED_IDENTITY: Public assignment retains a retired mode-run alias');
-					const nativeAttempt: unknown = JSON.parse(value.assignment_attempt_json);
-					const attempt = assignmentAttemptSchema.parse(nativeAttempt);
-					assert.deepEqual(nativeAttempt, attempt, 'ACCEPTANCE_SCHEMA_ATTEMPT: Native bytes contain stripped or coerced canonical fields');
-					assert.equal(attempt.id, value.id); assert.equal(attempt.teamId, run.teamId); assert.equal(attempt.workdayId, id);
-					assert.deepEqual(visible.assignmentAttempt, attempt);
+					const attempt = verifyNativeAssignmentReadback(value, visible, run, reservations);
 					if (value.execution_kind === 'workday') {
 						const allocation = object(object(object(visible.explanation).metadata).allocation), selection = object(allocation.selection), inputs = object(selection.input);
 						assert.equal(allocation.admitted, true, 'ACCEPTANCE_QUOTA_ADMISSION: Retained admission must be positive even when the later attempt failed');
@@ -270,12 +263,6 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 						// graph or a reconstructed terminal eligible inventory. The real
 						// producer integration separately proves hard-gate completeness.
 					}
-					if (value.assignment_result_json !== null) {
-						const nativeResult: unknown = JSON.parse(value.assignment_result_json);
-						const result = assignmentResultSchema.parse(nativeResult);
-						assert.deepEqual(nativeResult, result, 'ACCEPTANCE_SCHEMA_RESULT: Native bytes contain stripped or coerced canonical fields');
-						assert.equal(result.assignmentId, value.id); assert.deepEqual(visible.assignmentResult, result);
-					} else assert.ok(visible.assignmentResult === null || visible.assignmentResult === undefined);
 					observations.push({ id: value.id, value: visible });
 				}
 				requireNativeAdmissionSamples(prioritizedWork, calibratedWork, requireObservedSamples);

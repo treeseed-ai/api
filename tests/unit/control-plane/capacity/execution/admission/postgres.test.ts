@@ -13,7 +13,7 @@ import { CapacityReservationRepository } from '../../../../../../src/api/capacit
 import { CapacityLedgerRepository } from '../../../../../../src/api/capacity/repositories/capacity/accounting/ledger.ts';
 import { listTaskUsageActualsPage } from '../../../../../../src/api/capacity/repositories/capacity/accounting/task-usage.ts';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { requireNativeAdmissionSamples, verifyNativeInventory } from '../../../../../acceptance/execution-inventory.ts';
+import { requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback } from '../../../../../acceptance/execution-inventory.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 describe('living admission in disposable PostgreSQL', () => {
@@ -40,7 +40,8 @@ describe('living admission in disposable PostgreSQL', () => {
 			expect(connections.map(result => result.rows[0].name)).toEqual([name, name]);
 			expect(connections[0]!.rows[0].pid).not.toBe(connections[1]!.rows[0].pid);
 			const now = assignment.createdAt;
-			await database.pool.query(`INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ('team','team','Team',$1,$1)`, [now]);
+			await database.pool.query(`INSERT INTO teams (id,slug,name,created_at,updated_at)
+				VALUES ('team','team','Team',$1,$1),('foreign-team','foreign-team','Foreign Team',$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO capacity_workday_runs (id,team_id,status,execution_mode,created_at,updated_at)
 				VALUES ('workday','team','running','simulation',$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('project','team','project','Project',$1,$1)`, [now]);
@@ -116,9 +117,24 @@ describe('living admission in disposable PostgreSQL', () => {
 					verifyNativeInventory(nativeLedger!.rows, cursor => new CapacityLedgerRepository(peerAccounting)
 						.listProjectPage('project', { workDayId: 'workday', limit: 1, cursor: decodeCapacityPageCursor(cursor) }), 1),
 				]);
+				for (const native of nativeAssignments!.rows) verifyNativeAssignmentReadback(native,
+					assignments.find(value => value.id === native.id)!, { id: 'workday', teamId: 'team' }, nativeReservations!.rows);
 				return { assignments, reservations, usage, ledger };
 			};
 			const issuedPublic = await publicInventory();
+			const deniedReservations: unknown[] = [];
+			for (const [column, replacement, original] of [['team_id', 'foreign-team', winner.teamId],
+				['reserved_seconds', winner.limits.maximumSeconds + 1, winner.limits.maximumSeconds]] as const) {
+				await database.pool.query(`UPDATE capacity_reservations SET ${column}=$1 WHERE id=$2`, [replacement, winner.reservationId]);
+				try {
+					const observed = (await peerDatabase.pool.query('SELECT * FROM capacity_reservations WHERE id=$1', [winner.reservationId])).rows;
+					deniedReservations.push(structuredClone(observed));
+					await expect(publicInventory()).rejects.toThrow('ACCEPTANCE_NATIVE_RESERVATION');
+					expect(observed).toEqual(deniedReservations.at(-1));
+				} finally { await database.pool.query(`UPDATE capacity_reservations SET ${column}=$1 WHERE id=$2`, [original, winner.reservationId]); }
+				expect(await publicInventory()).toEqual(issuedPublic);
+			}
+			expect(deniedReservations).toHaveLength(2);
 			expect(issuedPublic.assignments.map(value => value.assignmentAttempt)).toEqual([winner]);
 			// This direct native admission fixture has default priority and no
 			// historical measurements. The separate architecture case retains its
