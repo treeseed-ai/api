@@ -3,6 +3,8 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync 
 import { executionWorkdayStart, verifyRetainedWorkdayStart } from '../../../../../../acceptance/execution-inventory.ts';
 import { executionStartFixture } from './execution-start-fixture.ts';
 import { workdayStartDatabase } from './workday-start-fixture.ts';
+import { appliedWorkdaySchema } from '@treeseed/sdk/agent-capacity';
+import { verifyNativeWorkdayReadback } from '../../../../../../acceptance/execution-inventory.ts';
 
 it('isolated managed API verifier resolves the original retained SDK start without inherited environment mutation or run discovery', () => {
 	const f = executionStartFixture();
@@ -84,3 +86,35 @@ it('actual owning public preflight and start produce the base64url digests consu
 		expect(await producer.start(preflight, key)).toEqual(receipt);
 	} finally { try { await producer.close(); } finally { f.close(); } }
 });
+
+it('real public allocation overrides preserve team defaults and existing Workday authority through versioned policy replacement and original start replay', async () => {
+	const f = await workdayStartDatabase();
+	try {
+		const profile = await f.publicService.profilesShow(f.principal, 'team', 'default');
+		const team = await f.all('SELECT * FROM teams ORDER BY id');
+		const allocation = { planningPercent: 40, allocationWeight: 2, planningTurnMaximumSeconds: 10,
+			projectPercentages: { project: 3 }, agentClassPercentages: { project: { 'boundary-planner': 4 } } };
+		const intent = { ...f.intent, allocation }, originalIntent = structuredClone(intent);
+		const preflight = await f.publicService.preflight(f.principal, 'team', intent), key = 'policy-override-start';
+		const started = await f.start(preflight, key), run = await f.store.getCapacityWorkdayRun('team', started.workdayId);
+		if (!run) throw new Error('Actual original Workday required');
+		const plan = appliedWorkdaySchema.parse(run.parameters.appliedPlan);
+		expect(plan.policyRevision).toBe(profile.revision); expect(plan.policyId).toBe('default');
+		expect(plan.policySnapshot).toEqual({ ...profile.policy, ...allocation, durationSeconds: intent.durationSeconds });
+		expect(await f.all('SELECT * FROM teams ORDER BY id')).toEqual(team);
+		expect(await f.publicService.profilesShow(f.principal, 'team', 'default')).toEqual(profile);
+		const issued = await f.snapshot(), native = await f.all('SELECT * FROM capacity_workday_runs WHERE id=?', [run.id]);
+		verifyNativeWorkdayReadback(native, run, []);
+		const policy = { ...profile.policy, planningPercent: 60, allocationWeight: 3 };
+		expect(await f.publicService.profilesUpdate(f.principal, 'team', 'default', { policy }, String(profile.revision)))
+			.toEqual({ ...profile, revision: profile.revision + 1, policy });
+		await expect(f.publicService.profilesUpdate(f.principal, 'team', 'default', { policy: profile.policy }, String(profile.revision)))
+			.rejects.toMatchObject({ code: 'workday_profile_precondition_failed' });
+		expect(await f.snapshot()).toEqual(issued);
+		expect(await f.store.getCapacityWorkdayRun('team', run.id)).toEqual(run);
+		expect(await f.start(preflight, key)).toEqual(started); expect(await f.snapshot()).toEqual(issued);
+		const next = await f.preflight();
+		expect(next.profileGeneration).toBe(profile.revision + 1);
+		expect(intent).toEqual(originalIntent);
+	} finally { await f.close(); }
+}, 30_000);
