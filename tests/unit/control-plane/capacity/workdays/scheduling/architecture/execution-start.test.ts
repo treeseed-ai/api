@@ -105,9 +105,9 @@ it('real public allocation overrides preserve team defaults and existing Workday
 		expect(await f.all('SELECT * FROM teams ORDER BY id')).toEqual(team);
 		expect(await f.publicService.profilesShow(f.principal, 'team', 'default')).toEqual(profile);
 		const issued = await f.snapshot(), native = await f.all('SELECT * FROM capacity_workday_runs WHERE id=?', [run.id]);
-		verifyNativeWorkdayReadback(native, run, []);
 		const originalPreflight = await f.all("SELECT * FROM capacity_operation_receipts WHERE operation='workday.preflight' AND resource_id=?", [preflight.id]);
 		const projects = await f.all<{ id: string; slug: string }>('SELECT id,slug FROM projects WHERE team_id=?', ['team']);
+		verifyNativeWorkdayReadback(native, run, [], projects);
 		verifyNativeWorkdayPolicy(originalPreflight, run, preflight, projects);
 		for (const changed of [{ policyRevision: plan.policyRevision + 1 }, { policySnapshot: { ...plan.policySnapshot, planningPercent: 50 } }]) {
 			const visible = { ...run, parameters: { ...run.parameters, appliedPlan: { ...plan, ...changed } } }, held = structuredClone(visible);

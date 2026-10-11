@@ -4331,3 +4331,53 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/release/suite-resource-ownership-native.test.ts
     testName: "native unchanged owning Vitest configuration finishes archive ownership before retaining simultaneous database workers and complete reports"
+  api.golden.policy-identity-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/profile-service.test.ts
+    testName: "provides one default without reading repository allocation records"
+  api.golden.policy-invalid-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/profile-service.test.ts
+    testName: "fails closed on invalid persisted policy"
+  api.golden.policy-update-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/profile-service.test.ts
+    testName: "requires current version and management authority, then atomically advances policy"
+  api.golden.policy-concurrent-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/profile-service.test.ts
+    testName: "rejects a concurrent policy writer"
+  api.golden.policy-concurrent-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/profile-postgres.test.ts
+    testName: "preserves unrelated metadata and admits exactly one concurrent replacement"
+  api.golden.policy-issued-readback-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/schema-samples.test.ts
+    testName: "native Workday readback denies policy identity revision and resolved snapshot drift even when native and public parameters agree"
+  api.golden.policy-preflight-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/policy-readback.test.ts
+    testName: "original native preflight binds default revision and resolved overrides through canonical project aliases without input mutation"
+  api.golden.policy-preflight-denials-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/policy-readback.test.ts
+    testName: "original native policy custody rejects missing duplicate foreign malformed or altered preflight observations and retains denied evidence"
+  api.golden.policy-issued-denials-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/policy-readback.test.ts
+    testName: "original native policy custody denies an altered issued revision or allocation even when native and public later records could agree"
+  api.golden.policy-override-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/execution-start.test.ts
+    testName: "real public allocation overrides preserve team defaults and existing Workday authority through versioned policy replacement and original start replay"

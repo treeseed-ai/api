@@ -8,7 +8,7 @@ function fixture() {
 		allocation: { planningPercent: 40, projectPercentages: { sdk: 1 }, agentClassPercentages: { sdk: { engineer: 1 } } } };
 	const parameters = { ...DEFAULT_WORKDAY_POLICY, ...intent.allocation, policyId: 'default', profileId: 'default', policyRevision: 3 };
 	const plan = compileWorkday({ id: 'workday', teamId: 'team', executionMode: 'simulation', policyId: 'default', policyRevision: 3,
-		startsAt: '2026-10-11T12:00:00.000Z', agentIds: [], policy: { ...parameters,
+		startsAt: '2026-10-11T12:00:00.000Z', agentIds: [], policy: { ...DEFAULT_WORKDAY_POLICY, ...intent.allocation,
 			projectPercentages: { project: 1 }, agentClassPercentages: { project: { engineer: 1 } } } });
 	const payload = { id: 'preflight', teamId: 'team', profileId: 'default', profileGeneration: 3, profileVersion: 'revision-3',
 		intentDigest: `sha256:${sha256(canonicalJson(intent))}` };
