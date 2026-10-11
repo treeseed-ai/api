@@ -1,5 +1,38 @@
 import { expect, it } from 'vitest';
-import { requireNativeAdmissionSamples, executionCliReadArguments, executionLibraryResult } from '../../../../../acceptance/execution-inventory.ts';
+import { requireNativeAdmissionSamples, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback } from '../../../../../acceptance/execution-inventory.ts';
+
+it('native Workday readback retains exact production and simulation mode and original parameters without repairing authority', () => {
+	for (const executionMode of ['simulation', 'production']) {
+		const run = { id: 'original-workday', teamId: 'original-team', status: 'completed', executionMode, parameters: { durationSeconds: 600 } };
+		const native = [{ id: run.id, team_id: run.teamId, status: run.status, execution_mode: executionMode, parameters_json: JSON.stringify(run.parameters) }];
+		const before = structuredClone({ native, run }); verifyNativeWorkdayReadback(native, run); expect({ native, run }).toEqual(before);
+	}
+});
+
+it('native Workday readback denies missing malformed or contradictory mode even when every other public and native field agrees', () => {
+	for (const executionMode of [undefined, null, '', 'simulation ', 'production ', 'unknown', false, 0, {}, []]) {
+		const run = { id: 'original-workday', teamId: 'original-team', status: 'completed', executionMode, parameters: {} };
+		const native = [{ id: run.id, team_id: run.teamId, status: run.status, execution_mode: executionMode, parameters_json: '{}' }];
+		const before = structuredClone({ native, run }); expect.soft(() => verifyNativeWorkdayReadback(native, run)).toThrow(); expect({ native, run }).toEqual(before);
+	}
+	for (const executionMode of ['simulation', 'production']) {
+		const run = { id: 'original-workday', teamId: 'original-team', status: 'completed', executionMode, parameters: {} };
+		const native = [{ id: run.id, team_id: run.teamId, status: run.status, execution_mode: executionMode === 'simulation' ? 'production' : 'simulation', parameters_json: '{}' }];
+		const before = structuredClone({ native, run }); expect.soft(() => verifyNativeWorkdayReadback(native, run)).toThrow(); expect({ native, run }).toEqual(before);
+	}
+});
+
+it('native Workday readback denies foreign identity duplicate parameter mode and differing original parameters without accepting matching duplicate authority', () => {
+	for (const mode of ['foreign-id', 'duplicate-mode', 'parameters', 'malformed-parameters']) {
+		const run = { id: 'original-workday', teamId: 'original-team', status: 'completed', executionMode: 'simulation', parameters: { durationSeconds: 600 } as Record<string, unknown> };
+		const native = [{ id: run.id, team_id: run.teamId, status: run.status, execution_mode: run.executionMode, parameters_json: JSON.stringify(run.parameters) }];
+		if (mode === 'foreign-id') native[0]!.id = 'foreign-workday';
+		if (mode === 'duplicate-mode') { run.parameters.executionMode = run.executionMode; native[0]!.parameters_json = JSON.stringify(run.parameters); }
+		if (mode === 'parameters') native[0]!.parameters_json = '{"durationSeconds":601}';
+		if (mode === 'malformed-parameters') native[0]!.parameters_json = 'null';
+		const before = structuredClone({ native, run }); expect.soft(() => verifyNativeWorkdayReadback(native, run)).toThrow(); expect({ native, run }).toEqual(before);
+	}
+});
 
 it('schema priority source retains the single supported public library result and rejects raw compatibility fallback without repair', () => {
 	const result = { ok: true, resolvedRef: 'a'.repeat(40), files: [{ path: 'proposals/current.mdx', content: 'original bytes' }] };

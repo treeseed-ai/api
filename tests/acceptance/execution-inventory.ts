@@ -8,6 +8,11 @@ import { serializeCapacityReservationRow } from '../../dist/api/capacity/reposit
 
 type Row = Record<string, unknown>;
 
+/** Original owning Workday row comparison shared by native and managed reads. */
+export function verifyNativeWorkdayReadback(native: Row[], run: Row): void {
+	assert.equal(native.length, 1); assert.equal(native[0]!.team_id, run.teamId); assert.equal(native[0]!.status, run.status);
+}
+
 /** Arguments for the existing schema reader; source paths and refs stay caller-owned. */
 export function executionCliReadArguments(args: readonly string[], team: string): string[] {
 	if (args[0] === 'library') return [...args, '--json'];

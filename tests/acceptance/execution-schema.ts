@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, executionCliReadArguments, executionLibraryResult } from './execution-inventory.ts';
+import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback } from './execution-inventory.ts';
 
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
@@ -102,7 +102,7 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 				const ledger = (await client.query<{ name: string }>('SELECT * FROM treeseed_control_plane_schema_migrations ORDER BY name')).rows;
 				assert.deepEqual(ledger.map(value => value.name), sources.map(value => value.name));
 				const nativeRun = (await client.query('SELECT * FROM capacity_workday_runs WHERE id=$1', [id])).rows;
-				assert.equal(nativeRun.length, 1); assert.equal(nativeRun[0].team_id, run.teamId); assert.equal(nativeRun[0].status, run.status);
+				verifyNativeWorkdayReadback(nativeRun, run);
 				const assignments = (await client.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1 ORDER BY id', [id])).rows;
 				assert.ok(assignments.length > 0, 'ACCEPTANCE_SCHEMA_EMPTY: Actual managed assignment inventory required');
 				const inventoryReads: Array<{ args: string[]; cursor?: string; returned: Record<string, unknown> }> = [];
