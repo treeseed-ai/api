@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { compileWorkday, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { requireNativeAdmissionSamples, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback } from '../../../../../acceptance/execution-inventory.ts';
 
 it('native Workday readback retains exact production and simulation mode and original parameters without repairing authority', () => {
@@ -75,4 +76,23 @@ it('denies missing malformed negative fractional or unbounded native sample coun
 	}
 	for (const invalid of [null, '', 'sdk', 0, 1, {}, []]) expect(() => requireNativeAdmissionSamples(1, 1, invalid as boolean)).toThrow('ACCEPTANCE_SCHEMA_SAMPLES');
 	expect(() => requireNativeAdmissionSamples(1, 1)).not.toThrow();
+});
+
+it('native Workday readback reconciles original applied plan with independently measured reservation shares and rejects altered totals or source parameters', () => {
+	const plan = compileWorkday({ id: 'original-workday', teamId: 'original-team', policyId: 'default', policyRevision: 1,
+		executionMode: 'simulation', startsAt: '2026-09-16T12:00:00.000Z', agentIds: [], policy: { ...DEFAULT_WORKDAY_POLICY,
+			durationSeconds: 600, maximumConcurrency: 1, communicationConcurrency: 1 } });
+	const shares = [{ project_id: 'sdk', agent_class: 'engineer', admitted_seconds: '180' }, { project_id: 'sdk', agent_class: 'tester', admitted_seconds: '90' }];
+	const run = { id: plan.id, teamId: plan.teamId, status: 'completed', executionMode: 'simulation', parameters: { durationSeconds: 600,
+		appliedPlan: { ...plan, admittedSecondsByProject: { sdk: 270 }, admittedSecondsByAgentClass: { 'sdk:engineer': 180, 'sdk:tester': 90 } } } };
+	const native = [{ id: run.id, team_id: run.teamId, status: run.status, execution_mode: run.executionMode, parameters_json: JSON.stringify({ durationSeconds: 600, appliedPlan: plan }) }];
+	const before = structuredClone({ native, run, shares });
+	verifyNativeWorkdayReadback(native, run, shares);
+	for (const changed of [{ ...run, parameters: { ...run.parameters, appliedPlan: { ...run.parameters.appliedPlan, admittedSecondsByProject: { sdk: 269 } } } },
+		{ ...run, parameters: { ...run.parameters, appliedPlan: { ...run.parameters.appliedPlan, policyRevision: 2 } } }]) {
+		const failed = structuredClone(changed); expect.soft(() => verifyNativeWorkdayReadback(native, changed, shares)).toThrow(); expect(changed).toEqual(failed);
+	}
+	for (const invalid of ['', '0x10', '-1', 'Infinity', false, null, {}, []]) expect.soft(() => verifyNativeWorkdayReadback(native, run,
+		[{ ...shares[0]!, admitted_seconds: invalid }])).toThrow();
+	expect({ native, run, shares }).toEqual(before);
 });
