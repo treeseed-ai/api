@@ -116,3 +116,19 @@ it('native Workday readback reconciles original applied plan with independently 
 		[{ ...shares[0]!, admitted_seconds: invalid }])).toThrow();
 	expect({ native, run, shares }).toEqual(before);
 });
+
+it('native Workday readback denies policy identity revision and resolved snapshot drift even when native and public parameters agree', () => {
+	const plan = compileWorkday({ id: 'held-workday', teamId: 'held-team', policyId: 'default', policyRevision: 3,
+		executionMode: 'simulation', startsAt: '2026-10-11T12:00:00.000Z', agentIds: [], policy: DEFAULT_WORKDAY_POLICY });
+	const parameters = { ...plan.policySnapshot, policyId: 'default', profileId: 'default', policyRevision: 3, appliedPlan: plan };
+	for (const change of [{ policyId: 'other' }, { profileId: 'other' }, { policyRevision: 4 },
+		{ planningPercent: 30 }, { allocationWeight: 2 }, { projectPercentages: { other: 1 } },
+		{ agentClassPercentages: { other: { engineer: 1 } } }, { planningTurnMaximumSeconds: 1 }]) {
+		const run = { id: plan.id, teamId: plan.teamId, status: 'completed', executionMode: plan.executionMode,
+			parameters: { ...parameters, ...change } };
+		const native = [{ id: run.id, team_id: run.teamId, status: run.status, execution_mode: run.executionMode,
+			parameters_json: JSON.stringify(run.parameters) }], held = structuredClone({ native, run });
+		expect.soft(() => verifyNativeWorkdayReadback(native, run, []), JSON.stringify(change)).toThrow('ACCEPTANCE_NATIVE_WORKDAY_POLICY');
+		expect({ native, run }).toEqual(held);
+	}
+});
