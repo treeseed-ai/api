@@ -7,7 +7,7 @@ import { loadCommunicationInvocations } from '../../../../../../src/api/control-
 import { projectCommunicationInvocations } from '../../../../../../src/api/capacity/policy/execution/communication-execution-projector.ts';
 import { CapacityWorkdayRunRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
 import { verifyNativeWorkdayReadback } from '../../../../../acceptance/execution-inventory.ts';
-import { agentDefinitionSchema } from '@treeseed/sdk/agent-capacity';
+import { compileWorkday, DEFAULT_WORKDAY_POLICY, agentDefinitionSchema } from '@treeseed/sdk/agent-capacity';
 
 describe('concurrent local execution in PostgreSQL', () => {
 	it('preserves production and simulation workdays when another workday or conversation starts', async () => {
@@ -44,24 +44,33 @@ describe('concurrent local execution in PostgreSQL', () => {
 				.toEqual(['api', 'chat', 'production', 'sdk'].map(id => ({ id, status: 'running', error_json: '{}' })));
 			const repository = new CapacityWorkdayRunRepository(store as never);
 			for (const id of ['production', 'sdk']) {
+				const initial = await repository.get('team', id); expect(initial).not.toBeNull();
+				const plan = compileWorkday({ id, teamId: 'team', policyId: 'default', policyRevision: 1, executionMode: initial!.executionMode,
+					startsAt: now, agentIds: [], policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 600, maximumConcurrency: 1, communicationConcurrency: 1 } });
+				await service.update('team', id, { parameters: { ...initial!.parameters, appliedPlan: plan } });
 				const original = await repository.get('team', id); expect(original).not.toBeNull();
+				const shares = async () => (await observer.query(`SELECT reservation.project_id,node.agent_class,
+					SUM(reservation.requested_seconds) AS admitted_seconds FROM capacity_reservations reservation
+					JOIN capacity_provider_assignments assignment ON assignment.id=reservation.assignment_id AND assignment.team_id=reservation.team_id
+					JOIN execution_nodes node ON node.id=assignment.execution_node_id AND node.team_id=assignment.team_id
+					WHERE reservation.team_id=$1 AND reservation.work_day_id=$2 GROUP BY reservation.project_id,node.agent_class`, ['team', id])).rows;
 				const read = async () => (await observer.query('SELECT * FROM capacity_workday_runs WHERE team_id=$1 AND id=$2', ['team', id])).rows;
 				const native = await read(), before = structuredClone({ native, original });
-				await Promise.all(Array.from({ length: 4 }, async () => verifyNativeWorkdayReadback(await read(), (await repository.get('team', id))!)));
+				await Promise.all(Array.from({ length: 4 }, async () => verifyNativeWorkdayReadback(await read(), (await repository.get('team', id))!, await shares())));
 				for (const input of [{ executionMode: original!.executionMode === 'simulation' ? 'production' : 'simulation' },
 					{ parameters: { ...original!.parameters, executionMode: original!.executionMode } }]) {
 					const held = structuredClone(input);
 					await expect(service.update('team', id, input)).rejects.toThrow();
 					expect(input).toEqual(held); expect(await read()).toEqual(native);
 					const retry = await repository.get('team', id); expect(retry).toEqual(original);
-					verifyNativeWorkdayReadback(await read(), retry!);
+					verifyNativeWorkdayReadback(await read(), retry!, await shares());
 				}
 				// These are retained observer failures, never writes to owning state.
 				for (const changed of [{ ...native[0], execution_mode: original!.executionMode === 'simulation' ? 'production' : 'simulation' },
 					{ ...native[0], id: 'foreign' }, { ...native[0], parameters_json: '{}' }]) {
-					const failed = structuredClone(changed); expect.soft(() => verifyNativeWorkdayReadback([changed], original!)).toThrow();
+					const failed = structuredClone(changed), observedShares = await shares(); expect.soft(() => verifyNativeWorkdayReadback([changed], original!, observedShares)).toThrow();
 					expect(changed).toEqual(failed); expect(await read()).toEqual(native);
-					verifyNativeWorkdayReadback(await read(), (await repository.get('team', id))!);
+					verifyNativeWorkdayReadback(await read(), (await repository.get('team', id))!, await shares());
 				}
 				expect({ native, original }).toEqual(before);
 			}

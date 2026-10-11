@@ -24,13 +24,20 @@ it('native Workday readback denies missing malformed or contradictory mode even 
 });
 
 it('native Workday readback denies foreign identity duplicate parameter mode and differing original parameters without accepting matching duplicate authority', () => {
-	for (const mode of ['foreign-id', 'duplicate-mode', 'parameters', 'malformed-parameters']) {
+	for (const mode of ['foreign-id', 'duplicate-mode', 'parameters', 'malformed-parameters', 'array-parameters', 'invalid-json', 'missing-parameters', 'foreign-team', 'foreign-status', 'empty-native', 'duplicate-native']) {
 		const run = { id: 'original-workday', teamId: 'original-team', status: 'completed', executionMode: 'simulation', parameters: { durationSeconds: 600 } as Record<string, unknown> };
-		const native = [{ id: run.id, team_id: run.teamId, status: run.status, execution_mode: run.executionMode, parameters_json: JSON.stringify(run.parameters) }];
+		const native: Record<string, unknown>[] = [{ id: run.id, team_id: run.teamId, status: run.status, execution_mode: run.executionMode, parameters_json: JSON.stringify(run.parameters) }];
 		if (mode === 'foreign-id') native[0]!.id = 'foreign-workday';
 		if (mode === 'duplicate-mode') { run.parameters.executionMode = run.executionMode; native[0]!.parameters_json = JSON.stringify(run.parameters); }
 		if (mode === 'parameters') native[0]!.parameters_json = '{"durationSeconds":601}';
 		if (mode === 'malformed-parameters') native[0]!.parameters_json = 'null';
+		if (mode === 'array-parameters') native[0]!.parameters_json = '[]';
+		if (mode === 'invalid-json') native[0]!.parameters_json = '{';
+		if (mode === 'missing-parameters') native[0]!.parameters_json = undefined;
+		if (mode === 'foreign-team') native[0]!.team_id = 'foreign';
+		if (mode === 'foreign-status') native[0]!.status = 'running';
+		if (mode === 'empty-native') native.length = 0;
+		if (mode === 'duplicate-native') native.push({ ...native[0]! });
 		const before = structuredClone({ native, run }); expect.soft(() => verifyNativeWorkdayReadback(native, run)).toThrow(); expect({ native, run }).toEqual(before);
 	}
 });
@@ -87,6 +94,14 @@ it('native Workday readback reconciles original applied plan with independently 
 		appliedPlan: { ...plan, admittedSecondsByProject: { sdk: 270 }, admittedSecondsByAgentClass: { 'sdk:engineer': 180, 'sdk:tester': 90 } } } };
 	const native = [{ id: run.id, team_id: run.teamId, status: run.status, execution_mode: run.executionMode, parameters_json: JSON.stringify({ durationSeconds: 600, appliedPlan: plan }) }];
 	const before = structuredClone({ native, run, shares });
+	for (const change of [{ id: 'foreign' }, { teamId: 'foreign' }, { executionMode: 'production' }]) {
+		const changed = [{ ...native[0]!, parameters_json: JSON.stringify({ durationSeconds: 600, appliedPlan: { ...plan, ...change } }) }];
+		const visible = { ...run, parameters: { ...run.parameters, appliedPlan: { ...run.parameters.appliedPlan, ...change } } };
+		const failed = structuredClone({ changed, visible });
+		expect(() => verifyNativeWorkdayReadback(changed, visible, shares)).toThrow(); expect({ changed, visible }).toEqual(failed);
+	}
+	expect(() => verifyNativeWorkdayReadback(native, run)).toThrow('Independent reservation shares required');
+	expect(() => verifyNativeWorkdayReadback(native, run, [...shares, shares[0]!])).toThrow();
 	verifyNativeWorkdayReadback(native, run, shares);
 	for (const changed of [{ ...run, parameters: { ...run.parameters, appliedPlan: { ...run.parameters.appliedPlan, admittedSecondsByProject: { sdk: 269 } } } },
 		{ ...run, parameters: { ...run.parameters, appliedPlan: { ...run.parameters.appliedPlan, policyRevision: 2 } } }]) {

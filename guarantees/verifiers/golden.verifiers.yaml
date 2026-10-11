@@ -1,6 +1,26 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.native-workday-mode-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/schema-samples.test.ts
+    testName: "native Workday readback retains exact production and simulation mode and original parameters without repairing authority"
+  api.golden.native-workday-mode-denials-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/schema-samples.test.ts
+    testName: "native Workday readback denies missing malformed or contradictory mode even when every other public and native field agrees"
+  api.golden.native-workday-parameters-denials-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/schema-samples.test.ts
+    testName: "native Workday readback denies foreign identity duplicate parameter mode and differing original parameters without accepting matching duplicate authority"
+  api.golden.native-workday-reservation-shares-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/schema-samples.test.ts
+    testName: "native Workday readback reconciles original applied plan with independently measured reservation shares and rejects altered totals or source parameters"
   api.golden.schema-library-result-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
