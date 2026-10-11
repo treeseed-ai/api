@@ -1,5 +1,19 @@
 import { expect, it } from 'vitest';
-import { requireNativeAdmissionSamples } from '../../../../../acceptance/execution-inventory.ts';
+import { requireNativeAdmissionSamples, executionCliReadArguments } from '../../../../../acceptance/execution-inventory.ts';
+
+it('schema reader retains exact public library ref without unsupported server or team selectors through repeated readback', () => {
+	const args = ['library', 'read', 'original-project', 'proposals/current.mdx', '--ref', 'a'.repeat(40)], held = [...args];
+	for (let retry = 0; retry < 2; retry++) expect.soft(executionCliReadArguments(args, 'original-team')).toEqual([...args, '--json']);
+	expect(args).toEqual(held);
+});
+
+it('schema reader preserves original local server and team scope on canonical workday assignment and inventory reads', () => {
+	for (const args of [['workdays', 'show', 'original-workday'], ['assignments', 'show', 'original-attempt'],
+		['capacity', 'reservations', 'list', '--workday', 'original-workday', '--limit', '200']]) {
+		const held = [...args]; expect(executionCliReadArguments(args, 'original-team')).toEqual([...args, '--server', 'local', '--team', 'original-team', '--json']);
+		expect(args).toEqual(held);
+	}
+});
 
 it('normal SDK schema accepts cold start and default zero samples while original architecture proof still requires both measured controls', () => {
 	for (const counts of [[0, 0], [0, 1], [1, 0], [1, 1], [2, 3]]) {

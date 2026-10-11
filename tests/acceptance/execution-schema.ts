@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback } from './execution-inventory.ts';
+import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, executionCliReadArguments } from './execution-inventory.ts';
 
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
@@ -47,7 +47,7 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 	};
 	const read = (args: string[]) => {
 		const remaining = deadline - Date.now(); assert.ok(remaining > 0, 'ACCEPTANCE_SCHEMA_DEADLINE: Original bound elapsed');
-		const native = spawnSync(process.execPath, [cli, ...args, '--server', 'local', '--team', team, '--json'], {
+		const native = spawnSync(process.execPath, [cli, ...executionCliReadArguments(args, team)], {
 			encoding: 'utf8', timeout: remaining, maxBuffer: 32 * 1024 * 1024,
 		});
 		assert.ok(!native.error && native.signal === null && native.status === 0, 'ACCEPTANCE_SCHEMA_CLI: Supported exact command failed; raw credential-bearing output is not exposed');

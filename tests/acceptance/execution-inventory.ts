@@ -8,6 +8,11 @@ import { serializeCapacityReservationRow } from '../../dist/api/capacity/reposit
 
 type Row = Record<string, unknown>;
 
+/** Arguments for the existing schema reader; source paths and refs stay caller-owned. */
+export function executionCliReadArguments(args: readonly string[], team: string): string[] {
+	return [...args, '--server', 'local', '--team', team, '--json'];
+}
+
 /** Shared original assignment assertion for native owner and managed read-back. */
 export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: Row,
 	reservations: unknown) {
