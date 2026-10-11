@@ -67,7 +67,8 @@ describe('concurrent local execution in PostgreSQL', () => {
 				}
 				// These are retained observer failures, never writes to owning state.
 				for (const changed of [{ ...native[0], execution_mode: original!.executionMode === 'simulation' ? 'production' : 'simulation' },
-					{ ...native[0], id: 'foreign' }, { ...native[0], parameters_json: '{}' }]) {
+					{ ...native[0], id: 'foreign' }, { ...native[0], parameters_json: '{}' },
+					{ ...native[0], parameters_json: JSON.stringify({ ...initial!.parameters, appliedPlan: { ...plan, id: ` ${plan.id} ` } }) }]) {
 					const failed = structuredClone(changed), observedShares = await shares(); expect.soft(() => verifyNativeWorkdayReadback([changed], original!, observedShares)).toThrow();
 					expect(changed).toEqual(failed); expect(await read()).toEqual(native);
 					verifyNativeWorkdayReadback(await read(), (await repository.get('team', id))!, await shares());

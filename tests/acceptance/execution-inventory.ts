@@ -21,6 +21,7 @@ export function verifyNativeWorkdayReadback(native: Row[], run: { id?: unknown; 
 	const expected = structuredClone(parameters) as Row;
 	if (expected.appliedPlan) {
 		const plan = appliedWorkdaySchema.parse(expected.appliedPlan);
+		assert.deepEqual(plan, expected.appliedPlan, 'ACCEPTANCE_NATIVE_WORKDAY: Original native applied plan must already be canonical without normalization');
 		assert.equal(plan.id, run.id); assert.equal(plan.teamId, run.teamId); assert.equal(plan.executionMode, run.executionMode);
 		assert.ok(admittedShares, 'ACCEPTANCE_NATIVE_WORKDAY: Independent reservation shares required');
 		const projects: Record<string, number> = {}, classes: Record<string, number> = {};
