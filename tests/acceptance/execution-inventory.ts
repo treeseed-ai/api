@@ -10,7 +10,7 @@ import { canonicalWorkdayShares } from '../../dist/api/capacity/services/capacit
 type Row = Record<string, unknown>;
 
 /** Original preflight owns the resolved policy; current team defaults may advance later. */
-export function verifyNativeWorkdayPolicy(native: Row[], run: Row, preflight: Row, projects: Array<{ id: string; slug?: string | null }>): void {
+export function verifyNativeWorkdayPolicy(native: Row[], run: { id?: unknown; teamId?: unknown; executionMode?: unknown; parameters?: unknown }, preflight: { id?: unknown; intentDigest?: unknown }, projects: Array<{ id: string; slug?: string | null }>): void {
 	assert.equal(native.length, 1, 'ACCEPTANCE_NATIVE_WORKDAY_POLICY: One original preflight required');
 	const record = native[0]!;
 	assert.equal(record.team_id, run.teamId); assert.equal(record.operation, 'workday.preflight');
