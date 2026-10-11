@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { validateDecisionAuthority, validateExecutionAuthorityReceipt } from '../../../../../../src/api/governance/decision-authority.ts';
 import { readyProposal } from './ready-proposal-fixture.ts';
+import { verifyNativeProposalReconciliation } from './proposal-reconciliation-fixture.ts';
 import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { stringify } from 'yaml';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
@@ -241,6 +242,7 @@ describe('native proposal Decision authority', () => {
 			const graph = { nodes: await f.store.all('SELECT * FROM execution_nodes ORDER BY id'),
 				edges: await f.store.all('SELECT * FROM execution_edges ORDER BY id'),
 				revisions: await f.store.all('SELECT * FROM execution_graph_revisions ORDER BY team_id,revision') };
+			await verifyNativeProposalReconciliation(f.store, f.peerStore, 'team', projectId);
 			// The original scheduling authority consumer must read the actual
 			// governance-produced Decision, not a seeded accepted substitute.
 			const expectedAuthority = { teamId: 'team', projectId, decisionId, proposalId: declaration.id,
