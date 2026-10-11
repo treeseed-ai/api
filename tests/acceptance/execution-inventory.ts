@@ -4,11 +4,13 @@ import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/a
 import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { canonicalJson, sha256 } from '../../dist/api/capacity/security.js';
+import { serializeCapacityReservationRow } from '../../dist/api/capacity/repositories/capacity/accounting/reservation.js';
 
 type Row = Record<string, unknown>;
 
 /** Shared original assignment assertion for native owner and managed read-back. */
-export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: Row) {
+export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: Row,
+	reservations: unknown) {
 	assert.equal(native.team_id, run.teamId); assert.equal(typeof native.id, 'string');
 	assert.equal(visible.id, native.id); assert.equal(visible.workDayId, run.id); assert.equal(visible.teamId, run.teamId);
 	assert.equal(visible.status, native.status); assert.equal(visible.membershipId, native.membership_id);
@@ -19,6 +21,58 @@ export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: R
 	assert.deepEqual(original, attempt, 'ACCEPTANCE_SCHEMA_ATTEMPT: Native bytes contain stripped or coerced canonical fields');
 	assert.equal(attempt.id, native.id); assert.equal(attempt.teamId, run.teamId); assert.equal(attempt.workdayId, run.id);
 	assert.deepEqual(visible.assignmentAttempt, attempt);
+	assert.ok(Array.isArray(reservations) && reservations.length > 0,
+		'ACCEPTANCE_NATIVE_RESERVATION: Complete native reservation inventory required');
+	const originalReservations = reservations.map(row);
+	assert.ok(originalReservations.every(value =>
+		typeof value.id === 'string' && value.id.trim() === value.id && value.id)
+		&& new Set(originalReservations.map(value => value.id)).size === originalReservations.length,
+		'ACCEPTANCE_NATIVE_RESERVATION: Unique original reservation identities required');
+	assert.ok(originalReservations.every(value => value.team_id === run.teamId && value.work_day_id === run.id),
+		'ACCEPTANCE_NATIVE_RESERVATION: Foreign reservation owner or workday');
+	const originalMatches = originalReservations.filter(value => value.id === attempt.reservationId || value.assignment_id === attempt.id);
+	assert.ok(originalMatches.length === 1,
+		'ACCEPTANCE_NATIVE_RESERVATION: Exactly one original reservation per issued attempt required');
+	if (native.execution_kind === 'workday') assert.equal(originalMatches[0]!.idempotency_key, attempt.idempotencyKey,
+		'ACCEPTANCE_NATIVE_RESERVATION: Original ready-node reservation replay identity required');
+	// Owning serialization validates the existing reservation contract; do not
+	// copy its state model into acceptance or manufacture a public inventory.
+	assert.ok(serializeCapacityReservationRow(originalMatches[0]!));
+	assert.ok(native.reservation_id === attempt.reservationId && visible.reservationId === attempt.reservationId
+		&& native.capacity_provider_id === attempt.provider.providerId
+		&& native.project_id === attempt.projectId && visible.projectId === attempt.projectId && native.work_day_id === run.id
+		&& typeof native.membership_id === 'string' && native.membership_id.trim() === native.membership_id && native.membership_id
+		&& typeof native.project_agent_class_id === 'string' && native.project_agent_class_id
+		&& visible.projectAgentClassId === native.project_agent_class_id
+		&& typeof native.lease_state === 'string' && native.lease_state.trim() === native.lease_state && native.lease_state
+		&& visible.leaseState === native.lease_state,
+		'ACCEPTANCE_NATIVE_RESERVATION: Original assignment reservation provider and lease custody required');
+	if (native.execution_kind === 'workday') for (const [column, field, expected] of [
+		['execution_node_id', 'executionNodeId', attempt.nodeId],
+		['execution_node_revision', 'executionNodeRevision', attempt.nodeRevision], ['graph_revision', 'graphRevision', attempt.graphRevision],
+	] as const) assert.ok(native[column] === expected && visible[field] === expected,
+		'ACCEPTANCE_NATIVE_RESERVATION: Native ready-node issuance differs from canonical authority');
+	for (const [column, expected] of [
+		['id', attempt.reservationId], ['assignment_id', attempt.id],
+		['team_id', attempt.teamId], ['project_id', attempt.projectId], ['work_day_id', attempt.workdayId],
+		['capacity_provider_id', attempt.provider.providerId],
+		['execution_provider_id', attempt.provider.executionProviderId], ['membership_id', native.membership_id],
+		['project_agent_class_id', native.project_agent_class_id],
+	] as const) assert.ok(originalMatches[0]![column] === expected,
+		'ACCEPTANCE_NATIVE_RESERVATION: Reservation scope differs from its issued assignment');
+	const reserved = originalMatches[0]!.reserved_seconds;
+	assert.ok(['requested_seconds', 'reserved_seconds', 'active_seconds', 'elapsed_seconds', 'released_seconds', 'overrun_seconds']
+		.every(field => { const value = originalMatches[0]![field]; return (typeof value === 'number'
+			|| (typeof value === 'string' && /^\d+(?:\.\d+)?$/u.test(value))) && Number.isFinite(Number(value)) && Number(value) >= 0; }),
+		'ACCEPTANCE_NATIVE_RESERVATION: Original measured numeric representation required');
+	assert.ok(['created_at', 'updated_at'].every(field => typeof originalMatches[0]![field] === 'string'
+		&& Number.isFinite(Date.parse(originalMatches[0]![field] as string)))
+		&& Date.parse(originalMatches[0]!.updated_at as string) >= Date.parse(originalMatches[0]!.created_at as string),
+		'ACCEPTANCE_NATIVE_RESERVATION: Original reservation observation clocks required');
+	assert.ok((typeof reserved === 'number' || (typeof reserved === 'string' && /^\d+(?:\.\d+)?$/u.test(reserved)))
+		&& Number(reserved) === attempt.limits.maximumSeconds
+		&& typeof originalMatches[0]!.state === 'string' && originalMatches[0]!.state,
+		'ACCEPTANCE_NATIVE_RESERVATION: Original reserved amount and state required');
 	if (native.assignment_result_json !== null) {
 		assert.equal(typeof native.assignment_result_json, 'string');
 		const originalResult: unknown = JSON.parse(native.assignment_result_json as string), result = assignmentResultSchema.parse(originalResult);

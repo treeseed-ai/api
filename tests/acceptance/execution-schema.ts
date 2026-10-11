@@ -117,6 +117,7 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 				}, 200, direction);
 				const publicAssignments = await inventory(assignments, ['assignments', 'list', '--workday', id]);
 				const nativeEvents = await nativeInventory('SELECT * FROM capacity_workday_events WHERE run_id=$1 AND team_id=$2 ORDER BY id', [id, run.teamId]);
+				const reservations = await nativeInventory('SELECT * FROM capacity_reservations WHERE work_day_id=$1 ORDER BY id', [id]);
 				assert.ok(nativeEvents.length > 0, 'ACCEPTANCE_NATIVE_INVENTORY: Actual transition history required');
 				const publicEvents = await inventory(nativeEvents, ['workdays', 'events', 'list', id], 'ascending');
 				for (const visible of publicEvents) {
@@ -152,7 +153,7 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 						capacity_provider_id: value.capacity_provider_id }, 'ACCEPTANCE_PROVIDER_MEMBERSHIP: Assignment team and provider must match its owning membership');
 					const visible = read(['assignments', 'show', value.id]);
 					assert.deepEqual(publicAssignments.find(record => record.id === value.id), visible);
-					const attempt = verifyNativeAssignmentReadback(value, visible, run);
+					const attempt = verifyNativeAssignmentReadback(value, visible, run, reservations);
 					if (value.execution_kind === 'workday') {
 						const allocation = object(object(object(visible.explanation).metadata).allocation), selection = object(allocation.selection), inputs = object(selection.input);
 						assert.equal(allocation.admitted, true, 'ACCEPTANCE_QUOTA_ADMISSION: Retained admission must be positive even when the later attempt failed');
