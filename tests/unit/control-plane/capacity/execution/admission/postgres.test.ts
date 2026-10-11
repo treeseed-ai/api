@@ -40,7 +40,8 @@ describe('living admission in disposable PostgreSQL', () => {
 			expect(connections.map(result => result.rows[0].name)).toEqual([name, name]);
 			expect(connections[0]!.rows[0].pid).not.toBe(connections[1]!.rows[0].pid);
 			const now = assignment.createdAt;
-			await database.pool.query(`INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ('team','team','Team',$1,$1)`, [now]);
+			await database.pool.query(`INSERT INTO teams (id,slug,name,created_at,updated_at)
+				VALUES ('team','team','Team',$1,$1),('foreign-team','foreign-team','Foreign Team',$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO capacity_workday_runs (id,team_id,status,execution_mode,created_at,updated_at)
 				VALUES ('workday','team','running','simulation',$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('project','team','project','Project',$1,$1)`, [now]);
