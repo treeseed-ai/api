@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, executionCliReadArguments } from './execution-inventory.ts';
+import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, executionCliReadArguments, executionLibraryResult } from './execution-inventory.ts';
 
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
@@ -242,7 +242,7 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 								const args = ['library', 'read', attempt.projectId, source.path, '--ref', source.commit];
 								observation = { args, returned: read(args) }; prioritySources.set(key, observation);
 							}
-							const returned = object(observation.returned.result ?? observation.returned);
+							const returned = object(executionLibraryResult(observation.returned));
 							assert.equal(returned.resolvedRef, source.commit); assert.ok(Array.isArray(returned.files) && returned.files.length === 1);
 							const file = object(returned.files[0]); assert.equal(file.path, source.path); assert.equal(typeof file.content, 'string');
 							assert.equal(`sha256:${createHash('sha256').update(String(file.content)).digest('hex')}`, source.digest);

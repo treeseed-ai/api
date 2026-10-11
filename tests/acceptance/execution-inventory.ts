@@ -14,6 +14,11 @@ export function executionCliReadArguments(args: readonly string[], team: string)
 	return [...args, '--server', 'local', '--team', team, '--json'];
 }
 
+/** Original public library response consumed by priority source verification. */
+export function executionLibraryResult(value: Row): unknown {
+	return value.result ?? value;
+}
+
 /** Shared original assignment assertion for native owner and managed read-back. */
 export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: Row,
 	reservations: unknown) {
