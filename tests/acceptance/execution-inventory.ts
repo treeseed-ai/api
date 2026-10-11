@@ -1,10 +1,32 @@
 import assert from 'node:assert/strict';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
+import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { canonicalJson, sha256 } from '../../dist/api/capacity/security.js';
 
 type Row = Record<string, unknown>;
+
+/** Shared original assignment assertion for native owner and managed read-back. */
+export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: Row) {
+	assert.equal(native.team_id, run.teamId); assert.equal(typeof native.id, 'string');
+	assert.equal(visible.id, native.id); assert.equal(visible.workDayId, run.id); assert.equal(visible.teamId, run.teamId);
+	assert.equal(visible.status, native.status); assert.equal(visible.membershipId, native.membership_id);
+	assert.equal(visible.capacityProviderId, native.capacity_provider_id);
+	assert.equal(Object.hasOwn(visible, 'modeRunId'), false, 'ACCEPTANCE_SCHEMA_RETIRED_IDENTITY: Public assignment retains a retired mode-run alias');
+	assert.equal(typeof native.assignment_attempt_json, 'string');
+	const original: unknown = JSON.parse(native.assignment_attempt_json as string), attempt = assignmentAttemptSchema.parse(original);
+	assert.deepEqual(original, attempt, 'ACCEPTANCE_SCHEMA_ATTEMPT: Native bytes contain stripped or coerced canonical fields');
+	assert.equal(attempt.id, native.id); assert.equal(attempt.teamId, run.teamId); assert.equal(attempt.workdayId, run.id);
+	assert.deepEqual(visible.assignmentAttempt, attempt);
+	if (native.assignment_result_json !== null) {
+		assert.equal(typeof native.assignment_result_json, 'string');
+		const originalResult: unknown = JSON.parse(native.assignment_result_json as string), result = assignmentResultSchema.parse(originalResult);
+		assert.deepEqual(originalResult, result, 'ACCEPTANCE_SCHEMA_RESULT: Native bytes contain stripped or coerced canonical fields');
+		assert.equal(result.assignmentId, native.id); assert.deepEqual(visible.assignmentResult, result);
+	} else assert.ok(visible.assignmentResult === null || visible.assignmentResult === undefined);
+	return attempt;
+}
 
 type ExecutionStart = { id: string | undefined; retained?: {
 	path: string; bytes: Buffer; receiptPath: string; receiptBytes: Buffer; freeze: Row; receipt: Row;

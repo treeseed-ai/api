@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { verifyNativeInventory } from '../../../../../acceptance/execution-inventory.ts';
+import { verifyNativeInventory, verifyNativeAssignmentReadback } from '../../../../../acceptance/execution-inventory.ts';
+import { assignment } from '../fixtures/assignment.ts';
 
 const clock = '2026-10-09T12:00:00.000Z';
 const native = [{ id: 'first', created_at: clock }, { id: 'second', created_at: clock }];
@@ -8,9 +9,20 @@ const rows = [{ id: 'second', createdAt: clock, retained: 'actual second' }, { i
 const cursor = encodeCapacityPageCursor({ id: 'second', createdAt: clock });
 const pages = [{ items: [rows[0]], page: { limit: 1, hasMore: true, nextCursor: cursor } },
 	{ items: [rows[1]], page: { limit: 1, hasMore: false, nextCursor: null } }];
+const scope = { id: assignment.workdayId, teamId: assignment.teamId };
+const nativeAssignment = { id: assignment.id, team_id: assignment.teamId, project_id: assignment.projectId,
+	work_day_id: assignment.workdayId, membership_id: 'membership', capacity_provider_id: assignment.provider.providerId,
+	status: 'pending', lease_state: 'unleased', reservation_id: assignment.reservationId, execution_kind: 'workday',
+	execution_node_id: assignment.nodeId, execution_node_revision: assignment.nodeRevision, graph_revision: assignment.graphRevision,
+	assignment_attempt_json: JSON.stringify(assignment), assignment_result_json: null };
+const publicAssignment = { id: assignment.id, teamId: assignment.teamId, projectId: assignment.projectId,
+	workDayId: assignment.workdayId, membershipId: 'membership', capacityProviderId: assignment.provider.providerId,
+	status: 'pending', leaseState: 'unleased', reservationId: assignment.reservationId, assignmentAttempt: assignment, assignmentResult: null,
+	executionNodeId: assignment.nodeId, executionNodeRevision: assignment.nodeRevision, graphRevision: assignment.graphRevision };
 
 describe('independent native producer inventory reconciliation', () => {
 	it('reads exactly every native identity through complete public pages without changing original observations', async () => {
+		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope)).toEqual(assignment);
 		const supplied = structuredClone(native), received = structuredClone(pages), calls: Array<string | undefined> = [];
 		expect(await verifyNativeInventory(supplied, value => { calls.push(value); return received[calls.length - 1]; }, 1)).toEqual(rows);
 		expect(calls).toEqual([undefined, cursor]); expect(supplied).toEqual(native); expect(received).toEqual(pages);
@@ -20,6 +32,10 @@ describe('independent native producer inventory reconciliation', () => {
 		expect(await verifyNativeInventory(native, () => ({ items: [ascending[index++]], page: { limit: 1, hasMore: index < 2, nextCursor: index < 2 ? next : null } }), 1, 'ascending')).toEqual(ascending);
 	});
 	it('denies malformed missing duplicated reordered foreign truncated or interrupted public inventories without repairing failed pages', async () => {
+		const before = structuredClone({ nativeAssignment, publicAssignment });
+		expect(() => Reflect.apply(verifyNativeAssignmentReadback, undefined,
+			[nativeAssignment, publicAssignment, scope, [], []])).toThrow('ACCEPTANCE_NATIVE_RESERVATION');
+		expect({ nativeAssignment, publicAssignment }).toEqual(before);
 		for (const replacement of [undefined, null, {}, { items: rows }, { ...pages[0], items: null }, { ...pages[0], page: [] },
 			{ ...pages[0], items: [null] }, { ...pages[0], items: [[]] }, { ...pages[0], items: ['malformed'] }, { items: [], page: pages[0]!.page },
 			{ ...pages[0], items: [rows[1]] }, { ...pages[0], items: [rows[0], rows[0]] },
