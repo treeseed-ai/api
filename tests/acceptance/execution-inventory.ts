@@ -10,6 +10,7 @@ type Row = Record<string, unknown>;
 
 /** Arguments for the existing schema reader; source paths and refs stay caller-owned. */
 export function executionCliReadArguments(args: readonly string[], team: string): string[] {
+	if (args[0] === 'library') return [...args, '--json'];
 	return [...args, '--server', 'local', '--team', team, '--json'];
 }
 
