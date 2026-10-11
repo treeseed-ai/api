@@ -43,7 +43,11 @@ it('native production API archive retains exact acceptance bytes and loads its o
   expect(`sha512-${createHash('sha512').update(sdkBytes).digest('base64')}`).toBe(sdk!.integrity);
   // npm's existing override binds the sole held SDK archive rather than resolving a second Git copy.
   writeFileSync(resolve(root,'package.json'),JSON.stringify({private:true,type:'module',dependencies:{'@treeseed/api':`file:${archive}`,'@treeseed/sdk':`file:${sdkArchive}`},overrides:{'@treeseed/sdk':'$@treeseed/sdk'}}));
-  await run('npm',['install','--prefer-offline','--prefix',root,'--omit=dev','--ignore-scripts','--package-lock=false','--no-save','--no-audit','--no-fund',archive,sdkArchive],root);
+  const dependencyLock=readFileSync('package-lock.json');
+  writeFileSync(resolve(root,'package-lock.json'),dependencyLock);
+  // Reuse the owning lock's exact dependency integrities with the cache populated by
+  // complete prerequisite installation. Missing cached bytes fail without network retries.
+  await run('npm',['install','--offline','--prefix',root,'--omit=dev','--ignore-scripts','--no-save','--no-audit','--no-fund',archive,sdkArchive],root);
   const installed=resolve(root,'node_modules/@treeseed/api');expect(realpathSync(installed)).toBe(installed);expect(lstatSync(installed).isSymbolicLink()).toBe(false);
   for(const path of ['src','node_modules/@treeseed/sdk'])expect(existsSync(resolve(installed,path))).toBe(false);
   for(const path of ['vitest','tsx'])expect(existsSync(resolve(root,'node_modules',path)),path).toBe(false);
@@ -64,6 +68,7 @@ console.log(JSON.stringify({installedRuntimeContracts:'passed'}));\n`);
   const result=await run(process.execPath,['consumer.ts'],root,{...process.env,TREESEED_DIAGNOSTICS_ENCRYPTION_KEY_FILE:''});
   expect(JSON.parse(result)).toEqual({installedRuntimeContracts:'passed'});expect(process.env.TREESEED_DIAGNOSTICS_ENCRYPTION_KEY_FILE).toBe(env);
   expect(readFileSync(archive).equals(bytes)).toBe(true);expect(readFileSync(sdkArchive).equals(sdkBytes)).toBe(true);
+  expect(readFileSync('package-lock.json').equals(dependencyLock)).toBe(true);
   controller.signal.throwIfAborted();expect(performance.now()).toBeLessThan(deadline-5000);
   observation={archive:packed!.filename,sha256:createHash('sha256').update(bytes).digest('hex'),sdkSha256:createHash('sha256').update(sdkBytes).digest('hex'),installedRuntimeContracts:'passed'};
  }catch(error){originalFailure=error;throw error;}finally{
@@ -109,5 +114,8 @@ it('native archive commands retain split UTF8 and literal arguments and reject o
   writeFileSync(resolve(root,'failure.ts'),`process.stderr.write('original subprocess failure');process.exitCode=7;`);
   await expect(execute(process.execPath,['failure.ts'],root)).rejects.toThrow('original subprocess failure');
   await expect(execute(resolve(root,'unavailable-executable'),[],root)).rejects.toThrow(/ENOENT/u);
+  writeFileSync(resolve(root,'package.json'),JSON.stringify({private:true,dependencies:{'uncached-native-proof':'https://127.0.0.1:1/uncached.tgz'}}));
+  await expect(execute('npm',['install','--offline','--cache',resolve(root,'empty-cache'),'--omit=dev','--ignore-scripts','--no-audit','--no-fund'],root,AbortSignal.timeout(2000))).rejects.toThrow('ENOTCACHED');
+  expect(existsSync(resolve(root,'node_modules/uncached-native-proof'))).toBe(false);
  }finally{rmSync(root,{recursive:true,force:true});expect(existsSync(root)).toBe(false);}
 });
