@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: schema-library-result-unit
+    action: { verifier: api.golden.schema-library-result-unit }
+    expect: { status: passed }
   - id: schema-library-read-unit
     action: { verifier: api.golden.schema-library-read-unit }
     expect: { status: passed }

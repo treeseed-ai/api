@@ -16,7 +16,11 @@ export function executionCliReadArguments(args: readonly string[], team: string)
 
 /** Original public library response consumed by priority source verification. */
 export function executionLibraryResult(value: Row): unknown {
-	return value.result ?? value;
+	const result = value.result;
+	assert.ok(result && typeof result === 'object' && !Array.isArray(result)
+		&& Object.hasOwn(result, 'ok') && Reflect.get(result, 'ok') === true,
+		'ACCEPTANCE_LIBRARY_RESULT: Supported successful public library result required');
+	return result;
 }
 
 /** Shared original assignment assertion for native owner and managed read-back. */
