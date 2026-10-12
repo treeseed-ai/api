@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.native-observation-deadline-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-observation.test.ts
+    testName: "retains pending native observations but rejects success after the original caller deadline without accepting server cleanup early"
   api.golden.native-settlement-inventory-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

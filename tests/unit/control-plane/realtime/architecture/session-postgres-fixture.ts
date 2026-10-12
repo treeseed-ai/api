@@ -6,10 +6,14 @@ import { postgresGraph } from '../../capacity/execution/graph/architecture/livin
 
 // Transport-observation timeout only: no assignment/productive authority is
 // created or changed by this event component fixture.
-export async function eventObserved(predicate: () => boolean | Promise<boolean>) {
-	const until = Date.now() + 5_000;
-	while (!await predicate()) {
-		assert.ok(Date.now() < until, 'Native session event observation did not complete');
+export async function eventObserved(predicate: () => boolean | Promise<boolean>, until = Date.now() + 5_000) {
+	const deadline = Math.min(until, Date.now() + 5_000);
+	assert.ok(Number.isFinite(until), 'Native session event observation did not complete');
+	for (;;) {
+		assert.ok(Date.now() < deadline, 'Native session event observation did not complete');
+		const observed = await predicate();
+		assert.ok(Date.now() < deadline, 'Native session event observation did not complete');
+		if (observed) return;
 		await new Promise<void>(resolve => setTimeout(resolve, 1));
 	}
 }

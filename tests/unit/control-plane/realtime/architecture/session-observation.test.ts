@@ -9,7 +9,22 @@ it('retains pending native observations but rejects success after the original c
 			now = 100;
 			const predicate = vi.fn(async () => { if (late) now = 102; return true; });
 			await expect.soft(eventObserved(predicate, late ? 101 : 99)).rejects.toThrow('Native session event observation did not complete');
+			expect(predicate).toHaveBeenCalledTimes(late ? 1 : 0);
 		}
+		for (const deadline of [Number.NaN, Infinity, -Infinity]) {
+			const predicate = vi.fn(async () => true);
+			await expect(eventObserved(predicate, deadline)).rejects.toThrow('Native session event observation did not complete');
+			expect(predicate).not.toHaveBeenCalled();
+		}
+		now = 100;
+		await expect(eventObserved(async () => { now = 5101; return true; }, 10_000))
+			.rejects.toThrow('Native session event observation did not complete');
+		now = 100;
+		let reads = 0;
+		await expect(eventObserved(async () => { reads++; now++; return false; }, 102))
+			.rejects.toThrow('Native session event observation did not complete');
+		expect(reads).toBe(2);
+		now = 100; await eventObserved(async () => true);
 		now = 100;
 		const original = [{ pid: 1922 }], held = structuredClone(original), observations: Array<typeof original> = [];
 		await eventObserved(async () => {
