@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeModelExecutionInventory } from '../../../../../acceptance/execution-inventory.ts';
+import { verifyNativeInventory, verifyNativeSettlementReadback, verifyNativeAssignmentReadback, verifyNativeModelExecutionInventory } from '../../../../../acceptance/execution-inventory.ts';
 import { assignment } from '../fixtures/assignment.ts';
 
 const clock = '2026-10-09T12:00:00.000Z';
@@ -30,6 +30,19 @@ const nativeReservation = { id: assignment.reservationId, assignment_id: assignm
 	created_at: assignment.createdAt, updated_at: assignment.createdAt };
 
 describe('independent native producer inventory reconciliation', () => {
+	it('denies omitted duplicated or reclassified original settlements for the complete issued assignment inventory without rewriting failed observations', () => {
+		// Controlled readback fixture; owning PostgreSQL produces the canonical records separately.
+		const exact = { assignments: [{ id: assignment.id }], ledger: [{ id: 'settlement', assignment_id: assignment.id,
+			phase: 'task_completed_actual_settlement', metadata_json: JSON.stringify({ usageSettlement: { id: 'settlement' } }) }],
+			visible: [{ id: 'settlement', usageSettlement: { id: 'settlement' } }] };
+		const inspect = (value: typeof exact) => verifyNativeSettlementReadback(value.ledger, value.visible, value.assignments);
+		const held = structuredClone(exact); inspect(exact); expect(exact).toEqual(held);
+		const disguised = structuredClone(exact); disguised.ledger[0]!.phase = 'reservation_released';
+		const original = structuredClone(disguised);
+		expect(() => inspect(disguised)).toThrow('ACCEPTANCE_NATIVE_SETTLEMENT');
+		expect(disguised).toEqual(original); inspect(exact); expect(exact).toEqual(held);
+	});
+
 	it('selects every original native model start independently of public sandbox markers and denies incomplete foreign duplicated or interrupted custody', () => {
 		const owner = { ...nativeAssignment, status: 'completed' };
 		const started = { id: 'started', event_index: 0, run_id: scope.id, team_id: scope.teamId, workday_id: scope.id,
