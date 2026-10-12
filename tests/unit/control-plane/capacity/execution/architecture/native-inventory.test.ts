@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeModelExecutionInventory } from '../../../../../acceptance/execution-inventory.ts';
+import { verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeModelExecutionInventory, verifyNativeReporterCloseout } from '../../../../../acceptance/execution-inventory.ts';
 import { assignment } from '../fixtures/assignment.ts';
+import { compileWorkday, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
+import { now as reportClock, reportRef, reportResult } from '../graph/architecture/closeout-sql-fixture.ts';
 
 const clock = '2026-10-09T12:00:00.000Z';
 const native = [{ id: 'first', created_at: clock }, { id: 'second', created_at: clock }];
@@ -30,6 +32,36 @@ const nativeReservation = { id: assignment.reservationId, assignment_id: assignm
 	created_at: assignment.createdAt, updated_at: assignment.createdAt };
 
 describe('independent native producer inventory reconciliation', () => {
+	it('denies missing duplicated foreign malformed or later native report publication without rewriting completed records or retained audit history', () => {
+		const compiled = compileWorkday({ id: scope.id, teamId: scope.teamId, policyId: 'default', policyRevision: 1,
+			executionMode: 'simulation', startsAt: '2026-10-02T21:00:00.000Z', agentIds: [], policy: DEFAULT_WORKDAY_POLICY });
+		const exact = { run: { ...scope, parameters: { appliedPlan: { ...compiled, state: 'ended', endedAt: reportClock, reportRef } } },
+			assignments: [{ ...nativeAssignment, id: reportResult.assignmentId, status: 'completed', execution_node_id: 'report-node',
+				completed_at: reportClock, assignment_result_json: JSON.stringify(reportResult) }],
+			nodes: [{ id: 'report-node', team_id: scope.teamId, workday_id: scope.id, project_id: reportRef.projectId, kind: 'reporting', status: 'completed' }],
+			audits: [{ id: 'original-integration', target_id: reportResult.assignmentId, target_type: 'capacity_provider_assignment',
+				event_type: 'assignment.content.integrated', created_at: reportClock,
+				data_json: JSON.stringify({ resultId: reportResult.id, references: reportResult.references, publication: false }) }] };
+		const inspect = (value: typeof exact) => verifyNativeReporterCloseout(value.run, value.assignments, value.nodes, value.audits);
+		const before = structuredClone(exact); expect(() => inspect(exact)).not.toThrow(); expect(exact).toEqual(before);
+		const changes: Array<(value: typeof exact) => void> = [
+			value => { value.assignments = []; }, value => { value.nodes = []; }, value => { value.audits = []; },
+			value => { value.assignments.push(value.assignments[0]!); }, value => { value.nodes.push(value.nodes[0]!); }, value => { value.audits.push(value.audits[0]!); },
+			value => { Reflect.set(value.assignments[0]!, 'team_id', 'foreign'); }, value => { Reflect.set(value.assignments[0]!, 'work_day_id', 'foreign'); },
+			value => { Reflect.set(value.assignments[0]!, 'project_id', 'foreign'); }, value => { value.assignments[0]!.status = 'failed'; },
+			value => { Reflect.set(value.nodes[0]!, 'team_id', 'foreign'); }, value => { Reflect.set(value.nodes[0]!, 'workday_id', 'foreign'); }, value => { value.nodes[0]!.status = 'running'; },
+			value => { value.audits[0]!.created_at = 'invalid'; }, value => { value.audits[0]!.created_at = '2026-10-02T21:02:00.000Z'; },
+			value => { value.audits[0]!.target_id = 'foreign'; }, value => { value.audits[0]!.data_json = '{'; },
+			value => { value.audits[0]!.data_json = JSON.stringify({ resultId: 'foreign', references: reportResult.references }); },
+			value => { value.audits[0]!.data_json = JSON.stringify({ resultId: reportResult.id, references: [{ ...reportRef, commit: 'b'.repeat(40) }] }); },
+			value => { value.assignments[0]!.assignment_result_json = '{'; }, value => { value.assignments[0]!.completed_at = '2026-10-02T21:02:00.000Z'; },
+			value => { value.assignments[0]!.assignment_result_json = JSON.stringify({ ...reportResult, assignmentId: 'foreign' }); },
+			value => { value.assignments[0]!.assignment_result_json = JSON.stringify({ ...reportResult, references: [{ ...reportRef, commit: 'b'.repeat(40) }] }); },
+		];
+		for (const change of changes) { const denied = structuredClone(exact); change(denied); const held = structuredClone(denied);
+			expect(() => inspect(denied)).toThrow(); expect(denied).toEqual(held); }
+		expect(() => inspect(exact)).not.toThrow(); expect(exact).toEqual(before);
+	});
 	it('selects every original native model start independently of public sandbox markers and denies incomplete foreign duplicated or interrupted custody', () => {
 		const owner = { ...nativeAssignment, status: 'completed' };
 		const started = { id: 'started', event_index: 0, run_id: scope.id, team_id: scope.teamId, workday_id: scope.id,

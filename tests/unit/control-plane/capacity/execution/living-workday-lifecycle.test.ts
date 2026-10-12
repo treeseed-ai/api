@@ -321,7 +321,8 @@ describe('living workday lifecycle', () => {
 		const updateCapacityWorkdayRun = vi.fn(async (_team: string, _id: string, _input: Record<string, unknown>) => closingRun);
 		const store = { all: vi.fn(async (sql: string) => sql.includes('SELECT id,kind,status')
 			? [{ id: 'reporting:workday:project/reporter', kind: 'reporting', status: 'completed' }]
-			: sql.includes('assignment_result_json') ? [{ id: 'assignment', assignment_result_json: JSON.stringify(reportResult) }]
+			: sql.includes('assignment_result_json') ? [{ id: 'assignment', assignment_result_json: JSON.stringify(reportResult),
+				integrated_at: now, integration_json: JSON.stringify({ resultId: reportResult.id, references: reportResult.references, publication: false }) }]
 			: sql.includes('JOIN execution_edges') ? [{ status: 'completed' }] : [{ state: 'consumed' }]), updateCapacityWorkdayRun };
 		const result = await advanceLivingWorkday(store as never, closingRun, now);
 		expect(result).toMatchObject({ changed: true, status: 'completed', plan: { state: 'ended', endedAt: now, reportRef: reportReference } });
@@ -330,15 +331,15 @@ describe('living workday lifecycle', () => {
 		expect(updateCapacityWorkdayRun.mock.calls[0]?.[2]).not.toHaveProperty('reportRefs');
 	});
 	it.each(['missing', 'duplicate', 'invalid', 'wrong-assignment', 'wrong-store', 'future-completion', 'missing-integration',
-		'future-integration', 'wrong-result-integration', 'wrong-reference-integration'])('rejects %s Reporter evidence despite a completed graph node', async failure => {
+		'future-integration', 'wrong-result-integration', 'wrong-reference-integration', 'invalid-integration-time', 'invalid-integration-json'])('rejects %s Reporter evidence despite a completed graph node', async failure => {
 		const closingRun = { ...run, parameters: { appliedPlan: { ...plan, state: 'closing', closingAt: now } } } as never;
 		const result = { ...reportResult,
 			...(failure === 'wrong-assignment' ? { assignmentId: 'another' } : {}),
 			...(failure === 'wrong-store' ? { references: [] } : {}) };
 		if (failure === 'future-completion') result.completedAt = '2026-09-13T16:01:00.000Z';
 		const row = { id: 'assignment', assignment_result_json: failure === 'invalid' ? '{broken' : JSON.stringify(result),
-			integrated_at: failure === 'missing-integration' ? null : failure === 'future-integration' ? '2026-09-13T16:01:00.000Z' : now,
-			integration_json: JSON.stringify({ resultId: failure === 'wrong-result-integration' ? 'foreign-result' : result.id,
+			integrated_at: failure === 'missing-integration' ? null : failure === 'invalid-integration-time' ? 'malformed' : failure === 'future-integration' ? '2026-09-13T16:01:00.000Z' : now,
+			integration_json: failure === 'invalid-integration-json' ? '{' : JSON.stringify({ resultId: failure === 'wrong-result-integration' ? 'foreign-result' : result.id,
 				references: failure === 'wrong-reference-integration' ? [{ ...reportReference, commit: 'b'.repeat(40) }] : result.references, publication: false }) };
 		const store = { all: vi.fn(async (sql: string) => sql.includes('SELECT id,kind,status')
 			? [{ id: 'report', kind: 'reporting', status: 'completed' }]
