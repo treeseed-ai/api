@@ -3,6 +3,8 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: native-settlement-inventory-unit
+    action: { verifier: api.golden.native-settlement-inventory-unit }
   - id: native-workday-mode-unit
     action: { verifier: api.golden.native-workday-mode-unit }
     expect: { status: passed }

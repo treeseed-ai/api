@@ -16,7 +16,7 @@ import { CapacityReservationRepository } from '../../../../../../src/api/capacit
 import { CapacityLedgerRepository } from '../../../../../../src/api/capacity/repositories/capacity/accounting/ledger.ts';
 import { listTaskUsageActualsPage } from '../../../../../../src/api/capacity/repositories/capacity/accounting/task-usage.ts';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeModelExecutionInventory, verifyNativeWorkdayReadback } from '../../../../../acceptance/execution-inventory.ts';
+import { requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, verifyNativeWorkdayReadback } from '../../../../../acceptance/execution-inventory.ts';
 import { createWorkdayProfileService } from '../../../../../../src/api/control-plane/repositories/capacity/workdays/profile-service.ts';
 import { CapacityWorkdayEventRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { createDiagnosticEnvelopeService } from '../../../../../../src/security/diagnostic-envelope.ts';
@@ -321,6 +321,23 @@ describe('living admission in disposable PostgreSQL', () => {
 			expect(retained.assignments).toEqual(beforeFailure.assignments); expect(retained.nodes).toEqual(beforeFailure.nodes); expect(retained.proxies).toEqual(beforeFailure.proxies);
 			expect(JSON.parse(String(retained.usage[0]!.native_usage_json))).toEqual(settlement.usageActual.nativeUsage);
 			const published = await publicInventory();
+			verifyNativeSettlementReadback(retained.ledger, published.ledger, retained.assignments);
+			// Corrupt only this disposable owning database through the independent connection.
+			// The public serializer retains canonical metadata under the other valid phase;
+			// strict acceptance must still deny the missing original terminal settlement.
+			try {
+				await peerDatabase.pool.query("UPDATE capacity_ledger_entries SET phase='reservation_released' WHERE id=$1", [retained.ledger[0]!.id]);
+				const failedPublic = await publicInventory(), failedNative = await state(peerDatabase), originalFailure = structuredClone({ failedPublic, failedNative });
+				expect(() => verifyNativeSettlementReadback(failedNative.ledger, failedPublic.ledger, failedNative.assignments))
+					.toThrow('ACCEPTANCE_NATIVE_SETTLEMENT');
+				expect({ failedPublic, failedNative }).toEqual(originalFailure); expect(await state()).toEqual(failedNative);
+			} finally {
+				await peerDatabase.pool.query("UPDATE capacity_ledger_entries SET phase='task_completed_actual_settlement' WHERE id=$1", [retained.ledger[0]!.id]);
+			}
+			expect(await state()).toEqual(retained); expect(await publicInventory()).toEqual(published);
+			for (const replayed of await Promise.all([publicInventory(), publicInventory()]))
+				verifyNativeSettlementReadback(retained.ledger, replayed.ledger, retained.assignments);
+
 			expect(published.assignments.map(value => value.id)).toEqual(retained.assignments.map(value => value.id));
 			expect(published.assignments.map(value => value.assignmentAttempt)).toEqual([winner]);
 			expect(published.reservations.map(value => value.id)).toEqual(retained.reservations.map(value => value.id));

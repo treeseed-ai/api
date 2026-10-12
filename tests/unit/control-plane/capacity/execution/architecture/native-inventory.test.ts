@@ -38,9 +38,16 @@ describe('independent native producer inventory reconciliation', () => {
 		const inspect = (value: typeof exact) => verifyNativeSettlementReadback(value.ledger, value.visible, value.assignments);
 		const held = structuredClone(exact); inspect(exact); expect(exact).toEqual(held);
 		const disguised = structuredClone(exact); disguised.ledger[0]!.phase = 'reservation_released';
-		const original = structuredClone(disguised);
-		expect(() => inspect(disguised)).toThrow('ACCEPTANCE_NATIVE_SETTLEMENT');
-		expect(disguised).toEqual(original); inspect(exact); expect(exact).toEqual(held);
+		const missing = structuredClone(exact); missing.ledger = []; missing.visible = [];
+		const duplicate = structuredClone(exact); duplicate.ledger.push({ ...duplicate.ledger[0]!, id: 'second-settlement' });
+		const foreign = structuredClone(exact); Reflect.set(foreign.ledger[0]!, 'assignment_id', 'foreign-assignment');
+		const empty = structuredClone(exact); empty.assignments = [];
+		const repeated = structuredClone(exact); repeated.assignments.push({ ...repeated.assignments[0]! });
+		for (const denied of [disguised, missing, duplicate, foreign, empty, repeated]) {
+			const original = structuredClone(denied); expect(() => inspect(denied)).toThrow('ACCEPTANCE_NATIVE_SETTLEMENT');
+			expect(denied).toEqual(original);
+		}
+		inspect(exact); expect(exact).toEqual(held);
 	});
 
 	it('selects every original native model start independently of public sandbox markers and denies incomplete foreign duplicated or interrupted custody', () => {

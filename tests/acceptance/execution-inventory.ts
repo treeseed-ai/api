@@ -135,7 +135,13 @@ export function executionLibraryResult(value: Row): unknown {
 
 /** Shared original assignment assertion for native owner and managed read-back. */
 /** Original native/public ledger comparison, shared with its focused proof. */
-export function verifyNativeSettlementReadback(native: Row[], visible: Row[], _assignments: Row[]): void {
+export function verifyNativeSettlementReadback(native: Row[], visible: Row[], assignments: Row[]): void {
+	const label = 'ACCEPTANCE_NATIVE_SETTLEMENT: One original terminal ledger row per complete issued assignment required';
+	assert.ok(assignments.length > 0 && assignments.every(value => typeof value.id === 'string' && value.id)
+		&& new Set(assignments.map(value => value.id)).size === assignments.length, label);
+	const settled = native.filter(value => value.phase === 'task_completed_actual_settlement');
+	assert.equal(settled.length, assignments.length, label);
+	for (const assignment of assignments) assert.equal(settled.filter(value => value.assignment_id === assignment.id).length, 1, label);
 	for (const value of visible) {
 		const stored = native.find(record => record.id === value.id); assert.ok(stored);
 		if (stored.phase === 'task_completed_actual_settlement')

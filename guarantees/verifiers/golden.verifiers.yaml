@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.native-settlement-inventory-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
+    testName: "denies omitted duplicated or reclassified original settlements for the complete issued assignment inventory without rewriting failed observations"
   api.golden.native-workday-mode-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
