@@ -14,6 +14,7 @@ import { CapacityLedgerRepository } from '../../../../../../src/api/capacity/rep
 import { listTaskUsageActualsPage } from '../../../../../../src/api/capacity/repositories/capacity/accounting/task-usage.ts';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import { requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback } from '../../../../../acceptance/execution-inventory.ts';
+import { createWorkdayProfileService } from '../../../../../../src/api/control-plane/repositories/capacity/workdays/profile-service.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 describe('living admission in disposable PostgreSQL', () => {
@@ -156,6 +157,24 @@ describe('living admission in disposable PostgreSQL', () => {
 			const custody = { sourceWorkspace: { exactCommit: 'a'.repeat(40) }, retained: 'winner' };
 			await database.pool.query(`UPDATE capacity_provider_assignments SET status='leased',lease_state='leased',
 				workspace_context_json=$1 WHERE id=$2`, [JSON.stringify(custody), winner.id]);
+			// An actual issued, leased attempt and its accounting records must remain
+			// byte-identical when the owning team advances its default policy.
+			const issuedState = async () => Object.fromEntries(await Promise.all([
+				'capacity_workday_runs', 'execution_nodes', 'capacity_provider_assignments', 'capacity_reservations',
+				'capacity_admission_counters', 'capacity_reservation_counter_claims', 'capacity_usage_actuals', 'capacity_ledger_entries',
+			].map(async table => [table, (await peerDatabase.pool.query(`SELECT * FROM ${table} ORDER BY ${table === 'capacity_reservation_counter_claims' ? 'reservation_id,counter_id' : 'id'}`)).rows])));
+			const beforePolicy = await issuedState(), leasedPublic = await publicInventory();
+			const profiles = createWorkdayProfileService(accounting), principal = { id: 'owner', roles: ['admin'] };
+			const frozenProfile = await profiles.profilesShow(principal, 'team', 'default');
+			const policy = { ...frozenProfile.policy, planningPercent: 30, allocationWeight: 2 };
+			expect(await profiles.profilesUpdate(principal, 'team', 'default', { policy }, String(frozenProfile.revision)))
+				.toEqual({ ...frozenProfile, revision: frozenProfile.revision + 1, policy });
+			const peerProfiles = createWorkdayProfileService(peerAccounting);
+			expect(await peerProfiles.profilesShow(principal, 'team', 'default')).toEqual({ ...frozenProfile, revision: 2, policy });
+			await expect(peerProfiles.profilesUpdate(principal, 'team', 'default', { policy: frozenProfile.policy }, '1'))
+				.rejects.toMatchObject({ code: 'workday_profile_precondition_failed' });
+			expect(await issuedState()).toEqual(beforePolicy); expect(await publicInventory()).toEqual(leasedPublic);
+			expect(leasedPublic.assignments).toMatchObject([{ assignmentAttempt: { id: winner.id, leaseId: winner.leaseId }, leaseState: 'leased' }]);
 			staleAdmissionRead = true;
 			await run(winner);
 			expect((await database.pool.query('SELECT workspace_context_json::jsonb AS context FROM capacity_provider_assignments WHERE id=$1', [winner.id])).rows[0].context)

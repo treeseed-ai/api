@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback } from './execution-inventory.ts';
+import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy } from './execution-inventory.ts';
 
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
@@ -114,7 +114,13 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 					JOIN capacity_provider_assignments assignment ON assignment.id=reservation.assignment_id AND assignment.team_id=reservation.team_id
 					JOIN execution_nodes node ON node.id=assignment.execution_node_id AND node.team_id=assignment.team_id
 					WHERE reservation.team_id=$1 AND reservation.work_day_id=$2 GROUP BY reservation.project_id,node.agent_class`, [team, id]);
-				verifyNativeWorkdayReadback(nativeRun, run, admittedShares);
+				const policyProjects = await nativeInventory('SELECT id,slug FROM projects WHERE team_id=$1 AND id=ANY($2::text[]) ORDER BY id', [run.teamId, object(run.parameters).scheduledProjectIds]);
+				verifyNativeWorkdayReadback(nativeRun, run, admittedShares, policyProjects);
+				if (start.retained) {
+					const preflight = object(start.retained.freeze.preflight);
+					const policies = await nativeInventory("SELECT * FROM capacity_operation_receipts WHERE team_id=$1 AND operation='workday.preflight' AND resource_type='workday_preflight' AND resource_id=$2 ORDER BY id", [run.teamId, preflight.id]);
+					verifyNativeWorkdayPolicy(policies, run, preflight, policyProjects);
+				}
 				await verifyRetainedWorkdayStart(start, run, nativeInventory);
 				const inventory = (native: unknown, args: string[], direction: 'ascending' | 'descending' = 'descending') => verifyNativeInventory(native, cursor => {
 					const returned = read([...args, '--limit', '200', ...(cursor ? ['--cursor', cursor] : [])]);

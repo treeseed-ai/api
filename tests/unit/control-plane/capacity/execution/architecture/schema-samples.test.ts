@@ -90,9 +90,10 @@ it('native Workday readback reconciles original applied plan with independently 
 		executionMode: 'simulation', startsAt: '2026-09-16T12:00:00.000Z', agentIds: [], policy: { ...DEFAULT_WORKDAY_POLICY,
 			durationSeconds: 600, maximumConcurrency: 1, communicationConcurrency: 1 } });
 	const shares = [{ project_id: 'sdk', agent_class: 'engineer', admitted_seconds: '180' }, { project_id: 'sdk', agent_class: 'tester', admitted_seconds: '90' }];
-	const run = { id: plan.id, teamId: plan.teamId, status: 'completed', executionMode: 'simulation', parameters: { durationSeconds: 600,
+	const parameters = { ...plan.policySnapshot, policyId: 'default', profileId: 'default', policyRevision: 1 };
+	const run = { id: plan.id, teamId: plan.teamId, status: 'completed', executionMode: 'simulation', parameters: { ...parameters,
 		appliedPlan: { ...plan, admittedSecondsByProject: { sdk: 270 }, admittedSecondsByAgentClass: { 'sdk:engineer': 180, 'sdk:tester': 90 } } } };
-	const native = [{ id: run.id, team_id: run.teamId, status: run.status, execution_mode: run.executionMode, parameters_json: JSON.stringify({ durationSeconds: 600, appliedPlan: plan }) }];
+	const native = [{ id: run.id, team_id: run.teamId, status: run.status, execution_mode: run.executionMode, parameters_json: JSON.stringify({ ...parameters, appliedPlan: plan }) }];
 	const before = structuredClone({ native, run, shares });
 	for (const change of [{ id: 'foreign' }, { teamId: 'foreign' }, { executionMode: 'production' }]) {
 		const changed = [{ ...native[0]!, parameters_json: JSON.stringify({ durationSeconds: 600, appliedPlan: { ...plan, ...change } }) }];
@@ -115,4 +116,20 @@ it('native Workday readback reconciles original applied plan with independently 
 	for (const invalid of ['', '0x10', '-1', 'Infinity', false, null, {}, []]) expect.soft(() => verifyNativeWorkdayReadback(native, run,
 		[{ ...shares[0]!, admitted_seconds: invalid }])).toThrow();
 	expect({ native, run, shares }).toEqual(before);
+});
+
+it('native Workday readback denies policy identity revision and resolved snapshot drift even when native and public parameters agree', () => {
+	const plan = compileWorkday({ id: 'held-workday', teamId: 'held-team', policyId: 'default', policyRevision: 3,
+		executionMode: 'simulation', startsAt: '2026-10-11T12:00:00.000Z', agentIds: [], policy: DEFAULT_WORKDAY_POLICY });
+	const parameters = { ...plan.policySnapshot, policyId: 'default', profileId: 'default', policyRevision: 3, appliedPlan: plan };
+	for (const change of [{ policyId: 'other' }, { profileId: 'other' }, { policyRevision: 4 },
+		{ planningPercent: 30 }, { allocationWeight: 2 }, { projectPercentages: { other: 1 } },
+		{ agentClassPercentages: { other: { engineer: 1 } } }, { planningTurnMaximumSeconds: 1 }]) {
+		const run = { id: plan.id, teamId: plan.teamId, status: 'completed', executionMode: plan.executionMode,
+			parameters: { ...parameters, ...change } };
+		const native = [{ id: run.id, team_id: run.teamId, status: run.status, execution_mode: run.executionMode,
+			parameters_json: JSON.stringify(run.parameters) }], held = structuredClone({ native, run });
+		expect.soft(() => verifyNativeWorkdayReadback(native, run, []), JSON.stringify(change)).toThrow('ACCEPTANCE_NATIVE_WORKDAY_POLICY');
+		expect({ native, run }).toEqual(held);
+	}
 });

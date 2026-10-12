@@ -2538,3 +2538,33 @@ workflow:
   - id: archive-ownership-native
     action: { verifier: api.golden.archive-ownership-native }
     expect: { status: passed }
+  - id: policy-identity-unit
+    action: { verifier: api.golden.policy-identity-unit }
+    expect: { status: passed }
+  - id: policy-invalid-unit
+    action: { verifier: api.golden.policy-invalid-unit }
+    expect: { status: passed }
+  - id: policy-update-unit
+    action: { verifier: api.golden.policy-update-unit }
+    expect: { status: passed }
+  - id: policy-concurrent-unit
+    action: { verifier: api.golden.policy-concurrent-unit }
+    expect: { status: passed }
+  - id: policy-concurrent-native
+    action: { verifier: api.golden.policy-concurrent-native }
+    expect: { status: passed }
+  - id: policy-issued-readback-unit
+    action: { verifier: api.golden.policy-issued-readback-unit }
+    expect: { status: passed }
+  - id: policy-preflight-unit
+    action: { verifier: api.golden.policy-preflight-unit }
+    expect: { status: passed }
+  - id: policy-preflight-denials-unit
+    action: { verifier: api.golden.policy-preflight-denials-unit }
+    expect: { status: passed }
+  - id: policy-issued-denials-unit
+    action: { verifier: api.golden.policy-issued-denials-unit }
+    expect: { status: passed }
+  - id: policy-override-native
+    action: { verifier: api.golden.policy-override-native }
+    expect: { status: passed }

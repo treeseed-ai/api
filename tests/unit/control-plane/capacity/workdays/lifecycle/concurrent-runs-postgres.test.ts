@@ -53,7 +53,8 @@ describe('concurrent local execution in PostgreSQL', () => {
 				const initial = await repository.get('team', id); expect(initial).not.toBeNull();
 				const plan = compileWorkday({ id, teamId: 'team', policyId: 'default', policyRevision: 1, executionMode: initial!.executionMode,
 					startsAt: now, agentIds: [], policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 600, maximumConcurrency: 1, communicationConcurrency: 1 } });
-				await service.update('team', id, { parameters: { ...initial!.parameters, appliedPlan: plan } });
+				await service.update('team', id, { parameters: { ...initial!.parameters, ...plan.policySnapshot,
+					policyId: plan.policyId, profileId: plan.policyId, policyRevision: plan.policyRevision, appliedPlan: plan } });
 				const original = await repository.get('team', id); expect(original).not.toBeNull();
 				const shares = async () => (await observer.query(`SELECT reservation.project_id,node.agent_class,
 					SUM(reservation.requested_seconds) AS admitted_seconds FROM capacity_reservations reservation
