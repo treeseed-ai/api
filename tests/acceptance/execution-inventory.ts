@@ -134,6 +134,15 @@ export function executionLibraryResult(value: Row): unknown {
 }
 
 /** Shared original assignment assertion for native owner and managed read-back. */
+/** Original native/public ledger comparison, shared with its focused proof. */
+export function verifyNativeSettlementReadback(native: Row[], visible: Row[], _assignments: Row[]): void {
+	for (const value of visible) {
+		const stored = native.find(record => record.id === value.id); assert.ok(stored);
+		if (stored.phase === 'task_completed_actual_settlement')
+			assert.deepEqual(value.usageSettlement, JSON.parse(stored.metadata_json as string).usageSettlement);
+	}
+}
+
 export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: Row,
 	reservations: unknown) {
 	assert.equal(native.team_id, run.teamId); assert.equal(typeof native.id, 'string');

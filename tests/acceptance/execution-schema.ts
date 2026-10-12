@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy } from './execution-inventory.ts';
+import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy } from './execution-inventory.ts';
 
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
@@ -144,8 +144,8 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 							assert.equal(value.assignmentId, stored.assignment_id); assert.equal(value.workDayId, id);
 							assert.equal(value.activeSeconds, stored.active_seconds); assert.equal(value.elapsedSeconds, stored.elapsed_seconds);
 							if (command === 'usage') assert.deepEqual(value.nativeUsage, JSON.parse(stored.native_usage_json));
-							else if (stored.phase === 'task_completed_actual_settlement') assert.deepEqual(value.usageSettlement, JSON.parse(stored.metadata_json).usageSettlement);
 						}
+						if (command === 'ledger') verifyNativeSettlementReadback(native, visible, assignments.filter(value => value.project_id === project));
 					}
 				}
 				const membershipSql = `SELECT id,team_id,capacity_provider_id FROM capacity_provider_team_memberships membership
