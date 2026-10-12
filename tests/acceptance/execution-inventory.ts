@@ -201,6 +201,7 @@ export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: R
 		'ACCEPTANCE_NATIVE_RESERVATION: Original reservation observation clocks required');
 	assert.ok((typeof reserved === 'number' || (typeof reserved === 'string' && /^\d+(?:\.\d+)?$/u.test(reserved)))
 		&& Number(reserved) === attempt.limits.maximumSeconds
+		&& Number(originalMatches[0]!.requested_seconds) === attempt.limits.maximumSeconds
 		&& typeof originalMatches[0]!.state === 'string' && originalMatches[0]!.state,
 		'ACCEPTANCE_NATIVE_RESERVATION: Original reserved amount and state required');
 	if (native.assignment_result_json !== null) {

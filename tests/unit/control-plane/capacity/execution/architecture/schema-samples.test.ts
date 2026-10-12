@@ -110,6 +110,7 @@ it('native Workday readback reconciles original applied plan with independently 
 	expect(() => verifyNativeWorkdayReadback(native, run, [...shares, shares[0]!])).toThrow();
 	verifyNativeWorkdayReadback(native, run, shares);
 	for (const changed of [{ ...run, parameters: { ...run.parameters, appliedPlan: { ...run.parameters.appliedPlan, admittedSecondsByProject: { sdk: 269 } } } },
+		{ ...run, parameters: { ...run.parameters, appliedPlan: { ...run.parameters.appliedPlan, admittedSecondsByAgentClass: { 'sdk:engineer': 179, 'sdk:tester': 90 } } } },
 		{ ...run, parameters: { ...run.parameters, appliedPlan: { ...run.parameters.appliedPlan, policyRevision: 2 } } }]) {
 		const failed = structuredClone(changed); expect.soft(() => verifyNativeWorkdayReadback(native, changed, shares)).toThrow(); expect(changed).toEqual(failed);
 	}
