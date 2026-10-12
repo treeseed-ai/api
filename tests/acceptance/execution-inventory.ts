@@ -9,6 +9,51 @@ import { canonicalWorkdayShares } from '../../dist/api/capacity/services/capacit
 
 type Row = Record<string, unknown>;
 
+/** Native producers, rather than optional public output markers, own this inventory. */
+export function verifyNativeModelExecutionInventory(assignments: Row[], events: Row[], run: Row): Set<string> {
+	const owners = new Map<string, Row>(), eventIds = new Set<string>(), indexes = new Set<number>();
+	for (const assignment of assignments) {
+		assert.ok(typeof assignment.id === 'string' && assignment.id && !owners.has(assignment.id), 'ACCEPTANCE_NATIVE_MODEL_OWNER');
+		assert.equal(assignment.team_id, run.teamId); assert.equal(assignment.work_day_id, run.id);
+		owners.set(assignment.id, assignment);
+	}
+	const original = events.map(event => {
+		assert.ok(typeof event.id === 'string' && event.id && !eventIds.has(event.id)
+			&& Number.isSafeInteger(event.event_index) && Number(event.event_index) >= 0 && !indexes.has(Number(event.event_index)), 'ACCEPTANCE_NATIVE_MODEL_EVENT');
+		assert.equal(event.team_id, run.teamId); assert.equal(event.run_id, run.id);
+		eventIds.add(event.id); indexes.add(Number(event.event_index));
+		return { event, context: row(JSON.parse(String(event.context_json))), metadata: row(JSON.parse(String(event.metadata_json))) };
+	});
+	const model = (context: Row) => Object.hasOwn(context, 'model') || context.isolation === 'microvm';
+	const selected = new Set<string>();
+	for (const { event: started, context } of original.filter(value => value.event.event_type === 'provider.execution.started' && model(value.context))) {
+		assert.ok(typeof context.model === 'string' && context.model.trim(), 'ACCEPTANCE_NATIVE_MODEL_CONFIGURATION');
+		assert.ok(typeof started.assignment_id === 'string' && !selected.has(started.assignment_id), 'ACCEPTANCE_NATIVE_MODEL_DUPLICATE');
+		const owner = owners.get(started.assignment_id); assert.ok(owner, 'ACCEPTANCE_NATIVE_MODEL_OWNER');
+		const terminals = original.filter(value => value.event.assignment_id === owner.id
+			&& ['provider.execution.completed', 'provider.execution.failed'].includes(String(value.event.event_type)));
+		assert.equal(terminals.length, 1, 'ACCEPTANCE_NATIVE_MODEL_TERMINAL');
+		const terminal = terminals[0]!;
+		for (const event of [started, terminal.event]) {
+			assert.equal(event.workday_id, run.id); assert.equal(event.project_id, owner.project_id);
+			assert.ok(Number.isFinite(Date.parse(String(event.created_at))), 'ACCEPTANCE_NATIVE_MODEL_CLOCK');
+		}
+		assert.ok(Number(started.event_index) < Number(terminal.event.event_index)
+			&& Date.parse(String(started.created_at)) <= Date.parse(String(terminal.event.created_at)), 'ACCEPTANCE_NATIVE_MODEL_ORDER');
+		assert.ok(Object.hasOwn(terminal.metadata, 'protectedPayloadEnvelope'), 'ACCEPTANCE_NATIVE_MODEL_PROTECTED');
+		selected.add(started.assignment_id);
+	}
+	for (const { event, context, metadata } of original.filter(value => ['provider.execution.completed', 'provider.execution.failed'].includes(String(value.event.event_type))))
+		if (model(context) || Object.hasOwn(metadata, 'protectedPayloadEnvelope')) assert.ok(selected.has(String(event.assignment_id)), 'ACCEPTANCE_NATIVE_MODEL_MISSING_START');
+	for (const assignment of assignments) {
+		const output = row(JSON.parse(String(assignment.lifecycle_output_json)));
+		if (assignment.status === 'completed' && Object.hasOwn(output, 'sandboxId'))
+			assert.ok(selected.has(String(assignment.id)), 'ACCEPTANCE_NATIVE_MODEL_MISSING_START');
+	}
+	assert.ok(selected.size > 0, 'ACCEPTANCE_NATIVE_MODEL_EMPTY');
+	return selected;
+}
+
 /** Original preflight owns the resolved policy; current team defaults may advance later. */
 export function verifyNativeWorkdayPolicy(native: Row[], run: { id?: unknown; teamId?: unknown; executionMode?: unknown; parameters?: unknown }, preflight: unknown, projects: Array<{ id: string; slug?: string | null }>): void {
 	assert.equal(native.length, 1, 'ACCEPTANCE_NATIVE_WORKDAY_POLICY: One original preflight required');
@@ -95,6 +140,9 @@ export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: R
 	assert.equal(visible.id, native.id); assert.equal(visible.workDayId, run.id); assert.equal(visible.teamId, run.teamId);
 	assert.equal(visible.status, native.status); assert.equal(visible.membershipId, native.membership_id);
 	assert.equal(visible.capacityProviderId, native.capacity_provider_id);
+	assert.equal(typeof native.lifecycle_output_json, 'string', 'ACCEPTANCE_NATIVE_LIFECYCLE: Original lifecycle bytes required');
+	const lifecycleOutput = row(JSON.parse(native.lifecycle_output_json as string));
+	assert.deepEqual(visible.lifecycleOutput, lifecycleOutput, 'ACCEPTANCE_NATIVE_LIFECYCLE: Public lifecycle output differs from original native custody');
 	assert.equal(Object.hasOwn(visible, 'modeRunId'), false, 'ACCEPTANCE_SCHEMA_RETIRED_IDENTITY: Public assignment retains a retired mode-run alias');
 	assert.equal(typeof native.assignment_attempt_json, 'string');
 	const original: unknown = JSON.parse(native.assignment_attempt_json as string), attempt = assignmentAttemptSchema.parse(original);

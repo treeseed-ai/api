@@ -1,4 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import pg from 'pg';
 import { describe, expect, it } from 'vitest';
 import { assignmentAttemptSchema, calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
@@ -13,8 +16,10 @@ import { CapacityReservationRepository } from '../../../../../../src/api/capacit
 import { CapacityLedgerRepository } from '../../../../../../src/api/capacity/repositories/capacity/accounting/ledger.ts';
 import { listTaskUsageActualsPage } from '../../../../../../src/api/capacity/repositories/capacity/accounting/task-usage.ts';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback } from '../../../../../acceptance/execution-inventory.ts';
+import { requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeModelExecutionInventory } from '../../../../../acceptance/execution-inventory.ts';
 import { createWorkdayProfileService } from '../../../../../../src/api/control-plane/repositories/capacity/workdays/profile-service.ts';
+import { CapacityWorkdayEventRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
+import { createDiagnosticEnvelopeService } from '../../../../../../src/security/diagnostic-envelope.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 describe('living admission in disposable PostgreSQL', () => {
@@ -123,6 +128,28 @@ describe('living admission in disposable PostgreSQL', () => {
 				return { assignments, reservations, usage, ledger };
 			};
 			const issuedPublic = await publicInventory();
+			// Write controlled lifecycle bytes through one native connection and
+			// read the actual owning public serializer through the independent peer.
+			const lifecycleOutput = { sandboxId: 'controlled-native-sandbox', retained: { source: 'original-sql-row' } };
+			await database.pool.query('UPDATE capacity_provider_assignments SET lifecycle_output_json=$1 WHERE id=$2', [JSON.stringify(lifecycleOutput), winner.id]);
+			try {
+				const observed = await publicInventory(); expect(observed.assignments[0]!.lifecycleOutput).toEqual(lifecycleOutput);
+				const raw = (await peerDatabase.pool.query('SELECT * FROM capacity_provider_assignments WHERE id=$1', [winner.id])).rows[0]!;
+				const reservations = (await peerDatabase.pool.query('SELECT * FROM capacity_reservations WHERE work_day_id=$1', ['workday'])).rows;
+				const held = structuredClone({ raw, observed, reservations });
+				for (const lifecycleOutput of [undefined, null, {}, { sandboxId: 'substituted-native-sandbox' }])
+					expect(() => verifyNativeAssignmentReadback(raw, { ...observed.assignments[0], lifecycleOutput },
+						{ id: 'workday', teamId: 'team' }, reservations)).toThrow('ACCEPTANCE_NATIVE_LIFECYCLE');
+				expect(await Promise.all([publicInventory(), publicInventory()])).toEqual([observed, observed]);
+				expect({ raw, observed, reservations }).toEqual(held);
+				for (const malformed of ['{', 'null', '[]', 'true', '1']) {
+					await database.pool.query('UPDATE capacity_provider_assignments SET lifecycle_output_json=$1 WHERE id=$2', [malformed, winner.id]);
+					await expect(publicInventory()).rejects.toThrow();
+					expect((await peerDatabase.pool.query('SELECT lifecycle_output_json FROM capacity_provider_assignments WHERE id=$1', [winner.id])).rows)
+						.toEqual([{ lifecycle_output_json: malformed }]);
+				}
+			} finally { await database.pool.query("UPDATE capacity_provider_assignments SET lifecycle_output_json='{}' WHERE id=$1", [winner.id]); }
+			expect(await publicInventory()).toEqual(issuedPublic);
 			const deniedReservations: unknown[] = [];
 			for (const [column, replacement, original] of [['team_id', 'foreign-team', winner.teamId],
 				['reserved_seconds', winner.limits.maximumSeconds + 1, winner.limits.maximumSeconds]] as const) {
@@ -297,6 +324,32 @@ describe('living admission in disposable PostgreSQL', () => {
 				WHERE reservation_id=$1 AND phase='task_completed_actual_settlement'`, [winner.reservationId])).rows[0].count).toBe(1);
 			expect((await database.pool.query(`SELECT count(*)::int AS count FROM capacity_usage_actuals
 				WHERE assignment_id=$1 AND accounting_mode='aggregate'`, [winner.id])).rows[0].count).toBe(1);
+			const directory = await mkdtemp(join(tmpdir(), 'api-native-model-inventory-'));
+			try {
+				const key = join(directory, 'diagnostics.key'); await writeFile(key, randomBytes(32).toString('base64url'), { mode: 0o600 });
+				const envelopes = createDiagnosticEnvelopeService({ diagnosticsEncryptionKeyFile: key });
+				const writer = new CapacityWorkdayEventRepository(accounting), reader = new CapacityWorkdayEventRepository(peerAccounting);
+				const base = { projectId: 'project', workdayId: 'workday', assignmentId: winner.id, status: 'recorded' as const,
+					title: null, message: 'Controlled original native event input; no model invocation claimed.', parameters: {}, refs: {}, createdAt: now };
+				const start = await writer.create('team', 'workday', { ...base, id: 'controlled-model-start',
+					eventType: 'provider.execution.started', context: { model: 'arbitrary-configured-model', isolation: 'microvm' }, metadata: {} });
+				const payload = { providerEvents: [{ type: 'controlled-native-observation' }] };
+				const protectedPayloadEnvelope = envelopes.encrypt(payload, { teamId: 'team', assignmentId: winner.id,
+					resourceId: 'controlled-model-terminal', eventType: 'provider.execution.completed', sequence: 0 });
+				const terminal = await writer.create('team', 'workday', { ...base, id: 'controlled-model-terminal',
+					eventType: 'provider.execution.completed', context: {}, metadata: { protectedPayloadEnvelope } });
+				expect(await reader.get('team', 'workday', start!.id)).toEqual(start);
+				expect(await reader.get('team', 'workday', terminal!.id)).toEqual(terminal);
+				const raw = (await peerDatabase.pool.query('SELECT * FROM capacity_workday_events WHERE assignment_id=$1 ORDER BY event_index', [winner.id])).rows;
+				const owners = (await peerDatabase.pool.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1', ['workday'])).rows;
+				const held = structuredClone({ raw, owners });
+				expect([...verifyNativeModelExecutionInventory(owners, raw, { id: 'workday', teamId: 'team' })]).toEqual([winner.id]);
+				expect(envelopes.decrypt(JSON.parse(String(raw[1]!.metadata_json)).protectedPayloadEnvelope)).toEqual(payload);
+				for (const incomplete of [raw.slice(0, 1), raw.slice(1), [...raw, raw[0]!]])
+					expect(() => verifyNativeModelExecutionInventory(owners, incomplete, { id: 'workday', teamId: 'team' })).toThrow();
+				expect({ raw, owners }).toEqual(held); expect(await state()).toEqual(retained);
+				expect((await peerDatabase.pool.query('SELECT * FROM capacity_workday_events WHERE assignment_id=$1 ORDER BY event_index', [winner.id])).rows).toEqual(raw);
+			} finally { await rm(directory, { recursive: true, force: true }); }
 		} finally {
 			try { await Promise.all([database.close(), ...(peer ? [peer.close()] : [])]); }
 			finally { try { await admin.query(`DROP DATABASE "${name}"`); } finally { await admin.end(); } }

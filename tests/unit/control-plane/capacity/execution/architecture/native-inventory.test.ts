@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { verifyNativeInventory, verifyNativeAssignmentReadback } from '../../../../../acceptance/execution-inventory.ts';
+import { verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeModelExecutionInventory } from '../../../../../acceptance/execution-inventory.ts';
 import { assignment } from '../fixtures/assignment.ts';
 
 const clock = '2026-10-09T12:00:00.000Z';
@@ -15,11 +15,11 @@ const nativeAssignment = { id: assignment.id, team_id: assignment.teamId, projec
 	status: 'pending', lease_state: 'unleased', reservation_id: assignment.reservationId, execution_kind: 'workday',
 	project_agent_class_id: 'class',
 	execution_node_id: assignment.nodeId, execution_node_revision: assignment.nodeRevision, graph_revision: assignment.graphRevision,
-	assignment_attempt_json: JSON.stringify(assignment), assignment_result_json: null };
+	assignment_attempt_json: JSON.stringify(assignment), assignment_result_json: null, lifecycle_output_json: '{}' };
 const publicAssignment = { id: assignment.id, teamId: assignment.teamId, projectId: assignment.projectId,
 	workDayId: assignment.workdayId, membershipId: 'membership', capacityProviderId: assignment.provider.providerId,
 	status: 'pending', leaseState: 'unleased', reservationId: assignment.reservationId, assignmentAttempt: assignment, assignmentResult: null,
-	projectAgentClassId: 'class',
+	projectAgentClassId: 'class', lifecycleOutput: {},
 	executionNodeId: assignment.nodeId, executionNodeRevision: assignment.nodeRevision, graphRevision: assignment.graphRevision };
 const nativeReservation = { id: assignment.reservationId, assignment_id: assignment.id, team_id: assignment.teamId,
 	project_id: assignment.projectId, work_day_id: assignment.workdayId, membership_id: 'membership',
@@ -30,6 +30,41 @@ const nativeReservation = { id: assignment.reservationId, assignment_id: assignm
 	created_at: assignment.createdAt, updated_at: assignment.createdAt };
 
 describe('independent native producer inventory reconciliation', () => {
+	it('selects every original native model start independently of public sandbox markers and denies incomplete foreign duplicated or interrupted custody', () => {
+		const owner = { ...nativeAssignment, status: 'completed' };
+		const started = { id: 'started', event_index: 0, run_id: scope.id, team_id: scope.teamId, workday_id: scope.id,
+			project_id: owner.project_id, assignment_id: owner.id, event_type: 'provider.execution.started',
+			context_json: JSON.stringify({ model: 'arbitrary-configured-model', isolation: 'microvm' }), metadata_json: '{}', created_at: clock };
+		const terminal = { ...started, id: 'terminal', event_index: 1, event_type: 'provider.execution.completed',
+			context_json: '{}', metadata_json: JSON.stringify({ protectedPayloadEnvelope: { original: 'ciphertext' } }) };
+		const events = [started, terminal], held = structuredClone({ owner, events });
+		expect([...verifyNativeModelExecutionInventory([owner], events, scope)]).toEqual([owner.id]);
+		const sandbox = { ...owner, lifecycle_output_json: JSON.stringify({ sandboxId: 'native-sandbox' }) };
+		expect([...verifyNativeModelExecutionInventory([sandbox], events, scope)]).toEqual([owner.id]);
+		for (const observed of [[], [started], [terminal], [...events, started], [...events, { ...terminal, id: 'duplicate', event_index: 2 }],
+			[{ ...started, context_json: '{}' }, terminal], [{ ...started, context_json: JSON.stringify({ model: '' }) }, terminal],
+			[started, { ...terminal, metadata_json: '{}' }], [{ ...started, assignment_id: 'foreign' }, terminal],
+			[{ ...started, event_index: 2 }, terminal], [{ ...started, created_at: 'invalid' }, terminal],
+			[{ ...started, created_at: '2026-10-09T12:00:01.000Z' }, terminal]]) {
+			const before = structuredClone(observed);
+			expect(() => verifyNativeModelExecutionInventory([sandbox], observed, scope)).toThrow(); expect(observed).toEqual(before);
+		}
+		for (const column of ['team_id', 'run_id', 'workday_id', 'project_id'])
+			for (const index of [0, 1]) {
+				const observed = structuredClone(events); Reflect.set(observed[index]!, column, 'foreign');
+				expect(() => verifyNativeModelExecutionInventory([owner], observed, scope)).toThrow();
+			}
+		for (const column of ['context_json', 'metadata_json']) for (const malformed of ['{', 'null', '[]', 'true', '1']) {
+			const observed = structuredClone(events); Reflect.set(observed[0]!, column, malformed);
+			expect(() => verifyNativeModelExecutionInventory([owner], observed, scope)).toThrow();
+		}
+		const omitted = { ...sandbox, id: 'omitted-model' };
+		expect(() => verifyNativeModelExecutionInventory([owner, omitted], events, scope)).toThrow('ACCEPTANCE_NATIVE_MODEL_MISSING_START');
+		expect(() => verifyNativeModelExecutionInventory([owner, owner], events, scope)).toThrow('ACCEPTANCE_NATIVE_MODEL_OWNER');
+		// A failed preparation has no model start; it cannot fabricate a model execution.
+		expect([...verifyNativeModelExecutionInventory([owner, { ...omitted, status: 'failed' }], events, scope)]).toEqual([owner.id]);
+		expect({ owner, events }).toEqual(held);
+	});
 	it('retains original native lifecycle output and denies missing substituted or malformed public model custody without rewriting observations', () => {
 		const output = { sandboxId: 'native-model-sandbox', retained: { source: 'original-native-output' } };
 		const original = { ...nativeAssignment, lifecycle_output_json: JSON.stringify(output) };
