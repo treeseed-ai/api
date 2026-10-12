@@ -329,13 +329,17 @@ describe('living workday lifecycle', () => {
 			parameters: expect.objectContaining({ appliedPlan: expect.objectContaining({ reportRef: reportReference }) }) }));
 		expect(updateCapacityWorkdayRun.mock.calls[0]?.[2]).not.toHaveProperty('reportRefs');
 	});
-	it.each(['missing', 'duplicate', 'invalid', 'wrong-assignment', 'wrong-store', 'future-completion'])('rejects %s Reporter evidence despite a completed graph node', async failure => {
+	it.each(['missing', 'duplicate', 'invalid', 'wrong-assignment', 'wrong-store', 'future-completion', 'missing-integration',
+		'future-integration', 'wrong-result-integration', 'wrong-reference-integration'])('rejects %s Reporter evidence despite a completed graph node', async failure => {
 		const closingRun = { ...run, parameters: { appliedPlan: { ...plan, state: 'closing', closingAt: now } } } as never;
 		const result = { ...reportResult,
 			...(failure === 'wrong-assignment' ? { assignmentId: 'another' } : {}),
 			...(failure === 'wrong-store' ? { references: [] } : {}) };
 		if (failure === 'future-completion') result.completedAt = '2026-09-13T16:01:00.000Z';
-		const row = { id: 'assignment', assignment_result_json: failure === 'invalid' ? '{broken' : JSON.stringify(result) };
+		const row = { id: 'assignment', assignment_result_json: failure === 'invalid' ? '{broken' : JSON.stringify(result),
+			integrated_at: failure === 'missing-integration' ? null : failure === 'future-integration' ? '2026-09-13T16:01:00.000Z' : now,
+			integration_json: JSON.stringify({ resultId: failure === 'wrong-result-integration' ? 'foreign-result' : result.id,
+				references: failure === 'wrong-reference-integration' ? [{ ...reportReference, commit: 'b'.repeat(40) }] : result.references, publication: false }) };
 		const store = { all: vi.fn(async (sql: string) => sql.includes('SELECT id,kind,status')
 			? [{ id: 'report', kind: 'reporting', status: 'completed' }]
 			: sql.includes('assignment_result_json') ? failure === 'missing' ? [] : failure === 'duplicate' ? [row, row] : [row]

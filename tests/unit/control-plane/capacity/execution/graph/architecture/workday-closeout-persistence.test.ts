@@ -173,15 +173,20 @@ describe('canonical single report at the real lifecycle and SQL boundary', () =>
 	});
 
 	it('denies future result completion at the real SQL closeout boundary', async () => {
+		for (const future of ['result', 'integration']) {
 		const { db, reads, store, query } = await closeoutDatabase();
 		try {
-			await query('UPDATE capacity_provider_assignments SET assignment_result_json=?',
+			if (future === 'result') await query('UPDATE capacity_provider_assignments SET assignment_result_json=?',
 				[JSON.stringify({ ...reportResult, completedAt: '2026-10-02T21:02:00.000Z' })]);
+			else await query('UPDATE audit_events SET created_at=?', ['2026-10-02T21:02:00.000Z']);
+			const before = (await query('SELECT * FROM audit_events ORDER BY id')).rows;
 			const run = (await reads.get('team', 'workday'))!;
 			const outcome = await advanceLivingWorkday(store as never, run, now);
 			expect(outcome.status).not.toBe('completed');
 			expect(outcome.plan.state).not.toBe('ended');
 			expect((await reads.get('team', 'workday'))!.parameters.appliedPlan).not.toHaveProperty('reportRef');
+			expect((await query('SELECT * FROM audit_events ORDER BY id')).rows).toEqual(before);
 		} finally { await db.close(); }
+		}
 	});
 });
