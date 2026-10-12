@@ -50,7 +50,7 @@ describe('immutable assignment-attempt construction', () => {
 		expect(first.assignment.contextRefs).toEqual(supplied.candidate.contextRefs);
 		expect(first.assignment.effectiveProfile).toEqual(supplied.candidate.effectiveProfile);
 		expect(first.assignment.workspace).toEqual({ mode: 'git', repository: 'treeseed-ai/sdk', baseCommit: 'c'.repeat(40),
-			branch: `simulation/local/workday/${first.assignment.id}`, writablePaths: ['**'] });
+			branch: `simulation/local/workday/${first.assignment.id}`, writablePaths: ['.'] });
 		expect(first.assignment.grant).toEqual({ contentRead: [supplied.candidate.node.sourceRef], contentWrite: [],
 			sourceRead: ['treeseed-ai/sdk'], sourceWrite: ['treeseed-ai/sdk'], tools: [...permissions.tools] });
 		expect(first.assignment.createdAt).toBe(supplied.now); expect(first.assignment.limits.maximumSeconds).toBe(3);
