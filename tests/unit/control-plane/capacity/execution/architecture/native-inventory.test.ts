@@ -30,6 +30,24 @@ const nativeReservation = { id: assignment.reservationId, assignment_id: assignm
 	created_at: assignment.createdAt, updated_at: assignment.createdAt };
 
 describe('independent native producer inventory reconciliation', () => {
+	it('retains original native lifecycle output and denies missing substituted or malformed public model custody without rewriting observations', () => {
+		const output = { sandboxId: 'native-model-sandbox', retained: { source: 'original-native-output' } };
+		const original = { ...nativeAssignment, lifecycle_output_json: JSON.stringify(output) };
+		const visible = { ...publicAssignment, lifecycleOutput: output };
+		const held = structuredClone({ original, visible });
+		expect(verifyNativeAssignmentReadback(original, visible, scope, [nativeReservation])).toEqual(assignment);
+		for (const lifecycleOutput of [undefined, null, {}, { sandboxId: 'foreign' }, { ...output, retained: { source: 'substituted' } }]) {
+			const changed = { ...visible, lifecycleOutput }, before = structuredClone(changed);
+			expect.soft(() => verifyNativeAssignmentReadback(original, changed, scope, [nativeReservation])).toThrow();
+			expect(changed).toEqual(before);
+		}
+		for (const lifecycle_output_json of ['{', 'null', '[]', 'true', '""', '1']) {
+			const changed = { ...original, lifecycle_output_json }, before = structuredClone(changed);
+			expect.soft(() => verifyNativeAssignmentReadback(changed, visible, scope, [nativeReservation])).toThrow();
+			expect(changed).toEqual(before);
+		}
+		expect({ original, visible }).toEqual(held);
+	});
 	it('reads exactly every native identity through complete public pages without changing original observations', async () => {
 		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [nativeReservation])).toEqual(assignment);
 		const retainedAssignment = structuredClone({ nativeAssignment, publicAssignment, nativeReservation });
