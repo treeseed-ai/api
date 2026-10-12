@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import pg from 'pg';
 import { describe, expect, it } from 'vitest';
-import { assignmentAttemptSchema, calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
+import { appliedWorkdaySchema, assignmentAttemptSchema, calculateAssignmentAllocation, compileWorkday, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { createControlPlanePostgresDatabase } from '../../../../../../src/api/support/control-plane-postgres.ts';
 import { admitLivingExecutionAssignment } from '../../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts';
 import { assignment } from '../fixtures/assignment.ts';
@@ -16,10 +16,11 @@ import { CapacityReservationRepository } from '../../../../../../src/api/capacit
 import { CapacityLedgerRepository } from '../../../../../../src/api/capacity/repositories/capacity/accounting/ledger.ts';
 import { listTaskUsageActualsPage } from '../../../../../../src/api/capacity/repositories/capacity/accounting/task-usage.ts';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeModelExecutionInventory } from '../../../../../acceptance/execution-inventory.ts';
+import { requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, verifyNativeWorkdayReadback } from '../../../../../acceptance/execution-inventory.ts';
 import { createWorkdayProfileService } from '../../../../../../src/api/control-plane/repositories/capacity/workdays/profile-service.ts';
 import { CapacityWorkdayEventRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { createDiagnosticEnvelopeService } from '../../../../../../src/security/diagnostic-envelope.ts';
+import { CapacityWorkdayRunRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 describe('living admission in disposable PostgreSQL', () => {
@@ -50,6 +51,10 @@ describe('living admission in disposable PostgreSQL', () => {
 				VALUES ('team','team','Team',$1,$1),('foreign-team','foreign-team','Foreign Team',$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO capacity_workday_runs (id,team_id,status,execution_mode,created_at,updated_at)
 				VALUES ('workday','team','running','simulation',$1,$1)`, [now]);
+			const originalPlan = compileWorkday({ id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
+				executionMode: 'simulation', startsAt: now, agentIds: [], policy: DEFAULT_WORKDAY_POLICY });
+			await database.pool.query('UPDATE capacity_workday_runs SET parameters_json=$1 WHERE id=$2', [JSON.stringify({
+				...originalPlan.policySnapshot, policyId: 'default', profileId: 'default', policyRevision: 1, appliedPlan: originalPlan }), 'workday']);
 			await database.pool.query(`INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('project','team','project','Project',$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,created_at,updated_at) VALUES ('class','team','project','engineer','Engineer',$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO capacity_providers (id,fingerprint,public_jwk_json,display_name,created_at,updated_at) VALUES ('provider','test','{}','Provider',$1,$1)`, [now]);
@@ -125,9 +130,37 @@ describe('living admission in disposable PostgreSQL', () => {
 				]);
 				for (const native of nativeAssignments!.rows) verifyNativeAssignmentReadback(native,
 					assignments.find(value => value.id === native.id)!, { id: 'workday', teamId: 'team' }, nativeReservations!.rows);
-				return { assignments, reservations, usage, ledger };
+				const workday = await new CapacityWorkdayRunRepository(peerAccounting).get('team', 'workday');
+				if (!workday) throw new Error('Original native workday admission projection required.');
+				const shares = (await peerDatabase.pool.query(`SELECT project_id,assignment_attempt_json::jsonb->>'agentClass' AS agent_class,
+					SUM((assignment_attempt_json::jsonb->'limits'->>'maximumSeconds')::numeric) AS admitted_seconds
+					FROM capacity_provider_assignments WHERE team_id=$1 AND work_day_id=$2
+					GROUP BY project_id,assignment_attempt_json::jsonb->>'agentClass'`, ['team', 'workday'])).rows;
+				const nativeRun = (await peerDatabase.pool.query('SELECT * FROM capacity_workday_runs WHERE team_id=$1 AND id=$2', ['team', 'workday'])).rows;
+				verifyNativeWorkdayReadback(nativeRun, workday, shares);
+				return { assignments, reservations, usage, ledger, workday, shares };
 			};
 			const issuedPublic = await publicInventory();
+			const nativeRun = (await peerDatabase.pool.query('SELECT * FROM capacity_workday_runs WHERE team_id=$1 AND id=$2', ['team', 'workday'])).rows;
+			const nativeAssignment = (await peerDatabase.pool.query('SELECT * FROM capacity_provider_assignments WHERE id=$1', [winner.id])).rows[0]!;
+			const nativeReservations = (await peerDatabase.pool.query('SELECT * FROM capacity_reservations WHERE work_day_id=$1', ['workday'])).rows;
+			const originalAdmission = structuredClone({ issuedPublic, nativeRun, nativeAssignment, nativeReservations });
+			for (const seconds of [0, winner.limits.maximumSeconds - 1, winner.limits.maximumSeconds + 1]) {
+				const denied = nativeReservations.map(row => ({ ...row, requested_seconds: seconds })), failed = structuredClone(denied);
+				expect(() => verifyNativeAssignmentReadback(nativeAssignment, issuedPublic.assignments[0]!,
+					{ id: 'workday', teamId: 'team' }, denied)).toThrow('ACCEPTANCE_NATIVE_RESERVATION');
+				expect(denied).toEqual(failed);
+			}
+			const plan = appliedWorkdaySchema.parse(issuedPublic.workday.parameters.appliedPlan);
+			for (const changedPlan of [{ ...plan, admittedSecondsByProject: { project: 0 } },
+				{ ...plan, admittedSecondsByAgentClass: { 'project:engineer': 0 } }]) {
+				const denied = { ...issuedPublic.workday, parameters: { ...issuedPublic.workday.parameters, appliedPlan: changedPlan } };
+				const failed = structuredClone(denied);
+				expect(() => verifyNativeWorkdayReadback(nativeRun, denied, issuedPublic.shares)).toThrow('ACCEPTANCE_NATIVE_WORKDAY');
+				expect(denied).toEqual(failed);
+			}
+			expect({ issuedPublic, nativeRun, nativeAssignment, nativeReservations }).toEqual(originalAdmission);
+			expect(await Promise.all([publicInventory(), publicInventory()])).toEqual([issuedPublic, issuedPublic]);
 			// Write controlled lifecycle bytes through one native connection and
 			// read the actual owning public serializer through the independent peer.
 			const lifecycleOutput = { sandboxId: 'controlled-native-sandbox', retained: { source: 'original-sql-row' } };
@@ -288,6 +321,23 @@ describe('living admission in disposable PostgreSQL', () => {
 			expect(retained.assignments).toEqual(beforeFailure.assignments); expect(retained.nodes).toEqual(beforeFailure.nodes); expect(retained.proxies).toEqual(beforeFailure.proxies);
 			expect(JSON.parse(String(retained.usage[0]!.native_usage_json))).toEqual(settlement.usageActual.nativeUsage);
 			const published = await publicInventory();
+			verifyNativeSettlementReadback(retained.ledger, published.ledger, retained.assignments);
+			// Corrupt only this disposable owning database through the independent connection.
+			// The public serializer retains canonical metadata under the other valid phase;
+			// strict acceptance must still deny the missing original terminal settlement.
+			try {
+				await peerDatabase.pool.query("UPDATE capacity_ledger_entries SET phase='reservation_released' WHERE id=$1", [retained.ledger[0]!.id]);
+				const failedPublic = await publicInventory(), failedNative = await state(peerDatabase), originalFailure = structuredClone({ failedPublic, failedNative });
+				expect(() => verifyNativeSettlementReadback(failedNative.ledger, failedPublic.ledger, failedNative.assignments))
+					.toThrow('ACCEPTANCE_NATIVE_SETTLEMENT');
+				expect({ failedPublic, failedNative }).toEqual(originalFailure); expect(await state()).toEqual(failedNative);
+			} finally {
+				await peerDatabase.pool.query("UPDATE capacity_ledger_entries SET phase='task_completed_actual_settlement' WHERE id=$1", [retained.ledger[0]!.id]);
+			}
+			expect(await state()).toEqual(retained); expect(await publicInventory()).toEqual(published);
+			for (const replayed of await Promise.all([publicInventory(), publicInventory()]))
+				verifyNativeSettlementReadback(retained.ledger, replayed.ledger, retained.assignments);
+
 			expect(published.assignments.map(value => value.id)).toEqual(retained.assignments.map(value => value.id));
 			expect(published.assignments.map(value => value.assignmentAttempt)).toEqual([winner]);
 			expect(published.reservations.map(value => value.id)).toEqual(retained.reservations.map(value => value.id));

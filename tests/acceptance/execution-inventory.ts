@@ -157,6 +157,21 @@ export function executionLibraryResult(value: Row): unknown {
 }
 
 /** Shared original assignment assertion for native owner and managed read-back. */
+/** Original native/public ledger comparison, shared with its focused proof. */
+export function verifyNativeSettlementReadback(native: Row[], visible: Row[], assignments: Row[]): void {
+	const label = 'ACCEPTANCE_NATIVE_SETTLEMENT: One original terminal ledger row per complete issued assignment required';
+	assert.ok(assignments.length > 0 && assignments.every(value => typeof value.id === 'string' && value.id)
+		&& new Set(assignments.map(value => value.id)).size === assignments.length, label);
+	const settled = native.filter(value => value.phase === 'task_completed_actual_settlement');
+	assert.equal(settled.length, assignments.length, label);
+	for (const assignment of assignments) assert.equal(settled.filter(value => value.assignment_id === assignment.id).length, 1, label);
+	for (const value of visible) {
+		const stored = native.find(record => record.id === value.id); assert.ok(stored);
+		if (stored.phase === 'task_completed_actual_settlement')
+			assert.deepEqual(value.usageSettlement, JSON.parse(stored.metadata_json as string).usageSettlement);
+	}
+}
+
 export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: Row,
 	reservations: unknown) {
 	assert.equal(native.team_id, run.teamId); assert.equal(typeof native.id, 'string');
@@ -224,6 +239,7 @@ export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: R
 		'ACCEPTANCE_NATIVE_RESERVATION: Original reservation observation clocks required');
 	assert.ok((typeof reserved === 'number' || (typeof reserved === 'string' && /^\d+(?:\.\d+)?$/u.test(reserved)))
 		&& Number(reserved) === attempt.limits.maximumSeconds
+		&& Number(originalMatches[0]!.requested_seconds) === attempt.limits.maximumSeconds
 		&& typeof originalMatches[0]!.state === 'string' && originalMatches[0]!.state,
 		'ACCEPTANCE_NATIVE_RESERVATION: Original reserved amount and state required');
 	if (native.assignment_result_json !== null) {

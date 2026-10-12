@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeModelExecutionInventory, verifyNativeReporterCloseout } from '../../../../../acceptance/execution-inventory.ts';
+import { verifyNativeInventory, verifyNativeSettlementReadback, verifyNativeAssignmentReadback, verifyNativeModelExecutionInventory, verifyNativeReporterCloseout } from '../../../../../acceptance/execution-inventory.ts';
 import { assignment } from '../fixtures/assignment.ts';
 import { compileWorkday, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { now as reportClock, reportRef, reportResult } from '../graph/architecture/closeout-sql-fixture.ts';
@@ -32,6 +32,26 @@ const nativeReservation = { id: assignment.reservationId, assignment_id: assignm
 	created_at: assignment.createdAt, updated_at: assignment.createdAt };
 
 describe('independent native producer inventory reconciliation', () => {
+	it('denies omitted duplicated or reclassified original settlements for the complete issued assignment inventory without rewriting failed observations', () => {
+		// Controlled readback fixture; owning PostgreSQL produces the canonical records separately.
+		const exact = { assignments: [{ id: assignment.id }], ledger: [{ id: 'settlement', assignment_id: assignment.id,
+			phase: 'task_completed_actual_settlement', metadata_json: JSON.stringify({ usageSettlement: { id: 'settlement' } }) }],
+			visible: [{ id: 'settlement', usageSettlement: { id: 'settlement' } }] };
+		const inspect = (value: typeof exact) => verifyNativeSettlementReadback(value.ledger, value.visible, value.assignments);
+		const held = structuredClone(exact); inspect(exact); expect(exact).toEqual(held);
+		const disguised = structuredClone(exact); disguised.ledger[0]!.phase = 'reservation_released';
+		const missing = structuredClone(exact); missing.ledger = []; missing.visible = [];
+		const duplicate = structuredClone(exact); duplicate.ledger.push({ ...duplicate.ledger[0]!, id: 'second-settlement' });
+		const foreign = structuredClone(exact); Reflect.set(foreign.ledger[0]!, 'assignment_id', 'foreign-assignment');
+		const empty = structuredClone(exact); empty.assignments = [];
+		const repeated = structuredClone(exact); repeated.assignments.push({ ...repeated.assignments[0]! });
+		for (const denied of [disguised, missing, duplicate, foreign, empty, repeated]) {
+			const original = structuredClone(denied); expect(() => inspect(denied)).toThrow('ACCEPTANCE_NATIVE_SETTLEMENT');
+			expect(denied).toEqual(original);
+		}
+		inspect(exact); expect(exact).toEqual(held);
+	});
+
 	it('denies missing duplicated foreign malformed or later native report publication without rewriting completed records or retained audit history', () => {
 		const compiled = compileWorkday({ id: scope.id, teamId: scope.teamId, policyId: 'default', policyRevision: 1,
 			executionMode: 'simulation', startsAt: '2026-10-02T21:00:00.000Z', agentIds: [], policy: DEFAULT_WORKDAY_POLICY });
@@ -117,6 +137,14 @@ describe('independent native producer inventory reconciliation', () => {
 	});
 	it('reads exactly every native identity through complete public pages without changing original observations', async () => {
 		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [nativeReservation])).toEqual(assignment);
+		for (const requested_seconds of [0, assignment.limits.maximumSeconds - 1, assignment.limits.maximumSeconds + 1,
+			String(assignment.limits.maximumSeconds + 1)]) {
+			const changed = { ...nativeReservation, requested_seconds }, retained = structuredClone(changed);
+			expect(() => verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [changed])).toThrow('ACCEPTANCE_NATIVE_RESERVATION');
+			expect(changed).toEqual(retained);
+		}
+		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope,
+			[{ ...nativeReservation, requested_seconds: String(assignment.limits.maximumSeconds), reserved_seconds: String(assignment.limits.maximumSeconds) }])).toEqual(assignment);
 		for (const writablePaths of [['**'], ['src'], ['.', 'src'], ['.', '.']]) {
 			const attempt = { ...assignment, workspace: { ...assignment.workspace, writablePaths } };
 			const original = { ...nativeAssignment, assignment_attempt_json: JSON.stringify(attempt) }, visible = { ...publicAssignment, assignmentAttempt: attempt };

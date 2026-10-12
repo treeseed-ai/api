@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy, verifyNativeReporterCloseout } from './execution-inventory.ts';
+import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy, verifyNativeReporterCloseout } from './execution-inventory.ts';
 
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
@@ -109,11 +109,10 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 				const nativeInventory = async (sql: string, parameters: unknown[]) => {
 					const rows = (await client.query(sql, parameters)).rows; nativeInventories.push({ sql, parameters, rows }); return rows;
 				};
-				const admittedShares = await nativeInventory(`SELECT reservation.project_id,node.agent_class,
-					SUM(reservation.requested_seconds) AS admitted_seconds FROM capacity_reservations reservation
-					JOIN capacity_provider_assignments assignment ON assignment.id=reservation.assignment_id AND assignment.team_id=reservation.team_id
-					JOIN execution_nodes node ON node.id=assignment.execution_node_id AND node.team_id=assignment.team_id
-					WHERE reservation.team_id=$1 AND reservation.work_day_id=$2 GROUP BY reservation.project_id,node.agent_class`, [team, id]);
+				const admittedShares = await nativeInventory(`SELECT project_id,assignment_attempt_json::jsonb->>'agentClass' AS agent_class,
+					SUM((assignment_attempt_json::jsonb->'limits'->>'maximumSeconds')::numeric) AS admitted_seconds
+					FROM capacity_provider_assignments WHERE team_id=$1 AND work_day_id=$2
+					GROUP BY project_id,assignment_attempt_json::jsonb->>'agentClass'`, [team, id]);
 				const policyProjects = await nativeInventory('SELECT id,slug FROM projects WHERE team_id=$1 AND id=ANY($2::text[]) ORDER BY id', [run.teamId, object(run.parameters).scheduledProjectIds]);
 				verifyNativeWorkdayReadback(nativeRun, run, admittedShares, policyProjects);
 				const reportNodes = await nativeInventory('SELECT * FROM execution_nodes WHERE team_id=$1 AND workday_id=$2 ORDER BY id', [run.teamId, id]);
@@ -150,8 +149,8 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 							assert.equal(value.assignmentId, stored.assignment_id); assert.equal(value.workDayId, id);
 							assert.equal(value.activeSeconds, stored.active_seconds); assert.equal(value.elapsedSeconds, stored.elapsed_seconds);
 							if (command === 'usage') assert.deepEqual(value.nativeUsage, JSON.parse(stored.native_usage_json));
-							else if (stored.phase === 'task_completed_actual_settlement') assert.deepEqual(value.usageSettlement, JSON.parse(stored.metadata_json).usageSettlement);
 						}
+						if (command === 'ledger') verifyNativeSettlementReadback(native, visible, assignments.filter(value => value.project_id === project));
 					}
 				}
 				const membershipSql = `SELECT id,team_id,capacity_provider_id FROM capacity_provider_team_memberships membership

@@ -8,9 +8,11 @@ import { projectCommunicationInvocations } from '../../../../../../src/api/capac
 import { CapacityWorkdayRunRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
 import { verifyNativeWorkdayReadback } from '../../../../../acceptance/execution-inventory.ts';
 import { compileWorkday, DEFAULT_WORKDAY_POLICY, agentDefinitionSchema } from '@treeseed/sdk/agent-capacity';
+import { eventObserved } from '../../../realtime/architecture/session-postgres-fixture.ts';
 
 describe('concurrent local execution in PostgreSQL', () => {
 	it('preserves production and simulation workdays when another workday or conversation starts', async () => {
+		const deadline = Date.now() + 30_000;
 		const url = process.env.TREESEED_TEST_POSTGRES_URL;
 		if (!url) throw new Error('TREESEED_TEST_POSTGRES_URL is required; native concurrent workday coverage cannot be skipped.');
 		const connection = new URL(url);
@@ -115,6 +117,9 @@ describe('concurrent local execution in PostgreSQL', () => {
 				await observer.end();
 				await database.pool.end();
 				await Promise.all(disconnected);
+				// Client socket end is not server-backend termination. Observe the
+				// original complete database scope within both unchanged watchdogs.
+				await eventObserved(async () => (await admin.query('SELECT pid FROM pg_stat_activity WHERE datname=$1', [name])).rows.length === 0, deadline);
 				expect((await admin.query('SELECT pid FROM pg_stat_activity WHERE datname=$1', [name])).rows).toEqual([]);
 			} finally {
 				try { await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`); }
