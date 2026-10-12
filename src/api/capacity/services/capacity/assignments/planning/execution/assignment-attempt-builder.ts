@@ -170,7 +170,7 @@ function workspace(candidate: ReadyExecutionNode, assignmentId: string, exactGra
 		'assignment_workspace_reference_missing', `Node ${candidate.node.id} lacks its exact ${candidate.node.workspace} workspace reference.`, 409);
 	const writablePaths = candidate.node.workspace === 'treedx'
 		? exactGrant.contentWrite.map((item) => item.path).filter((path): path is string => Boolean(path))
-		: [reference.path ?? '**'];
+		: run.executionMode === 'simulation' ? ['.'] : [reference.path ?? '**'];
 	if (!writablePaths.length) throw new CapacityGovernanceError('assignment_workspace_write_scope_missing',
 		`Node ${candidate.node.id} has no exact writable paths for its ${candidate.node.workspace} workspace.`, 409);
 	const predecessorCommits = candidate.node.workspace === 'git'

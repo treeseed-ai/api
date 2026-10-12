@@ -50,7 +50,7 @@ describe('immutable assignment-attempt construction', () => {
 		expect(first.assignment.contextRefs).toEqual(supplied.candidate.contextRefs);
 		expect(first.assignment.effectiveProfile).toEqual(supplied.candidate.effectiveProfile);
 		expect(first.assignment.workspace).toEqual({ mode: 'git', repository: 'treeseed-ai/sdk', baseCommit: 'c'.repeat(40),
-			branch: `simulation/local/workday/${first.assignment.id}`, writablePaths: ['**'] });
+			branch: `simulation/local/workday/${first.assignment.id}`, writablePaths: ['.'] });
 		expect(first.assignment.grant).toEqual({ contentRead: [supplied.candidate.node.sourceRef], contentWrite: [],
 			sourceRead: ['treeseed-ai/sdk'], sourceWrite: ['treeseed-ai/sdk'], tools: [...permissions.tools] });
 		expect(first.assignment.createdAt).toBe(supplied.now); expect(first.assignment.limits.maximumSeconds).toBe(3);
@@ -61,6 +61,16 @@ describe('immutable assignment-attempt construction', () => {
 		expect(first.providerConcurrencyLimit).toBe(1); expect(first.laneId).toBe('work');
 		for (let retry = 0; retry < 3; retry++) expect(buildAssignmentAttempt(structuredClone(supplied))).toEqual(first);
 		expect(supplied).toEqual(before);
+		for (const path of [undefined, '.', 'src', '**']) {
+			const production = structuredClone(supplied);
+			production.run.executionMode = 'production';
+			production.run.parameters.appliedPlan = { ...appliedWorkdaySchema.parse(production.run.parameters.appliedPlan), executionMode: 'production' };
+			if (path !== undefined) production.candidate.contextRefs[0]!.path = path;
+			const held = structuredClone(production), actual = buildAssignmentAttempt(production);
+			expect(actual.assignment.workspace).toEqual({ mode: 'git', repository: 'treeseed-ai/sdk', baseCommit: 'c'.repeat(40),
+				branch: `treeseed/assignments/${actual.assignment.id}`, writablePaths: [path ?? '**'] });
+			expect(production).toEqual(held);
+		}
 		// Canonical supplied qualification bytes are not native attestation proof.
 	});
 	it('denies changed malformed expired failed revoked or ambiguous supplied offer qualification before freezing an assignment without repairing any input', () => {

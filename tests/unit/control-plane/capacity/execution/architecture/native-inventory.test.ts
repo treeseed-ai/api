@@ -85,6 +85,18 @@ describe('independent native producer inventory reconciliation', () => {
 	});
 	it('reads exactly every native identity through complete public pages without changing original observations', async () => {
 		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [nativeReservation])).toEqual(assignment);
+		for (const writablePaths of [['**'], ['src'], ['.', 'src'], ['.', '.']]) {
+			const attempt = { ...assignment, workspace: { ...assignment.workspace, writablePaths } };
+			const original = { ...nativeAssignment, assignment_attempt_json: JSON.stringify(attempt) }, visible = { ...publicAssignment, assignmentAttempt: attempt };
+			const held = structuredClone({ original, visible });
+			expect.soft(() => verifyNativeAssignmentReadback(original, visible, { ...scope, executionMode: 'simulation' }, [nativeReservation]))
+				.toThrow(writablePaths.length === 2 && writablePaths[1] === '.' ? 'Values must be unique.' : 'ACCEPTANCE_NATIVE_SIMULATION_WORKSPACE');
+			expect({ original, visible }).toEqual(held);
+		}
+		const root = { ...assignment, workspace: { ...assignment.workspace, writablePaths: ['.'] } };
+		expect(verifyNativeAssignmentReadback({ ...nativeAssignment, assignment_attempt_json: JSON.stringify(root) },
+			{ ...publicAssignment, assignmentAttempt: root }, { ...scope, executionMode: 'simulation' }, [nativeReservation])).toEqual(root);
+		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, { ...scope, executionMode: 'production' }, [nativeReservation])).toEqual(assignment);
 		const retainedAssignment = structuredClone({ nativeAssignment, publicAssignment, nativeReservation });
 		for (const state of ['reserved', 'consuming', 'consumed', 'released', 'expired', 'failed', 'overran_pending_approval', 'continuation_required'])
 			expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [{ ...nativeReservation, state }])).toEqual(assignment);

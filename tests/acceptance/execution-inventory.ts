@@ -149,6 +149,8 @@ export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: R
 	assert.deepEqual(original, attempt, 'ACCEPTANCE_SCHEMA_ATTEMPT: Native bytes contain stripped or coerced canonical fields');
 	assert.equal(attempt.id, native.id); assert.equal(attempt.teamId, run.teamId); assert.equal(attempt.workdayId, run.id);
 	assert.deepEqual(visible.assignmentAttempt, attempt);
+	if (run.executionMode === 'simulation' && attempt.workspace.mode === 'git') assert.deepEqual(attempt.workspace.writablePaths, ['.'],
+		'ACCEPTANCE_NATIVE_SIMULATION_WORKSPACE: Simulation Git authority requires the exact repository root');
 	assert.ok(Array.isArray(reservations) && reservations.length > 0,
 		'ACCEPTANCE_NATIVE_RESERVATION: Complete native reservation inventory required');
 	const originalReservations = reservations.map(row);

@@ -58,7 +58,8 @@ describe('initial living assignment native admission', () => {
 				}
 				const built = buildAssignmentAttempt(supplied); await f.seedNode(built.assignment);
 				const input = f.input(built.assignment), original = structuredClone(input), admitted = await f.admit(input);
-				expect(built.assignment.workspace).toMatchObject({ mode: 'git', repository: 'treeseed-ai/sdk', baseCommit: 'c'.repeat(40) });
+				expect(built.assignment.workspace).toEqual({ mode: 'git', repository: 'treeseed-ai/sdk', baseCommit: 'c'.repeat(40),
+					branch: `simulation/local/${f.attempt.workdayId}/${built.assignment.id}`, writablePaths: ['.'] });
 				expect(built.assignment.grant.sourceWrite).toEqual(['treeseed-ai/sdk']);
 				expect(built.assignment.grant.sourceRead).toEqual(expect.arrayContaining(['treeseed-ai/sdk', foreign.repository]));
 				expect(built.assignment.contextRefs).toContainEqual(foreign);
