@@ -71,7 +71,7 @@ export async function closeoutDatabase() {
 		// The fixture begins after content integration. It does not simulate or claim a native TreeDX read-back.
 		await query(`INSERT INTO audit_events (id,actor_type,event_type,target_type,target_id,data_json,created_at)
 			VALUES ('integrated-input','service','assignment.content.integrated','capacity_provider_assignment',
-			'assignment-report','{}',?)`, [now]);
+			'assignment-report',?,?)`, [JSON.stringify({ resultId: reportResult.id, references: reportResult.references, publication: false }), now]);
 		await query(`INSERT INTO capacity_reservations (id,idempotency_key,admission_token,membership_id,capacity_provider_id,
 			project_agent_class_id,assignment_id,mode,team_id,project_id,work_day_id,state,requested_seconds,reserved_seconds,
 			active_seconds,elapsed_seconds,created_at,updated_at)

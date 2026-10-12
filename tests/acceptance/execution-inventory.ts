@@ -118,6 +118,29 @@ export function verifyNativeWorkdayReadback(native: Row[], run: { id?: unknown; 
 	assert.deepEqual(run.parameters, expected, 'ACCEPTANCE_NATIVE_WORKDAY: Public parameters differ from original native authority and reservation totals');
 }
 
+/** Independent owning rows prove publication before terminal state; public content read-back remains separate. */
+export function verifyNativeReporterCloseout(run: { id?: unknown; teamId?: unknown; parameters?: unknown }, assignments: Row[], nodes: Row[], audits: Row[]): void {
+	const label = 'ACCEPTANCE_NATIVE_REPORT_CLOSEOUT';
+	const plan = appliedWorkdaySchema.parse(row(run.parameters).appliedPlan);
+	assert.ok(plan.id === run.id && plan.teamId === run.teamId && plan.state === 'ended' && plan.reportRef?.kind === 'treedx', label);
+	const ended = Date.parse(plan.endedAt!); assert.ok(Number.isFinite(ended), label);
+	const reports = nodes.filter(node => node.kind === 'reporting'); assert.equal(reports.length, 1, label);
+	const node = reports[0]!;
+	assert.ok(node.team_id === run.teamId && node.workday_id === run.id && node.status === 'completed', label);
+	const owners = assignments.filter(owner => owner.execution_node_id === node.id); assert.equal(owners.length, 1, label);
+	const owner = owners[0]!;
+	assert.ok(owner.team_id === run.teamId && owner.work_day_id === run.id && owner.project_id === node.project_id && owner.status === 'completed', label);
+	const result = assignmentResultSchema.parse(JSON.parse(String(owner.assignment_result_json)));
+	assert.ok(result.assignmentId === owner.id && result.status === 'completed' && owner.completed_at === result.completedAt
+		&& Date.parse(result.completedAt) <= ended && plan.reportRef.projectId === owner.project_id, label);
+	assert.deepEqual(result.references, [plan.reportRef], label);
+	const integrated = audits.filter(audit => audit.target_id === owner.id && audit.target_type === 'capacity_provider_assignment'
+		&& audit.event_type === 'assignment.content.integrated'); assert.equal(integrated.length, 1, label);
+	const audit = integrated[0]!, at = Date.parse(String(audit.created_at)), metadata = row(JSON.parse(String(audit.data_json)));
+	assert.ok(Number.isFinite(at) && at <= ended && metadata.resultId === result.id, label);
+	assert.deepEqual(metadata.references, result.references, label);
+}
+
 /** Arguments for the existing schema reader; source paths and refs stay caller-owned. */
 export function executionCliReadArguments(args: readonly string[], team: string): string[] {
 	if (args[0] === 'library') return [...args, '--json'];

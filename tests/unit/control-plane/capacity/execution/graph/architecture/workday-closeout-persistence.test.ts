@@ -12,6 +12,7 @@ import { settleCapacityReservationExactlyOnce } from '../../../../../../../src/a
 import { cancellationDatabase } from '../../../../providers/assignments/architecture/cancellation-fixture.ts';
 import { createWorkdayService } from '../../../../../../../src/api/control-plane/repositories/capacity/workday-service.ts';
 import { terminalizeCapacityWorkdayAssignments } from '../../../../../../../src/api/capacity/services/capacity/workdays/lifecycle/workday-assignment-terminalization-service.ts';
+import { verifyNativeReporterCloseout } from '../../../../../../acceptance/execution-inventory.ts';
 
 describe('canonical single report at the real lifecycle and SQL boundary', () => {
 	it('native migration retains unreported ended history as an explicit failed closing workday without fabricating a report or changing valid runs', async () => {
@@ -89,7 +90,8 @@ describe('canonical single report at the real lifecycle and SQL boundary', () =>
 				VALUES ('assignment-closeout','membership','team','project','provider','renamed-closeout','workday','acting',
 				'completed','closing-report',?,?,?,?)`, [JSON.stringify(result), now, now, now]);
 			await f.query(`INSERT INTO audit_events (id,actor_type,event_type,target_type,target_id,data_json,created_at)
-				VALUES ('closeout-integrated','service','assignment.content.integrated','capacity_provider_assignment','assignment-closeout','{}',?)`, [now]);
+				VALUES ('closeout-integrated','service','assignment.content.integrated','capacity_provider_assignment','assignment-closeout',?,?)`,
+				[JSON.stringify({ resultId: result.id, references: result.references, publication: false }), now]);
 			const run = (await f.reads.get('team', 'workday'))!;
 			const outcome = await advanceLivingWorkday(store, run, new Date().toISOString());
 			expect(outcome).toMatchObject({ status: 'cancelled', plan: { state: 'ended', reportRef } });
@@ -154,6 +156,15 @@ describe('canonical single report at the real lifecycle and SQL boundary', () =>
 			expect(JSON.parse(String(rows[0]!.report_refs_json))).toEqual({});
 			const settled = (await reads.get('team', 'workday'))!;
 			expect(settled.parameters.appliedPlan).toMatchObject({ state: 'ended', reportRef });
+			const assignments = (await query('SELECT * FROM capacity_provider_assignments ORDER BY id')).rows;
+			const nodes = (await query('SELECT * FROM execution_nodes ORDER BY id')).rows;
+			const audits = (await query('SELECT * FROM audit_events ORDER BY id')).rows;
+			const held = structuredClone({ settled, assignments, nodes, audits });
+			expect(() => verifyNativeReporterCloseout(settled, assignments, nodes, audits)).not.toThrow();
+			expect({ settled, assignments, nodes, audits }).toEqual(held);
+			const later = structuredClone(audits); later[0]!.created_at = '2026-10-02T21:02:00.000Z';
+			expect(() => verifyNativeReporterCloseout(settled, assignments, nodes, later)).toThrow('ACCEPTANCE_NATIVE_REPORT_CLOSEOUT');
+			expect((await query('SELECT * FROM audit_events ORDER BY id')).rows).toEqual(audits);
 			const repeated = await advanceLivingWorkday(store as never, settled, now);
 			expect(repeated.changed).toBe(false);
 			expect((await query('SELECT COUNT(*)::int AS count FROM capacity_workday_runs')).rows).toEqual([{ count: 1 }]);
@@ -173,15 +184,26 @@ describe('canonical single report at the real lifecycle and SQL boundary', () =>
 	});
 
 	it('denies future result completion at the real SQL closeout boundary', async () => {
+		for (const future of ['result', 'integration', 'duplicate-integration', 'wrong-result-integration', 'wrong-reference-integration', 'invalid-integration-json', 'invalid-integration-time']) {
 		const { db, reads, store, query } = await closeoutDatabase();
 		try {
-			await query('UPDATE capacity_provider_assignments SET assignment_result_json=?',
+			if (future === 'result') await query('UPDATE capacity_provider_assignments SET assignment_result_json=?',
 				[JSON.stringify({ ...reportResult, completedAt: '2026-10-02T21:02:00.000Z' })]);
+			else if (future === 'integration' || future === 'invalid-integration-time') await query('UPDATE audit_events SET created_at=?',
+				[future === 'integration' ? '2026-10-02T21:02:00.000Z' : 'malformed']);
+			else if (future === 'duplicate-integration') await query(`INSERT INTO audit_events (id,actor_type,event_type,target_type,target_id,data_json,created_at)
+				SELECT 'duplicate-integration',actor_type,event_type,target_type,target_id,data_json,created_at FROM audit_events WHERE id='integrated-input'`);
+			else await query('UPDATE audit_events SET data_json=?', [future === 'invalid-integration-json' ? '{' : JSON.stringify({
+				resultId: future === 'wrong-result-integration' ? 'foreign-result' : reportResult.id,
+				references: future === 'wrong-reference-integration' ? [{ ...reportRef, commit: 'b'.repeat(40) }] : reportResult.references, publication: false })]);
+			const before = (await query('SELECT * FROM audit_events ORDER BY id')).rows;
 			const run = (await reads.get('team', 'workday'))!;
 			const outcome = await advanceLivingWorkday(store as never, run, now);
 			expect(outcome.status).not.toBe('completed');
 			expect(outcome.plan.state).not.toBe('ended');
 			expect((await reads.get('team', 'workday'))!.parameters.appliedPlan).not.toHaveProperty('reportRef');
+			expect((await query('SELECT * FROM audit_events ORDER BY id')).rows).toEqual(before);
 		} finally { await db.close(); }
+		}
 	});
 });

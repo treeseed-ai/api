@@ -81,6 +81,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
     testName: "reads exactly every native identity through complete public pages without changing original observations"
+  api.golden.native-reporter-closeout-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
+    testName: "denies missing duplicated foreign malformed or later native report publication without rewriting completed records or retained audit history"
   api.golden.native-lifecycle-custody-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy } from './execution-inventory.ts';
+import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy, verifyNativeReporterCloseout } from './execution-inventory.ts';
 
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
@@ -115,6 +115,11 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 					GROUP BY project_id,assignment_attempt_json::jsonb->>'agentClass'`, [team, id]);
 				const policyProjects = await nativeInventory('SELECT id,slug FROM projects WHERE team_id=$1 AND id=ANY($2::text[]) ORDER BY id', [run.teamId, object(run.parameters).scheduledProjectIds]);
 				verifyNativeWorkdayReadback(nativeRun, run, admittedShares, policyProjects);
+				const reportNodes = await nativeInventory('SELECT * FROM execution_nodes WHERE team_id=$1 AND workday_id=$2 ORDER BY id', [run.teamId, id]);
+				const reportAudits = await nativeInventory(`SELECT audit.* FROM audit_events audit JOIN capacity_provider_assignments assignment
+					ON audit.target_id=assignment.id AND audit.target_type='capacity_provider_assignment'
+					WHERE assignment.team_id=$1 AND assignment.work_day_id=$2 AND audit.event_type='assignment.content.integrated' ORDER BY audit.id`, [run.teamId, id]);
+				verifyNativeReporterCloseout(run, assignments, reportNodes, reportAudits);
 				if (start.retained) {
 					const preflight = object(start.retained.freeze.preflight);
 					const policies = await nativeInventory("SELECT * FROM capacity_operation_receipts WHERE team_id=$1 AND operation='workday.preflight' AND resource_type='workday_preflight' AND resource_id=$2 ORDER BY id", [run.teamId, preflight.id]);
