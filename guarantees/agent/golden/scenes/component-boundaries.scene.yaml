@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: native-reporter-closeout-unit
+    action: { verifier: api.golden.native-reporter-closeout-unit }
+    expect: { status: passed }
   - id: native-workday-mode-unit
     action: { verifier: api.golden.native-workday-mode-unit }
     expect: { status: passed }
