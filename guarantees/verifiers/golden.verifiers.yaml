@@ -76,6 +76,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
     testName: "reads exactly every native identity through complete public pages without changing original observations"
+  api.golden.native-lifecycle-custody-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
+    testName: "retains original native lifecycle output and denies missing substituted or malformed public model custody without rewriting observations"
+  api.golden.native-model-inventory-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
+    testName: "selects every original native model start independently of public sandbox markers and denies incomplete foreign duplicated or interrupted custody"
   api.golden.native-inventory-denials-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

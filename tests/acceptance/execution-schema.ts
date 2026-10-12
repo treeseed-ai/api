@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy } from './execution-inventory.ts';
+import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy } from './execution-inventory.ts';
 
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
@@ -364,6 +364,8 @@ async function verifyManagedModelExecution(requireUnfinished: boolean): Promise<
 				const assignments = (await client.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1 ORDER BY id', [id])).rows;
 				const events = (await client.query('SELECT * FROM capacity_workday_events WHERE run_id=$1 ORDER BY event_index,id', [id])).rows;
 				assert.ok(assignments.length > 0 && events.length > 0, 'ACCEPTANCE_DIAGNOSTICS_EMPTY: Actual native inventory required');
+				const modelExecutions = verifyNativeModelExecutionInventory(assignments, events, run);
+				const reservations = (await client.query('SELECT * FROM capacity_reservations WHERE work_day_id=$1 ORDER BY id', [id])).rows;
 				const activities = new Set<string>(), verifiedActivities = new Set<string>(), publicReads: Array<{ id: string; value: Record<string, unknown> }> = [];
 				const contentReads: Array<{ args: string[]; value: Record<string, unknown> }> = []; let unfinishedDrafts = 0;
 				const exactContent = (args: string[], commit: string, path: string) => {
@@ -376,8 +378,9 @@ async function verifyManagedModelExecution(requireUnfinished: boolean): Promise<
 				for (const native of assignments) {
 					assert.equal(native.team_id, run.teamId); const visible = read(['assignments', 'show', String(native.id)]);
 					assert.equal(visible.id, native.id); assert.equal(visible.teamId, run.teamId); assert.equal(visible.workDayId, id);
+					verifyNativeAssignmentReadback(native, visible, run, reservations);
 					publicReads.push({ id: String(native.id), value: visible });
-					const output = object(visible.lifecycleOutput); if (typeof output.sandboxId !== 'string' || !output.sandboxId) continue;
+					const output = object(visible.lifecycleOutput); if (!modelExecutions.has(String(native.id))) continue;
 					const attempt = assignmentAttemptSchema.parse(visible.assignmentAttempt); assert.equal(attempt.id, native.id);
 					const candidates = events.filter(event => event.assignment_id === attempt.id
 						&& ['provider.execution.completed', 'provider.execution.failed'].includes(event.event_type)
@@ -478,6 +481,7 @@ async function verifyManagedModelExecution(requireUnfinished: boolean): Promise<
 					async (sql, parameters) => (await client.query(sql, parameters)).rows), startRows);
 				assert.ok(isDeepStrictEqual((await client.query('SELECT * FROM capacity_workday_events WHERE run_id=$1 ORDER BY event_index,id', [id])).rows, events));
 				assert.ok(isDeepStrictEqual((await client.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1 ORDER BY id', [id])).rows, assignments));
+				assert.deepEqual((await client.query('SELECT * FROM capacity_reservations WHERE work_day_id=$1 ORDER BY id', [id])).rows, reservations);
 			} finally { await client.query('ROLLBACK'); }
 		} finally { client.release(); }
 	} finally { await pool.end(); }
