@@ -85,6 +85,14 @@ describe('independent native producer inventory reconciliation', () => {
 	});
 	it('reads exactly every native identity through complete public pages without changing original observations', async () => {
 		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [nativeReservation])).toEqual(assignment);
+		for (const requested_seconds of [0, assignment.limits.maximumSeconds - 1, assignment.limits.maximumSeconds + 1,
+			String(assignment.limits.maximumSeconds + 1)]) {
+			const changed = { ...nativeReservation, requested_seconds }, retained = structuredClone(changed);
+			expect(() => verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [changed])).toThrow('ACCEPTANCE_NATIVE_RESERVATION');
+			expect(changed).toEqual(retained);
+		}
+		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope,
+			[{ ...nativeReservation, requested_seconds: String(assignment.limits.maximumSeconds), reserved_seconds: String(assignment.limits.maximumSeconds) }])).toEqual(assignment);
 		for (const writablePaths of [['**'], ['src'], ['.', 'src'], ['.', '.']]) {
 			const attempt = { ...assignment, workspace: { ...assignment.workspace, writablePaths } };
 			const original = { ...nativeAssignment, assignment_attempt_json: JSON.stringify(attempt) }, visible = { ...publicAssignment, assignmentAttempt: attempt };
