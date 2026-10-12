@@ -90,7 +90,8 @@ describe('independent native producer inventory reconciliation', () => {
 			const original = { ...nativeAssignment, assignment_attempt_json: JSON.stringify(attempt) }, visible = { ...publicAssignment, assignmentAttempt: attempt };
 			const held = structuredClone({ original, visible });
 			expect.soft(() => verifyNativeAssignmentReadback(original, visible, { ...scope, executionMode: 'simulation' }, [nativeReservation]))
-				.toThrow('ACCEPTANCE_NATIVE_SIMULATION_WORKSPACE'); expect({ original, visible }).toEqual(held);
+				.toThrow(writablePaths.length === 2 && writablePaths[1] === '.' ? 'Values must be unique.' : 'ACCEPTANCE_NATIVE_SIMULATION_WORKSPACE');
+			expect({ original, visible }).toEqual(held);
 		}
 		const root = { ...assignment, workspace: { ...assignment.workspace, writablePaths: ['.'] } };
 		expect(verifyNativeAssignmentReadback({ ...nativeAssignment, assignment_attempt_json: JSON.stringify(root) },
