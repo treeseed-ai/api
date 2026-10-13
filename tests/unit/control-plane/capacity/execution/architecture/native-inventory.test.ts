@@ -202,7 +202,7 @@ describe('independent native producer inventory reconciliation', () => {
 			const held = structuredClone(cohort); expect.soft(() => inspect(cohort, exactReservations)).toThrow('ACCEPTANCE_NATIVE_ISSUANCE'); expect(cohort).toEqual(held);
 		}
 		for (const reservations of [[], [nativeReservation], [...exactReservations, unrelated]]) {
-			const held = structuredClone(reservations); expect.soft(() => inspect(exactCohort, reservations)).toThrow('ACCEPTANCE_NATIVE_ISSUANCE'); expect(reservations).toEqual(held);
+			const held = structuredClone(reservations); expect.soft(() => inspect(exactCohort, reservations)).toThrow(reservations.length ? 'ACCEPTANCE_NATIVE_ISSUANCE' : 'ACCEPTANCE_NATIVE_RESERVATION'); expect(reservations).toEqual(held);
 		}
 		expect(() => inspect(exactCohort, exactReservations)).not.toThrow(); expect({ exactCohort, exactReservations }).toEqual(heldCohort);
 		expect({ nativeAssignment, publicAssignment, nativeReservation }).toEqual(retainedAssignment);
