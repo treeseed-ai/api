@@ -129,12 +129,12 @@ describe('living admission in disposable PostgreSQL', () => {
 						.listProjectPage('project', { workDayId: 'workday', limit: 1, cursor: decodeCapacityPageCursor(cursor) }), 1),
 				]);
 				for (const native of nativeAssignments!.rows) verifyNativeAssignmentReadback(native,
-					assignments.find(value => value.id === native.id)!, { id: 'workday', teamId: 'team' }, nativeReservations!.rows);
+					assignments.find(value => value.id === native.id)!, { id: 'workday', teamId: 'team' }, nativeReservations!.rows, nativeAssignments!.rows);
 				for (const native of nativeAssignments!.rows) {
 					const visible = assignments.find(value => value.id === native.id)!;
 					const original = structuredClone(visible);
 					for (const changed of [{ ...visible, laneId: 'substituted-lane' }, { ...visible, lanePurpose: 'communication' }])
-						expect(() => verifyNativeAssignmentReadback(native, changed, { id: 'workday', teamId: 'team' }, nativeReservations!.rows)).toThrow('ACCEPTANCE_NATIVE_LANE');
+						expect(() => verifyNativeAssignmentReadback(native, changed, { id: 'workday', teamId: 'team' }, nativeReservations!.rows, nativeAssignments!.rows)).toThrow('ACCEPTANCE_NATIVE_LANE');
 					expect(visible).toEqual(original);
 				}
 				const workday = await new CapacityWorkdayRunRepository(peerAccounting).get('team', 'workday');
@@ -152,10 +152,42 @@ describe('living admission in disposable PostgreSQL', () => {
 			const nativeAssignment = (await peerDatabase.pool.query('SELECT * FROM capacity_provider_assignments WHERE id=$1', [winner.id])).rows[0]!;
 			const nativeReservations = (await peerDatabase.pool.query('SELECT * FROM capacity_reservations WHERE work_day_id=$1', ['workday'])).rows;
 			const originalAdmission = structuredClone({ issuedPublic, nativeRun, nativeAssignment, nativeReservations });
+			// Corrupt only the disposable owning database; inspect through an independent connection and original public serializer.
+			const fakeId = 'controlled-cohort-assignment', fakeReservation = 'controlled-cohort-reservation';
+			const other = attempts.find(value => value.id !== winner.id)!;
+			const fakeAttempt = { ...winner, id: fakeId, idempotencyKey: fakeId, nodeId: other.nodeId, reservationId: fakeReservation };
+			const inspectCohort = async () => {
+				const owners = (await peerDatabase.pool.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1 ORDER BY id', ['workday'])).rows;
+				const reserved = (await peerDatabase.pool.query('SELECT * FROM capacity_reservations WHERE work_day_id=$1 ORDER BY id', ['workday'])).rows;
+				const visible = await new ProviderAssignmentRepository(peerAccounting).get('team', winner.id); if (!visible) throw new Error('Original public owner required');
+				verifyNativeAssignmentReadback(owners.find(value => value.id === winner.id)!, visible, { id: 'workday', teamId: 'team' }, reserved, owners);
+				return { owners, reserved };
+			};
+			const originalCohort = await inspectCohort(), failedCohorts: unknown[] = [];
+			for (const mode of ['orphan-reservation', 'duplicate-lease']) {
+				const injectedReservation = { ...nativeReservations[0], id: fakeReservation, assignment_id: fakeId, idempotency_key: fakeId };
+				const injectedAssignment = { ...nativeAssignment, id: fakeId, reservation_id: fakeReservation, execution_node_id: other.nodeId,
+					assignment_attempt_json: JSON.stringify(fakeAttempt), synthesis_key: fakeId };
+				try {
+					await database.pool.query('INSERT INTO capacity_reservations SELECT (json_populate_record(NULL::capacity_reservations,$1::json)).*', [JSON.stringify(injectedReservation)]);
+					if (mode === 'duplicate-lease') await database.pool.query('INSERT INTO capacity_provider_assignments SELECT (json_populate_record(NULL::capacity_provider_assignments,$1::json)).*', [JSON.stringify(injectedAssignment)]);
+					const owners = (await peerDatabase.pool.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1 ORDER BY id', ['workday'])).rows;
+					const reserved = (await peerDatabase.pool.query('SELECT * FROM capacity_reservations WHERE work_day_id=$1 ORDER BY id', ['workday'])).rows;
+					const held = structuredClone({ mode, owners, reserved }); failedCohorts.push(held);
+					await expect(inspectCohort()).rejects.toThrow('ACCEPTANCE_NATIVE_ISSUANCE');
+					expect((await database.pool.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1 ORDER BY id', ['workday'])).rows).toEqual(held.owners);
+					expect((await database.pool.query('SELECT * FROM capacity_reservations WHERE work_day_id=$1 ORDER BY id', ['workday'])).rows).toEqual(held.reserved);
+				} finally {
+					await database.pool.query('DELETE FROM capacity_provider_assignments WHERE id=$1', [fakeId]);
+					await database.pool.query('DELETE FROM capacity_reservations WHERE id=$1', [fakeReservation]);
+				}
+				expect(await inspectCohort()).toEqual(originalCohort); expect(await publicInventory()).toEqual(issuedPublic);
+			}
+			expect(failedCohorts).toHaveLength(2);
 			for (const seconds of [0, winner.limits.maximumSeconds - 1, winner.limits.maximumSeconds + 1]) {
 				const denied = nativeReservations.map(row => ({ ...row, requested_seconds: seconds })), failed = structuredClone(denied);
 				expect(() => verifyNativeAssignmentReadback(nativeAssignment, issuedPublic.assignments[0]!,
-					{ id: 'workday', teamId: 'team' }, denied)).toThrow('ACCEPTANCE_NATIVE_RESERVATION');
+					{ id: 'workday', teamId: 'team' }, denied, [nativeAssignment])).toThrow('ACCEPTANCE_NATIVE_RESERVATION');
 				expect(denied).toEqual(failed);
 			}
 			const plan = appliedWorkdaySchema.parse(issuedPublic.workday.parameters.appliedPlan);
@@ -179,7 +211,7 @@ describe('living admission in disposable PostgreSQL', () => {
 				const held = structuredClone({ raw, observed, reservations });
 				for (const lifecycleOutput of [undefined, null, {}, { sandboxId: 'substituted-native-sandbox' }])
 					expect(() => verifyNativeAssignmentReadback(raw, { ...observed.assignments[0], lifecycleOutput },
-						{ id: 'workday', teamId: 'team' }, reservations)).toThrow('ACCEPTANCE_NATIVE_LIFECYCLE');
+						{ id: 'workday', teamId: 'team' }, reservations, [raw])).toThrow('ACCEPTANCE_NATIVE_LIFECYCLE');
 				expect(await Promise.all([publicInventory(), publicInventory()])).toEqual([observed, observed]);
 				expect({ raw, observed, reservations }).toEqual(held);
 				for (const malformed of ['{', 'null', '[]', 'true', '1']) {

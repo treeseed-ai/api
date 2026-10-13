@@ -185,7 +185,7 @@ export function verifyNativeCommunicationEdges(nodes: Row[], edges: Row[], run: 
 }
 
 export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: Row,
-	reservations: unknown) {
+	reservations: unknown, nativeAssignments: unknown) {
 	assert.equal(native.team_id, run.teamId); assert.equal(typeof native.id, 'string');
 	assert.equal(visible.id, native.id); assert.equal(visible.workDayId, run.id); assert.equal(visible.teamId, run.teamId);
 	assert.equal(visible.status, native.status); assert.equal(visible.membershipId, native.membership_id);
@@ -259,6 +259,23 @@ export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: R
 		&& Number(originalMatches[0]!.requested_seconds) === attempt.limits.maximumSeconds
 		&& typeof originalMatches[0]!.state === 'string' && originalMatches[0]!.state,
 		'ACCEPTANCE_NATIVE_RESERVATION: Original reserved amount and state required');
+	const issuance = 'ACCEPTANCE_NATIVE_ISSUANCE: Complete distinct assignment lease and reservation custody required';
+	assert.ok(Array.isArray(nativeAssignments) && nativeAssignments.length > 0, issuance);
+	const cohort = nativeAssignments.map(row), ids = new Set<string>(), leases = new Set<string>(), reservedIds = new Set<string>(), nodes = new Set<string>(), keys = new Set<string>();
+	for (const owner of cohort) {
+		assert.ok(typeof owner.id === 'string' && owner.id && owner.team_id === run.teamId && owner.work_day_id === run.id && !ids.has(owner.id), issuance);
+		ids.add(owner.id); const issued = assignmentAttemptSchema.parse(JSON.parse(String(owner.assignment_attempt_json)));
+		assert.ok(issued.id === owner.id && issued.teamId === run.teamId && issued.workdayId === run.id
+			&& issued.reservationId === owner.reservation_id && !leases.has(issued.leaseId) && !reservedIds.has(issued.reservationId) && !keys.has(issued.idempotencyKey), issuance);
+		const node = JSON.stringify([issued.nodeId, issued.nodeRevision, issued.attempt]); assert.ok(!nodes.has(node), issuance);
+		leases.add(issued.leaseId); reservedIds.add(issued.reservationId); nodes.add(node); keys.add(issued.idempotencyKey);
+	}
+	assert.ok(ids.has(attempt.id), issuance); assert.deepEqual(cohort.find(value => value.id === attempt.id), native, issuance);
+	assert.equal(originalReservations.length, cohort.length, issuance);
+	for (const reservation of originalReservations) {
+		const owners = cohort.filter(owner => owner.id === reservation.assignment_id && owner.reservation_id === reservation.id);
+		assert.equal(owners.length, 1, issuance); assert.ok(reservedIds.has(String(reservation.id)), issuance);
+	}
 	if (native.assignment_result_json !== null) {
 		assert.equal(typeof native.assignment_result_json, 'string');
 		const originalResult: unknown = JSON.parse(native.assignment_result_json as string), result = assignmentResultSchema.parse(originalResult);
