@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { verifyNativeInventory, verifyNativeSettlementReadback, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeModelExecutionInventory, verifyNativeReporterCloseout } from '../../../../../acceptance/execution-inventory.ts';
+import { verifyNativeInventory, verifyNativeGraphRevisionInventory, verifyNativeSettlementReadback, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeModelExecutionInventory, verifyNativeReporterCloseout } from '../../../../../acceptance/execution-inventory.ts';
 import { assignment } from '../fixtures/assignment.ts';
 import { graphProjection } from '../graph/architecture/living/living-graph-fixture.ts';
 import { compileWorkday, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
@@ -209,8 +209,7 @@ describe('independent native producer inventory reconciliation', () => {
 		expect(() => inspect(exactCohort, exactReservations)).not.toThrow(); expect({ exactCohort, exactReservations }).toEqual(heldCohort);
 		expect({ nativeAssignment, publicAssignment, nativeReservation }).toEqual(retainedAssignment);
 		// New independent producer proof, not another runner or an inferred exit-zero assertion.
-		const inspectGraph: unknown = Reflect.get(await import('../../../../../acceptance/execution-inventory.ts'), 'verifyNativeGraphRevisionInventory');
-		expect(typeof inspectGraph).toBe('function'); if (typeof inspectGraph !== 'function') throw new Error('Native graph revision proof is missing');
+		const inspectGraph = verifyNativeGraphRevisionInventory;
 		const firstRevision = graphProjection().revision, graphRecords = [firstRevision, { ...firstRevision, revision: 2, createdAt: '2026-10-03T00:00:01.000Z' }];
 		const nativeGraph = graphRecords.map(value => ({ team_id: value.teamId, revision: value.revision, rule_revision: value.ruleRevision,
 			changed_source_refs_json: JSON.stringify(value.changedSourceRefs), graph_digest: value.graphDigest, changes_json: JSON.stringify(value.changes), created_at: value.createdAt }));

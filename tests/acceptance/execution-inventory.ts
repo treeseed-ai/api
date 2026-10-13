@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { assignmentAttemptSchema, assignmentResultSchema, appliedWorkdaySchema, workdayPolicySchema } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, assignmentResultSchema, graphRevisionSchema, appliedWorkdaySchema, workdayPolicySchema } from '@treeseed/sdk/agent-capacity';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { canonicalJson, sha256 } from '../../dist/api/capacity/security.js';
@@ -372,6 +372,30 @@ export function requireNativeAdmissionSamples(prioritizedWork: number, calibrate
 	if (!requireObservedSamples) return;
 	assert.ok(prioritizedWork > 0, 'ACCEPTANCE_PRIORITY_EMPTY: Actual governed nonzero priority must be exercised, not only default-zero replay');
 	assert.ok(calibratedWork > 0, 'ACCEPTANCE_CALIBRATION_EMPTY: Actual historical calibration is required, not only cold-start IDs');
+}
+
+/** The native revision inventory owns completeness; use the original revision cursor without a pagination adapter. */
+export async function verifyNativeGraphRevisionInventory(native: unknown, teamId: unknown, fetch: (cursor: string) => unknown | Promise<unknown>) {
+	const label = 'ACCEPTANCE_NATIVE_GRAPH_INVENTORY: Every original revision and explicit terminal page required';
+	assert.ok(typeof teamId === 'string' && teamId && teamId.trim() === teamId && Array.isArray(native) && native.length > 0, label);
+	const expected = native.map((value, index) => {
+		const original = row(value);
+		assert.ok(original.team_id === teamId && original.revision === index + 1 && Number.isSafeInteger(original.rule_revision)
+			&& typeof original.changed_source_refs_json === 'string' && typeof original.changes_json === 'string', label);
+		const canonical = { schemaVersion: 'treeseed.graph-revision/v1', teamId: original.team_id, revision: original.revision,
+			ruleRevision: original.rule_revision, changedSourceRefs: JSON.parse(original.changed_source_refs_json), graphDigest: original.graph_digest,
+			changes: JSON.parse(original.changes_json), createdAt: original.created_at };
+		const checked = graphRevisionSchema.parse(canonical); assert.deepEqual(checked, canonical, label); return checked;
+	});
+	const observed: typeof expected = []; let cursor = '0';
+	for (let page = 0; page <= expected.length; page++) {
+		const response = row(await fetch(cursor)); assert.ok(Array.isArray(response.items) && typeof response.nextCursor === 'string', label);
+		if (response.items.length === 0) { assert.equal(response.nextCursor, cursor, label); assert.deepEqual(observed, expected, label); return observed; }
+		const values = response.items.map(value => { const checked = graphRevisionSchema.parse(value); assert.deepEqual(checked, value, label); return checked; });
+		assert.deepEqual(values, expected.slice(observed.length, observed.length + values.length), label); observed.push(...values);
+		const next = String(observed.at(-1)!.revision); assert.equal(response.nextCursor, next, label); assert.notEqual(next, cursor, label); cursor = next;
+	}
+	assert.fail(label);
 }
 
 /** Independent owning SQL inventory bounds public reads; matching read-backs alone cannot prove completeness. */

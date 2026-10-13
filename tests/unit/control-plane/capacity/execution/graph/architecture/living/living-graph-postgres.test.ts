@@ -1,3 +1,4 @@
+import { verifyNativeGraphRevisionInventory } from '../../../../../../../acceptance/execution-inventory.ts';
 import { describe, expect, it } from 'vitest';
 import { createExecutionGraphService, persistExecutionGraph } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { authoredGraphFixture, expectAuthoredGraphPairs, emptyLivingGraph, graphNode, graphProjection, graphSource, graphState } from './living-graph-fixture.ts';
@@ -220,6 +221,35 @@ describe('independent PostgreSQL connection graph custody', () => {
 			}
 			expect(fixture).toEqual(held); expect(before.assignments).toEqual([]); expect(before.reservations).toEqual([]);
 			expect(await f.snapshot()).toEqual(before);
+			const moved = structuredClone(fixture.source); moved.proposalRevision = 2; moved.digest = 'sha256:' + 'e'.repeat(64);
+			const projected = graphProjection([moved], 2), next = graphState(projected, graph);
+			await persistExecutionGraph(f.stores[0], next, graph, { ...projected.revision, graphDigest: next.digest });
+			const nativeRows = (await f.right.pool.query('SELECT * FROM execution_graph_revisions WHERE team_id=$1 ORDER BY revision', ['team'])).rows;
+			const originalRows = structuredClone(nativeRows), after = await f.snapshot(); expect(nativeRows).toHaveLength(2);
+			const watch = (cursor: string) => f.reader.watch(f.principal, 'team', { cursor, limit: 1 });
+			const exact = await verifyNativeGraphRevisionInventory(nativeRows, 'team', watch), failures: unknown[] = [];
+			for (const mode of ['hidden-tail', 'duplicate', 'foreign-team', 'substituted-digest', 'substituted-changes', 'cursor', 'interrupted']) {
+				const observed: unknown[] = []; let rejected = false;
+				try { await verifyNativeGraphRevisionInventory(nativeRows, 'team', async cursor => {
+					const page = structuredClone(await watch(cursor));
+					if (mode === 'interrupted' && cursor === '1') throw new Error('retained native graph watch interruption');
+					if (mode === 'hidden-tail' && cursor === '1') { page.items = []; page.nextCursor = cursor; }
+					if (mode === 'duplicate' && cursor === '1') page.items = [structuredClone(exact[0]!)];
+					if (page.items[0] && cursor === '0') {
+						if (mode === 'foreign-team') page.items[0].teamId = 'foreign';
+						if (mode === 'substituted-digest') page.items[0].graphDigest = 'sha256:' + 'f'.repeat(64);
+						if (mode === 'substituted-changes') page.items[0].changes.added = ['substituted-node'];
+						if (mode === 'cursor') page.nextCursor = '0';
+					}
+					observed.push(structuredClone(page)); return page;
+				}); } catch (failure) { rejected = true; failures.push({ mode, observed, failure: String(failure) }); }
+				expect(rejected, mode).toBe(true); expect(await f.snapshot()).toEqual(after); expect(nativeRows).toEqual(originalRows);
+			}
+			const retainedFailures = structuredClone(failures); expect(failures).toHaveLength(7);
+			expect(await verifyNativeGraphRevisionInventory(nativeRows, 'team', watch)).toEqual(exact);
+			expect(failures).toEqual(retainedFailures); expect(await f.snapshot()).toEqual(after);
+			expect((await f.left.pool.query('SELECT * FROM execution_graph_revisions WHERE team_id=$1 ORDER BY revision', ['team'])).rows).toEqual(originalRows);
+			console.log(JSON.stringify({ nativeGraphRevisionFailures: failures }));
 		} finally { await f.close(); }
 	}, 30_000);
 	it('late native SQL interruption rolls back all graph records before another independent writer retries exact authority', async () => {
