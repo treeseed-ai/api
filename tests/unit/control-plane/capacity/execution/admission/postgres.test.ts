@@ -130,6 +130,13 @@ describe('living admission in disposable PostgreSQL', () => {
 				]);
 				for (const native of nativeAssignments!.rows) verifyNativeAssignmentReadback(native,
 					assignments.find(value => value.id === native.id)!, { id: 'workday', teamId: 'team' }, nativeReservations!.rows);
+				for (const native of nativeAssignments!.rows) {
+					const visible = assignments.find(value => value.id === native.id)!;
+					const original = structuredClone(visible);
+					for (const changed of [{ ...visible, laneId: 'substituted-lane' }, { ...visible, lanePurpose: 'communication' }])
+						expect(() => verifyNativeAssignmentReadback(native, changed, { id: 'workday', teamId: 'team' }, nativeReservations!.rows)).toThrow('ACCEPTANCE_NATIVE_LANE');
+					expect(visible).toEqual(original);
+				}
 				const workday = await new CapacityWorkdayRunRepository(peerAccounting).get('team', 'workday');
 				if (!workday) throw new Error('Original native workday admission projection required.');
 				const shares = (await peerDatabase.pool.query(`SELECT project_id,assignment_attempt_json::jsonb->>'agentClass' AS agent_class,

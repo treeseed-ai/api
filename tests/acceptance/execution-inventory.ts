@@ -172,12 +172,29 @@ export function verifyNativeSettlementReadback(native: Row[], visible: Row[], as
 	}
 }
 
+/** Join complete owning communication-node and retained edge inventories. */
+export function verifyNativeCommunicationEdges(nodes: Row[], edges: Row[], run: Row, expectedNodeIds: string[]): void {
+	assert.ok(Array.isArray(nodes) && nodes.length > 0 && Array.isArray(edges) && Array.isArray(expectedNodeIds)
+		&& expectedNodeIds.length > 0 && expectedNodeIds.every(id => typeof id === 'string' && id.trim() === id && id)
+		&& new Set(expectedNodeIds).size === expectedNodeIds.length, 'ACCEPTANCE_NATIVE_CHAT_INVENTORY: Complete unique communication scope required');
+	assert.ok(nodes.every(node => node && typeof node === 'object' && !Array.isArray(node) && node.kind === 'communication' && node.team_id === run.teamId && node.workday_id === run.id
+		&& typeof node.id === 'string' && node.id.trim() === node.id && node.id)
+		&& new Set(nodes.map(node => node.id)).size === nodes.length, 'ACCEPTANCE_NATIVE_CHAT_SCOPE: Original communication nodes required');
+	assert.deepEqual(nodes.map(node => node.id).sort(), [...expectedNodeIds].sort(), 'ACCEPTANCE_NATIVE_CHAT_INVENTORY: Expected chat and owning node inventories differ');
+	assert.deepEqual(edges, [], 'ACCEPTANCE_NATIVE_CHAT_EDGE: Chat must create no workflow edges, including retained removed edges');
+}
+
 export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: Row,
 	reservations: unknown) {
 	assert.equal(native.team_id, run.teamId); assert.equal(typeof native.id, 'string');
 	assert.equal(visible.id, native.id); assert.equal(visible.workDayId, run.id); assert.equal(visible.teamId, run.teamId);
 	assert.equal(visible.status, native.status); assert.equal(visible.membershipId, native.membership_id);
 	assert.equal(visible.capacityProviderId, native.capacity_provider_id);
+	assert.ok(typeof native.lane_id === 'string' && native.lane_id.trim() === native.lane_id && native.lane_id
+		&& typeof native.lane_purpose === 'string' && ['workday', 'communication'].includes(native.lane_purpose), 'ACCEPTANCE_NATIVE_LANE: Original issued lane custody required');
+	assert.equal(visible.laneId, native.lane_id, 'ACCEPTANCE_NATIVE_LANE: Public lane differs from native issuance');
+	assert.equal(visible.lanePurpose, native.lane_purpose, 'ACCEPTANCE_NATIVE_LANE: Public lane purpose differs from native issuance');
+
 	assert.equal(typeof native.lifecycle_output_json, 'string', 'ACCEPTANCE_NATIVE_LIFECYCLE: Original lifecycle bytes required');
 	const lifecycleOutput = row(JSON.parse(native.lifecycle_output_json as string));
 	assert.deepEqual(visible.lifecycleOutput, lifecycleOutput, 'ACCEPTANCE_NATIVE_LIFECYCLE: Public lifecycle output differs from original native custody');
