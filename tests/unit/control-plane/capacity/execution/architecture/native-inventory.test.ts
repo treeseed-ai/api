@@ -14,13 +14,13 @@ const pages = [{ items: [rows[0]], page: { limit: 1, hasMore: true, nextCursor: 
 const scope = { id: assignment.workdayId, teamId: assignment.teamId };
 const nativeAssignment = { id: assignment.id, team_id: assignment.teamId, project_id: assignment.projectId,
 	work_day_id: assignment.workdayId, membership_id: 'membership', capacity_provider_id: assignment.provider.providerId,
-	status: 'pending', lease_state: 'unleased', reservation_id: assignment.reservationId, execution_kind: 'workday',
+	lane_id: 'workday', lane_purpose: 'workday', status: 'pending', lease_state: 'unleased', reservation_id: assignment.reservationId, execution_kind: 'workday',
 	project_agent_class_id: 'class',
 	execution_node_id: assignment.nodeId, execution_node_revision: assignment.nodeRevision, graph_revision: assignment.graphRevision,
 	assignment_attempt_json: JSON.stringify(assignment), assignment_result_json: null, lifecycle_output_json: '{}' };
 const publicAssignment = { id: assignment.id, teamId: assignment.teamId, projectId: assignment.projectId,
 	workDayId: assignment.workdayId, membershipId: 'membership', capacityProviderId: assignment.provider.providerId,
-	status: 'pending', leaseState: 'unleased', reservationId: assignment.reservationId, assignmentAttempt: assignment, assignmentResult: null,
+	laneId: 'workday', lanePurpose: 'workday', status: 'pending', leaseState: 'unleased', reservationId: assignment.reservationId, assignmentAttempt: assignment, assignmentResult: null,
 	projectAgentClassId: 'class', lifecycleOutput: {},
 	executionNodeId: assignment.nodeId, executionNodeRevision: assignment.nodeRevision, graphRevision: assignment.graphRevision };
 const nativeReservation = { id: assignment.reservationId, assignment_id: assignment.id, team_id: assignment.teamId,
@@ -133,6 +133,12 @@ describe('independent native producer inventory reconciliation', () => {
 			expect.soft(() => verifyNativeAssignmentReadback(changed, visible, scope, [nativeReservation])).toThrow();
 			expect(changed).toEqual(before);
 		}
+  for (const field of ['laneId', 'lanePurpose']) for (const value of [undefined, null, '', 'foreign', {}, 7]) {
+   const changed = { ...visible, [field]: value }, before = structuredClone(changed);
+   expect.soft(() => verifyNativeAssignmentReadback(original, changed, scope, [nativeReservation]))
+    .toThrow('ACCEPTANCE_NATIVE_LANE');
+   expect(changed).toEqual(before);
+  }
 		expect({ original, visible }).toEqual(held);
 	});
 	it('reads exactly every native identity through complete public pages without changing original observations', async () => {
