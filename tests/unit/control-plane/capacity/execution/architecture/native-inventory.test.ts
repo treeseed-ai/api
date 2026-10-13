@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import { verifyNativeInventory, verifyNativeSettlementReadback, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeModelExecutionInventory, verifyNativeReporterCloseout } from '../../../../../acceptance/execution-inventory.ts';
 import { assignment } from '../fixtures/assignment.ts';
+import { graphProjection } from '../graph/architecture/living/living-graph-fixture.ts';
 import { compileWorkday, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { now as reportClock, reportRef, reportResult } from '../graph/architecture/closeout-sql-fixture.ts';
 
@@ -207,6 +208,40 @@ describe('independent native producer inventory reconciliation', () => {
 		}
 		expect(() => inspect(exactCohort, exactReservations)).not.toThrow(); expect({ exactCohort, exactReservations }).toEqual(heldCohort);
 		expect({ nativeAssignment, publicAssignment, nativeReservation }).toEqual(retainedAssignment);
+		// New independent producer proof, not another runner or an inferred exit-zero assertion.
+		const inspectGraph: unknown = Reflect.get(await import('../../../../../acceptance/execution-inventory.ts'), 'verifyNativeGraphRevisionInventory');
+		expect(typeof inspectGraph).toBe('function'); if (typeof inspectGraph !== 'function') throw new Error('Native graph revision proof is missing');
+		const firstRevision = graphProjection().revision, graphRecords = [firstRevision, { ...firstRevision, revision: 2, createdAt: '2026-10-03T00:00:01.000Z' }];
+		const nativeGraph = graphRecords.map(value => ({ team_id: value.teamId, revision: value.revision, rule_revision: value.ruleRevision,
+			changed_source_refs_json: JSON.stringify(value.changedSourceRefs), graph_digest: value.graphDigest, changes_json: JSON.stringify(value.changes), created_at: value.createdAt }));
+		const graphPage = (cursor: string) => ({ items: graphRecords.slice(Number(cursor), Number(cursor) + 1), nextCursor: String(Math.min(Number(cursor) + 1, graphRecords.length)) });
+		const originalGraph = structuredClone({ nativeGraph, graphRecords });
+		expect(await Reflect.apply(inspectGraph, undefined, [nativeGraph, scope.teamId, graphPage])).toEqual(graphRecords);
+		const changes: Array<(value: Record<string, unknown>) => void> = [
+			value => { value.teamId = 'foreign'; }, value => { value.revision = 2; }, value => { value.ruleRevision = 2; },
+			value => { value.graphDigest = 'sha256:' + 'f'.repeat(64); }, value => { value.createdAt = '2026-10-03T00:00:02.000Z'; },
+			value => { value.changedSourceRefs = []; }, value => { value.changes = { ...firstRevision.changes, added: ['substituted-node'] }; },
+			value => { value.extraAuthority = true; }, value => { delete value.graphDigest; },
+		];
+		for (const change of changes) {
+			const value = structuredClone(firstRevision); change(value); const held = structuredClone(value);
+			await expect(Reflect.apply(inspectGraph, undefined, [nativeGraph, scope.teamId, (cursor: string) => cursor === '0' ? { items: [value], nextCursor: '1' } : graphPage(cursor)])).rejects.toThrow();
+			expect(value).toEqual(held);
+		}
+		for (const fetch of [
+			() => ({ items: [], nextCursor: '0' }), () => ({ items: [firstRevision], nextCursor: '0' }),
+			() => ({ items: [firstRevision, firstRevision], nextCursor: '1' }),
+			(cursor: string) => cursor === '1' ? { items: [], nextCursor: cursor } : graphPage(cursor),
+			(cursor: string) => cursor === '2' ? { items: [], nextCursor: '3' } : graphPage(cursor),
+			(cursor: string) => { if (cursor === '1') throw new Error('retained native graph interruption'); return graphPage(cursor); },
+			() => ({ nextCursor: '0' }), () => ({ items: 'malformed', nextCursor: '0' }),
+		]) await expect(Reflect.apply(inspectGraph, undefined, [nativeGraph, scope.teamId, fetch])).rejects.toThrow();
+		for (const rows of [undefined, null, [], [nativeGraph[1]], [nativeGraph[0], nativeGraph[0]],
+			[{ ...nativeGraph[0], team_id: 'foreign' }, nativeGraph[1]], [{ ...nativeGraph[0], revision: '1' }, nativeGraph[1]],
+			[{ ...nativeGraph[0], changed_source_refs_json: '{' }, nativeGraph[1]], [{ ...nativeGraph[0], changes_json: 'null' }, nativeGraph[1]]])
+			await expect(Reflect.apply(inspectGraph, undefined, [rows, scope.teamId, graphPage])).rejects.toThrow();
+		expect(await Reflect.apply(inspectGraph, undefined, [nativeGraph, scope.teamId, graphPage])).toEqual(graphRecords);
+		expect({ nativeGraph, graphRecords }).toEqual(originalGraph);
 		const supplied = structuredClone(native), received = structuredClone(pages), calls: Array<string | undefined> = [];
 		expect(await verifyNativeInventory(supplied, value => { calls.push(value); return received[calls.length - 1]; }, 1)).toEqual(rows);
 		expect(calls).toEqual([undefined, cursor]); expect(supplied).toEqual(native); expect(received).toEqual(pages);
