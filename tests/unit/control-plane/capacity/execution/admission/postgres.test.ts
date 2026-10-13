@@ -160,7 +160,7 @@ describe('living admission in disposable PostgreSQL', () => {
 				const owners = (await peerDatabase.pool.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1 ORDER BY id', ['workday'])).rows;
 				const reserved = (await peerDatabase.pool.query('SELECT * FROM capacity_reservations WHERE work_day_id=$1 ORDER BY id', ['workday'])).rows;
 				const visible = await new ProviderAssignmentRepository(peerAccounting).get('team', winner.id); if (!visible) throw new Error('Original public owner required');
-				verifyNativeAssignmentReadback(owners.find(value => value.id === winner.id)!, visible, { id: 'workday', teamId: 'team' }, reserved, owners);
+				verifyNativeAssignmentReadback(owners.find(value => value.id === winner.id)!, { ...visible }, { id: 'workday', teamId: 'team' }, reserved, owners);
 				return { owners, reserved };
 			};
 			const originalCohort = await inspectCohort(), failedCohorts: unknown[] = [];
