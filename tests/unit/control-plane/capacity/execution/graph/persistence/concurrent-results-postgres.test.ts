@@ -3,8 +3,11 @@ import pg from 'pg';
 import { describe, expect, it } from 'vitest';
 import { createControlPlanePostgresDatabase } from '../../../../../../../src/api/support/control-plane-postgres.ts';
 import { commitLivingExecutionLifecycle } from '../../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/execution/living-execution-lifecycle.ts';
-import { persistExecutionGraph } from '../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
-import type { ExecutionNode, GraphRevision } from '@treeseed/sdk/agent-capacity';
+import { persistExecutionGraph, createExecutionGraphService } from '../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { agentDefinitionSchema, type ExecutionNode, type ExecutionEdge, type GraphRevision } from '@treeseed/sdk/agent-capacity';
+import { projectCommunicationInvocations } from '../../../../../../../src/api/capacity/policy/execution/communication-execution-projector.ts';
+import { digest as graphDigest, type TeamGraph } from '../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
+import { verifyNativeCommunicationEdges } from '../../../../../../acceptance/execution-inventory.ts';
 
 describe('concurrent terminal graph revision custody', () => {
 	it('commits five simultaneous results against reconciliation without duplicate or lost revisions', async () => {
@@ -69,6 +72,49 @@ describe('concurrent terminal graph revision custody', () => {
 			expect((await db.pool.query('SELECT status,source_ref_json,node_revision FROM execution_nodes')).rows)
 				.toEqual(nodes.map(() => expect.objectContaining({ status: 'completed', source_ref_json: JSON.stringify(sourceRef), node_revision: 1 })));
 			expect((await db.pool.query('SELECT status FROM capacity_provider_assignments')).rows.every(row => row.status === 'completed')).toBe(true);
+			const graphService = createExecutionGraphService({ ...store, principalCanAccessTeam: async () => true,
+				getTeamAccessSummary: async () => ({ permissions: ['projects:read:team'] }) });
+			const principal = { id: 'controlled-native-reader', roles: [], permissions: [] };
+			const current: TeamGraph = await graphService.show(principal, 'team', {});
+			const definition = agentDefinitionSchema.parse({ schemaVersion: 'treeseed.agent/v1', id: 'project/renamed-peer',
+				name: 'Renamed peer', agentClass: 'renamed-peer', purpose: 'Answer coordination prompts.', responsibilities: ['Answer the addressed question.'],
+				capabilities: ['reasoning'], context: { include: ['project-objectives'] }, activityProfiles: { chat: { handler: 'writer',
+					permissions: { content: { read: ['discussion'], write: ['discussion'] }, tools: ['discussion'] }, prompt: { system: 'Answer with the authorized context.' } } } });
+			await db.pool.query("INSERT INTO capacity_workday_runs (id,team_id,status,execution_mode,created_at,updated_at) VALUES ('chat-workday','team','running','simulation',$1,$1)", [now]);
+			const projected = projectCommunicationInvocations({ teamId: 'team', revision: current.revision + 1,
+				profiles: { 'project:renamed-peer': definition }, sources: [{ id: 'native-chat-invocation', teamId: 'team', projectId: 'project',
+					workdayId: 'chat-workday', agentId: 'renamed-peer', repository: 'library', commit: 'b'.repeat(40), path: 'discussion-messages/native/request.mdx', durationSeconds: 180 }] });
+			const unrelated: ExecutionEdge = { schemaVersion: 'treeseed.execution-edge/v1', id: 'native-unrelated-edge', teamId: 'team',
+				fromNodeId: nodes[0]!.id, toNodeId: nodes[1]!.id, provenance: 'profile-event', sourceRef, graphRevisionCreated: current.revision + 1 };
+			let previous = current;
+			const publish = async (edges: ExecutionEdge[], changes: GraphRevision['changes']) => {
+				const next = { ...previous, revision: previous.revision + 1, nodes: [...current.nodes, ...projected.nodes], edges };
+				next.digest = graphDigest({ teamId: next.teamId, nodes: next.nodes, edges: next.edges });
+				await persistExecutionGraph(store, next, previous, { schemaVersion: 'treeseed.graph-revision/v1', teamId: 'team', revision: next.revision,
+					ruleRevision: 1, changedSourceRefs: projected.changedSourceRefs, graphDigest: next.digest, changes, createdAt: now });
+				previous = await graphService.show(principal, 'team', {}); return previous;
+			};
+			const changes = { added: projected.nodes.map(node => node.id), changed: [], completed: [], blocked: [], stale: [], addedEdges: [unrelated.id], removedEdges: [] };
+			const shown = await publish([unrelated], changes), scope = { teamId: 'team', id: 'chat-workday' };
+			const ids = shown.nodes.filter(node => node.kind === 'communication' && node.workdayId === scope.id).map(node => node.id);
+			const peer = new pg.Pool({ connectionString: connection.href, max: 1 });
+			try {
+				const nativeNodes = (await peer.query("SELECT * FROM execution_nodes WHERE team_id=$1 AND workday_id=$2 AND kind='communication' ORDER BY id", [scope.teamId, scope.id])).rows;
+				const edgeSql = 'SELECT * FROM execution_edges WHERE team_id=$1 AND (from_node_id=ANY($2::text[]) OR to_node_id=ANY($2::text[])) ORDER BY id';
+				const edges = async () => (await peer.query(edgeSql, [scope.teamId, ids])).rows;
+				verifyNativeCommunicationEdges(nativeNodes, await edges(), scope, ids);
+				const forbidden: ExecutionEdge = { ...unrelated, id: 'native-chat-edge', fromNodeId: ids[0]!, toNodeId: nodes[2]!.id, graphRevisionCreated: previous.revision + 1 };
+				await publish([unrelated, forbidden], { ...changes, added: [], addedEdges: [forbidden.id] });
+				const active = await edges(); expect(active).toHaveLength(1);
+				expect(() => verifyNativeCommunicationEdges(nativeNodes, active, scope, ids)).toThrow('ACCEPTANCE_NATIVE_CHAT_EDGE');
+				await publish([unrelated], { ...changes, added: [], addedEdges: [], removedEdges: [forbidden.id] });
+				expect(previous.edges.map(edge => edge.id)).toEqual([unrelated.id]);
+				const retained = await edges(); expect(retained).toHaveLength(1); expect(Number(retained[0]!.graph_revision_removed)).toBeGreaterThan(0);
+				const held = structuredClone(retained); expect(() => verifyNativeCommunicationEdges(nativeNodes, retained, scope, ids)).toThrow('ACCEPTANCE_NATIVE_CHAT_EDGE');
+				expect(retained).toEqual(held); expect(await edges()).toEqual(held);
+				expect(previous.nodes.filter(node => node.kind !== 'communication')).toEqual(current.nodes);
+			} finally { await peer.end(); }
+
 		} finally {
 			await db.close(); await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`); await admin.end();
 		}

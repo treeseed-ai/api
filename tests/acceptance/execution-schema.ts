@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy, verifyNativeReporterCloseout } from './execution-inventory.ts';
+import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy, verifyNativeReporterCloseout } from './execution-inventory.ts';
 
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
@@ -280,6 +280,10 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 					}
 					observations.push({ id: value.id, value: visible });
 				}
+				const chatNodeIds = observations.map(item => assignmentAttemptSchema.parse(item.value.assignmentAttempt))
+					.filter(attempt => attempt.effectiveProfile.activity === 'chat').map(attempt => attempt.nodeId);
+				const chatEdges = await nativeInventory('SELECT * FROM execution_edges WHERE team_id=$1 AND (from_node_id=ANY($2::text[]) OR to_node_id=ANY($2::text[])) ORDER BY id', [run.teamId, chatNodeIds]);
+				verifyNativeCommunicationEdges(reportNodes.filter(node => node.kind === 'communication'), chatEdges, run, chatNodeIds);
 				requireNativeAdmissionSamples(prioritizedWork, calibratedWork, requireObservedSamples);
 				for (const observation of calibrationHistory.values()) assert.deepEqual(
 					(await client.query(observation.sql, observation.parameters)).rows, observation.rows);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { verifyNativeInventory, verifyNativeSettlementReadback, verifyNativeAssignmentReadback, verifyNativeModelExecutionInventory, verifyNativeReporterCloseout } from '../../../../../acceptance/execution-inventory.ts';
+import { verifyNativeInventory, verifyNativeSettlementReadback, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeModelExecutionInventory, verifyNativeReporterCloseout } from '../../../../../acceptance/execution-inventory.ts';
 import { assignment } from '../fixtures/assignment.ts';
 import { compileWorkday, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { now as reportClock, reportRef, reportResult } from '../graph/architecture/closeout-sql-fixture.ts';
@@ -139,6 +139,20 @@ describe('independent native producer inventory reconciliation', () => {
     .toThrow('ACCEPTANCE_NATIVE_LANE');
    expect(changed).toEqual(before);
   }
+  const chatNodes = [{ id: 'chat-node', team_id: scope.teamId, workday_id: scope.id, kind: 'communication' }];
+  const chatBefore = structuredClone(chatNodes);
+  expect(() => verifyNativeCommunicationEdges(chatNodes, [], scope, ['chat-node'])).not.toThrow();
+  for (const edges of [[{ id: 'active-edge', from_node_id: 'chat-node', to_node_id: 'other' }],
+   [{ id: 'removed-edge', from_node_id: 'other', to_node_id: 'chat-node', graph_revision_removed: 7 }]]) {
+   const before = structuredClone(edges); expect(() => verifyNativeCommunicationEdges(chatNodes, edges, scope, ['chat-node']))
+    .toThrow('ACCEPTANCE_NATIVE_CHAT_EDGE'); expect(edges).toEqual(before);
+  }
+  for (const ids of [[], ['foreign'], ['chat-node', 'chat-node']])
+   expect(() => verifyNativeCommunicationEdges(chatNodes, [], scope, ids)).toThrow('ACCEPTANCE_NATIVE_CHAT_INVENTORY');
+  for (const nodes of [[], [...chatNodes, ...chatNodes], [{ ...chatNodes[0]!, team_id: 'foreign' }],
+   [{ ...chatNodes[0]!, workday_id: 'foreign' }], [{ ...chatNodes[0]!, kind: 'acting' }]])
+   expect(() => verifyNativeCommunicationEdges(nodes, [], scope, ['chat-node'])).toThrow();
+  expect(chatNodes).toEqual(chatBefore);
 		expect({ original, visible }).toEqual(held);
 	});
 	it('reads exactly every native identity through complete public pages without changing original observations', async () => {
