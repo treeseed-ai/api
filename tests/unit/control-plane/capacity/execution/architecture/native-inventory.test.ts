@@ -182,7 +182,29 @@ describe('independent native producer inventory reconciliation', () => {
 			expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [{ ...nativeReservation, state }])).toEqual(assignment);
 		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [{ ...nativeReservation, reserved_seconds: '3' }])).toEqual(assignment);
 		const unrelated = { ...nativeReservation, id: 'another-reservation', assignment_id: 'another-assignment' };
-		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [unrelated, nativeReservation])).toEqual(assignment);
+		expect(() => Reflect.apply(verifyNativeAssignmentReadback, undefined, [nativeAssignment, publicAssignment, scope, [unrelated, nativeReservation], [nativeAssignment]]))
+			.toThrow('ACCEPTANCE_NATIVE_ISSUANCE');
+		const secondAttempt = { ...assignment, id: 'second-issued', idempotencyKey: 'second-issued', nodeId: 'second-node',
+			reservationId: 'second-reservation', leaseId: 'second-lease' };
+		const second = { ...nativeAssignment, id: secondAttempt.id, execution_node_id: secondAttempt.nodeId,
+			reservation_id: secondAttempt.reservationId, assignment_attempt_json: JSON.stringify(secondAttempt) };
+		const secondReservation = { ...nativeReservation, id: secondAttempt.reservationId, assignment_id: secondAttempt.id, idempotency_key: secondAttempt.idempotencyKey };
+		const exactCohort = [nativeAssignment, second], exactReservations = [nativeReservation, secondReservation];
+		const inspect = (cohort: unknown, reservations: unknown) => Reflect.apply(verifyNativeAssignmentReadback, undefined,
+			[nativeAssignment, publicAssignment, scope, reservations, cohort]);
+		const heldCohort = structuredClone({ exactCohort, exactReservations });
+		expect(() => inspect(exactCohort, exactReservations)).not.toThrow();
+		for (const cohort of [undefined, null, [], [nativeAssignment, nativeAssignment], [second],
+			[nativeAssignment, { ...second, team_id: 'foreign' }],
+			[nativeAssignment, { ...second, assignment_attempt_json: JSON.stringify({ ...secondAttempt, leaseId: assignment.leaseId }) }],
+			[nativeAssignment, { ...second, assignment_attempt_json: JSON.stringify({ ...secondAttempt, reservationId: assignment.reservationId }) }],
+			[nativeAssignment, { ...second, assignment_attempt_json: JSON.stringify({ ...secondAttempt, nodeId: assignment.nodeId }) }]]) {
+			const held = structuredClone(cohort); expect.soft(() => inspect(cohort, exactReservations)).toThrow('ACCEPTANCE_NATIVE_ISSUANCE'); expect(cohort).toEqual(held);
+		}
+		for (const reservations of [[], [nativeReservation], [...exactReservations, unrelated]]) {
+			const held = structuredClone(reservations); expect.soft(() => inspect(exactCohort, reservations)).toThrow('ACCEPTANCE_NATIVE_ISSUANCE'); expect(reservations).toEqual(held);
+		}
+		expect(() => inspect(exactCohort, exactReservations)).not.toThrow(); expect({ exactCohort, exactReservations }).toEqual(heldCohort);
 		expect({ nativeAssignment, publicAssignment, nativeReservation }).toEqual(retainedAssignment);
 		const supplied = structuredClone(native), received = structuredClone(pages), calls: Array<string | undefined> = [];
 		expect(await verifyNativeInventory(supplied, value => { calls.push(value); return received[calls.length - 1]; }, 1)).toEqual(rows);
