@@ -228,14 +228,22 @@ describe('independent PostgreSQL connection graph custody', () => {
 			const originalRows = structuredClone(nativeRows), after = await f.snapshot(); expect(nativeRows).toHaveLength(2);
 			const watch = (cursor: string) => f.reader.watch(f.principal, 'team', { cursor, limit: 1 });
 			const exact = await verifyNativeGraphRevisionInventory(nativeRows, 'team', watch), failures: unknown[] = [];
-			for (const mode of ['hidden-tail', 'duplicate', 'foreign-team', 'substituted-digest', 'substituted-changes', 'cursor', 'interrupted']) {
+			for (const mode of ['hidden-tail', 'duplicate', 'foreign-team', 'substituted-digest', 'substituted-changes', 'cursor', 'interrupted', 'rule-revision', 'clock', 'source-refs', 'missing-field', 'extra-field', 'malformed-page', 'missing-page', 'terminal-cursor']) {
 				const observed: unknown[] = []; let rejected = false;
 				try { await verifyNativeGraphRevisionInventory(nativeRows, 'team', async cursor => {
 					const page = structuredClone(await watch(cursor));
 					if (mode === 'interrupted' && cursor === '1') throw new Error('retained native graph watch interruption');
 					if (mode === 'hidden-tail' && cursor === '1') { page.items = []; page.nextCursor = cursor; }
 					if (mode === 'duplicate' && cursor === '1') page.items = [structuredClone(exact[0]!)];
-					if (page.items[0] && cursor === '0') {
+					if (mode === 'malformed-page' && cursor === '0') Reflect.set(page, 'items', 'malformed');
+					if (mode === 'missing-page' && cursor === '0') Reflect.deleteProperty(page, 'items');
+					if (mode === 'terminal-cursor' && cursor === '2') page.nextCursor = '3';
+					if (page.items?.[0] && cursor === '0') {
+						if (mode === 'rule-revision') page.items[0].ruleRevision = 2;
+						if (mode === 'clock') page.items[0].createdAt = '2026-10-03T00:00:02.000Z';
+						if (mode === 'source-refs') page.items[0].changedSourceRefs = [];
+						if (mode === 'missing-field') Reflect.deleteProperty(page.items[0], 'graphDigest');
+						if (mode === 'extra-field') Reflect.set(page.items[0], 'alternateAuthority', true);
 						if (mode === 'foreign-team') page.items[0].teamId = 'foreign';
 						if (mode === 'substituted-digest') page.items[0].graphDigest = 'sha256:' + 'f'.repeat(64);
 						if (mode === 'substituted-changes') page.items[0].changes.added = ['substituted-node'];
@@ -245,7 +253,7 @@ describe('independent PostgreSQL connection graph custody', () => {
 				}); } catch (failure) { rejected = true; failures.push({ mode, observed, failure: String(failure) }); }
 				expect(rejected, mode).toBe(true); expect(await f.snapshot()).toEqual(after); expect(nativeRows).toEqual(originalRows);
 			}
-			const retainedFailures = structuredClone(failures); expect(failures).toHaveLength(7);
+			const retainedFailures = structuredClone(failures); expect(failures).toHaveLength(15);
 			expect(await verifyNativeGraphRevisionInventory(nativeRows, 'team', watch)).toEqual(exact);
 			expect(failures).toEqual(retainedFailures); expect(await f.snapshot()).toEqual(after);
 			expect((await f.left.pool.query('SELECT * FROM execution_graph_revisions WHERE team_id=$1 ORDER BY revision', ['team'])).rows).toEqual(originalRows);
