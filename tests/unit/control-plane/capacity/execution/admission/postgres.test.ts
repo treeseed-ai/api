@@ -8,6 +8,7 @@ import { appliedWorkdaySchema, assignmentAttemptSchema, calculateAssignmentAlloc
 import { createControlPlanePostgresDatabase } from '../../../../../../src/api/support/control-plane-postgres.ts';
 import { admitLivingExecutionAssignment } from '../../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts';
 import { assignment } from '../fixtures/assignment.ts';
+import { proveNativeLeaseClaim } from './native-lease-claim.ts';
 import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { buildProviderAssignmentExplanation } from '../../../../../../src/api/capacity/services/capacity/assignments/observability/assignment-explanation-service.ts';
 import { settleCapacityReservationExactlyOnce } from '../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
@@ -46,7 +47,10 @@ describe('living admission in disposable PostgreSQL', () => {
 			const connections = await Promise.all([database, peerDatabase].map(owner => owner.pool.query('SELECT pg_backend_pid() AS pid,current_database() AS name')));
 			expect(connections.map(result => result.rows[0].name)).toEqual([name, name]);
 			expect(connections[0]!.rows[0].pid).not.toBe(connections[1]!.rows[0].pid);
-			const now = assignment.createdAt;
+			// Freeze one current fixture before admission; preserve the original authority interval and all execution/watchdog limits.
+			const now = new Date().toISOString();
+			const currentAssignment = { ...assignment, createdAt: now,
+				deadline: new Date(Date.parse(now) + Date.parse(assignment.deadline) - Date.parse(assignment.createdAt)).toISOString() };
 			await database.pool.query(`INSERT INTO teams (id,slug,name,created_at,updated_at)
 				VALUES ('team','team','Team',$1,$1),('foreign-team','foreign-team','Foreign Team',$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO capacity_workday_runs (id,team_id,status,execution_mode,created_at,updated_at)
@@ -63,10 +67,11 @@ describe('living admission in disposable PostgreSQL', () => {
 			await database.pool.query(`INSERT INTO capacity_provider_lanes (id,capacity_provider_id,execution_provider_id,display_name,purpose,max_concurrent_runners,created_at,updated_at) VALUES ('workday','provider','codex','Workday','workday',1,$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO capacity_provider_availability_sessions
 				(id,membership_id,team_id,capacity_provider_id,opened_at,refreshed_at,expires_at,available_from,created_at,updated_at)
-				VALUES ('session','membership','team','provider',$1,$1,$2,$1,$1,$1)`, [now, assignment.deadline]);
+				VALUES ('session','membership','team','provider',$1,$1,$2,$1,$1,$1)`, [now, currentAssignment.deadline]);
 			const observed = { day: now.slice(0, 10), observedAt: now, healthy: true, activeSeconds: 1, reservedSeconds: 0 };
 			await database.pool.query(`UPDATE capacity_provider_availability_sessions SET execution_providers_json=$1 WHERE id='session'`,
-				[JSON.stringify([{ id: 'codex-implementation', nativeLimits: { modelConfigurationId: 'terra-medium' },
+				[JSON.stringify([{ id: 'codex', runtimeBuild: assignment.provider.runtimeBuild, status: 'available', capabilities: [],
+					maxConcurrentRunners: 1, lanes: [{ id: 'workday', purpose: 'workday', maxConcurrentRunners: 1 }], nativeLimits: { modelConfigurationId: 'terra-medium' },
 					accountingObservation: { modelUsage: observed, capabilityUsage: { 'code-change': observed } } }])]);
 			let staleAdmissionRead = false;
 			const store = { ensureInitialized: () => database.migrate(),
@@ -79,7 +84,7 @@ describe('living admission in disposable PostgreSQL', () => {
 					return new ProviderAssignmentRepository(store as never).get(team, id);
 				},
 			};
-			const attempts = ['first', 'second'].map(id => assignmentAttemptSchema.parse({ ...assignment,
+			const attempts = ['first', 'second'].map(id => assignmentAttemptSchema.parse({ ...currentAssignment,
 				id, idempotencyKey: id, nodeId: id, reservationId: `reservation-${id}` }));
 			for (const attempt of attempts) await database.prepare(`INSERT INTO execution_nodes
 				(id,team_id,project_id,workday_id,kind,source_ref_json,authority_refs_json,rule_revision,node_revision,agent_class,status,
@@ -254,8 +259,8 @@ describe('living admission in disposable PostgreSQL', () => {
 			// Both admissions observed absence, but the winner committed and was
 			// leased/pinned before the losing SQL batch acquired the workday lock.
 			const custody = { sourceWorkspace: { exactCommit: 'a'.repeat(40) }, retained: 'winner' };
-			await database.pool.query(`UPDATE capacity_provider_assignments SET status='leased',lease_state='leased',
-				workspace_context_json=$1 WHERE id=$2`, [JSON.stringify(custody), winner.id]);
+			await proveNativeLeaseClaim(database, peerDatabase, accounting, peerAccounting, winner);
+			await database.pool.query('UPDATE capacity_provider_assignments SET workspace_context_json=$1 WHERE id=$2', [JSON.stringify(custody), winner.id]);
 			// An actual issued, leased attempt and its accounting records must remain
 			// byte-identical when the owning team advances its default policy.
 			const issuedState = async () => Object.fromEntries(await Promise.all([
