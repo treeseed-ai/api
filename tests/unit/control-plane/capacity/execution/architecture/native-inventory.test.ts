@@ -198,6 +198,7 @@ describe('independent native producer inventory reconciliation', () => {
 			[nativeAssignment, { ...second, team_id: 'foreign' }],
 			[nativeAssignment, { ...second, assignment_attempt_json: JSON.stringify({ ...secondAttempt, leaseId: assignment.leaseId }) }],
 			[nativeAssignment, { ...second, assignment_attempt_json: JSON.stringify({ ...secondAttempt, reservationId: assignment.reservationId }) }],
+			[nativeAssignment, { ...second, assignment_attempt_json: JSON.stringify({ ...secondAttempt, idempotencyKey: assignment.idempotencyKey }) }],
 			[nativeAssignment, { ...second, assignment_attempt_json: JSON.stringify({ ...secondAttempt, nodeId: assignment.nodeId }) }]]) {
 			const held = structuredClone(cohort); expect.soft(() => inspect(cohort, exactReservations)).toThrow('ACCEPTANCE_NATIVE_ISSUANCE'); expect(cohort).toEqual(held);
 		}
