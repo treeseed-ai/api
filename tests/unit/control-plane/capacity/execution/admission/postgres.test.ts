@@ -473,17 +473,18 @@ describe('living admission in disposable PostgreSQL', () => {
 				expect(await reader.get('team', 'workday', terminal!.id)).toEqual(terminal);
 				const raw = (await peerDatabase.pool.query('SELECT * FROM capacity_workday_events WHERE assignment_id=$1 ORDER BY event_index', [winner.id])).rows;
 				const owners = (await peerDatabase.pool.query('SELECT * FROM capacity_provider_assignments WHERE work_day_id=$1', ['workday'])).rows;
+				const rawTerminal = raw.find(value => value.id === terminal!.id); expect(rawTerminal).toBeDefined();
 				const held = structuredClone({ raw, owners });
 				expect([...verifyNativeModelExecutionInventory(owners, raw, { id: 'workday', teamId: 'team' })]).toEqual([winner.id]);
-				expect(envelopes.decrypt(JSON.parse(String(raw[1]!.metadata_json)).protectedPayloadEnvelope)).toEqual(payload);
-				const context = JSON.parse(String(raw[1]!.context_json)), decrypted = envelopes.decrypt(JSON.parse(String(raw[1]!.metadata_json)).protectedPayloadEnvelope);
+				expect(envelopes.decrypt(JSON.parse(String(rawTerminal!.metadata_json)).protectedPayloadEnvelope)).toEqual(payload);
+				const context = JSON.parse(String(rawTerminal!.context_json)), decrypted = envelopes.decrypt(JSON.parse(String(rawTerminal!.metadata_json)).protectedPayloadEnvelope);
 				verifyNativeModelUsage(context, result); verifyNativeProviderUsage(context, decrypted); expect(terminal!.context).toEqual(context);
 				for (const field of Object.keys(measured)) { const changed = structuredClone(result); Reflect.set(changed.usage.native, field, measured[field as keyof typeof measured] + 1); const before = structuredClone(changed);
 					expect(() => verifyNativeModelUsage(context, changed)).toThrow('ACCEPTANCE_NATIVE_USAGE'); expect(changed).toEqual(before); }
 				for (const field of Object.keys(units)) { const changed = structuredClone(decrypted); Reflect.set((changed.providerEvents as Array<{ usage: Record<string, number> }>)[0]!.usage, field, 99); const before = structuredClone(changed);
 					expect(() => verifyNativeProviderUsage(context, changed)).toThrow('ACCEPTANCE_NATIVE_USAGE'); expect(changed).toEqual(before); }
 
-				for (const incomplete of [raw.slice(0, 1), raw.slice(1), [...raw, raw[0]!]])
+				for (const incomplete of [raw.filter(value => value.id !== start!.id), raw.filter(value => value.id !== terminal!.id), [...raw, raw.find(value => value.id === start!.id)!]])
 					expect(() => verifyNativeModelExecutionInventory(owners, incomplete, { id: 'workday', teamId: 'team' })).toThrow();
 				expect({ raw, owners }).toEqual(held); expect(await state()).toEqual(retained);
 				expect((await peerDatabase.pool.query('SELECT * FROM capacity_workday_events WHERE assignment_id=$1 ORDER BY event_index', [winner.id])).rows).toEqual(raw);
