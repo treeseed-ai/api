@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.assignment-phase-observation-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/execution-window-replay.test.ts
+    testName: commits one original execution or closeout transition observation with its state change and never reports success without that durable proof
   api.golden.native-observation-deadline-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
