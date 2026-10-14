@@ -1,3 +1,4 @@
+import { assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 import { describe, expect, it } from 'vitest';
 import { closeoutDatabase } from '../graph/architecture/closeout-sql-fixture.ts';
 import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
@@ -50,8 +51,12 @@ describe('native immutable admission replay', () => {
 			for (const status of ['leased', 'running', 'completed', 'failed', 'cancelled', 'expired'] as const) {
 				const progressed = status === 'leased' ? advanceAssignmentAttemptLifecycle(input.assignment, status, input.now)
 					: advanceAssignmentAttemptLifecycle(advanceAssignmentAttemptLifecycle(input.assignment, 'running', input.now), status, input.now);
-				await fixture.query('UPDATE capacity_provider_assignments SET status=?,lease_state=?,assignment_attempt_json=? WHERE id=?',
-					[status, ['leased', 'running'].includes(status) ? 'leased' : 'released', JSON.stringify(progressed), input.assignment.id]);
+				// Controlled persisted input, not native provider execution or measured settlement. A completed row requires its canonical result.
+				const result = status === 'completed' ? assignmentResultSchema.parse({ schemaVersion: 'treeseed.assignment-result/v1', id: 'controlled-completed-result',
+					assignmentId: input.assignment.id, status: 'completed', summary: 'Controlled completed replay fixture.', references: [], verification: [], usage: { elapsedSeconds: 0 }, diagnostics: [], completedAt: input.now }) : null;
+				await fixture.query('UPDATE capacity_provider_assignments SET status=?,lease_state=?,assignment_attempt_json=?,assignment_result_json=?,completed_at=?,failed_at=? WHERE id=?',
+					[status, ['leased', 'running'].includes(status) ? 'leased' : 'released', JSON.stringify(progressed), result ? JSON.stringify(result) : null,
+					result ? input.now : null, ['failed', 'cancelled', 'expired'].includes(status) ? input.now : null, input.assignment.id]);
 				const held = await fixture.snapshot(), published = await fixture.repository.get('team', input.assignment.id);
 				expect(published?.assignmentAttempt).toEqual(progressed); expect(await Promise.all([run(), run()])).toEqual([published, published]);
 				expect(await fixture.snapshot()).toEqual(held); expect(input).toEqual(original);
