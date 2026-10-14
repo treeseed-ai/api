@@ -30,7 +30,7 @@ describe('provider terminal reporting through original transaction and resource 
 			const proveInterruptedObservation=async(phase:'execution'|'closeout',invoke:()=>Promise<unknown>)=>{
 				const snapshot=async()=>({state:await native.snapshot(),runs:(await native.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows,events:(await native.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows});
 				const original=await snapshot();
-				await native.db.exec(`CREATE FUNCTION native_phase_observation_failure() RETURNS trigger LANGUAGE plpgsql AS $ BEGIN IF NEW.event_type='assignment.${phase}.started' THEN RAISE EXCEPTION 'original native phase observation interrupted'; END IF;RETURN NEW;END $;
+				await native.db.exec(`CREATE FUNCTION native_phase_observation_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type='assignment.${phase}.started' THEN RAISE EXCEPTION 'original native phase observation interrupted'; END IF;RETURN NEW;END $$;
 				 CREATE TRIGGER native_phase_observation_failure BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION native_phase_observation_failure();`);
 				try{await expect(invoke()).rejects.toThrow('original native phase observation interrupted');expect(await snapshot()).toEqual(original);}
 				finally{await native.db.exec('DROP TRIGGER native_phase_observation_failure ON capacity_workday_events;DROP FUNCTION native_phase_observation_failure();');}
