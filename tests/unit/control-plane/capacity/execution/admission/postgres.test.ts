@@ -286,6 +286,7 @@ describe('living admission in disposable PostgreSQL', () => {
 			await database.pool.query(`UPDATE capacity_provider_assignments SET status='pending',lease_state='unleased' WHERE id=$1`, [winner.id]);
 			const admitted = await new ProviderAssignmentRepository(store as never).get('team', winner.id);
 			if (!admitted?.assignmentAttempt) throw new Error('Complete admitted assignment authority is required for the settlement fixture.');
+			expect(admitted.assignmentAttempt).toEqual({ ...winner, status: 'leased' });
 			expect(admitted?.explanation)
 				.toMatchObject({ metadata: { allocation: { admitted: true } } });
 			expect(buildProviderAssignmentExplanation(admitted!, 'team', { source: 'lease_next_assignment', eligible: true }, now))
@@ -383,7 +384,7 @@ describe('living admission in disposable PostgreSQL', () => {
 				verifyNativeSettlementReadback(retained.ledger, replayed.ledger, retained.assignments);
 
 			expect(published.assignments.map(value => value.id)).toEqual(retained.assignments.map(value => value.id));
-			expect(published.assignments.map(value => value.assignmentAttempt)).toEqual([winner]);
+			expect(published.assignments.map(value => value.assignmentAttempt)).toEqual([admitted.assignmentAttempt]);
 			expect(published.reservations.map(value => value.id)).toEqual(retained.reservations.map(value => value.id));
 			expect(published.reservations[0]).toMatchObject({ assignmentId: winner.id, state: 'consumed', activeSeconds: 2, elapsedSeconds: 4,
 				consumedProviderUnits: 0.25, consumedUsd: 0.001 });
