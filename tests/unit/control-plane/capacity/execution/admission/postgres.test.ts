@@ -367,6 +367,28 @@ describe('living admission in disposable PostgreSQL', () => {
 			expect(JSON.parse(String(retained.usage[0]!.native_usage_json))).toEqual(settlement.usageActual.nativeUsage);
 			const published = await publicInventory();
 			verifyNativeSettlementReadback(retained.ledger, published.ledger, retained.assignments);
+			// Corrupt only the original disposable SQL allocation, then inspect its
+			// real public projection. Matching corrupted views cannot authorize a
+			// different amount than the immutable attempt and reservation.
+			for (const field of ['requestedSeconds', 'reservedSeconds', 'allocatedSeconds']) {
+				const column = field === 'allocatedSeconds' ? 'explanation_json' : 'capacity_envelope_json';
+				const original = retained.assignments.find(value => value.id === winner.id)!;
+				const material = JSON.parse(String(original[column]));
+				if (field === 'allocatedSeconds') material.metadata.allocation.allocatedSeconds++;
+				else material[field]++;
+				try {
+					await peerDatabase.pool.query('UPDATE capacity_provider_assignments SET ' + column + '=$1 WHERE id=$2', [JSON.stringify(material), winner.id]);
+					const failedNative = await state(peerDatabase), publicPage = await new ProviderAssignmentRepository(peerAccounting).list('team', { workdayId: 'workday', limit: 10 });
+					const visible = publicPage.items.find(value => value.id === winner.id)!, raw = failedNative.assignments.find(value => value.id === winner.id)!;
+					const failedObservation = structuredClone({ raw, visible });
+					expect(visible[field === 'allocatedSeconds' ? 'explanation' : 'capacityEnvelope']).toEqual(material);
+					expect(() => verifyNativeAssignmentReadback(raw, { ...visible }, { id: 'workday', teamId: 'team' }, failedNative.reservations, failedNative.assignments))
+						.toThrow('ACCEPTANCE_NATIVE_ALLOCATION');
+					expect({ raw, visible }).toEqual(failedObservation); expect(await state()).toEqual(failedNative);
+				} finally { await peerDatabase.pool.query('UPDATE capacity_provider_assignments SET ' + column + '=$1 WHERE id=$2', [original[column], winner.id]); }
+				expect(await state()).toEqual(retained); expect(await publicInventory()).toEqual(published);
+			}
+
 			// Corrupt only this disposable owning database through the independent connection.
 			// The public serializer retains canonical metadata under the other valid phase;
 			// strict acceptance must still deny the missing original terminal settlement.
