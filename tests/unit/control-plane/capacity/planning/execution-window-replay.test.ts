@@ -36,6 +36,7 @@ describe('execution transition replay authority', () => {
     eventType:'assignment.'+phase+'.started',status:'recorded',title:phase==='execution'?'Assignment execution started':'Assignment closeout started',message:null,parameters:{},metadata:{},refs:{},
     context:{nodeId:fullAttempt.nodeId,nodeRevision:fullAttempt.nodeRevision,graphRevision:fullAttempt.graphRevision,status:phase==='execution'?'running':'closeout',leaseId:fullAttempt.leaseId,reservationId:fullAttempt.reservationId,runnerId:'original-runner'},createdAt:now});
    expect(JSON.stringify(mocks.events.mock.calls)).not.toContain('current');
+   for(const cause of [null,new Error('original native observation failure')]){mocks.get.mockReset().mockResolvedValueOnce(current).mockResolvedValueOnce(updated);mocks.events.mockReset();if(cause)mocks.events.mockRejectedValueOnce(cause);else mocks.events.mockResolvedValueOnce(null);const denied=start({run:vi.fn()}as never,principal,'assignment',{leaseToken:'current',expectedStateVersion:4,idempotencyKey:key},now);if(cause)await expect(denied).rejects.toBe(cause);else await expect(denied).rejects.toMatchObject({code:'assignment_window_observation_missing'});}
   }
  });
 

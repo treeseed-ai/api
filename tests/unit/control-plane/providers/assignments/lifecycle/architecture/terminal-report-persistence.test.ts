@@ -26,6 +26,18 @@ describe('provider terminal reporting through original transaction and resource 
 			const input = { leaseToken: 'lease-token', expectedStateVersion: native.assignment.stateVersion,
 				idempotencyKey: 'canonical-execution-start' }, original = structuredClone(input);
 			const provider = { ...principal, scopes: ['provider:assignments:write'] };
+
+			const proveInterruptedObservation=async(phase:'execution'|'closeout',invoke:()=>Promise<unknown>)=>{
+				const snapshot=async()=>({state:await native.snapshot(),runs:(await native.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows,events:(await native.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows});
+				const original=await snapshot();
+				await native.db.exec(`CREATE FUNCTION native_phase_observation_failure() RETURNS trigger LANGUAGE plpgsql AS $ BEGIN IF NEW.event_type='assignment.${phase}.started' THEN RAISE EXCEPTION 'original native phase observation interrupted'; END IF;RETURN NEW;END $;
+				 CREATE TRIGGER native_phase_observation_failure BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION native_phase_observation_failure();`);
+				try{await expect(invoke()).rejects.toThrow('original native phase observation interrupted');expect(await snapshot()).toEqual(original);}
+				finally{await native.db.exec('DROP TRIGGER native_phase_observation_failure ON capacity_workday_events;DROP FUNCTION native_phase_observation_failure();');}
+			};
+
+
+			await proveInterruptedObservation('execution',()=>startAssignmentExecutionWindow(owner,provider,native.assignment.id,input,startedAt));
 			const started = await startAssignmentExecutionWindow(owner, provider, native.assignment.id, input, startedAt);
 			expect(started.assignmentAttempt).toEqual({ ...native.attempt, status: 'running', startedAt });
 			const rawEvents=async()=>(await native.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows;
@@ -39,9 +51,11 @@ describe('provider terminal reporting through original transaction and resource 
 			const replay = await startAssignmentExecutionWindow(owner, provider, native.assignment.id, input,
 				'2026-10-02T21:00:01.000Z');
 			expect(replay).toEqual(started); expect(await native.snapshot()).toEqual(running);expect(await rawEvents()).toEqual(executionEvents);
+			await proveInterruptedObservation('closeout',()=>startAssignmentCloseoutWindow(owner,provider,native.assignment.id,{...input,expectedStateVersion:started.stateVersion,idempotencyKey:'canonical-closeout'},'2026-10-02T21:00:02.000Z'));
 			const closed = await startAssignmentCloseoutWindow(owner, provider, native.assignment.id,
 				{ ...input, expectedStateVersion: started.stateVersion, idempotencyKey: 'canonical-closeout' }, '2026-10-02T21:00:02.000Z');
 			const closeoutEvents=await rawEvents();expect(closeoutEvents).toHaveLength(2);expect(closeoutEvents[1]).toMatchObject({assignment_id:native.assignment.id,event_type:'assignment.closeout.started',created_at:'2026-10-02T21:00:02.000Z'});
+			const finalPublic=await new CapacityWorkdayEventRepository(owner).list('team',native.attempt.workdayId);expect(finalPublic.items).toHaveLength(2);for(const event of closeoutEvents){const visible=finalPublic.items.find(value=>value.id===event.id);expect(visible).toMatchObject({eventType:event.event_type,assignmentId:event.assignment_id,workdayId:event.workday_id,projectId:event.project_id,createdAt:event.created_at,context:JSON.parse(String(event.context_json)),parameters:{},metadata:{},refs:{}});}expect(JSON.stringify(finalPublic)).not.toContain('lease-token');
 			expect(closed.assignmentAttempt).toEqual(started.assignmentAttempt);
 			expect(closed.assignmentAttempt?.deadline).toBe(native.attempt.deadline);
 			expect(input).toEqual(original);
