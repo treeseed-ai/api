@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
-import * as inventory from '../../../../../acceptance/execution-inventory.ts';
-import { assignment } from '../fixtures/assignment.ts';
+import * as inventory from '../../../../../../../acceptance/execution-inventory.ts';
+import { assignment } from '../../../fixtures/assignment.ts';
 type Row=Record<string,unknown>;
 it('requires each original native lease exactly once in scoped durable history without repairing missing foreign duplicated malformed or secret-bearing observations',()=>{
  const check=(inventory as unknown as Record<string,(assignments:Row[],events:Row[],run:Row)=>void>).verifyNativeLeaseHistory;
