@@ -441,7 +441,10 @@ export function verifyNativeGraphReadback(nodes: unknown, edges: unknown, revisi
 		assert.ok(records.every(value => value.team_id === revision.teamId && typeof value.id === 'string' && value.id)
 			&& new Set(records.map(value => value.id)).size === records.length, label); return records; };
 	const expectedNodes = originals(nodes).map(decodeExecutionNode).sort((a, b) => a.id.localeCompare(b.id));
-	const expectedEdges = originals(edges).filter(value => value.graph_revision_removed == null).map(decodeExecutionEdge).sort((a, b) => a.id.localeCompare(b.id));
+	const originalEdges = originals(edges);
+	assert.ok(originalEdges.every(value => value.graph_revision_removed == null || Number.isSafeInteger(value.graph_revision_removed)
+		&& Number(value.graph_revision_removed) > 0 && Number(value.graph_revision_removed) <= Number(revision.revision)), label);
+	const expectedEdges = originalEdges.map(decodeExecutionEdge).filter(value => value.graphRevisionRemoved === undefined).sort((a, b) => a.id.localeCompare(b.id));
 	const ids = new Set(expectedNodes.map(node => node.id)); assert.ok(expectedEdges.every(edge => ids.has(edge.fromNodeId) && ids.has(edge.toNodeId)), label);
 	assert.deepEqual(visible, { teamId: revision.teamId, revision: revision.revision, digest: revision.graphDigest, nodes: expectedNodes, edges: expectedEdges }, label);
 }

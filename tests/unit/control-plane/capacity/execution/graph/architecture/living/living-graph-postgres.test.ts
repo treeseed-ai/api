@@ -269,6 +269,18 @@ describe('independent PostgreSQL connection graph custody', () => {
 			}
 			verifyNativeGraphReadback(nativeNodes, nativeEdges, exact.at(-1)!, await f.reader.show(f.principal, 'team', {}));
 			expect({ nativeNodes, nativeEdges }).toEqual(sourceRows);
+			const activeEdge = nativeEdges.find(edge => edge.graph_revision_removed == null); expect(activeEdge).toBeDefined();
+			const failedEdges: unknown[] = [];
+			for (const removedAt of [0, -1, next.revision + 1]) {
+				await f.left.pool.query('UPDATE execution_edges SET graph_revision_removed=$1 WHERE id=$2', [removedAt, activeEdge!.id]);
+				try { const observed = (await f.right.pool.query('SELECT * FROM execution_edges WHERE team_id=$1 ORDER BY id', ['team'])).rows;
+					const original = structuredClone(observed), publicView = await f.reader.show(f.principal, 'team', {}); failedEdges.push({ removedAt, observed: original, publicView });
+					expect(() => verifyNativeGraphReadback(nativeNodes, observed, exact.at(-1)!, publicView)).toThrow('ACCEPTANCE_NATIVE_GRAPH_STATE'); expect(observed).toEqual(original);
+				} finally { await f.left.pool.query('UPDATE execution_edges SET graph_revision_removed=$1 WHERE id=$2', [activeEdge!.graph_revision_removed, activeEdge!.id]); }
+				expect(await f.snapshot()).toEqual(after);
+			}
+			console.log(JSON.stringify({ retainedNativeRemovedEdgeFailures: failedEdges }));
+
 			const retainedFailures = structuredClone(failures); expect(failures).toHaveLength(15);
 			expect(await verifyNativeGraphRevisionInventory(nativeRows, 'team', watch)).toEqual(exact);
 			expect(failures).toEqual(retainedFailures); expect(await f.snapshot()).toEqual(after);
