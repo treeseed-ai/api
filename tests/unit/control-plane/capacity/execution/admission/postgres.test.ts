@@ -260,7 +260,7 @@ describe('living admission in disposable PostgreSQL', () => {
 			// Both admissions observed absence, but the winner committed and was
 			// leased/pinned before the losing SQL batch acquired the workday lock.
 			const custody = { sourceWorkspace: { exactCommit: 'a'.repeat(40) }, retained: 'winner' };
-			await proveNativeLeaseClaim(database, peerDatabase, accounting, peerAccounting, winner);
+			const phase = await proveNativeLeaseClaim(database, peerDatabase, accounting, peerAccounting, winner);
 			await database.pool.query('UPDATE capacity_provider_assignments SET workspace_context_json=$1 WHERE id=$2', [JSON.stringify(custody), winner.id]);
 			// An actual issued, leased attempt and its accounting records must remain
 			// byte-identical when the owning team advances its default policy.
@@ -287,7 +287,7 @@ describe('living admission in disposable PostgreSQL', () => {
 			await database.pool.query(`UPDATE capacity_provider_assignments SET status='pending',lease_state='unleased' WHERE id=$1`, [winner.id]);
 			const admitted = await new ProviderAssignmentRepository(store as never).get('team', winner.id);
 			if (!admitted?.assignmentAttempt) throw new Error('Complete admitted assignment authority is required for the settlement fixture.');
-			expect(admitted.assignmentAttempt).toEqual({ ...winner, status: 'leased' });
+			expect(admitted.assignmentAttempt).toEqual({ ...winner, status: 'running', startedAt: phase.executionStartedAt });
 			expect(admitted?.explanation)
 				.toMatchObject({ metadata: { allocation: { admitted: true } } });
 			expect(buildProviderAssignmentExplanation(admitted!, 'team', { source: 'lease_next_assignment', eligible: true }, now))
