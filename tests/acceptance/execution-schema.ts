@@ -495,6 +495,5 @@ async function verifyManagedModelExecution(requireUnfinished: boolean): Promise<
 	} finally { await pool.end(); }
 	assert.ok(readFileSync(cli).equals(bytes)); assert.ok(Date.now() <= deadline);
 }
-
 test('Actual managed model execution retains encrypted original action observations for every enabled activity and independently binds first final and intervening clocks without public transcript leakage', { timeout: 120_000 }, () => verifyManagedModelExecution(false));
 test('Actual original model clocks failed verification and exact governed pending work bind an authorized unfinished draft before the unchanged deadline without a falsely passed replay', { timeout: 120_000 }, () => verifyManagedModelExecution(true));
