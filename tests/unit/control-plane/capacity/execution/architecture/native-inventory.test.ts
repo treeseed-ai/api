@@ -170,10 +170,10 @@ describe('independent native producer inventory reconciliation', () => {
 		const serializedRaw = { ...nativeAssignment, execution_provider_id: assignment.provider.executionProviderId,
 			agent_id: assignment.agentClass, attempt_count: assignment.attempt, created_at: assignment.createdAt, updated_at: assignment.createdAt };
 		expect(serializeProviderAssignmentRow(serializedRaw, true)?.assignmentAttempt).toEqual(assignment);
-		const corrupted = { ...serializedRaw, capacity_envelope_json: JSON.stringify({ ...envelope, requestedSeconds: envelope.requestedSeconds + 1 }) };
+		const corrupted = { ...serializedRaw, capacity_envelope_json: JSON.stringify({ ...envelope, teamId: 'foreign' }) };
 		const diagnostic = serializeProviderAssignmentRow(corrupted, true)!;
 		expect(diagnostic.assignmentAttempt).toBeNull(); expect(diagnostic.assignmentResult).toBeNull();
-		expect(diagnostic.explanation.snapshotValidation).toMatchObject({ valid: false, assignmentId: assignment.id, path: 'assignmentAttempt' });
+		expect(diagnostic.explanation.snapshotValidation).toMatchObject({ valid: false, assignmentId: assignment.id, path: 'capacityEnvelope.teamId' });
 		const heldDiagnostic = structuredClone(diagnostic);
 		expect(() => verifyNativeAssignmentReadback(corrupted, { ...diagnostic }, scope, [nativeReservation], [corrupted]))
 			.toThrow('ACCEPTANCE_NATIVE_ALLOCATION');
