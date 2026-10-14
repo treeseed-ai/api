@@ -1,3 +1,4 @@
+import { verifyNativeModelUsage } from './execution-native-usage.ts';
 import assert from 'node:assert/strict';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import { assignmentAttemptSchema, assignmentResultSchema, graphRevisionSchema, appliedWorkdaySchema, workdayPolicySchema } from '@treeseed/sdk/agent-capacity';
@@ -42,6 +43,7 @@ export function verifyNativeModelExecutionInventory(assignments: Row[], events: 
 		assert.ok(Number(started.event_index) < Number(terminal.event.event_index)
 			&& Date.parse(String(started.created_at)) <= Date.parse(String(terminal.event.created_at)), 'ACCEPTANCE_NATIVE_MODEL_ORDER');
 		assert.ok(Object.hasOwn(terminal.metadata, 'protectedPayloadEnvelope'), 'ACCEPTANCE_NATIVE_MODEL_PROTECTED');
+		if (owner.status === 'completed') verifyNativeModelUsage(terminal.context, JSON.parse(String(owner.assignment_result_json)));
 		selected.add(started.assignment_id);
 	}
 	for (const { event, context, metadata } of original.filter(value => ['provider.execution.completed', 'provider.execution.failed'].includes(String(value.event.event_type))))

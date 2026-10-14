@@ -1,3 +1,4 @@
+import { verifyNativeProviderUsage } from './execution-native-usage.ts';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -398,6 +399,7 @@ async function verifyManagedModelExecution(requireUnfinished: boolean): Promise<
 						&& envelope.aad.resourceId === event.id && envelope.aad.eventType === event.event_type && Number.isInteger(envelope.aad.sequence),
 						'ACCEPTANCE_DIAGNOSTICS_CORRELATION: Ciphertext must authenticate the exact native owning event');
 					const protectedPayload = envelopes.decrypt(envelope);
+					verifyNativeProviderUsage(JSON.parse(String(event.context_json)), protectedPayload);
 					assert.ok(Array.isArray(protectedPayload.providerEvents) && protectedPayload.providerEvents.length > 0, 'ACCEPTANCE_DIAGNOSTICS_ACTIONS: Original provider actions required, not timing flags');
 					const actions = protectedPayload.providerEvents.map(object).filter(value => value.type === 'item.completed').map(value => object(value.item))
 						.filter(value => ['mcp_tool_call', 'command_execution'].includes(String(value.type)));
