@@ -1,3 +1,4 @@
+import { verifyNativeGraphRevisionInventory, verifyNativeGraphReadback } from '../../../../../../../acceptance/execution-inventory.ts';
 import { describe, expect, it } from 'vitest';
 import { createExecutionGraphService, persistExecutionGraph } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { authoredGraphFixture, expectAuthoredGraphPairs, emptyLivingGraph, graphNode, graphProjection, graphSource, graphState } from './living-graph-fixture.ts';
@@ -220,6 +221,71 @@ describe('independent PostgreSQL connection graph custody', () => {
 			}
 			expect(fixture).toEqual(held); expect(before.assignments).toEqual([]); expect(before.reservations).toEqual([]);
 			expect(await f.snapshot()).toEqual(before);
+			const moved = structuredClone(fixture.source); moved.proposalRevision = 2; moved.digest = 'sha256:' + 'e'.repeat(64);
+			const projected = graphProjection([moved], 2), next = graphState(projected, graph);
+			await persistExecutionGraph(f.stores[0], next, graph, { ...projected.revision, graphDigest: next.digest });
+			const nativeRows = (await f.right.pool.query('SELECT * FROM execution_graph_revisions WHERE team_id=$1 ORDER BY revision', ['team'])).rows;
+			const originalRows = structuredClone(nativeRows), after = await f.snapshot(); expect(nativeRows).toHaveLength(2);
+			const watch = (cursor: string) => f.reader.watch(f.principal, 'team', { cursor, limit: 1 });
+			const exact = await verifyNativeGraphRevisionInventory(nativeRows, 'team', watch), failures: unknown[] = [];
+			for (const mode of ['hidden-tail', 'duplicate', 'foreign-team', 'substituted-digest', 'substituted-changes', 'cursor', 'interrupted', 'rule-revision', 'clock', 'source-refs', 'missing-field', 'extra-field', 'malformed-page', 'missing-page', 'terminal-cursor']) {
+				const observed: unknown[] = []; let rejected = false;
+				try { await verifyNativeGraphRevisionInventory(nativeRows, 'team', async cursor => {
+					const page = structuredClone(await watch(cursor));
+					if (mode === 'interrupted' && cursor === '1') throw new Error('retained native graph watch interruption');
+					if (mode === 'hidden-tail' && cursor === '1') { page.items = []; page.nextCursor = cursor; }
+					if (mode === 'duplicate' && cursor === '1') page.items = [structuredClone(exact[0]!)];
+					if (mode === 'malformed-page' && cursor === '0') Reflect.set(page, 'items', 'malformed');
+					if (mode === 'missing-page' && cursor === '0') Reflect.deleteProperty(page, 'items');
+					if (mode === 'terminal-cursor' && cursor === '2') page.nextCursor = '3';
+					if (page.items?.[0] && cursor === '0') {
+						if (mode === 'rule-revision') page.items[0].ruleRevision = 2;
+						if (mode === 'clock') page.items[0].createdAt = '2026-10-03T00:00:02.000Z';
+						if (mode === 'source-refs') page.items[0].changedSourceRefs = [];
+						if (mode === 'missing-field') Reflect.deleteProperty(page.items[0], 'graphDigest');
+						if (mode === 'extra-field') Reflect.set(page.items[0], 'alternateAuthority', true);
+						if (mode === 'foreign-team') page.items[0].teamId = 'foreign';
+						if (mode === 'substituted-digest') page.items[0].graphDigest = 'sha256:' + 'f'.repeat(64);
+						if (mode === 'substituted-changes') page.items[0].changes.added = ['substituted-node'];
+						if (mode === 'cursor') page.nextCursor = '0';
+					}
+					observed.push(structuredClone(page)); return page;
+				}); } catch (failure) { rejected = true; failures.push({ mode, observed, failure: String(failure) }); }
+				expect(rejected, mode).toBe(true); expect(await f.snapshot()).toEqual(after); expect(nativeRows).toEqual(originalRows);
+			}
+			const nativeNodes = (await f.right.pool.query('SELECT * FROM execution_nodes WHERE team_id=$1 ORDER BY id', ['team'])).rows;
+			const nativeEdges = (await f.right.pool.query('SELECT * FROM execution_edges WHERE team_id=$1 ORDER BY id', ['team'])).rows;
+			const visible = await f.reader.show(f.principal, 'team', {}), sourceRows = structuredClone({ nativeNodes, nativeEdges });
+			verifyNativeGraphReadback(nativeNodes, nativeEdges, exact.at(-1)!, visible);
+			for (const mode of ['node-missing', 'node-duplicate', 'node-status', 'node-authority', 'edge-missing', 'edge-duplicate', 'edge-provenance', 'digest', 'revision', 'team']) {
+				const denied = structuredClone(visible);
+				if (mode === 'node-missing') denied.nodes.pop(); if (mode === 'node-duplicate') denied.nodes.push(denied.nodes[0]!);
+				if (mode === 'node-status') denied.nodes[0]!.status = denied.nodes[0]!.status === 'completed' ? 'ready' : 'completed'; if (mode === 'node-authority') denied.nodes[0]!.sourceRef = { ...denied.nodes[0]!.sourceRef, id: 'substituted-native-authority' };
+				if (mode === 'edge-missing') denied.edges.pop(); if (mode === 'edge-duplicate') denied.edges.push(denied.edges[0]!);
+				if (mode === 'edge-provenance') denied.edges[0]!.provenance = denied.edges[0]!.provenance === 'treedx-link' ? 'review-pair' : 'treedx-link'; if (mode === 'digest') denied.digest = 'sha256:' + 'f'.repeat(64);
+				if (mode === 'revision') denied.revision++; if (mode === 'team') denied.teamId = 'foreign';
+				const failed = structuredClone(denied); expect(() => verifyNativeGraphReadback(nativeNodes, nativeEdges, exact.at(-1)!, denied), mode).toThrow();
+				expect(denied).toEqual(failed); expect(await f.snapshot()).toEqual(after);
+			}
+			verifyNativeGraphReadback(nativeNodes, nativeEdges, exact.at(-1)!, await f.reader.show(f.principal, 'team', {}));
+			expect({ nativeNodes, nativeEdges }).toEqual(sourceRows);
+			const activeEdge = nativeEdges.find(edge => edge.graph_revision_removed == null); expect(activeEdge).toBeDefined();
+			const failedEdges: unknown[] = [];
+			for (const removedAt of [0, -1, next.revision + 1]) {
+				await f.left.pool.query('UPDATE execution_edges SET graph_revision_removed=$1 WHERE id=$2', [removedAt, activeEdge!.id]);
+				try { const observed = (await f.right.pool.query('SELECT * FROM execution_edges WHERE team_id=$1 ORDER BY id', ['team'])).rows;
+					const original = structuredClone(observed), publicView = await f.reader.show(f.principal, 'team', {}); failedEdges.push({ removedAt, observed: original, publicView });
+					expect(() => verifyNativeGraphReadback(nativeNodes, observed, exact.at(-1)!, publicView)).toThrow('ACCEPTANCE_NATIVE_GRAPH_STATE'); expect(observed).toEqual(original);
+				} finally { await f.left.pool.query('UPDATE execution_edges SET graph_revision_removed=$1 WHERE id=$2', [activeEdge!.graph_revision_removed, activeEdge!.id]); }
+				expect(await f.snapshot()).toEqual(after);
+			}
+			console.log(JSON.stringify({ retainedNativeRemovedEdgeFailures: failedEdges }));
+
+			const retainedFailures = structuredClone(failures); expect(failures).toHaveLength(15);
+			expect(await verifyNativeGraphRevisionInventory(nativeRows, 'team', watch)).toEqual(exact);
+			expect(failures).toEqual(retainedFailures); expect(await f.snapshot()).toEqual(after);
+			expect((await f.left.pool.query('SELECT * FROM execution_graph_revisions WHERE team_id=$1 ORDER BY revision', ['team'])).rows).toEqual(originalRows);
+			console.log(JSON.stringify({ nativeGraphRevisionFailures: failures }));
 		} finally { await f.close(); }
 	}, 30_000);
 	it('late native SQL interruption rolls back all graph records before another independent writer retries exact authority', async () => {
