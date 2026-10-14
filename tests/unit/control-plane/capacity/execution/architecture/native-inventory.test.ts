@@ -166,19 +166,32 @@ describe('independent native producer inventory reconciliation', () => {
 		expect({ original, visible }).toEqual(held);
 	});
 	it('reads exactly every native identity through complete public pages without changing original observations', async () => {
-		// Exercise the real public serializer's earlier diagnostic rejection.
+		// Exercise every real owning serializer path before expensive native replay.
 		const serializedRaw = { ...nativeAssignment, execution_provider_id: assignment.provider.executionProviderId,
 			agent_id: assignment.agentClass, attempt_count: assignment.attempt, created_at: assignment.createdAt, updated_at: assignment.createdAt };
 		expect(serializeProviderAssignmentRow(serializedRaw, true)?.assignmentAttempt).toEqual(assignment);
-		const corrupted = { ...serializedRaw, capacity_envelope_json: JSON.stringify({ ...envelope, teamId: 'foreign' }) };
-		const diagnostic = serializeProviderAssignmentRow(corrupted, true)!;
-		expect(diagnostic.assignmentAttempt).toBeNull(); expect(diagnostic.assignmentResult).toBeNull();
-		expect(diagnostic.explanation.snapshotValidation).toMatchObject({ valid: false, assignmentId: assignment.id, path: 'capacityEnvelope.teamId' });
-		const heldDiagnostic = structuredClone(diagnostic);
-		expect(() => verifyNativeAssignmentReadback(corrupted, { ...diagnostic }, scope, [nativeReservation], [corrupted]))
-			.toThrow('ACCEPTANCE_NATIVE_ALLOCATION');
-		expect(diagnostic).toEqual(heldDiagnostic);
-
+		for (const field of ['requestedSeconds', 'reservedSeconds', 'allocatedSeconds', 'teamId', 'projectId', 'workDayId',
+			'capacityProviderId', 'executionProviderId', 'reservationId', 'projectAgentClassId', 'mode', 'limits', 'explanation.teamId', 'explanation.assignmentId']) {
+			const column = field === 'allocatedSeconds' || field.startsWith('explanation.') ? 'explanation_json' : 'capacity_envelope_json';
+			const corrupted = structuredClone(serializedRaw), material = JSON.parse(corrupted[column]);
+			if (field === 'allocatedSeconds') material.metadata.allocation.allocatedSeconds++;
+			else if (field.startsWith('explanation.')) material[field.slice('explanation.'.length)] = 'foreign';
+			else if (field === 'requestedSeconds' || field === 'reservedSeconds') material[field]++; else material[field] = 'foreign';
+			corrupted[column] = JSON.stringify(material); const original = structuredClone(corrupted);
+			if (field === 'mode') expect(() => serializeProviderAssignmentRow(corrupted, true)).toThrow(expect.objectContaining({
+				code: 'agent_capacity_envelope_mode_invalid', details: expect.objectContaining({ assignmentId: assignment.id, path: 'capacityEnvelope.mode' }) }));
+			else {
+				const projected = serializeProviderAssignmentRow(corrupted, true)!;
+				if (projected.assignmentAttempt === null) {
+					expect(projected.assignmentResult).toBeNull(); expect(column).toBe('capacity_envelope_json');
+					expect(projected.explanation.snapshotValidation).toMatchObject({ valid: false, assignmentId: assignment.id, path: 'capacityEnvelope.' + field });
+				}
+				const held = structuredClone(projected);
+				expect(() => verifyNativeAssignmentReadback(corrupted, { ...projected }, scope, [nativeReservation], [corrupted])).toThrow('ACCEPTANCE_NATIVE_ALLOCATION');
+				expect(projected).toEqual(held);
+			}
+			expect(corrupted).toEqual(original);
+		}
 		for (const field of ['capacityEnvelope', 'explanation'] as const) for (const value of [undefined, null, [], {}, false, 0, { foreign: true }]) {
 			const observed = structuredClone(publicAssignment); Reflect.set(observed, field, value); const held = structuredClone(observed);
 			expect.soft(() => verifyNativeAssignmentReadback(nativeAssignment, observed, scope, [nativeReservation], [nativeAssignment]))
