@@ -231,9 +231,9 @@ describe('independent native producer inventory reconciliation', () => {
 		for (const mode of ['node-missing', 'node-duplicate', 'node-status', 'node-authority', 'edge-missing', 'edge-duplicate', 'edge-provenance', 'edge-removed', 'digest', 'revision', 'team', 'extra']) {
 			const denied = structuredClone(published);
 			if (mode === 'node-missing') denied.nodes.pop(); if (mode === 'node-duplicate') denied.nodes.push(denied.nodes[0]!);
-			if (mode === 'node-status') denied.nodes[0]!.status = 'completed'; if (mode === 'node-authority') denied.nodes[0]!.authorityRefs = [];
+			if (mode === 'node-status') denied.nodes[0]!.status = denied.nodes[0]!.status === 'completed' ? 'ready' : 'completed'; if (mode === 'node-authority') denied.nodes[0]!.sourceRef = { ...denied.nodes[0]!.sourceRef, id: 'substituted-native-authority' };
 			if (mode === 'edge-missing') denied.edges.pop(); if (mode === 'edge-duplicate') denied.edges.push(denied.edges[0]!);
-			if (mode === 'edge-provenance') denied.edges[0]!.provenance = 'treedx-link';
+			if (mode === 'edge-provenance') denied.edges[0]!.provenance = denied.edges[0]!.provenance === 'treedx-link' ? 'review-pair' : 'treedx-link';
 			if (mode === 'edge-removed') denied.edges[0]!.graphRevisionRemoved = published.revision;
 			if (mode === 'digest') denied.digest = 'sha256:' + 'f'.repeat(64); if (mode === 'revision') denied.revision++;
 			if (mode === 'team') denied.teamId = 'foreign'; if (mode === 'extra') Reflect.set(denied, 'alternateAuthority', true);
