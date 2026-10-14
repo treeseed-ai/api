@@ -24,8 +24,8 @@ describe('execution transition replay authority', () => {
    mocks.get.mockReset();mocks.events.mockReset().mockResolvedValue({id:'durable-original-observation'});
    const base=assignment(),key=phase+'-start:assignment',window=phase+'Window';
    const current={...base,teamId:'team',projectId:'project',workDayId:'workday',runnerId:'original-runner',
-    assignmentAttempt:{...fullAttempt,status:'leased',createdAt:'2026-09-11T11:59:00.000Z',deadline:'2026-09-11T12:03:00.000Z'},
-    capacityEnvelope:{budget:{time:{executionSeconds:180,closeoutSeconds:5,preparationDeadlineAt:'2026-09-11T12:01:00.000Z',authorityDeadlineAt:'2026-09-11T12:03:00.000Z'}}},
+    assignmentAttempt:{...fullAttempt,status:phase==='closeout'?'running':'leased',...(phase==='closeout'?{startedAt:'2026-09-11T11:59:00Z'}:{}),createdAt:'2026-09-11T11:59:00.000Z',deadline:'2026-09-11T12:03:00.000Z'},
+    capacityEnvelope:{budget:{time:{executionSeconds:180,closeoutSeconds:5,...(phase==='closeout'?{executionStartedAt:'2026-09-11T11:59:00Z',executionDeadlineAt:'2026-09-11T12:02:00Z'}:{}),preparationDeadlineAt:'2026-09-11T12:01:00.000Z',authorityDeadlineAt:'2026-09-11T12:03:00.000Z'}}},
     metadata:phase==='execution'?{}:{executionWindow:{...base.metadata.executionWindow}}};
    const metadata={...current.metadata,[window]:{idempotencyKey:key,startedAt:now,executionDeadlineAt:'2026-09-11T12:03:00.000Z',closeoutDeadlineAt:'2026-09-11T12:03:00.000Z',executionRef:{...executionRef}}};
    const updated={...current,stateVersion:5,metadata};mocks.get.mockResolvedValueOnce(current).mockResolvedValueOnce(updated);
