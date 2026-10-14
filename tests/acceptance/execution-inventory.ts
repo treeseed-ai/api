@@ -1,3 +1,4 @@
+export { verifyNativeLeaseHistory } from './execution-lease-history.ts';
 import { verifyNativeModelUsage } from './execution-native-usage.ts';
 import assert from 'node:assert/strict';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';

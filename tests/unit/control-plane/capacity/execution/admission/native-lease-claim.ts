@@ -1,3 +1,4 @@
+import { verifyNativeLeaseHistory } from '../../../../../acceptance/execution-inventory.ts';
 import { CapacityWorkdayEventRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { expect } from 'vitest';
 import type { AssignmentAttempt } from '@treeseed/sdk/agent-capacity';
@@ -27,6 +28,7 @@ export async function proveNativeLeaseClaim(
     ledger: (await peer.pool.query('SELECT * FROM capacity_ledger_entries ORDER BY id')).rows,
     nodes: (await peer.pool.query('SELECT * FROM execution_nodes ORDER BY id')).rows,
     events: (await peer.pool.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows,
+    workdayEventIndex: (await peer.pool.query('SELECT id,next_event_index FROM capacity_workday_runs ORDER BY id')).rows,
   });
   const original = await custody();
   await database.pool.query(`CREATE FUNCTION native_claim_interruption() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
@@ -41,6 +43,16 @@ export async function proveNativeLeaseClaim(
   }
   expect(failed).toMatchObject({ message: expect.stringContaining('retained native lease claim interruption'), custody: original });
   const retainedFailure = structuredClone(failed);
+  await database.pool.query(`CREATE FUNCTION native_observation_interruption() RETURNS trigger LANGUAGE plpgsql AS $ BEGIN
+    IF NEW.event_type='assignment.leased' THEN RAISE EXCEPTION 'retained native lease observation interruption'; END IF; RETURN NEW; END $`);
+  await database.pool.query('CREATE TRIGGER native_observation_interruption BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION native_observation_interruption()');
+  let observationFailure:unknown;
+  try{await owners[0]!.leaseNextProviderAssignment(principal,request);}
+  catch(error){observationFailure={message:String(error),custody:await custody()};}
+  finally{await database.pool.query('DROP TRIGGER native_observation_interruption ON capacity_workday_events');await database.pool.query('DROP FUNCTION native_observation_interruption()');}
+  expect(observationFailure).toMatchObject({message:expect.stringContaining('retained native lease observation interruption'),custody:original});
+  const retainedObservationFailure=structuredClone(observationFailure);
+
   const results = await Promise.all(owners.map((owner, index) => owner.leaseNextProviderAssignment(principal,
     { ...request, runnerId: index === 0 ? request.runnerId : 'native-lease-second' })));
   const winners = results.filter(result => result.assignment); expect(winners).toHaveLength(1);
@@ -64,11 +76,13 @@ export async function proveNativeLeaseClaim(
     expect(read?.assignmentAttempt).toEqual({ ...attempt, status: 'leased' });
   }
   const after = await custody();
-  expect(after).toEqual({ ...original, events: [...original.events,...history], attempts: [{ ...original.attempts[0],
+  verifyNativeLeaseHistory((await peer.pool.query('SELECT * FROM capacity_provider_assignments ORDER BY id')).rows,after.events,{id:attempt.workdayId,teamId:attempt.teamId});
+  expect(after).toEqual({ ...original, events: [...original.events,...history], workdayEventIndex: original.workdayEventIndex.map(row=>row.id===attempt.workdayId?{...row,next_event_index:Number(row.next_event_index)+1}:row), attempts: [{ ...original.attempts[0],
     assignment_attempt_json: JSON.stringify({ ...attempt, status: 'leased' }), lease_state: 'leased',
     lease_token: winner.leaseToken, runner_id: winner.assignment?.runnerId }] });
   expect(await owners[0]!.leaseNextProviderAssignment(principal, request)).toMatchObject({ assignment: null, leaseToken: null });
   expect(await custody()).toEqual(after); expect({ principal, request, attempt }).toEqual(held); expect(failed).toEqual(retainedFailure);
+  expect(observationFailure).toEqual(retainedObservationFailure);
   if (failed && typeof failed === 'object' && 'audit' in failed && Array.isArray(failed.audit)) {
     const audit = (await peer.pool.query('SELECT * FROM capacity_audit_events ORDER BY id')).rows;
     for (const row of failed.audit) expect(audit).toContainEqual(row);

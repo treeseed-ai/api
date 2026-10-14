@@ -16,7 +16,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeGraphInventory, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy, verifyNativeReporterCloseout } from './execution-inventory.ts';
+import { verifyNativeLeaseHistory, executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeGraphInventory, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy, verifyNativeReporterCloseout } from './execution-inventory.ts';
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
 	const binary = JSON.parse(readFileSync(manifest, 'utf8')).bin?.trsd;
@@ -132,6 +132,7 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 				}, 200, direction);
 				const publicAssignments = await inventory(assignments, ['assignments', 'list', '--workday', id]);
 				const nativeEvents = await nativeInventory('SELECT * FROM capacity_workday_events WHERE run_id=$1 AND team_id=$2 ORDER BY id', [id, run.teamId]);
+				verifyNativeLeaseHistory(assignments,nativeEvents,run);
 				const reservations = await nativeInventory('SELECT * FROM capacity_reservations WHERE work_day_id=$1 ORDER BY id', [id]);
 				assert.ok(nativeEvents.length > 0, 'ACCEPTANCE_NATIVE_INVENTORY: Actual transition history required');
 				const publicEvents = await inventory(nativeEvents, ['workdays', 'events', 'list', id], 'ascending');
