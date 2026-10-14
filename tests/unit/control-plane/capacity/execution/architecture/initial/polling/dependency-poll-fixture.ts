@@ -15,7 +15,13 @@ export async function dependencyPoll() {
 			async first() { return (await f.query(this.sql, this.params)).rows[0] ?? null; }
 			async all() { return { results: (await f.query(this.sql, this.params)).rows }; }
 		}
-		const host = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, {
+		const database = {
+			// Original PGlite component SQL, not native PostgreSQL concurrency proof.
+			transaction: <T>(apply: (client: { query<R extends Record<string, unknown>>(sql: string, params?: unknown[]): Promise<{ rows: R[]; rowCount: number }> }) => Promise<T>) => f.db.transaction(async native => apply({
+				query: async <R extends Record<string, unknown>>(sql: string, params: unknown[] = []) => {
+					const result = await native.query<R>(sql, params); return { rows: result.rows, rowCount: result.affectedRows ?? result.rows.length };
+				},
+			})),
 			prepare: (sql: string) => ({ bind: (...params: unknown[]) => new Statement(sql, params) }),
 			batch: (statements: unknown[]) => f.db.transaction(async transaction => {
 				const results: Array<{ results: Record<string, unknown>[]; success: boolean; meta: { changes: number } }> = [];
@@ -26,7 +32,8 @@ export async function dependencyPoll() {
 				}
 				return results;
 			}),
-		});
+		};
+		const host = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, database);
 		host.initializationPromise = Promise.resolve(); // Original schema already applied; no unrelated owner seeding.
 		// This component fixture owns one represented project, not the default
 		// eight-project portfolio. Supply that exact selection before polling;

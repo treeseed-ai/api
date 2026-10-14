@@ -1,3 +1,5 @@
+import { capacityTransaction } from '../../../../transaction.ts';
+import { CapacityWorkdayEventRepository } from '../../../../repositories/capacity/workdays/workday-event.ts';
 import type { ProviderAssignmentExplanation,ProviderNextAssignmentRequest } from '@treeseed/sdk/agent-capacity';
 import { createHash, randomUUID } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
@@ -407,15 +409,31 @@ export async function leaseNextProviderAssignment(
 			[assignment.teamId, assignment.executionNodeId, assignment.executionNodeRevision],
 		);
 		if (!nodeRow) return { assignment: null, leaseToken: null, leaseSeconds, diagnostics: leaseDiagnostics };
-		await store.batch([leaseOperation, {
+	}
+	const leased = await capacityTransaction(store, async transaction => {
+	if (assignment.status === 'returned' && assignment.executionNodeId) {
+		await transaction.batch([leaseOperation, {
 			query: `UPDATE execution_nodes SET status='assigned',updated_at=?
 			 WHERE team_id=? AND id=? AND node_revision=? AND status='ready'
 			 AND EXISTS (SELECT 1 FROM capacity_provider_assignments assignment WHERE assignment.id=? AND assignment.team_id=? AND assignment.status='leased' AND assignment.lease_token=?)`,
 			params: [now, assignment.teamId, assignment.executionNodeId,
 				assignment.executionNodeRevision, assignment.id, assignment.teamId, leaseToken],
 		}]);
-	} else await store.run(leaseOperation.query, leaseOperation.params);
-	const leased = await new ProviderAssignmentRepository(store).get(principal.teamId, assignment.id);
+	} else await transaction.run(leaseOperation.query, leaseOperation.params);
+		const claimed = await new ProviderAssignmentRepository(transaction).get(principal.teamId, assignment.id);
+		if (claimed && claimed.leaseToken === leaseToken && (!input.runnerId || claimed.runnerId === input.runnerId) && claimed.workDayId) {
+			const attempt = claimed.assignmentAttempt;
+			if (!attempt) throw new CapacityGovernanceError('assignment_lease_authority_missing', 'Original canonical lease authority required.', 409);
+			const observation = await new CapacityWorkdayEventRepository(transaction).create(claimed.teamId, claimed.workDayId, {
+				id: `assignment-lease:${claimed.id}:${claimed.stateVersion}`, projectId: claimed.projectId, workdayId: claimed.workDayId, assignmentId: claimed.id,
+				eventType: 'assignment.leased', status: 'recorded', title: 'Assignment leased', message: null, parameters: {}, metadata: {}, refs: {},
+				context: { nodeId: attempt.nodeId, nodeRevision: attempt.nodeRevision, graphRevision: attempt.graphRevision, status: 'leased',
+					leaseId: attempt.leaseId, reservationId: attempt.reservationId, runnerId: claimed.runnerId ?? null }, createdAt: now,
+			});
+			if (!observation) throw new CapacityGovernanceError('assignment_lease_observation_missing', 'Committed lease requires durable workday observation.', 409);
+		}
+		return claimed;
+	});
 	if (!leased || leased.leaseToken !== leaseToken || (input.runnerId && leased.runnerId !== input.runnerId)) {
 		return {
 			assignment: null,

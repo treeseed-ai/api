@@ -61,8 +61,8 @@ jobs:
         env:
           ImageOS: ubuntu24
         with:
-          otp-version: '27'
-          elixir-version: '1.17'
+          otp-version: '27.3.4.18'
+          elixir-version: '1.17.3'
       - name: Verify all native TreeDX server prerequisites
         working-directory: .treeseed/tools/treedx
         run: |
@@ -92,6 +92,10 @@ jobs:
           npm prune --ignore-scripts --no-audit --no-fund --workspaces=false
           node --import tsx scripts/build/hydrate-exact-dependency.ts artifacts/sealed-sdk install
           node --import tsx scripts/build/hydrate-exact-dependency.ts artifacts/native-treedx-sdk install @treeseed/treedx
+      - name: Build public API exports before native acceptance consumer regression
+        run: npm run build:dist
+      - name: Reproduce native lease transition history before complete verification
+        run: node node_modules/vitest/vitest.mjs run --config ./vitest.control-plane.config.ts tests/unit/control-plane/capacity/execution/admission/postgres.test.ts tests/unit/control-plane/release/provider-prerequisites.test.ts
       - run: npm run verify:direct
       - name: Verify real PostgreSQL backup-writer migration closure
         run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/services/live/replication-migration-postgres.test.ts

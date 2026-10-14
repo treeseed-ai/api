@@ -2,8 +2,7 @@ import { verifyNativeProviderUsage } from './execution-native-usage.ts';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import test from 'node:test';
 import pg from 'pg';
@@ -16,13 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeGraphInventory, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy, verifyNativeReporterCloseout } from './execution-inventory.ts';
-function installedCli(): string {
-	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
-	const binary = JSON.parse(readFileSync(manifest, 'utf8')).bin?.trsd;
-	assert.ok(typeof binary === 'string' && binary, 'ACCEPTANCE_SCHEMA_CLI: Installed CLI public binary required');
-	return resolve(dirname(manifest), binary);
-}
+import { installedCli, verifyNativeLeaseHistory, verifyNativeLeaseEventReadback, executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeGraphInventory, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy, verifyNativeReporterCloseout } from './execution-inventory.ts';
 async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Promise<void> {
 	const started = Date.now(), deadline = started + 120_000;
 	const start = executionWorkdayStart(process.env, !requireObservedSamples), { id } = start, team = process.env.TREESEED_ACCEPTANCE_TEAM;
@@ -132,11 +125,13 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 				}, 200, direction);
 				const publicAssignments = await inventory(assignments, ['assignments', 'list', '--workday', id]);
 				const nativeEvents = await nativeInventory('SELECT * FROM capacity_workday_events WHERE run_id=$1 AND team_id=$2 ORDER BY id', [id, run.teamId]);
+				verifyNativeLeaseHistory(assignments,nativeEvents,run);
 				const reservations = await nativeInventory('SELECT * FROM capacity_reservations WHERE work_day_id=$1 ORDER BY id', [id]);
 				assert.ok(nativeEvents.length > 0, 'ACCEPTANCE_NATIVE_INVENTORY: Actual transition history required');
 				const publicEvents = await inventory(nativeEvents, ['workdays', 'events', 'list', id], 'ascending');
 				for (const visible of publicEvents) {
 					const native = nativeEvents.find(value => value.id === visible.id); assert.ok(native);
+					if(native.event_type==='assignment.leased') verifyNativeLeaseEventReadback(native,visible);
 					for (const [key, column] of [['runId','run_id'], ['teamId','team_id'], ['assignmentId','assignment_id'], ['eventIndex','event_index'],
 						['eventType','event_type'], ['status','status']] as const) assert.equal(visible[key], native[column]);
 				}

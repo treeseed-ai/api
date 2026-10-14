@@ -1,5 +1,6 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { createRequire } from 'node:module';
@@ -121,7 +122,7 @@ it('capacity execution dependency closure selects the sole exact SDK authority f
 	expect(readFileSync('package.json')).toEqual(bytes); expect(readFileSync('package-lock.json')).toEqual(lockBytes);
 });
 
-it('native capacity candidate hydration preserves exact SDK bytes and admits only a complete valid dependency tree and SBOM', () => {
+it('native capacity candidate hydration preserves exact SDK bytes and admits only a complete valid dependency tree and SBOM', async () => {
 	const root = mkdtempSync(resolve(tmpdir(), 'api-capacity-sdk-closure-'));
 	const inputs = new Map(['package.json', 'package-lock.json', 'scripts/build/hydrate-exact-dependency.ts', '.github/workflows/verify.yml'].map(path => [path, readFileSync(path)]));
 	const sdkBytes = readFileSync('node_modules/@treeseed/sdk/package.json');
@@ -132,22 +133,38 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 		const result = spawnSync(command, args, { cwd, env, encoding: 'utf8', timeout: 15_000, maxBuffer: 8 * 1024 * 1024 });
 		durations.push({ command: `${command} ${args.join(' ')}`, milliseconds: performance.now() - start }); return result;
 	};
-	const requireSuccess = (result: ReturnType<typeof run>) => {
+
+ type Outcome = { error?: unknown; signal: string | null; status: number | null; stdout: string; stderr: string };
+ const observe = async (command: string, args: string[], cwd = root): Promise<Outcome> => {
+  const started = performance.now();
+  try { const output = await promisify(execFile)(command, args, { cwd, env: process.env, encoding: 'utf8', timeout: 15_000, maxBuffer: 8 * 1024 * 1024 }); return { ...output, status: 0, signal: null }; }
+  finally { durations.push({ command: command + ' ' + args.join(' '), milliseconds: performance.now() - started }); }
+ };
+ const together = async (commands: Promise<Outcome>[]) => {
+  const results = await Promise.allSettled(commands), errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+  if (errors.length) throw new AggregateError(errors, 'Original native package observations failed');
+  return results.map(result => { if (result.status !== 'fulfilled') throw result.reason; return result.value; });
+ };
+	const requireSuccess = (result: Outcome) => {
 		expect(result.error).toBeUndefined(); expect(result.signal).toBeNull(); expect(result.status, result.stdout + result.stderr).toBe(0);
 	};
 	try {
-		requireSuccess(run('npm', ['ls', '--all', '--omit=dev', '--json'], process.cwd()));
 		mkdirSync(resolve(root, 'artifacts/sealed-sdk'), { recursive: true });
 		for (const [path, bytes] of inputs) { mkdirSync(resolve(root, path, '..'), { recursive: true }); writeFileSync(resolve(root, path), bytes); }
-		const pack = run('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', resolve(root, 'artifacts/sealed-sdk'), './node_modules/@treeseed/sdk'], process.cwd());
-		requireSuccess(pack);
+		const [sourceTree, pack, installed] = await together([
+			observe('npm', ['ls', '--all', '--omit=dev', '--json'], process.cwd()),
+			observe('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', resolve(root, 'artifacts/sealed-sdk'), './node_modules/@treeseed/sdk'], process.cwd()),
+			observe('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--workspaces=false']),
+		]);
+		if (!sourceTree || !pack || !installed) throw new Error('Every original native package observation required');
+		requireSuccess(sourceTree); requireSuccess(pack); requireSuccess(installed);
 		const inventory: unknown = JSON.parse(pack.stdout);
 		if (!Array.isArray(inventory) || inventory.length !== 1) throw new Error('One actual held SDK package required');
 		const packed = object(inventory[0]);
 		expect(packed.name).toBe('@treeseed/sdk'); expect(packed.version).toBe(object(JSON.parse(sdkBytes.toString('utf8'))).version);
 		if (typeof packed.filename !== 'string') throw new Error('Actual packed SDK filename required');
 		const archive = resolve(root, 'artifacts/sealed-sdk', packed.filename), archiveBytes = readFileSync(archive);
-		requireSuccess(run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--workspaces=false']));
+
 		// Transport the held official package as controlled native input; the real
 		// workflow supplies it from its exact verified Git checkout, not this fixture.
 		const nativeSource = resolve(root, '.treeseed/tools/treedx/packages/ts-sdk'); mkdirSync(nativeSource, { recursive: true });
@@ -181,7 +198,8 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 		requireSuccess(run('bash', ['-euo', 'pipefail', '-c', prune.run]));
 		requireSuccess(hydrate('artifacts/sealed-sdk'));
 		requireSuccess(hydrate('artifacts/native-treedx-sdk', '@treeseed/treedx'));
-		const tree = run('npm', ['ls', '--all', '--omit=dev', '--json']); requireSuccess(tree);
+		const [tree, sbom] = await together([observe('npm', ['ls', '--all', '--omit=dev', '--json']), observe('npm', ['sbom', '--omit=dev', '--sbom-format', 'cyclonedx'])]);
+		if (!tree || !sbom) throw new Error('Original complete tree and SBOM observations required'); requireSuccess(tree);
 		const publicEntry = createRequire(resolve(root, 'package.json')).resolve('@treeseed/sdk/agent-capacity');
 		for (const consumer of ['node_modules/@treeseed/deployment/package.json', 'node_modules/@treeseed/identity/package.json', 'node_modules/@treeseed/deployment/node_modules/@treeseed/identity/package.json']) {
 			expect(createRequire(resolve(root, consumer)).resolve('@treeseed/sdk/agent-capacity')).toBe(publicEntry);
@@ -189,7 +207,7 @@ it('native capacity candidate hydration preserves exact SDK bytes and admits onl
 		const treeDxEntry = createRequire(resolve(root, 'package.json')).resolve('@treeseed/treedx/treedx/client');
 		expect(createRequire(resolve(root, 'node_modules/@treeseed/sdk/package.json')).resolve('@treeseed/treedx/treedx/client')).toBe(treeDxEntry);
 		expectPackageBytes(resolve(root, 'node_modules/@treeseed/treedx'), treeDxBytes);
-		const sbom = run('npm', ['sbom', '--omit=dev', '--sbom-format', 'cyclonedx']); requireSuccess(sbom);
+		requireSuccess(sbom);
 		expect(polluted.status).toBe(1); expect(polluted.stdout + polluted.stderr).toContain('extraneous:');
 		const document = object(JSON.parse(sbom.stdout));
 		if (!Array.isArray(document.components)) throw new Error('Actual nonempty dependency SBOM required');
@@ -324,6 +342,11 @@ it('complete provider suites provision the exact native TreeDX engine and origin
 	expect(checkout?.uses).toBe('actions/checkout@v4');
 	expect(object(checkout?.with)).toEqual({ repository: 'treeseed-ai/treedx',
 		ref: '6d358bb2e536af24918f3c33acb2072b9093a603', path: '.treeseed/tools/treedx' });
+	// The signed TreeDX process stays alive through scenes: select the same exact
+	// native runtime required by the held executing Reviewer before starting it.
+	const beam = steps.filter(step => step.uses === 'erlef/setup-beam@v1');
+	expect(beam).toHaveLength(1);
+	expect(object(beam[0]?.with)).toEqual({ 'otp-version': '27.3.4.18', 'elixir-version': '1.17.3' });
 	const start = steps.find(step => step.run === 'node --import tsx scripts/verification/native-treedx.ts start');
 	const stop = steps.find(step => step.run === 'node --import tsx scripts/verification/native-treedx.ts stop');
 	const verify = steps.find(step => step.run === 'npm run verify:direct');

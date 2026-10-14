@@ -131,6 +131,8 @@ describe('independent native producer inventory reconciliation', () => {
 		verifyNativeProviderUsage(zero, { providerEvents: [{ type: 'turn.completed', usage: { input_tokens: 0, output_tokens: 0 } }] });
 
 		expect([...verifyNativeModelExecutionInventory([owner], events, scope)]).toEqual([owner.id]);
+		const mixed = [{ ...started, id: 'leased', event_index: 0, event_type: 'assignment.leased', context_json: '{}' }, ...events.map(value => ({ ...value, event_index: value.event_index + 1 }))], mixedBefore = structuredClone(mixed);
+		expect([...verifyNativeModelExecutionInventory([owner], mixed, scope)]).toEqual([owner.id]); expect(mixed).toEqual(mixedBefore);
 		for (const field of Object.keys(measured)) {
 			const changed = structuredClone(result); Reflect.set(changed.usage.native, field, measured[field as keyof typeof measured] + 1);
 			const corrupt = { ...owner, assignment_result_json: JSON.stringify(changed) }, before = structuredClone(corrupt);
