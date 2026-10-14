@@ -63,7 +63,8 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 	now: string;
 }): Promise<DurableProviderAssignment> {
 	const { assignment, principal } = input;
-	if (!assignmentAttemptSchema.safeParse(assignment).success) {
+	if (!assignmentAttemptSchema.safeParse(assignment).success || assignment.status !== 'created'
+		|| assignment.startedAt !== undefined || assignment.finishedAt !== undefined) {
 		throw new CapacityGovernanceError('execution_assignment_authority_mismatch',
 			'Assignment admission requires a canonical immutable assignment attempt.', 409);
 	}
@@ -79,12 +80,15 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 	const predecessorResults = assignmentPredecessors(assignment, input.predecessorResults);
 	const reporting = assignment.effectiveProfile.activity === 'reporting';
 	const requireExactReplay = (stored: DurableProviderAssignment) => {
+		// The original admission request remains immutable while owning lifecycle progress is retained.
+		const { status: _status, startedAt: _startedAt, finishedAt: _finishedAt, ...retainedAuthority } = stored.assignmentAttempt ?? {};
+		const { status: _requestedStatus, startedAt: _requestedStart, finishedAt: _requestedFinish, ...requestedAuthority } = assignment;
 		const metadata = stored.explanation.metadata;
 		const retainedAllocation = metadata && typeof metadata === 'object' && !Array.isArray(metadata) && 'allocation' in metadata
 			? metadata.allocation : undefined;
 		if (stored.teamId !== assignment.teamId || stored.capacityProviderId !== principal.capacityProviderId
 			|| stored.executionNodeId !== assignment.nodeId || stored.executionNodeRevision !== assignment.nodeRevision
-			|| !isDeepStrictEqual(stored.assignmentAttempt, assignment)
+			|| !isDeepStrictEqual(retainedAuthority, requestedAuthority)
 			|| (input.allocation.selection !== undefined && !isDeepStrictEqual(
 				retainedAllocation, input.allocation))) {
 			throw new CapacityGovernanceError('execution_assignment_idempotency_conflict',
