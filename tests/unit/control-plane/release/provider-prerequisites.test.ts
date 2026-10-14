@@ -342,6 +342,11 @@ it('complete provider suites provision the exact native TreeDX engine and origin
 	expect(checkout?.uses).toBe('actions/checkout@v4');
 	expect(object(checkout?.with)).toEqual({ repository: 'treeseed-ai/treedx',
 		ref: '6d358bb2e536af24918f3c33acb2072b9093a603', path: '.treeseed/tools/treedx' });
+	// The signed TreeDX process stays alive through scenes: select the same exact
+	// native runtime required by the held executing Reviewer before starting it.
+	const beam = steps.filter(step => step.uses === 'erlef/setup-beam@v1');
+	expect(beam).toHaveLength(1);
+	expect(object(beam[0]?.with)).toEqual({ 'otp-version': '27.3.4.18', 'elixir-version': '1.17.3' });
 	const start = steps.find(step => step.run === 'node --import tsx scripts/verification/native-treedx.ts start');
 	const stop = steps.find(step => step.run === 'node --import tsx scripts/verification/native-treedx.ts stop');
 	const verify = steps.find(step => step.run === 'npm run verify:direct');
