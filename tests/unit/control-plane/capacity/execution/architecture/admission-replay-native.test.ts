@@ -3,6 +3,7 @@ import { closeoutDatabase } from '../graph/architecture/closeout-sql-fixture.ts'
 import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import type { CapacityGovernanceDatabase } from '../../../../../../src/api/capacity/database.ts';
 import { admitLivingExecutionAssignment } from '../../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts';
+import { advanceAssignmentAttemptLifecycle } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { replayAttempt, replayChanges, replayInput } from './admission-replay-fixture.ts';
 
 // REAL original-DDL PGlite + owning repository + admission boundary. This tests
@@ -46,6 +47,18 @@ describe('native immutable admission replay', () => {
 			await expect(run()).resolves.toEqual(stored);
 			expect(await Promise.all([run(), run()])).toEqual([stored, stored]);
 			expect(await fixture.snapshot()).toEqual(before); expect(input).toEqual(original);
+			for (const status of ['leased', 'running', 'completed', 'failed', 'cancelled', 'expired'] as const) {
+				const progressed = status === 'leased' ? advanceAssignmentAttemptLifecycle(input.assignment, status, input.now)
+					: advanceAssignmentAttemptLifecycle(advanceAssignmentAttemptLifecycle(input.assignment, 'running', input.now), status, input.now);
+				await fixture.query('UPDATE capacity_provider_assignments SET status=?,lease_state=?,assignment_attempt_json=? WHERE id=?',
+					[status, ['leased', 'running'].includes(status) ? 'leased' : 'released', JSON.stringify(progressed), input.assignment.id]);
+				const held = await fixture.snapshot(), published = await fixture.repository.get('team', input.assignment.id);
+				expect(published?.assignmentAttempt).toEqual(progressed); expect(await Promise.all([run(), run()])).toEqual([published, published]);
+				expect(await fixture.snapshot()).toEqual(held); expect(input).toEqual(original);
+				for (const { change } of replayChanges) { const changed = replayAttempt(); change(changed);
+					await expect(admitLivingExecutionAssignment(fixture.store, replayInput(changed))).rejects.toThrow();
+					expect(await fixture.snapshot()).toEqual(held); expect(input).toEqual(original); }
+			}
 		} finally { await fixture.db.close(); }
 	});
 	for (const { name, change } of replayChanges) it(`denies changed ${name} against actual stored custody`, async () => {

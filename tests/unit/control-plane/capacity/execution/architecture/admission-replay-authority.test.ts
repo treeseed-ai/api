@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { admitLivingExecutionAssignment } from '../../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts';
+import { advanceAssignmentAttemptLifecycle } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { replayAttempt, replayChanges, replayInput } from './admission-replay-fixture.ts';
 
 // UNIT collaborator returns a previously stored snapshot; SQL proof is separate.
@@ -33,6 +34,20 @@ describe('immutable admission replay authority', () => {
 		const { store, stored } = replayStore(), input = replayInput(replayAttempt()), before = structuredClone({ input, stored });
 		await expect(admitLivingExecutionAssignment(store, input)).resolves.toBe(stored);
 		expect({ input, stored }).toEqual(before);
+		for (const status of ['leased', 'running', 'completed', 'failed', 'cancelled', 'expired', 'blocked'] as const) {
+			stored.assignmentAttempt = status === 'leased' ? advanceAssignmentAttemptLifecycle(input.assignment, status, input.now)
+				: advanceAssignmentAttemptLifecycle(advanceAssignmentAttemptLifecycle(input.assignment, 'running', input.now), status, input.now);
+			const held = structuredClone({ input, stored });
+			expect(await Promise.all([admitLivingExecutionAssignment(store, input), admitLivingExecutionAssignment(store, input)])).toEqual([stored, stored]);
+			expect({ input, stored }).toEqual(held);
+			for (const { change } of replayChanges) { const changed = replayAttempt(); change(changed);
+				await expect(admitLivingExecutionAssignment(store, replayInput(changed))).rejects.toThrow(); expect({ input, stored }).toEqual(held); }
+		}
+		for (const fields of [{ status: 'leased' as const }, { startedAt: input.now }, { finishedAt: input.now }]) {
+			const value = replayAttempt(); Object.assign(value, fields); const changed = replayInput(value), held = structuredClone({ changed, stored });
+			await expect(admitLivingExecutionAssignment(store, changed)).rejects.toMatchObject({ code: 'execution_assignment_authority_mismatch' });
+			expect({ changed, stored }).toEqual(held);
+		}
 	});
 	for (const { name, change } of replayChanges) it(`rejects replay changes to ${name}`, async () => {
 		const { store, stored } = replayStore(), value = replayAttempt(); change(value);
