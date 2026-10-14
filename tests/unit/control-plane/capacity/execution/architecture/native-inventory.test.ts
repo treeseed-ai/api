@@ -14,12 +14,15 @@ const pages = [{ items: [rows[0]], page: { limit: 1, hasMore: true, nextCursor: 
 	{ items: [rows[1]], page: { limit: 1, hasMore: false, nextCursor: null } }];
 const scope = { id: assignment.workdayId, teamId: assignment.teamId };
 // Controlled projection inputs; real owning PostgreSQL produces these separately.
-const envelope = { requestedSeconds: assignment.limits.maximumSeconds, reservedSeconds: assignment.limits.maximumSeconds };
-const explanation = { metadata: { allocation: { allocatedSeconds: assignment.limits.maximumSeconds } } };
+const envelope = { requestedSeconds: assignment.limits.maximumSeconds, reservedSeconds: assignment.limits.maximumSeconds,
+	teamId: assignment.teamId, projectId: assignment.projectId, workDayId: assignment.workdayId,
+	capacityProviderId: assignment.provider.providerId, executionProviderId: assignment.provider.executionProviderId,
+	reservationId: assignment.reservationId, projectAgentClassId: 'class', mode: 'acting', limits: assignment.limits };
+const explanation = { teamId: assignment.teamId, assignmentId: assignment.id, metadata: { allocation: { allocatedSeconds: assignment.limits.maximumSeconds } } };
 
 const nativeAssignment = { id: assignment.id, team_id: assignment.teamId, project_id: assignment.projectId,
 	work_day_id: assignment.workdayId, membership_id: 'membership', capacity_provider_id: assignment.provider.providerId,
-	lane_id: 'workday', lane_purpose: 'workday', status: 'pending', lease_state: 'unleased', reservation_id: assignment.reservationId, execution_kind: 'workday',
+	mode: 'acting', lane_id: 'workday', lane_purpose: 'workday', status: 'pending', lease_state: 'unleased', reservation_id: assignment.reservationId, execution_kind: 'workday',
 	project_agent_class_id: 'class',
 	execution_node_id: assignment.nodeId, execution_node_revision: assignment.nodeRevision, graph_revision: assignment.graphRevision,
 	assignment_attempt_json: JSON.stringify(assignment), assignment_result_json: null, lifecycle_output_json: '{}',
@@ -171,6 +174,20 @@ describe('independent native producer inventory reconciliation', () => {
 			const original = structuredClone(nativeAssignment); Reflect.set(original, field, value); const held = structuredClone(original);
 			expect.soft(() => verifyNativeAssignmentReadback(original, publicAssignment, scope, [nativeReservation], [original])).toThrow();
 			expect(original).toEqual(held);
+		}
+		for (const field of ['teamId', 'projectId', 'workDayId', 'capacityProviderId', 'executionProviderId', 'reservationId', 'projectAgentClassId', 'mode', 'limits']) {
+			const original = structuredClone(nativeAssignment), observed = structuredClone(publicAssignment);
+			Reflect.set(observed.capacityEnvelope, field, 'foreign'); original.capacity_envelope_json = JSON.stringify(observed.capacityEnvelope);
+			const held = structuredClone({ original, observed });
+			expect.soft(() => verifyNativeAssignmentReadback(original, observed, scope, [nativeReservation], [original])).toThrow('ACCEPTANCE_NATIVE_ALLOCATION');
+			expect({ original, observed }).toEqual(held);
+		}
+		for (const field of ['teamId', 'assignmentId']) {
+			const original = structuredClone(nativeAssignment), observed = structuredClone(publicAssignment);
+			Reflect.set(observed.explanation, field, 'foreign'); original.explanation_json = JSON.stringify(observed.explanation);
+			const held = structuredClone({ original, observed });
+			expect.soft(() => verifyNativeAssignmentReadback(original, observed, scope, [nativeReservation], [original])).toThrow('ACCEPTANCE_NATIVE_ALLOCATION');
+			expect({ original, observed }).toEqual(held);
 		}
 		for (const field of ['requestedSeconds', 'reservedSeconds', 'allocatedSeconds']) {
 			const original = structuredClone(nativeAssignment), observed = structuredClone(publicAssignment);
