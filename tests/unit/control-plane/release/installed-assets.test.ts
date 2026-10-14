@@ -6,7 +6,7 @@ import { afterAll, expect, it } from 'vitest';
 import ts from 'typescript';
 import { execute } from './installed-assets-process.ts';
 
-const assets=['treeseed.package.yaml','guarantees/verifiers/golden.verifiers.yaml','tests/acceptance/execution-schema.ts','tests/acceptance/execution-inventory.ts'];
+const assets=['treeseed.package.yaml','guarantees/verifiers/golden.verifiers.yaml','tests/acceptance/execution-schema.ts','tests/acceptance/execution-inventory.ts','tests/acceptance/execution-native-usage.ts'];
 type Packed={name:string;filename:string;integrity:string;files:Array<{path:string}>};
 let apiInspected=false;
 let heldApiArchive:{root:string;packed:Packed;bytes:Buffer}|undefined;

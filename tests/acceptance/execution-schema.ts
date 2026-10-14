@@ -1,3 +1,4 @@
+import { verifyNativeProviderUsage } from './execution-native-usage.ts';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -398,6 +399,7 @@ async function verifyManagedModelExecution(requireUnfinished: boolean): Promise<
 						&& envelope.aad.resourceId === event.id && envelope.aad.eventType === event.event_type && Number.isInteger(envelope.aad.sequence),
 						'ACCEPTANCE_DIAGNOSTICS_CORRELATION: Ciphertext must authenticate the exact native owning event');
 					const protectedPayload = envelopes.decrypt(envelope);
+					verifyNativeProviderUsage(JSON.parse(String(event.context_json)), protectedPayload);
 					assert.ok(Array.isArray(protectedPayload.providerEvents) && protectedPayload.providerEvents.length > 0, 'ACCEPTANCE_DIAGNOSTICS_ACTIONS: Original provider actions required, not timing flags');
 					const actions = protectedPayload.providerEvents.map(object).filter(value => value.type === 'item.completed').map(value => object(value.item))
 						.filter(value => ['mcp_tool_call', 'command_execution'].includes(String(value.type)));
@@ -493,6 +495,5 @@ async function verifyManagedModelExecution(requireUnfinished: boolean): Promise<
 	} finally { await pool.end(); }
 	assert.ok(readFileSync(cli).equals(bytes)); assert.ok(Date.now() <= deadline);
 }
-
 test('Actual managed model execution retains encrypted original action observations for every enabled activity and independently binds first final and intervening clocks without public transcript leakage', { timeout: 120_000 }, () => verifyManagedModelExecution(false));
 test('Actual original model clocks failed verification and exact governed pending work bind an authorized unfinished draft before the unchanged deadline without a falsely passed replay', { timeout: 120_000 }, () => verifyManagedModelExecution(true));

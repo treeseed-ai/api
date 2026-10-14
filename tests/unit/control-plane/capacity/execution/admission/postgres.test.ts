@@ -1,3 +1,4 @@
+import { verifyNativeModelUsage, verifyNativeProviderUsage } from '../../../../../acceptance/execution-native-usage.ts';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -461,11 +462,13 @@ describe('living admission in disposable PostgreSQL', () => {
 					title: null, message: 'Controlled original native event input; no model invocation claimed.', parameters: {}, refs: {}, createdAt: now };
 				const start = await writer.create('team', 'workday', { ...base, id: 'controlled-model-start',
 					eventType: 'provider.execution.started', context: { model: 'arbitrary-configured-model', isolation: 'microvm' }, metadata: {} });
-				const payload = { providerEvents: [{ type: 'controlled-native-observation' }] };
+				const units = { input_tokens: 7, output_tokens: 3 }, measured = { ...units, activeSeconds: 0.5, elapsedSeconds: 1.25, cpuUserMicros: 123, cpuSystemMicros: 45, peakRssBytes: 1024 };
+				const observation = { usage: [{ inputTokens: 7, outputTokens: 3, provenance: 'execution-provider', nativeUsage: measured, ...Object.fromEntries(Object.entries(measured).filter(([key]) => !Object.hasOwn(units, key))) }], timing: { elapsedSeconds: 1.25 }, resources: { cpuUserMicros: 123, cpuSystemMicros: 45, peakRssBytes: 1024 } };
+				const result = { usage: { elapsedSeconds: 2, modelInputTokens: 7, modelOutputTokens: 3, native: measured } }, payload = { providerEvents: [{ type: 'turn.completed', usage: units }] };
 				const protectedPayloadEnvelope = envelopes.encrypt(payload, { teamId: 'team', assignmentId: winner.id,
 					resourceId: 'controlled-model-terminal', eventType: 'provider.execution.completed', sequence: 0 });
 				const terminal = await writer.create('team', 'workday', { ...base, id: 'controlled-model-terminal',
-					eventType: 'provider.execution.completed', context: {}, metadata: { protectedPayloadEnvelope } });
+					eventType: 'provider.execution.completed', context: observation, metadata: { protectedPayloadEnvelope } });
 				expect(await reader.get('team', 'workday', start!.id)).toEqual(start);
 				expect(await reader.get('team', 'workday', terminal!.id)).toEqual(terminal);
 				const raw = (await peerDatabase.pool.query('SELECT * FROM capacity_workday_events WHERE assignment_id=$1 ORDER BY event_index', [winner.id])).rows;
@@ -473,6 +476,13 @@ describe('living admission in disposable PostgreSQL', () => {
 				const held = structuredClone({ raw, owners });
 				expect([...verifyNativeModelExecutionInventory(owners, raw, { id: 'workday', teamId: 'team' })]).toEqual([winner.id]);
 				expect(envelopes.decrypt(JSON.parse(String(raw[1]!.metadata_json)).protectedPayloadEnvelope)).toEqual(payload);
+				const context = JSON.parse(String(raw[1]!.context_json)), decrypted = envelopes.decrypt(JSON.parse(String(raw[1]!.metadata_json)).protectedPayloadEnvelope);
+				verifyNativeModelUsage(context, result); verifyNativeProviderUsage(context, decrypted); expect(terminal!.context).toEqual(context);
+				for (const field of Object.keys(measured)) { const changed = structuredClone(result); Reflect.set(changed.usage.native, field, measured[field as keyof typeof measured] + 1); const before = structuredClone(changed);
+					expect(() => verifyNativeModelUsage(context, changed)).toThrow('ACCEPTANCE_NATIVE_USAGE'); expect(changed).toEqual(before); }
+				for (const field of Object.keys(units)) { const changed = structuredClone(decrypted); Reflect.set((changed.providerEvents as Array<{ usage: Record<string, number> }>)[0]!.usage, field, 99); const before = structuredClone(changed);
+					expect(() => verifyNativeProviderUsage(context, changed)).toThrow('ACCEPTANCE_NATIVE_USAGE'); expect(changed).toEqual(before); }
+
 				for (const incomplete of [raw.slice(0, 1), raw.slice(1), [...raw, raw[0]!]])
 					expect(() => verifyNativeModelExecutionInventory(owners, incomplete, { id: 'workday', teamId: 'team' })).toThrow();
 				expect({ raw, owners }).toEqual(held); expect(await state()).toEqual(retained);
