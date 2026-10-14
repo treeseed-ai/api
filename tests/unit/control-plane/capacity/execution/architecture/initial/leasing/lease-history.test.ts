@@ -41,6 +41,6 @@ it('matches whole original lease event payload through independent public readba
   const failed=structuredClone(changed); expect(()=>check!(native,changed),field).toThrow(); expect(changed).toEqual(failed);expect(native).toEqual(before.native);
  }
  for(const supplied of[undefined,null,[],false,''])expect(()=>check!(native,supplied)).toThrow();
+ for(const field of ['leaseToken','executionMode','unowned'])expect(()=>check!(native,{...visible,[field]:'not-authority'})).toThrow();
  expect({native,visible}).toEqual(before);check!(native,visible);
 });
-

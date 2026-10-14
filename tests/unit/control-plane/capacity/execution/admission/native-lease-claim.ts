@@ -1,4 +1,4 @@
-import { verifyNativeLeaseHistory } from '../../../../../acceptance/execution-inventory.ts';
+import { verifyNativeLeaseHistory, verifyNativeLeaseEventReadback } from '../../../../../acceptance/execution-inventory.ts';
 import { CapacityWorkdayEventRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { expect } from 'vitest';
 import type { AssignmentAttempt } from '@treeseed/sdk/agent-capacity';
@@ -46,11 +46,13 @@ export async function proveNativeLeaseClaim(
   await database.pool.query(`CREATE FUNCTION native_observation_interruption() RETURNS trigger LANGUAGE plpgsql AS $ BEGIN
     IF NEW.event_type='assignment.leased' THEN RAISE EXCEPTION 'retained native lease observation interruption'; END IF; RETURN NEW; END $`);
   await database.pool.query('CREATE TRIGGER native_observation_interruption BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION native_observation_interruption()');
+  const rawBeforeObservation=(await peer.pool.query('SELECT * FROM capacity_provider_assignments ORDER BY id')).rows;
   let observationFailure:unknown;
   try{await owners[0]!.leaseNextProviderAssignment(principal,request);}
   catch(error){observationFailure={message:String(error),custody:await custody()};}
   finally{await database.pool.query('DROP TRIGGER native_observation_interruption ON capacity_workday_events');await database.pool.query('DROP FUNCTION native_observation_interruption()');}
   expect(observationFailure).toMatchObject({message:expect.stringContaining('retained native lease observation interruption'),custody:original});
+  expect((await peer.pool.query('SELECT * FROM capacity_provider_assignments ORDER BY id')).rows).toEqual(rawBeforeObservation);
   const retainedObservationFailure=structuredClone(observationFailure);
 
   const results = await Promise.all(owners.map((owner, index) => owner.leaseNextProviderAssignment(principal,
@@ -67,7 +69,7 @@ export async function proveNativeLeaseClaim(
   expect(JSON.stringify(event)).not.toContain(winner.leaseToken!);
   const publicEvents=await new CapacityWorkdayEventRepository(peerAccounting).list(attempt.teamId,attempt.workdayId,{limit:100});
   expect(publicEvents.items.filter(value=>value.id===event.id)).toHaveLength(1); expect(publicEvents.page).toEqual({limit:100,hasMore:false,nextCursor:null});
-  expect(publicEvents.items.find(value=>value.id===event.id)).toMatchObject({id:event.id,eventType:'assignment.leased',assignmentId:attempt.id,context:JSON.parse(String(event.context_json))});
+  verifyNativeLeaseEventReadback(event,publicEvents.items.find(value=>value.id===event.id));
 
   for (const result of results.filter(value => !value.assignment)) expect(result.leaseToken).toBeNull();
   for (const owner of owners) {
@@ -87,5 +89,5 @@ export async function proveNativeLeaseClaim(
     const audit = (await peer.pool.query('SELECT * FROM capacity_audit_events ORDER BY id')).rows;
     for (const row of failed.audit) expect(audit).toContainEqual(row);
   }
-  console.log(JSON.stringify({ nativeLeaseClaimFailedObservation: failed, winningAssignmentId: winner.assignment?.id, competingClaims: results.length }));
+  console.log(JSON.stringify({ nativeLeaseClaimFailedObservation: failed, nativeLeaseObservationFailedObservation: observationFailure, winningAssignmentId: winner.assignment?.id, competingClaims: results.length }));
 }

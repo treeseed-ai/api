@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-export { verifyNativeLeaseHistory } from './execution-lease-history.ts';
+export { verifyNativeLeaseHistory, verifyNativeLeaseEventReadback } from './execution-lease-history.ts';
 import { verifyNativeModelUsage } from './execution-native-usage.ts';
 import assert from 'node:assert/strict';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
@@ -482,4 +482,3 @@ export function installedCli(): string {
 	assert.ok(typeof binary === 'string' && binary, 'ACCEPTANCE_SCHEMA_CLI: Installed CLI public binary required');
 	return resolve(dirname(manifest), binary);
 }
-

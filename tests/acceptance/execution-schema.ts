@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { installedCli, verifyNativeLeaseHistory, executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeGraphInventory, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy, verifyNativeReporterCloseout } from './execution-inventory.ts';
+import { installedCli, verifyNativeLeaseHistory, verifyNativeLeaseEventReadback, executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeGraphInventory, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy, verifyNativeReporterCloseout } from './execution-inventory.ts';
 async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Promise<void> {
 	const started = Date.now(), deadline = started + 120_000;
 	const start = executionWorkdayStart(process.env, !requireObservedSamples), { id } = start, team = process.env.TREESEED_ACCEPTANCE_TEAM;
@@ -131,6 +131,7 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 				const publicEvents = await inventory(nativeEvents, ['workdays', 'events', 'list', id], 'ascending');
 				for (const visible of publicEvents) {
 					const native = nativeEvents.find(value => value.id === visible.id); assert.ok(native);
+					if(native.event_type==='assignment.leased') verifyNativeLeaseEventReadback(native,visible);
 					for (const [key, column] of [['runId','run_id'], ['teamId','team_id'], ['assignmentId','assignment_id'], ['eventIndex','event_index'],
 						['eventType','event_type'], ['status','status']] as const) assert.equal(visible[key], native[column]);
 				}
