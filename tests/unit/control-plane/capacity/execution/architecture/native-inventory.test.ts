@@ -242,6 +242,13 @@ describe('independent native producer inventory reconciliation', () => {
 			expect(denied).toEqual(held);
 		}
 		expect({ published, nativeNodes, nativeEdges }).toEqual(state);
+		for (const invalid of [0, -1, published.revision + 1, 'invalid', '1', true]) {
+			const denied = [...nativeEdges, { ...nativeEdges[0]!, id: 'retained-malformed-removed-edge', graph_revision_removed: invalid }];
+			const held = structuredClone(denied);
+			expect(() => Reflect.apply(inspectState, undefined, [nativeNodes, denied, { teamId: published.teamId, revision: published.revision, graphDigest: published.digest }, published]), String(invalid)).toThrow();
+			expect(denied).toEqual(held);
+		}
+
 
 		const firstRevision = graphProjection().revision, graphRecords = [firstRevision, { ...firstRevision, revision: 2, createdAt: '2026-10-03T00:00:01.000Z' }];
 		const nativeGraph = graphRecords.map(value => ({ team_id: value.teamId, revision: value.revision, rule_revision: value.ruleRevision,
