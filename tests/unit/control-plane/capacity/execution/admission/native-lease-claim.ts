@@ -1,4 +1,4 @@
-import { proveNativeAssignmentWindows } from './native-assignment-windows.ts';
+import { proveNativeAssignmentWindows } from './fixtures/native-assignment-windows.ts';
 import { verifyNativeLeaseHistory, verifyNativeLeaseEventReadback } from '../../../../../acceptance/execution-inventory.ts';
 import { CapacityWorkdayEventRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { expect } from 'vitest';

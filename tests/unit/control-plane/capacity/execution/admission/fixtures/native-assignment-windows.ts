@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 import { expect } from 'vitest';
 import type { AssignmentAttempt } from '@treeseed/sdk/agent-capacity';
-import type { createControlPlanePostgresDatabase } from '../../../../../../src/api/support/control-plane-postgres.ts';
-import type { ControlPlaneStore } from '../../../../../../src/api/persistence/store.ts';
-import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
-import { CapacityWorkdayEventRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
-import { startAssignmentExecutionWindow, startAssignmentCloseoutWindow } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-execution-window-service.ts';
+import type { createControlPlanePostgresDatabase } from '../../../../../../../src/api/support/control-plane-postgres.ts';
+import type { ControlPlaneStore } from '../../../../../../../src/api/persistence/store.ts';
+import { ProviderAssignmentRepository } from '../../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
+import { CapacityWorkdayEventRepository } from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
+import { startAssignmentExecutionWindow, startAssignmentCloseoutWindow } from '../../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-execution-window-service.ts';
 
 /** Extend the original admitted/leased PostgreSQL fixture. No allocation,
  * productive allowance, deadline or usage input is changed for this proof. */
