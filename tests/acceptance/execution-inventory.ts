@@ -1,10 +1,11 @@
+import { createRequire } from 'node:module';
 export { verifyNativeLeaseHistory } from './execution-lease-history.ts';
 import { verifyNativeModelUsage } from './execution-native-usage.ts';
 import assert from 'node:assert/strict';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import { assignmentAttemptSchema, assignmentResultSchema, graphRevisionSchema, appliedWorkdaySchema, workdayPolicySchema } from '@treeseed/sdk/agent-capacity';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { canonicalJson, sha256 } from '../../dist/api/capacity/security.js';
 import { serializeCapacityReservationRow } from '../../dist/api/capacity/repositories/capacity/accounting/reservation.js';
 import { decodeExecutionNode, decodeExecutionEdge } from '../../dist/api/control-plane/repositories/capacity/execution/execution-graph-storage.js';
@@ -475,3 +476,10 @@ export async function verifyNativeGraphInventory(native: (sql: string, parameter
 	verifyNativeGraphReadback(await native('SELECT * FROM execution_nodes WHERE team_id=$1 ORDER BY id', [teamId]),
 		await native('SELECT * FROM execution_edges WHERE team_id=$1 ORDER BY id', [teamId]), revisions.at(-1)!, read(['execution', 'graph', 'show']));
 }
+export function installedCli(): string {
+	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
+	const binary = JSON.parse(readFileSync(manifest, 'utf8')).bin?.trsd;
+	assert.ok(typeof binary === 'string' && binary, 'ACCEPTANCE_SCHEMA_CLI: Installed CLI public binary required');
+	return resolve(dirname(manifest), binary);
+}
+
