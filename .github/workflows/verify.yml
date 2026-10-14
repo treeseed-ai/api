@@ -92,6 +92,10 @@ jobs:
           npm prune --ignore-scripts --no-audit --no-fund --workspaces=false
           node --import tsx scripts/build/hydrate-exact-dependency.ts artifacts/sealed-sdk install
           node --import tsx scripts/build/hydrate-exact-dependency.ts artifacts/native-treedx-sdk install @treeseed/treedx
+      - name: Build public API exports before native acceptance consumer regression
+        run: npm run build:dist
+      - name: Reproduce native lease transition history before complete verification
+        run: node node_modules/vitest/vitest.mjs run --config ./vitest.control-plane.config.ts tests/unit/control-plane/capacity/execution/admission/postgres.test.ts
       - run: npm run verify:direct
       - name: Verify real PostgreSQL backup-writer migration closure
         run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/services/live/replication-migration-postgres.test.ts

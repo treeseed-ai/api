@@ -1,3 +1,4 @@
+import { CapacityWorkdayEventRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { expect } from 'vitest';
 import type { AssignmentAttempt } from '@treeseed/sdk/agent-capacity';
 import type { createControlPlanePostgresDatabase } from '../../../../../../src/api/support/control-plane-postgres.ts';
@@ -25,6 +26,7 @@ export async function proveNativeLeaseClaim(
     usage: (await peer.pool.query('SELECT * FROM capacity_usage_actuals ORDER BY id')).rows,
     ledger: (await peer.pool.query('SELECT * FROM capacity_ledger_entries ORDER BY id')).rows,
     nodes: (await peer.pool.query('SELECT * FROM execution_nodes ORDER BY id')).rows,
+    events: (await peer.pool.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows,
   });
   const original = await custody();
   await database.pool.query(`CREATE FUNCTION native_claim_interruption() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
@@ -45,6 +47,16 @@ export async function proveNativeLeaseClaim(
   const winner = winners[0]!;
   expect(winner.assignment).toMatchObject({ id: attempt.id, leaseState: 'leased', status: 'leased', assignmentAttempt: { ...attempt, status: 'leased' } });
   expect(winner.leaseToken).toEqual(expect.any(String)); expect(winner.leaseToken).not.toBe('');
+  const history=(await peer.pool.query("SELECT * FROM capacity_workday_events WHERE assignment_id=$1 AND event_type='assignment.leased' ORDER BY event_index",[attempt.id])).rows;
+  expect(history,'native committed lease must have one durable public history observation').toHaveLength(1);
+  const event=history[0]!;
+  expect(event).toMatchObject({team_id:attempt.teamId,run_id:attempt.workdayId,workday_id:attempt.workdayId,project_id:attempt.projectId,assignment_id:attempt.id,status:'recorded',created_at:winner.assignment!.updatedAt});
+  expect(JSON.parse(String(event.context_json))).toMatchObject({nodeId:attempt.nodeId,nodeRevision:attempt.nodeRevision,graphRevision:attempt.graphRevision,status:'leased',leaseId:attempt.leaseId,reservationId:attempt.reservationId,runnerId:winner.assignment!.runnerId});
+  expect(JSON.stringify(event)).not.toContain(winner.leaseToken!);
+  const publicEvents=await new CapacityWorkdayEventRepository(peerAccounting).list(attempt.teamId,attempt.workdayId,{limit:100});
+  expect(publicEvents.items.filter(value=>value.id===event.id)).toHaveLength(1); expect(publicEvents.page).toEqual({limit:100,hasMore:false,nextCursor:null});
+  expect(publicEvents.items.find(value=>value.id===event.id)).toMatchObject({id:event.id,eventType:'assignment.leased',assignmentId:attempt.id,context:JSON.parse(String(event.context_json))});
+
   for (const result of results.filter(value => !value.assignment)) expect(result.leaseToken).toBeNull();
   for (const owner of owners) {
     const read = await new ProviderAssignmentRepository(owner).get(attempt.teamId, attempt.id);
@@ -52,7 +64,7 @@ export async function proveNativeLeaseClaim(
     expect(read?.assignmentAttempt).toEqual({ ...attempt, status: 'leased' });
   }
   const after = await custody();
-  expect(after).toEqual({ ...original, attempts: [{ ...original.attempts[0],
+  expect(after).toEqual({ ...original, events: [...original.events,...history], attempts: [{ ...original.attempts[0],
     assignment_attempt_json: JSON.stringify({ ...attempt, status: 'leased' }), lease_state: 'leased',
     lease_token: winner.leaseToken, runner_id: winner.assignment?.runnerId }] });
   expect(await owners[0]!.leaseNextProviderAssignment(principal, request)).toMatchObject({ assignment: null, leaseToken: null });
