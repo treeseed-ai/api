@@ -122,20 +122,20 @@ describe('independent native producer inventory reconciliation', () => {
 		const original = { ...nativeAssignment, lifecycle_output_json: JSON.stringify(output) };
 		const visible = { ...publicAssignment, lifecycleOutput: output };
 		const held = structuredClone({ original, visible });
-		expect(verifyNativeAssignmentReadback(original, visible, scope, [nativeReservation])).toEqual(assignment);
+		expect(verifyNativeAssignmentReadback(original, visible, scope, [nativeReservation], [original])).toEqual(assignment);
 		for (const lifecycleOutput of [undefined, null, {}, { sandboxId: 'foreign' }, { ...output, retained: { source: 'substituted' } }]) {
 			const changed = { ...visible, lifecycleOutput }, before = structuredClone(changed);
-			expect.soft(() => verifyNativeAssignmentReadback(original, changed, scope, [nativeReservation])).toThrow();
+			expect.soft(() => verifyNativeAssignmentReadback(original, changed, scope, [nativeReservation], [original])).toThrow();
 			expect(changed).toEqual(before);
 		}
 		for (const lifecycle_output_json of ['{', 'null', '[]', 'true', '""', '1']) {
 			const changed = { ...original, lifecycle_output_json }, before = structuredClone(changed);
-			expect.soft(() => verifyNativeAssignmentReadback(changed, visible, scope, [nativeReservation])).toThrow();
+			expect.soft(() => verifyNativeAssignmentReadback(changed, visible, scope, [nativeReservation], [changed])).toThrow();
 			expect(changed).toEqual(before);
 		}
   for (const field of ['laneId', 'lanePurpose']) for (const value of [undefined, null, '', 'foreign', {}, 7]) {
    const changed = { ...visible, [field]: value }, before = structuredClone(changed);
-   expect.soft(() => verifyNativeAssignmentReadback(original, changed, scope, [nativeReservation]))
+   expect.soft(() => verifyNativeAssignmentReadback(original, changed, scope, [nativeReservation], [original]))
     .toThrow('ACCEPTANCE_NATIVE_LANE');
    expect(changed).toEqual(before);
   }
@@ -156,33 +156,56 @@ describe('independent native producer inventory reconciliation', () => {
 		expect({ original, visible }).toEqual(held);
 	});
 	it('reads exactly every native identity through complete public pages without changing original observations', async () => {
-		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [nativeReservation])).toEqual(assignment);
+		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [nativeReservation], [nativeAssignment])).toEqual(assignment);
 		for (const requested_seconds of [0, assignment.limits.maximumSeconds - 1, assignment.limits.maximumSeconds + 1,
 			String(assignment.limits.maximumSeconds + 1)]) {
 			const changed = { ...nativeReservation, requested_seconds }, retained = structuredClone(changed);
-			expect(() => verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [changed])).toThrow('ACCEPTANCE_NATIVE_RESERVATION');
+			expect(() => verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [changed], [nativeAssignment])).toThrow('ACCEPTANCE_NATIVE_RESERVATION');
 			expect(changed).toEqual(retained);
 		}
 		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope,
-			[{ ...nativeReservation, requested_seconds: String(assignment.limits.maximumSeconds), reserved_seconds: String(assignment.limits.maximumSeconds) }])).toEqual(assignment);
+			[{ ...nativeReservation, requested_seconds: String(assignment.limits.maximumSeconds), reserved_seconds: String(assignment.limits.maximumSeconds) }], [nativeAssignment])).toEqual(assignment);
 		for (const writablePaths of [['**'], ['src'], ['.', 'src'], ['.', '.']]) {
 			const attempt = { ...assignment, workspace: { ...assignment.workspace, writablePaths } };
 			const original = { ...nativeAssignment, assignment_attempt_json: JSON.stringify(attempt) }, visible = { ...publicAssignment, assignmentAttempt: attempt };
 			const held = structuredClone({ original, visible });
-			expect.soft(() => verifyNativeAssignmentReadback(original, visible, { ...scope, executionMode: 'simulation' }, [nativeReservation]))
+			expect.soft(() => verifyNativeAssignmentReadback(original, visible, { ...scope, executionMode: 'simulation' }, [nativeReservation], [original]))
 				.toThrow(writablePaths.length === 2 && writablePaths[1] === '.' ? 'Values must be unique.' : 'ACCEPTANCE_NATIVE_SIMULATION_WORKSPACE');
 			expect({ original, visible }).toEqual(held);
 		}
 		const root = { ...assignment, workspace: { ...assignment.workspace, writablePaths: ['.'] } };
 		expect(verifyNativeAssignmentReadback({ ...nativeAssignment, assignment_attempt_json: JSON.stringify(root) },
-			{ ...publicAssignment, assignmentAttempt: root }, { ...scope, executionMode: 'simulation' }, [nativeReservation])).toEqual(root);
-		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, { ...scope, executionMode: 'production' }, [nativeReservation])).toEqual(assignment);
+			{ ...publicAssignment, assignmentAttempt: root }, { ...scope, executionMode: 'simulation' }, [nativeReservation], [{ ...nativeAssignment, assignment_attempt_json: JSON.stringify(root) }])).toEqual(root);
+		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, { ...scope, executionMode: 'production' }, [nativeReservation], [nativeAssignment])).toEqual(assignment);
 		const retainedAssignment = structuredClone({ nativeAssignment, publicAssignment, nativeReservation });
 		for (const state of ['reserved', 'consuming', 'consumed', 'released', 'expired', 'failed', 'overran_pending_approval', 'continuation_required'])
-			expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [{ ...nativeReservation, state }])).toEqual(assignment);
-		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [{ ...nativeReservation, reserved_seconds: '3' }])).toEqual(assignment);
+			expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [{ ...nativeReservation, state }], [nativeAssignment])).toEqual(assignment);
+		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [{ ...nativeReservation, reserved_seconds: '3' }], [nativeAssignment])).toEqual(assignment);
 		const unrelated = { ...nativeReservation, id: 'another-reservation', assignment_id: 'another-assignment' };
-		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [unrelated, nativeReservation])).toEqual(assignment);
+		expect(() => Reflect.apply(verifyNativeAssignmentReadback, undefined, [nativeAssignment, publicAssignment, scope, [unrelated, nativeReservation], [nativeAssignment]]))
+			.toThrow('ACCEPTANCE_NATIVE_ISSUANCE');
+		const secondAttempt = { ...assignment, id: 'second-issued', idempotencyKey: 'second-issued', nodeId: 'second-node',
+			reservationId: 'second-reservation', leaseId: 'second-lease' };
+		const second = { ...nativeAssignment, id: secondAttempt.id, execution_node_id: secondAttempt.nodeId,
+			reservation_id: secondAttempt.reservationId, assignment_attempt_json: JSON.stringify(secondAttempt) };
+		const secondReservation = { ...nativeReservation, id: secondAttempt.reservationId, assignment_id: secondAttempt.id, idempotency_key: secondAttempt.idempotencyKey };
+		const exactCohort = [nativeAssignment, second], exactReservations = [nativeReservation, secondReservation];
+		const inspect = (cohort: unknown, reservations: unknown) => Reflect.apply(verifyNativeAssignmentReadback, undefined,
+			[nativeAssignment, publicAssignment, scope, reservations, cohort]);
+		const heldCohort = structuredClone({ exactCohort, exactReservations });
+		expect(() => inspect(exactCohort, exactReservations)).not.toThrow();
+		for (const cohort of [undefined, null, [], [nativeAssignment, nativeAssignment], [second],
+			[nativeAssignment, { ...second, team_id: 'foreign' }],
+			[nativeAssignment, { ...second, assignment_attempt_json: JSON.stringify({ ...secondAttempt, leaseId: assignment.leaseId }) }],
+			[nativeAssignment, { ...second, assignment_attempt_json: JSON.stringify({ ...secondAttempt, reservationId: assignment.reservationId }) }],
+			[nativeAssignment, { ...second, assignment_attempt_json: JSON.stringify({ ...secondAttempt, idempotencyKey: assignment.idempotencyKey }) }],
+			[nativeAssignment, { ...second, assignment_attempt_json: JSON.stringify({ ...secondAttempt, nodeId: assignment.nodeId }) }]]) {
+			const held = structuredClone(cohort); expect.soft(() => inspect(cohort, exactReservations)).toThrow('ACCEPTANCE_NATIVE_ISSUANCE'); expect(cohort).toEqual(held);
+		}
+		for (const reservations of [[], [nativeReservation], [...exactReservations, unrelated]]) {
+			const held = structuredClone(reservations); expect.soft(() => inspect(exactCohort, reservations)).toThrow(reservations.length ? 'ACCEPTANCE_NATIVE_ISSUANCE' : 'ACCEPTANCE_NATIVE_RESERVATION'); expect(reservations).toEqual(held);
+		}
+		expect(() => inspect(exactCohort, exactReservations)).not.toThrow(); expect({ exactCohort, exactReservations }).toEqual(heldCohort);
 		expect({ nativeAssignment, publicAssignment, nativeReservation }).toEqual(retainedAssignment);
 		const supplied = structuredClone(native), received = structuredClone(pages), calls: Array<string | undefined> = [];
 		expect(await verifyNativeInventory(supplied, value => { calls.push(value); return received[calls.length - 1]; }, 1)).toEqual(rows);
@@ -207,7 +230,7 @@ describe('independent native producer inventory reconciliation', () => {
 		for (const field of Object.keys(nativeReservation)) for (const invalid of [undefined, null, '', false, {}, [], 'foreign']) {
 			const changed = structuredClone(nativeReservation); Reflect.set(changed, field, invalid); const original = structuredClone(changed);
 			const validOpaque = ['metadata_json', 'policy_snapshot_json'].includes(field) && invalid && typeof invalid === 'object' && !Array.isArray(invalid);
-			const observe = () => verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [changed]);
+			const observe = () => verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [changed], [nativeAssignment]);
 			if (validOpaque) expect.soft(observe).not.toThrow();
 			else expect.soft(observe, `${field}=${JSON.stringify(invalid)}`).toThrow();
 			expect(changed).toEqual(original);
@@ -215,20 +238,20 @@ describe('independent native producer inventory reconciliation', () => {
 		for (const field of ['requested_seconds', 'reserved_seconds', 'active_seconds', 'elapsed_seconds', 'released_seconds', 'overrun_seconds'])
 			for (const invalid of [-1, NaN, Infinity, -Infinity, 'NaN', 'Infinity', '0x3']) {
 				const changed = structuredClone(nativeReservation); Reflect.set(changed, field, invalid);
-				expect(() => verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [changed])).toThrow();
+				expect(() => verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [changed], [nativeAssignment])).toThrow();
 			}
 		expect(() => verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope,
-			[{ ...nativeReservation, updated_at: '2026-09-13T11:00:00.000Z' }])).toThrow('ACCEPTANCE_NATIVE_RESERVATION');
+			[{ ...nativeReservation, updated_at: '2026-09-13T11:00:00.000Z' }], [nativeAssignment])).toThrow('ACCEPTANCE_NATIVE_RESERVATION');
 		for (const [originalNative, originalPublic, fields] of [
 			[nativeAssignment, publicAssignment, ['reservation_id', 'capacity_provider_id', 'project_id', 'work_day_id', 'membership_id', 'project_agent_class_id', 'lease_state', 'execution_node_id', 'execution_node_revision', 'graph_revision']],
 			[publicAssignment, nativeAssignment, ['reservationId', 'projectId', 'projectAgentClassId', 'leaseState', 'executionNodeId', 'executionNodeRevision', 'graphRevision']],
 		] as const) for (const field of fields) for (const invalid of [undefined, null, '', false, {}, [], 'foreign', 0]) {
 			const changed = structuredClone(originalNative); Reflect.set(changed, field, invalid); const held = structuredClone(changed);
-			expect.soft(() => field.includes('_') ? verifyNativeAssignmentReadback(changed, originalPublic, scope, [nativeReservation])
-				: verifyNativeAssignmentReadback(originalPublic, changed, scope, [nativeReservation])).toThrow();
+			expect.soft(() => field.includes('_') ? verifyNativeAssignmentReadback(changed, originalPublic, scope, [nativeReservation], [changed])
+				: verifyNativeAssignmentReadback(originalPublic, changed, scope, [nativeReservation], [originalPublic])).toThrow();
 			expect(changed).toEqual(held);
 		}
-		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [nativeReservation])).toEqual(assignment);
+		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [nativeReservation], [nativeAssignment])).toEqual(assignment);
 		for (const replacement of [undefined, null, {}, { items: rows }, { ...pages[0], items: null }, { ...pages[0], page: [] },
 			{ ...pages[0], items: [null] }, { ...pages[0], items: [[]] }, { ...pages[0], items: ['malformed'] }, { items: [], page: pages[0]!.page },
 			{ ...pages[0], items: [rows[1]] }, { ...pages[0], items: [rows[0], rows[0]] },

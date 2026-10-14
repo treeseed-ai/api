@@ -167,7 +167,7 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 						capacity_provider_id: value.capacity_provider_id }, 'ACCEPTANCE_PROVIDER_MEMBERSHIP: Assignment team and provider must match its owning membership');
 					const visible = read(['assignments', 'show', value.id]);
 					assert.deepEqual(publicAssignments.find(record => record.id === value.id), visible);
-					const attempt = verifyNativeAssignmentReadback(value, visible, run, reservations);
+					const attempt = verifyNativeAssignmentReadback(value, visible, run, reservations, assignments);
 					if (value.execution_kind === 'workday') {
 						const allocation = object(object(object(visible.explanation).metadata).allocation), selection = object(allocation.selection), inputs = object(selection.input);
 						assert.equal(allocation.admitted, true, 'ACCEPTANCE_QUOTA_ADMISSION: Retained admission must be positive even when the later attempt failed');
@@ -385,7 +385,7 @@ async function verifyManagedModelExecution(requireUnfinished: boolean): Promise<
 				for (const native of assignments) {
 					assert.equal(native.team_id, run.teamId); const visible = read(['assignments', 'show', String(native.id)]);
 					assert.equal(visible.id, native.id); assert.equal(visible.teamId, run.teamId); assert.equal(visible.workDayId, id);
-					verifyNativeAssignmentReadback(native, visible, run, reservations);
+					verifyNativeAssignmentReadback(native, visible, run, reservations, assignments);
 					publicReads.push({ id: String(native.id), value: visible });
 					const output = object(visible.lifecycleOutput); if (!modelExecutions.has(String(native.id))) continue;
 					const attempt = assignmentAttemptSchema.parse(visible.assignmentAttempt); assert.equal(attempt.id, native.id);
