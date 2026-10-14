@@ -43,8 +43,8 @@ export async function proveNativeLeaseClaim(
   }
   expect(failed).toMatchObject({ message: expect.stringContaining('retained native lease claim interruption'), custody: original });
   const retainedFailure = structuredClone(failed);
-  await database.pool.query(`CREATE FUNCTION native_observation_interruption() RETURNS trigger LANGUAGE plpgsql AS $ BEGIN
-    IF NEW.event_type='assignment.leased' THEN RAISE EXCEPTION 'retained native lease observation interruption'; END IF; RETURN NEW; END $`);
+  await database.pool.query(`CREATE FUNCTION native_observation_interruption() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+    IF NEW.event_type='assignment.leased' THEN RAISE EXCEPTION 'retained native lease observation interruption'; END IF; RETURN NEW; END $$`);
   await database.pool.query('CREATE TRIGGER native_observation_interruption BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION native_observation_interruption()');
   const rawBeforeObservation=(await peer.pool.query('SELECT * FROM capacity_provider_assignments ORDER BY id')).rows;
   let observationFailure:unknown;
