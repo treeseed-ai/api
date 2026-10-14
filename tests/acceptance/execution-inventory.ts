@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { assignmentAttemptSchema, assignmentResultSchema, appliedWorkdaySchema, workdayPolicySchema } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, assignmentResultSchema, graphRevisionSchema, appliedWorkdaySchema, workdayPolicySchema } from '@treeseed/sdk/agent-capacity';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { canonicalJson, sha256 } from '../../dist/api/capacity/security.js';
 import { serializeCapacityReservationRow } from '../../dist/api/capacity/repositories/capacity/accounting/reservation.js';
+import { decodeExecutionNode, decodeExecutionEdge } from '../../dist/api/control-plane/repositories/capacity/execution/execution-graph-storage.js';
 import { canonicalWorkdayShares } from '../../dist/api/capacity/services/capacity/workdays/scheduling/workday-scheduling-service.js';
 
 type Row = Record<string, unknown>;
@@ -374,6 +375,30 @@ export function requireNativeAdmissionSamples(prioritizedWork: number, calibrate
 	assert.ok(calibratedWork > 0, 'ACCEPTANCE_CALIBRATION_EMPTY: Actual historical calibration is required, not only cold-start IDs');
 }
 
+/** The native revision inventory owns completeness; use the original revision cursor without a pagination adapter. */
+export async function verifyNativeGraphRevisionInventory(native: unknown, teamId: unknown, fetch: (cursor: string) => unknown | Promise<unknown>) {
+	const label = 'ACCEPTANCE_NATIVE_GRAPH_INVENTORY: Every original revision and explicit terminal page required';
+	assert.ok(typeof teamId === 'string' && teamId && teamId.trim() === teamId && Array.isArray(native) && native.length > 0, label);
+	const expected = native.map((value, index) => {
+		const original = row(value);
+		assert.ok(original.team_id === teamId && original.revision === index + 1 && Number.isSafeInteger(original.rule_revision)
+			&& typeof original.changed_source_refs_json === 'string' && typeof original.changes_json === 'string', label);
+		const canonical = { schemaVersion: 'treeseed.graph-revision/v1', teamId: original.team_id, revision: original.revision,
+			ruleRevision: original.rule_revision, changedSourceRefs: JSON.parse(original.changed_source_refs_json), graphDigest: original.graph_digest,
+			changes: JSON.parse(original.changes_json), createdAt: original.created_at };
+		const checked = graphRevisionSchema.parse(canonical); assert.deepEqual(checked, canonical, label); return checked;
+	});
+	const observed: typeof expected = []; let cursor = '0';
+	for (let page = 0; page <= expected.length; page++) {
+		const response = row(await fetch(cursor)); assert.ok(Array.isArray(response.items) && typeof response.nextCursor === 'string', label);
+		if (response.items.length === 0) { assert.equal(response.nextCursor, cursor, label); assert.deepEqual(observed, expected, label); return observed; }
+		const values = response.items.map(value => { const checked = graphRevisionSchema.parse(value); assert.deepEqual(checked, value, label); return checked; });
+		assert.deepEqual(values, expected.slice(observed.length, observed.length + values.length), label); observed.push(...values);
+		const next = String(observed.at(-1)!.revision); assert.equal(response.nextCursor, next, label); assert.notEqual(next, cursor, label); cursor = next;
+	}
+	assert.fail(label);
+}
+
 /** Independent owning SQL inventory bounds public reads; matching read-backs alone cannot prove completeness. */
 export async function verifyNativeInventory(native: unknown, fetch: (cursor?: string) => unknown | Promise<unknown>, limit: number,
 	direction: 'ascending' | 'descending' = 'descending'): Promise<Row[]> {
@@ -405,4 +430,29 @@ export async function verifyNativeInventory(native: unknown, fetch: (cursor?: st
 	} while (observed.length < expected.length);
 	assert.equal(observed.length, expected.length);
 	return observed;
+}
+
+/** Complete independent SQL rows bound the original canonical public graph. */
+export function verifyNativeGraphReadback(nodes: unknown, edges: unknown, revision: Row, visible: unknown): void {
+	const label = 'ACCEPTANCE_NATIVE_GRAPH_STATE: Exact original nodes edges and revision required';
+	assert.ok(Array.isArray(nodes) && nodes.length > 0 && Array.isArray(edges)
+		&& typeof revision.teamId === 'string' && revision.teamId && Number.isSafeInteger(revision.revision) && Number(revision.revision) > 0, label);
+	const originals = (values: unknown[]) => { const records = values.map(row);
+		assert.ok(records.every(value => value.team_id === revision.teamId && typeof value.id === 'string' && value.id)
+			&& new Set(records.map(value => value.id)).size === records.length, label); return records; };
+	const expectedNodes = originals(nodes).map(decodeExecutionNode).sort((a, b) => a.id.localeCompare(b.id));
+	const originalEdges = originals(edges);
+	assert.ok(originalEdges.every(value => value.graph_revision_removed == null || Number.isSafeInteger(value.graph_revision_removed)
+		&& Number(value.graph_revision_removed) > 0 && Number(value.graph_revision_removed) <= Number(revision.revision)), label);
+	const expectedEdges = originalEdges.map(decodeExecutionEdge).filter(value => value.graphRevisionRemoved === undefined).sort((a, b) => a.id.localeCompare(b.id));
+	const ids = new Set(expectedNodes.map(node => node.id)); assert.ok(expectedEdges.every(edge => ids.has(edge.fromNodeId) && ids.has(edge.toNodeId)), label);
+	assert.deepEqual(visible, { teamId: revision.teamId, revision: revision.revision, digest: revision.graphDigest, nodes: expectedNodes, edges: expectedEdges }, label);
+}
+
+/** Reuse the original read-only native inventory and public CLI at the existing scene boundary. */
+export async function verifyNativeGraphInventory(native: (sql: string, parameters: unknown[]) => Promise<Row[]>, read: (args: string[]) => Row, teamId: string) {
+	const rows = await native('SELECT * FROM execution_graph_revisions WHERE team_id=$1 ORDER BY revision', [teamId]);
+	const revisions = await verifyNativeGraphRevisionInventory(rows, teamId, cursor => read(['execution', 'graph', 'watch', '--cursor', cursor]));
+	verifyNativeGraphReadback(await native('SELECT * FROM execution_nodes WHERE team_id=$1 ORDER BY id', [teamId]),
+		await native('SELECT * FROM execution_edges WHERE team_id=$1 ORDER BY id', [teamId]), revisions.at(-1)!, read(['execution', 'graph', 'show']));
 }

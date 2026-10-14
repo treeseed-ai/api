@@ -15,14 +15,13 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy, verifyNativeReporterCloseout } from './execution-inventory.ts';
+import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeGraphInventory, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy, verifyNativeReporterCloseout } from './execution-inventory.ts';
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
 	const binary = JSON.parse(readFileSync(manifest, 'utf8')).bin?.trsd;
 	assert.ok(typeof binary === 'string' && binary, 'ACCEPTANCE_SCHEMA_CLI: Installed CLI public binary required');
 	return resolve(dirname(manifest), binary);
 }
-
 async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Promise<void> {
 	const started = Date.now(), deadline = started + 120_000;
 	const start = executionWorkdayStart(process.env, !requireObservedSamples), { id } = start, team = process.env.TREESEED_ACCEPTANCE_TEAM;
@@ -108,6 +107,7 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 				const nativeInventory = async (sql: string, parameters: unknown[]) => {
 					const rows = (await client.query(sql, parameters)).rows; nativeInventories.push({ sql, parameters, rows }); return rows;
 				};
+				await verifyNativeGraphInventory(nativeInventory, read, String(run.teamId));
 				const admittedShares = await nativeInventory(`SELECT project_id,assignment_attempt_json::jsonb->>'agentClass' AS agent_class,
 					SUM((assignment_attempt_json::jsonb->'limits'->>'maximumSeconds')::numeric) AS admitted_seconds
 					FROM capacity_provider_assignments WHERE team_id=$1 AND work_day_id=$2
@@ -338,7 +338,6 @@ test('Actual managed execution uses the complete clean migration inventory and e
 	{ timeout: 120_000 }, () => verifyManagedExecutionSchema(true));
 test('Actual normal SDK workday retains complete clean migration and canonical public native inventories with genuine cold start and default zero priority allowed',
 	{ timeout: 120_000 }, () => verifyManagedExecutionSchema(false));
-
 async function verifyManagedModelExecution(requireUnfinished: boolean): Promise<void> {
 	const deadline = Date.now() + 120_000, start = executionWorkdayStart(), { id } = start;
 	const team = process.env.TREESEED_ACCEPTANCE_TEAM, workspace = process.env.TREESEED_DEVELOPMENT_WORKSPACE_ROOT;
