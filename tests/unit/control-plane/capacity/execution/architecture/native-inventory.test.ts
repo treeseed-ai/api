@@ -1,3 +1,4 @@
+import { serializeProviderAssignmentRow } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { describe, expect, it } from 'vitest';
 import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import { verifyNativeInventory, verifyNativeGraphRevisionInventory, verifyNativeSettlementReadback, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeModelExecutionInventory, verifyNativeReporterCloseout } from '../../../../../acceptance/execution-inventory.ts';
@@ -165,6 +166,19 @@ describe('independent native producer inventory reconciliation', () => {
 		expect({ original, visible }).toEqual(held);
 	});
 	it('reads exactly every native identity through complete public pages without changing original observations', async () => {
+		// Exercise the real public serializer's earlier diagnostic rejection.
+		const serializedRaw = { ...nativeAssignment, execution_provider_id: assignment.provider.executionProviderId,
+			agent_id: assignment.agentClass, attempt_count: assignment.attempt, created_at: assignment.createdAt, updated_at: assignment.createdAt };
+		expect(serializeProviderAssignmentRow(serializedRaw, true)?.assignmentAttempt).toEqual(assignment);
+		const corrupted = { ...serializedRaw, capacity_envelope_json: JSON.stringify({ ...envelope, requestedSeconds: envelope.requestedSeconds + 1 }) };
+		const diagnostic = serializeProviderAssignmentRow(corrupted, true)!;
+		expect(diagnostic.assignmentAttempt).toBeNull(); expect(diagnostic.assignmentResult).toBeNull();
+		expect(diagnostic.explanation.snapshotValidation).toMatchObject({ valid: false, assignmentId: assignment.id, path: 'assignmentAttempt' });
+		const heldDiagnostic = structuredClone(diagnostic);
+		expect(() => verifyNativeAssignmentReadback(corrupted, { ...diagnostic }, scope, [nativeReservation], [corrupted]))
+			.toThrow('ACCEPTANCE_NATIVE_ALLOCATION');
+		expect(diagnostic).toEqual(heldDiagnostic);
+
 		for (const field of ['capacityEnvelope', 'explanation'] as const) for (const value of [undefined, null, [], {}, false, 0, { foreign: true }]) {
 			const observed = structuredClone(publicAssignment); Reflect.set(observed, field, value); const held = structuredClone(observed);
 			expect.soft(() => verifyNativeAssignmentReadback(nativeAssignment, observed, scope, [nativeReservation], [nativeAssignment]))
