@@ -93,14 +93,40 @@ describe('independent native producer inventory reconciliation', () => {
 		expect(() => inspect(exact)).not.toThrow(); expect(exact).toEqual(before);
 	});
 	it('selects every original native model start independently of public sandbox markers and denies incomplete foreign duplicated or interrupted custody', () => {
-		const owner = { ...nativeAssignment, status: 'completed' };
+
+		const measured = { input_tokens: 7, output_tokens: 3, activeSeconds: 0.5, elapsedSeconds: 1.25,
+			cpuUserMicros: 123, cpuSystemMicros: 45, peakRssBytes: 1024 };
+		const usage = { elapsedSeconds: 2, modelInputTokens: 7, modelOutputTokens: 3, native: measured };
+		const result = { ...reportResult, assignmentId: nativeAssignment.id, usage };
+		const observation = { model: 'arbitrary-configured-model', usage: [{ ...measured, input_tokens: undefined, output_tokens: undefined,
+			inputTokens: 7, outputTokens: 3, provenance: 'execution-provider', nativeUsage: measured }],
+			timing: { elapsedSeconds: measured.elapsedSeconds }, resources: { cpuUserMicros: 123, cpuSystemMicros: 45, peakRssBytes: 1024 } };
+		const owner = { ...nativeAssignment, status: 'completed', assignment_result_json: JSON.stringify(result) };
 		const started = { id: 'started', event_index: 0, run_id: scope.id, team_id: scope.teamId, workday_id: scope.id,
 			project_id: owner.project_id, assignment_id: owner.id, event_type: 'provider.execution.started',
 			context_json: JSON.stringify({ model: 'arbitrary-configured-model', isolation: 'microvm' }), metadata_json: '{}', created_at: clock };
 		const terminal = { ...started, id: 'terminal', event_index: 1, event_type: 'provider.execution.completed',
-			context_json: '{}', metadata_json: JSON.stringify({ protectedPayloadEnvelope: { original: 'ciphertext' } }) };
+			context_json: JSON.stringify(observation), metadata_json: JSON.stringify({ protectedPayloadEnvelope: { original: 'ciphertext' } }) };
 		const events = [started, terminal], held = structuredClone({ owner, events });
 		expect([...verifyNativeModelExecutionInventory([owner], events, scope)]).toEqual([owner.id]);
+		for (const field of Object.keys(measured)) {
+			const changed = structuredClone(result); Reflect.set(changed.usage.native, field, measured[field as keyof typeof measured] + 1);
+			const corrupt = { ...owner, assignment_result_json: JSON.stringify(changed) }, before = structuredClone(corrupt);
+			expect.soft(() => verifyNativeModelExecutionInventory([corrupt], events, scope)).toThrow('ACCEPTANCE_NATIVE_USAGE');
+			expect(corrupt).toEqual(before);
+		}
+		for (const field of ['elapsedSeconds', 'modelInputTokens', 'modelOutputTokens'] as const) {
+			const changed = structuredClone(result); changed.usage[field]++;
+			expect.soft(() => verifyNativeModelExecutionInventory([{ ...owner, assignment_result_json: JSON.stringify(changed) }], events, scope))
+				.toThrow('ACCEPTANCE_NATIVE_USAGE');
+		}
+		for (const context of [{}, { ...observation, usage: [] }, { ...observation, usage: [...observation.usage, ...observation.usage] },
+			{ ...observation, timing: { elapsedSeconds: 9 } }, { ...observation, resources: { ...observation.resources, peakRssBytes: 9 } }]) {
+			const changed = [started, { ...terminal, context_json: JSON.stringify(context) }], before = structuredClone(changed);
+			expect.soft(() => verifyNativeModelExecutionInventory([owner], changed, scope)).toThrow('ACCEPTANCE_NATIVE_USAGE');
+			expect(changed).toEqual(before);
+		}
+
 		const sandbox = { ...owner, lifecycle_output_json: JSON.stringify({ sandboxId: 'native-sandbox' }) };
 		expect([...verifyNativeModelExecutionInventory([sandbox], events, scope)]).toEqual([owner.id]);
 		for (const observed of [[], [started], [terminal], [...events, started], [...events, { ...terminal, id: 'duplicate', event_index: 2 }],
