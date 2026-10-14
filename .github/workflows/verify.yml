@@ -61,8 +61,8 @@ jobs:
         env:
           ImageOS: ubuntu24
         with:
-          otp-version: '27'
-          elixir-version: '1.17'
+          otp-version: '27.3.4.18'
+          elixir-version: '1.17.3'
       - name: Verify all native TreeDX server prerequisites
         working-directory: .treeseed/tools/treedx
         run: |
