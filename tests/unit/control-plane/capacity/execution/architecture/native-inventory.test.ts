@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import { verifyNativeInventory, verifyNativeGraphRevisionInventory, verifyNativeSettlementReadback, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeModelExecutionInventory, verifyNativeReporterCloseout } from '../../../../../acceptance/execution-inventory.ts';
 import { assignment } from '../fixtures/assignment.ts';
-import { graphProjection } from '../graph/architecture/living/living-graph-fixture.ts';
+import { graphProjection, graphState } from '../graph/architecture/living/living-graph-fixture.ts';
 import { compileWorkday, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { now as reportClock, reportRef, reportResult } from '../graph/architecture/closeout-sql-fixture.ts';
 
@@ -210,6 +210,39 @@ describe('independent native producer inventory reconciliation', () => {
 		expect({ nativeAssignment, publicAssignment, nativeReservation }).toEqual(retainedAssignment);
 		// New independent producer proof, not another runner or an inferred exit-zero assertion.
 		const inspectGraph = verifyNativeGraphRevisionInventory;
+		const inspectState: unknown = Reflect.get(await import('../../../../../acceptance/execution-inventory.ts'), 'verifyNativeGraphReadback');
+		expect(typeof inspectState).toBe('function'); if (typeof inspectState !== 'function') throw new Error('Native graph state proof is missing');
+		const published = graphState(graphProjection());
+		const nativeNodes = published.nodes.map(node => ({ id: node.id, team_id: node.teamId, project_id: node.projectId,
+			workday_id: node.workdayId, work_item_id: node.workItemId, kind: node.kind, pair_role: node.pairRole,
+			source_ref_json: JSON.stringify(node.sourceRef), authority_refs_json: JSON.stringify(node.authorityRefs),
+			rule_revision: node.ruleRevision, node_revision: node.nodeRevision, agent_class: node.agentClass, status: node.status,
+			priority: node.priority, estimate_json: node.estimate && JSON.stringify(node.estimate),
+			required_capabilities_json: node.requiredCapabilities && JSON.stringify(node.requiredCapabilities),
+			requested_permissions_json: node.requestedPermissions && JSON.stringify(node.requestedPermissions),
+			workspace: node.workspace, acceptance_criteria_json: node.acceptanceCriteria && JSON.stringify(node.acceptanceCriteria),
+			maximum_review_cycles: node.maximumReviewCycles, condition_json: node.condition && JSON.stringify(node.condition),
+			graph_revision_created: node.graphRevisionCreated, graph_revision_updated: node.graphRevisionUpdated }));
+		const nativeEdges = published.edges.map(edge => ({ id: edge.id, team_id: edge.teamId, from_node_id: edge.fromNodeId,
+			to_node_id: edge.toNodeId, provenance: edge.provenance, source_ref_json: JSON.stringify(edge.sourceRef),
+			graph_revision_created: edge.graphRevisionCreated, graph_revision_removed: edge.graphRevisionRemoved }));
+		const state = structuredClone({ published, nativeNodes, nativeEdges });
+		Reflect.apply(inspectState, undefined, [nativeNodes, nativeEdges, { teamId: published.teamId, revision: published.revision, graphDigest: published.digest }, published]);
+		for (const mode of ['node-missing', 'node-duplicate', 'node-status', 'node-authority', 'edge-missing', 'edge-duplicate', 'edge-provenance', 'edge-removed', 'digest', 'revision', 'team', 'extra']) {
+			const denied = structuredClone(published);
+			if (mode === 'node-missing') denied.nodes.pop(); if (mode === 'node-duplicate') denied.nodes.push(denied.nodes[0]!);
+			if (mode === 'node-status') denied.nodes[0]!.status = 'completed'; if (mode === 'node-authority') denied.nodes[0]!.authorityRefs = [];
+			if (mode === 'edge-missing') denied.edges.pop(); if (mode === 'edge-duplicate') denied.edges.push(denied.edges[0]!);
+			if (mode === 'edge-provenance') denied.edges[0]!.provenance = 'treedx-link';
+			if (mode === 'edge-removed') denied.edges[0]!.graphRevisionRemoved = published.revision;
+			if (mode === 'digest') denied.digest = 'sha256:' + 'f'.repeat(64); if (mode === 'revision') denied.revision++;
+			if (mode === 'team') denied.teamId = 'foreign'; if (mode === 'extra') Reflect.set(denied, 'alternateAuthority', true);
+			const held = structuredClone(denied);
+			expect(() => Reflect.apply(inspectState, undefined, [nativeNodes, nativeEdges, { teamId: published.teamId, revision: published.revision, graphDigest: published.digest }, denied]), mode).toThrow();
+			expect(denied).toEqual(held);
+		}
+		expect({ published, nativeNodes, nativeEdges }).toEqual(state);
+
 		const firstRevision = graphProjection().revision, graphRecords = [firstRevision, { ...firstRevision, revision: 2, createdAt: '2026-10-03T00:00:01.000Z' }];
 		const nativeGraph = graphRecords.map(value => ({ team_id: value.teamId, revision: value.revision, rule_revision: value.ruleRevision,
 			changed_source_refs_json: JSON.stringify(value.changedSourceRefs), graph_digest: value.graphDigest, changes_json: JSON.stringify(value.changes), created_at: value.createdAt }));
