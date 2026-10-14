@@ -370,18 +370,22 @@ describe('living admission in disposable PostgreSQL', () => {
 			// Corrupt only the original disposable SQL allocation, then inspect its
 			// real public projection. Matching corrupted views cannot authorize a
 			// different amount than the immutable attempt and reservation.
-			for (const field of ['requestedSeconds', 'reservedSeconds', 'allocatedSeconds']) {
-				const column = field === 'allocatedSeconds' ? 'explanation_json' : 'capacity_envelope_json';
+			for (const field of ['requestedSeconds', 'reservedSeconds', 'allocatedSeconds', 'teamId', 'projectId', 'workDayId',
+				'capacityProviderId', 'executionProviderId', 'reservationId', 'projectAgentClassId', 'mode', 'limits', 'explanation.teamId', 'explanation.assignmentId']) {
+				const explanationField = field === 'allocatedSeconds' || field.startsWith('explanation.');
+				const column = explanationField ? 'explanation_json' : 'capacity_envelope_json';
 				const original = retained.assignments.find(value => value.id === winner.id)!;
 				const material = JSON.parse(String(original[column]));
 				if (field === 'allocatedSeconds') material.metadata.allocation.allocatedSeconds++;
-				else material[field]++;
+				else if (field.startsWith('explanation.')) material[field.slice('explanation.'.length)] = 'foreign';
+				else if (field === 'requestedSeconds' || field === 'reservedSeconds') material[field]++;
+				else material[field] = 'foreign';
 				try {
 					await peerDatabase.pool.query('UPDATE capacity_provider_assignments SET ' + column + '=$1 WHERE id=$2', [JSON.stringify(material), winner.id]);
 					const failedNative = await state(peerDatabase), publicPage = await new ProviderAssignmentRepository(peerAccounting).list('team', { workdayId: 'workday', limit: 10 });
 					const visible = publicPage.items.find(value => value.id === winner.id)!, raw = failedNative.assignments.find(value => value.id === winner.id)!;
 					const failedObservation = structuredClone({ raw, visible });
-					expect(visible[field === 'allocatedSeconds' ? 'explanation' : 'capacityEnvelope']).toEqual(material);
+					expect(visible[explanationField ? 'explanation' : 'capacityEnvelope']).toEqual(material);
 					expect(() => verifyNativeAssignmentReadback(raw, { ...visible }, { id: 'workday', teamId: 'team' }, failedNative.reservations, failedNative.assignments))
 						.toThrow('ACCEPTANCE_NATIVE_ALLOCATION');
 					expect({ raw, visible }).toEqual(failedObservation); expect(await state()).toEqual(failedNative);
