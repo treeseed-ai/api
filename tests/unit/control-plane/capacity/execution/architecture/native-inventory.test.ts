@@ -1,3 +1,4 @@
+import { verifyNativeModelUsage, verifyNativeProviderUsage } from '../../../../../acceptance/execution-native-usage.ts';
 import { serializeProviderAssignmentRow } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { describe, expect, it } from 'vitest';
 import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
@@ -108,6 +109,27 @@ describe('independent native producer inventory reconciliation', () => {
 		const terminal = { ...started, id: 'terminal', event_index: 1, event_type: 'provider.execution.completed',
 			context_json: JSON.stringify(observation), metadata_json: JSON.stringify({ protectedPayloadEnvelope: { original: 'ciphertext' } }) };
 		const events = [started, terminal], held = structuredClone({ owner, events });
+		const provider = { providerEvents: [{ type: 'turn.completed', usage: { input_tokens: 7, output_tokens: 3 } }] };
+		verifyNativeProviderUsage(JSON.parse(terminal.context_json), provider);
+		for (const value of [undefined, null, [], {}, { providerEvents: [] }, { providerEvents: [{}] },
+			{ providerEvents: [{ type: 'turn.started', usage: provider.providerEvents[0]!.usage }] },
+			{ providerEvents: [{ type: 'turn.completed', usage: {} }] }, { providerEvents: [{ type: 'turn.completed', usage: { input_tokens: 9, output_tokens: 3 } }] }]) {
+			const before = structuredClone(value); expect(() => verifyNativeProviderUsage(JSON.parse(terminal.context_json), value)).toThrow('ACCEPTANCE_NATIVE_USAGE'); expect(value).toEqual(before);
+		}
+		for (const field of Object.keys(measured)) for (const invalid of [undefined, null, '', false, -1, NaN, Infinity, {}, []]) {
+			const changed = JSON.parse(terminal.context_json); Reflect.set(changed.usage[0].nativeUsage, field, invalid); const before = structuredClone(changed);
+			expect(() => verifyNativeModelUsage(changed, result)).toThrow('ACCEPTANCE_NATIVE_USAGE'); expect(changed).toEqual(before);
+		}
+		for (const native of [{ ...measured, substituted: 1 }, Object.fromEntries(Object.entries(measured).filter(([key]) => key !== 'cpuUserMicros'))]) {
+			const changed = { ...result, usage: { ...usage, native } }, before = structuredClone(changed);
+			expect(() => verifyNativeModelUsage(JSON.parse(terminal.context_json), changed)).toThrow('ACCEPTANCE_NATIVE_USAGE'); expect(changed).toEqual(before);
+		}
+		const zero = JSON.parse(terminal.context_json); for (const key of Object.keys(zero.usage[0].nativeUsage)) zero.usage[0].nativeUsage[key] = 0;
+		Object.assign(zero.usage[0], { inputTokens: 0, outputTokens: 0, activeSeconds: 0, elapsedSeconds: 0, cpuUserMicros: 0, cpuSystemMicros: 0, peakRssBytes: 0 });
+		zero.timing.elapsedSeconds = 0; Object.assign(zero.resources, { cpuUserMicros: 0, cpuSystemMicros: 0, peakRssBytes: 0 });
+		verifyNativeModelUsage(zero, { usage: { elapsedSeconds: 0, modelInputTokens: 0, modelOutputTokens: 0, native: zero.usage[0].nativeUsage } });
+		verifyNativeProviderUsage(zero, { providerEvents: [{ type: 'turn.completed', usage: { input_tokens: 0, output_tokens: 0 } }] });
+
 		expect([...verifyNativeModelExecutionInventory([owner], events, scope)]).toEqual([owner.id]);
 		for (const field of Object.keys(measured)) {
 			const changed = structuredClone(result); Reflect.set(changed.usage.native, field, measured[field as keyof typeof measured] + 1);
