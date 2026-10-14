@@ -367,32 +367,39 @@ describe('living admission in disposable PostgreSQL', () => {
 			expect(JSON.parse(String(retained.usage[0]!.native_usage_json))).toEqual(settlement.usageActual.nativeUsage);
 			const published = await publicInventory();
 			verifyNativeSettlementReadback(retained.ledger, published.ledger, retained.assignments);
-			// Corrupt only the original disposable SQL allocation, then inspect its
-			// real public projection. Matching corrupted views cannot authorize a
-			// different amount than the immutable attempt and reservation.
+			// Original independent SQL corruption; each owning rejection remains explicit.
 			for (const field of ['requestedSeconds', 'reservedSeconds', 'allocatedSeconds', 'teamId', 'projectId', 'workDayId',
 				'capacityProviderId', 'executionProviderId', 'reservationId', 'projectAgentClassId', 'mode', 'limits', 'explanation.teamId', 'explanation.assignmentId']) {
 				const explanationField = field === 'allocatedSeconds' || field.startsWith('explanation.');
 				const column = explanationField ? 'explanation_json' : 'capacity_envelope_json';
-				const original = retained.assignments.find(value => value.id === winner.id)!;
-				const material = JSON.parse(String(original[column]));
+				const original = retained.assignments.find(value => value.id === winner.id)!, material = JSON.parse(String(original[column]));
 				if (field === 'allocatedSeconds') material.metadata.allocation.allocatedSeconds++;
 				else if (field.startsWith('explanation.')) material[field.slice('explanation.'.length)] = 'foreign';
-				else if (field === 'requestedSeconds' || field === 'reservedSeconds') material[field]++;
-				else material[field] = 'foreign';
+				else if (field === 'requestedSeconds' || field === 'reservedSeconds') material[field]++; else material[field] = 'foreign';
 				try {
 					await peerDatabase.pool.query('UPDATE capacity_provider_assignments SET ' + column + '=$1 WHERE id=$2', [JSON.stringify(material), winner.id]);
-					const failedNative = await state(peerDatabase), publicPage = await new ProviderAssignmentRepository(peerAccounting).list('team', { workdayId: 'workday', limit: 10 });
-					const visible = publicPage.items.find(value => value.id === winner.id)!, raw = failedNative.assignments.find(value => value.id === winner.id)!;
-					const failedObservation = structuredClone({ raw, visible });
-					expect(visible[explanationField ? 'explanation' : 'capacityEnvelope']).toEqual(material);
-					expect(() => verifyNativeAssignmentReadback(raw, { ...visible }, { id: 'workday', teamId: 'team' }, failedNative.reservations, failedNative.assignments))
-						.toThrow('ACCEPTANCE_NATIVE_ALLOCATION');
-					expect({ raw, visible }).toEqual(failedObservation); expect(await state()).toEqual(failedNative);
+					const failedNative = await state(peerDatabase), inspect = () => new ProviderAssignmentRepository(peerAccounting).list('team', { workdayId: 'workday', limit: 10 });
+					if (field === 'mode') {
+						let failedRead: unknown; try { await inspect(); } catch (failure) { failedRead = failure; }
+						console.log(JSON.stringify({ nativeAllocationFailure: { field, original: original[column], observed: material, failedRead, controlledMetadata: true, managedProof: false } }));
+						expect(failedRead).toMatchObject({ code: 'agent_capacity_envelope_mode_invalid', details: { assignmentId: winner.id, path: 'capacityEnvelope.mode' } });
+					} else {
+						const page = await inspect(), visible = page.items.find(value => value.id === winner.id)!, raw = failedNative.assignments.find(value => value.id === winner.id)!;
+						const failedObservation = structuredClone({ raw, visible });
+						console.log(JSON.stringify({ nativeAllocationFailure: { field, original: original[column], observed: material,
+							publicEnvelope: visible.capacityEnvelope, publicExplanation: visible.explanation, executableSnapshot: visible.assignmentAttempt !== null, controlledMetadata: true, managedProof: false } }));
+						if (visible.assignmentAttempt === null) {
+							expect(visible.assignmentResult).toBeNull(); expect(column).toBe('capacity_envelope_json');
+							expect(visible.explanation.snapshotValidation).toMatchObject({ valid: false, assignmentId: winner.id, path: 'capacityEnvelope.' + field });
+						}
+						expect(visible[explanationField ? 'explanation' : 'capacityEnvelope']).toEqual(material);
+						expect(() => verifyNativeAssignmentReadback(raw, { ...visible }, { id: 'workday', teamId: 'team' }, failedNative.reservations, failedNative.assignments))
+							.toThrow('ACCEPTANCE_NATIVE_ALLOCATION'); expect({ raw, visible }).toEqual(failedObservation);
+					}
+					expect(await state()).toEqual(failedNative);
 				} finally { await peerDatabase.pool.query('UPDATE capacity_provider_assignments SET ' + column + '=$1 WHERE id=$2', [original[column], winner.id]); }
 				expect(await state()).toEqual(retained); expect(await publicInventory()).toEqual(published);
 			}
-
 			// Corrupt only this disposable owning database through the independent connection.
 			// The public serializer retains canonical metadata under the other valid phase;
 			// strict acceptance must still deny the missing original terminal settlement.
