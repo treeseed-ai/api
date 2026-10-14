@@ -1,3 +1,4 @@
+import { serializeProviderAssignmentRow } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { describe, expect, it } from 'vitest';
 import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import { verifyNativeInventory, verifyNativeGraphRevisionInventory, verifyNativeSettlementReadback, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeModelExecutionInventory, verifyNativeReporterCloseout } from '../../../../../acceptance/execution-inventory.ts';
@@ -13,16 +14,24 @@ const cursor = encodeCapacityPageCursor({ id: 'second', createdAt: clock });
 const pages = [{ items: [rows[0]], page: { limit: 1, hasMore: true, nextCursor: cursor } },
 	{ items: [rows[1]], page: { limit: 1, hasMore: false, nextCursor: null } }];
 const scope = { id: assignment.workdayId, teamId: assignment.teamId };
+// Controlled projection inputs; real owning PostgreSQL produces these separately.
+const envelope = { requestedSeconds: assignment.limits.maximumSeconds, reservedSeconds: assignment.limits.maximumSeconds,
+	teamId: assignment.teamId, projectId: assignment.projectId, workDayId: assignment.workdayId,
+	capacityProviderId: assignment.provider.providerId, executionProviderId: assignment.provider.executionProviderId,
+	reservationId: assignment.reservationId, projectAgentClassId: 'class', mode: 'acting', limits: assignment.limits };
+const explanation = { teamId: assignment.teamId, assignmentId: assignment.id, metadata: { allocation: { allocatedSeconds: assignment.limits.maximumSeconds } } };
+
 const nativeAssignment = { id: assignment.id, team_id: assignment.teamId, project_id: assignment.projectId,
 	work_day_id: assignment.workdayId, membership_id: 'membership', capacity_provider_id: assignment.provider.providerId,
-	lane_id: 'workday', lane_purpose: 'workday', status: 'pending', lease_state: 'unleased', reservation_id: assignment.reservationId, execution_kind: 'workday',
+	mode: 'acting', lane_id: 'workday', lane_purpose: 'workday', status: 'pending', lease_state: 'unleased', reservation_id: assignment.reservationId, execution_kind: 'workday',
 	project_agent_class_id: 'class',
 	execution_node_id: assignment.nodeId, execution_node_revision: assignment.nodeRevision, graph_revision: assignment.graphRevision,
-	assignment_attempt_json: JSON.stringify(assignment), assignment_result_json: null, lifecycle_output_json: '{}' };
+	assignment_attempt_json: JSON.stringify(assignment), assignment_result_json: null, lifecycle_output_json: '{}',
+	capacity_envelope_json: JSON.stringify(envelope), explanation_json: JSON.stringify(explanation) };
 const publicAssignment = { id: assignment.id, teamId: assignment.teamId, projectId: assignment.projectId,
 	workDayId: assignment.workdayId, membershipId: 'membership', capacityProviderId: assignment.provider.providerId,
 	laneId: 'workday', lanePurpose: 'workday', status: 'pending', leaseState: 'unleased', reservationId: assignment.reservationId, assignmentAttempt: assignment, assignmentResult: null,
-	projectAgentClassId: 'class', lifecycleOutput: {},
+	projectAgentClassId: 'class', lifecycleOutput: {}, capacityEnvelope: envelope, explanation,
 	executionNodeId: assignment.nodeId, executionNodeRevision: assignment.nodeRevision, graphRevision: assignment.graphRevision };
 const nativeReservation = { id: assignment.reservationId, assignment_id: assignment.id, team_id: assignment.teamId,
 	project_id: assignment.projectId, work_day_id: assignment.workdayId, membership_id: 'membership',
@@ -157,6 +166,66 @@ describe('independent native producer inventory reconciliation', () => {
 		expect({ original, visible }).toEqual(held);
 	});
 	it('reads exactly every native identity through complete public pages without changing original observations', async () => {
+		// Exercise every real owning serializer path before expensive native replay.
+		const serializedRaw = { ...nativeAssignment, execution_provider_id: assignment.provider.executionProviderId,
+			agent_id: assignment.agentClass, attempt_count: assignment.attempt, created_at: assignment.createdAt, updated_at: assignment.createdAt };
+		expect(serializeProviderAssignmentRow(serializedRaw, true)?.assignmentAttempt).toEqual(assignment);
+		for (const field of ['requestedSeconds', 'reservedSeconds', 'allocatedSeconds', 'teamId', 'projectId', 'workDayId',
+			'capacityProviderId', 'executionProviderId', 'reservationId', 'projectAgentClassId', 'mode', 'limits', 'explanation.teamId', 'explanation.assignmentId']) {
+			const column = field === 'allocatedSeconds' || field.startsWith('explanation.') ? 'explanation_json' : 'capacity_envelope_json';
+			const corrupted = structuredClone(serializedRaw), material = JSON.parse(corrupted[column]);
+			if (field === 'allocatedSeconds') material.metadata.allocation.allocatedSeconds++;
+			else if (field.startsWith('explanation.')) material[field.slice('explanation.'.length)] = 'foreign';
+			else if (field === 'requestedSeconds' || field === 'reservedSeconds') material[field]++; else material[field] = 'foreign';
+			corrupted[column] = JSON.stringify(material); const original = structuredClone(corrupted);
+			if (field === 'mode') expect(() => serializeProviderAssignmentRow(corrupted, true)).toThrow(expect.objectContaining({
+				code: 'agent_capacity_envelope_mode_invalid', details: expect.objectContaining({ assignmentId: assignment.id, path: 'capacityEnvelope.mode' }) }));
+			else {
+				const projected = serializeProviderAssignmentRow(corrupted, true)!;
+				if (projected.assignmentAttempt === null) {
+					expect(projected.assignmentResult).toBeNull(); expect(column).toBe('capacity_envelope_json');
+					expect(projected.explanation.snapshotValidation).toMatchObject({ valid: false, assignmentId: assignment.id, path: 'capacityEnvelope.' + field });
+				}
+				const held = structuredClone(projected);
+				expect(() => verifyNativeAssignmentReadback(corrupted, { ...projected }, scope, [nativeReservation], [corrupted])).toThrow('ACCEPTANCE_NATIVE_ALLOCATION');
+				expect(projected).toEqual(held);
+			}
+			expect(corrupted).toEqual(original);
+		}
+		for (const field of ['capacityEnvelope', 'explanation'] as const) for (const value of [undefined, null, [], {}, false, 0, { foreign: true }]) {
+			const observed = structuredClone(publicAssignment); Reflect.set(observed, field, value); const held = structuredClone(observed);
+			expect.soft(() => verifyNativeAssignmentReadback(nativeAssignment, observed, scope, [nativeReservation], [nativeAssignment]))
+				.toThrow('ACCEPTANCE_NATIVE_ALLOCATION'); expect(observed).toEqual(held);
+		}
+		for (const field of ['capacity_envelope_json', 'explanation_json']) for (const value of [undefined, null, '', '{', 'null', '[]', '7']) {
+			const original = structuredClone(nativeAssignment); Reflect.set(original, field, value); const held = structuredClone(original);
+			expect.soft(() => verifyNativeAssignmentReadback(original, publicAssignment, scope, [nativeReservation], [original])).toThrow();
+			expect(original).toEqual(held);
+		}
+		for (const field of ['teamId', 'projectId', 'workDayId', 'capacityProviderId', 'executionProviderId', 'reservationId', 'projectAgentClassId', 'mode', 'limits']) {
+			const original = structuredClone(nativeAssignment), observed = structuredClone(publicAssignment);
+			Reflect.set(observed.capacityEnvelope, field, 'foreign'); original.capacity_envelope_json = JSON.stringify(observed.capacityEnvelope);
+			const held = structuredClone({ original, observed });
+			expect.soft(() => verifyNativeAssignmentReadback(original, observed, scope, [nativeReservation], [original])).toThrow('ACCEPTANCE_NATIVE_ALLOCATION');
+			expect({ original, observed }).toEqual(held);
+		}
+		for (const field of ['teamId', 'assignmentId']) {
+			const original = structuredClone(nativeAssignment), observed = structuredClone(publicAssignment);
+			Reflect.set(observed.explanation, field, 'foreign'); original.explanation_json = JSON.stringify(observed.explanation);
+			const held = structuredClone({ original, observed });
+			expect.soft(() => verifyNativeAssignmentReadback(original, observed, scope, [nativeReservation], [original])).toThrow('ACCEPTANCE_NATIVE_ALLOCATION');
+			expect({ original, observed }).toEqual(held);
+		}
+		for (const field of ['requestedSeconds', 'reservedSeconds', 'allocatedSeconds']) {
+			const original = structuredClone(nativeAssignment), observed = structuredClone(publicAssignment);
+			if (field === 'allocatedSeconds') {
+				observed.explanation.metadata.allocation.allocatedSeconds++; original.explanation_json = JSON.stringify(observed.explanation);
+			} else { observed.capacityEnvelope[field as keyof typeof envelope]++; original.capacity_envelope_json = JSON.stringify(observed.capacityEnvelope); }
+			const held = structuredClone({ original, observed });
+			expect.soft(() => verifyNativeAssignmentReadback(original, observed, scope, [nativeReservation], [original])).toThrow('ACCEPTANCE_NATIVE_ALLOCATION');
+			expect({ original, observed }).toEqual(held);
+		}
+
 		expect(verifyNativeAssignmentReadback(nativeAssignment, publicAssignment, scope, [nativeReservation], [nativeAssignment])).toEqual(assignment);
 		for (const requested_seconds of [0, assignment.limits.maximumSeconds - 1, assignment.limits.maximumSeconds + 1,
 			String(assignment.limits.maximumSeconds + 1)]) {

@@ -204,7 +204,23 @@ export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: R
 	const original: unknown = JSON.parse(native.assignment_attempt_json as string), attempt = assignmentAttemptSchema.parse(original);
 	assert.deepEqual(original, attempt, 'ACCEPTANCE_SCHEMA_ATTEMPT: Native bytes contain stripped or coerced canonical fields');
 	assert.equal(attempt.id, native.id); assert.equal(attempt.teamId, run.teamId); assert.equal(attempt.workdayId, run.id);
-	assert.deepEqual(visible.assignmentAttempt, attempt);
+	assert.deepEqual(visible.assignmentAttempt, attempt, 'ACCEPTANCE_NATIVE_ALLOCATION: Public issued snapshot differs from original native authority');
+	const allocationCode = 'ACCEPTANCE_NATIVE_ALLOCATION';
+	assert.equal(typeof native.capacity_envelope_json, 'string', allocationCode);
+	assert.equal(typeof native.explanation_json, 'string', allocationCode);
+	const envelope = row(JSON.parse(native.capacity_envelope_json as string)), explanation = row(JSON.parse(native.explanation_json as string));
+	assert.deepEqual(visible.capacityEnvelope, envelope, allocationCode + ': Public envelope differs from original native bytes');
+	assert.deepEqual(visible.explanation, explanation, allocationCode + ': Public explanation differs from original native bytes');
+	for (const [field, expected] of [
+		['teamId', attempt.teamId], ['projectId', attempt.projectId], ['workDayId', attempt.workdayId],
+		['capacityProviderId', attempt.provider.providerId], ['executionProviderId', attempt.provider.executionProviderId],
+		['reservationId', attempt.reservationId], ['projectAgentClassId', native.project_agent_class_id], ['mode', native.mode],
+		['requestedSeconds', attempt.limits.maximumSeconds], ['reservedSeconds', attempt.limits.maximumSeconds], ['limits', attempt.limits],
+	] as const) assert.deepEqual(envelope[field], expected, allocationCode + ': Original envelope ' + field + ' contradicts issued authority');
+	assert.equal(explanation.teamId, attempt.teamId, allocationCode); assert.equal(explanation.assignmentId, attempt.id, allocationCode);
+	if (native.execution_kind === 'workday') assert.equal(row(row(explanation.metadata).allocation).allocatedSeconds,
+		attempt.limits.maximumSeconds, allocationCode + ': Original allocation differs from the immutable attempt');
+
 	if (run.executionMode === 'simulation' && attempt.workspace.mode === 'git') assert.deepEqual(attempt.workspace.writablePaths, ['.'],
 		'ACCEPTANCE_NATIVE_SIMULATION_WORKSPACE: Simulation Git authority requires the exact repository root');
 	assert.ok(Array.isArray(reservations) && reservations.length > 0,
