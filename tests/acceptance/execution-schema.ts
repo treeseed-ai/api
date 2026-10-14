@@ -15,7 +15,7 @@ import { verifyDatabaseMigrations } from '../../dist/api/support/verify-database
 import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeGraphRevisionInventory, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy, verifyNativeReporterCloseout } from './execution-inventory.ts';
+import { executionWorkdayStart, verifyRetainedWorkdayStart, requireNativeAdmissionSamples, verifyNativeInventory, verifyNativeGraphInventory, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeSettlementReadback, verifyNativeModelExecutionInventory, executionCliReadArguments, executionLibraryResult, verifyNativeWorkdayReadback, verifyNativeWorkdayPolicy, verifyNativeReporterCloseout } from './execution-inventory.ts';
 function installedCli(): string {
 	const manifest = createRequire(import.meta.url).resolve('@treeseed/cli/package.json');
 	const binary = JSON.parse(readFileSync(manifest, 'utf8')).bin?.trsd;
@@ -107,8 +107,7 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 				const nativeInventory = async (sql: string, parameters: unknown[]) => {
 					const rows = (await client.query(sql, parameters)).rows; nativeInventories.push({ sql, parameters, rows }); return rows;
 				};
-				const graphRevisions = await nativeInventory('SELECT * FROM execution_graph_revisions WHERE team_id=$1 ORDER BY revision', [run.teamId]);
-				await verifyNativeGraphRevisionInventory(graphRevisions, run.teamId, cursor => read(['execution', 'graph', 'watch', '--cursor', cursor]));
+				await verifyNativeGraphInventory(nativeInventory, read, String(run.teamId));
 				const admittedShares = await nativeInventory(`SELECT project_id,assignment_attempt_json::jsonb->>'agentClass' AS agent_class,
 					SUM((assignment_attempt_json::jsonb->'limits'->>'maximumSeconds')::numeric) AS admitted_seconds
 					FROM capacity_provider_assignments WHERE team_id=$1 AND work_day_id=$2

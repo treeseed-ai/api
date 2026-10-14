@@ -5,6 +5,7 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, rea
 import { isAbsolute, resolve } from 'node:path';
 import { canonicalJson, sha256 } from '../../dist/api/capacity/security.js';
 import { serializeCapacityReservationRow } from '../../dist/api/capacity/repositories/capacity/accounting/reservation.js';
+import { decodeExecutionNode, decodeExecutionEdge } from '../../dist/api/control-plane/repositories/capacity/execution/execution-graph-storage.js';
 import { canonicalWorkdayShares } from '../../dist/api/capacity/services/capacity/workdays/scheduling/workday-scheduling-service.js';
 
 type Row = Record<string, unknown>;
@@ -429,4 +430,26 @@ export async function verifyNativeInventory(native: unknown, fetch: (cursor?: st
 	} while (observed.length < expected.length);
 	assert.equal(observed.length, expected.length);
 	return observed;
+}
+
+/** Complete independent SQL rows bound the original canonical public graph. */
+export function verifyNativeGraphReadback(nodes: unknown, edges: unknown, revision: Row, visible: unknown): void {
+	const label = 'ACCEPTANCE_NATIVE_GRAPH_STATE: Exact original nodes edges and revision required';
+	assert.ok(Array.isArray(nodes) && nodes.length > 0 && Array.isArray(edges)
+		&& typeof revision.teamId === 'string' && revision.teamId && Number.isSafeInteger(revision.revision) && Number(revision.revision) > 0, label);
+	const originals = (values: unknown[]) => { const records = values.map(row);
+		assert.ok(records.every(value => value.team_id === revision.teamId && typeof value.id === 'string' && value.id)
+			&& new Set(records.map(value => value.id)).size === records.length, label); return records; };
+	const expectedNodes = originals(nodes).map(decodeExecutionNode).sort((a, b) => a.id.localeCompare(b.id));
+	const expectedEdges = originals(edges).filter(value => value.graph_revision_removed == null).map(decodeExecutionEdge).sort((a, b) => a.id.localeCompare(b.id));
+	const ids = new Set(expectedNodes.map(node => node.id)); assert.ok(expectedEdges.every(edge => ids.has(edge.fromNodeId) && ids.has(edge.toNodeId)), label);
+	assert.deepEqual(visible, { teamId: revision.teamId, revision: revision.revision, digest: revision.graphDigest, nodes: expectedNodes, edges: expectedEdges }, label);
+}
+
+/** Reuse the original read-only native inventory and public CLI at the existing scene boundary. */
+export async function verifyNativeGraphInventory(native: (sql: string, parameters: unknown[]) => Promise<Row[]>, read: (args: string[]) => Row, teamId: string) {
+	const rows = await native('SELECT * FROM execution_graph_revisions WHERE team_id=$1 ORDER BY revision', [teamId]);
+	const revisions = await verifyNativeGraphRevisionInventory(rows, teamId, cursor => read(['execution', 'graph', 'watch', '--cursor', cursor]));
+	verifyNativeGraphReadback(await native('SELECT * FROM execution_nodes WHERE team_id=$1 ORDER BY id', [teamId]),
+		await native('SELECT * FROM execution_edges WHERE team_id=$1 ORDER BY id', [teamId]), revisions.at(-1)!, read(['execution', 'graph', 'show']));
 }
