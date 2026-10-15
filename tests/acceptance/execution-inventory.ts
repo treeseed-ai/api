@@ -195,6 +195,13 @@ export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: R
 	assert.equal(visible.id, native.id); assert.equal(visible.workDayId, run.id); assert.equal(visible.teamId, run.teamId);
 	assert.equal(visible.status, native.status); assert.equal(visible.membershipId, native.membership_id);
 	assert.equal(visible.capacityProviderId, native.capacity_provider_id);
+	assert.ok(typeof native.provider_session_id==='string'&&native.provider_session_id.trim()===native.provider_session_id&&native.provider_session_id,'ACCEPTANCE_NATIVE_RESOURCE');
+	assert.equal(visible.providerSessionId,native.provider_session_id,'ACCEPTANCE_NATIVE_RESOURCE');
+	for(const[column,field]of[['workspace_context_json','workspaceContext'],['treedx_proxy_handle_json','treedxProxyHandle']]as const){
+		assert.equal(typeof native[column],'string','ACCEPTANCE_NATIVE_RESOURCE');const original:unknown=JSON.parse(String(native[column]));
+		assert.ok(original&&typeof original==='object'&&!Array.isArray(original),'ACCEPTANCE_NATIVE_RESOURCE');assert.deepEqual(visible[field],original,'ACCEPTANCE_NATIVE_RESOURCE');
+	}
+
 	assert.ok(typeof native.lane_id === 'string' && native.lane_id.trim() === native.lane_id && native.lane_id
 		&& typeof native.lane_purpose === 'string' && ['workday', 'communication'].includes(native.lane_purpose), 'ACCEPTANCE_NATIVE_LANE: Original issued lane custody required');
 	assert.equal(visible.laneId, native.lane_id, 'ACCEPTANCE_NATIVE_LANE: Public lane differs from native issuance');
