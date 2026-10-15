@@ -43,7 +43,10 @@ it('retains each owning graph node state and revision in complete public workday
   const next={...current,revision:current.revision+1,nodes:current.nodes.map(node=>({...node,status:'ready' as const,graphRevisionUpdated:current.revision+1}))};next.digest=digest({teamId:next.teamId,nodes:next.nodes,edges:next.edges});
   const receipt:GraphRevision={schemaVersion:'treeseed.graph-revision/v1',teamId:'team',revision:next.revision,ruleRevision:1,changedSourceRefs:[node.sourceRef],graphDigest:next.digest,createdAt:'2026-10-02T21:00:01.000Z',changes:{added:[],changed:[node.id],completed:[],blocked:[],stale:[],addedEdges:[],removedEdges:[]}};
   await expect(persistExecutionGraph(owner,next,current,receipt)).rejects.toThrow('execution_node_observation_missing');expect(await snapshot()).toEqual(before);
-  await f.db.exec('DROP TRIGGER suppress_node_history ON capacity_workday_events; DROP FUNCTION suppress_node_history();');await persistExecutionGraph(owner,next,current,receipt);expect((await events.list('team','workday',{limit:100,afterEventIndex:-1})).items).toHaveLength(steps.length+1);
+  await f.db.exec('DROP TRIGGER suppress_node_history ON capacity_workday_events; DROP FUNCTION suppress_node_history();');
+  await f.db.exec("CREATE FUNCTION suppress_node_state() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='ready' THEN RETURN NULL; END IF; RETURN NEW; END $$; CREATE TRIGGER suppress_node_state BEFORE UPDATE ON execution_nodes FOR EACH ROW EXECUTE FUNCTION suppress_node_state();");
+  await expect(persistExecutionGraph(owner,next,current,receipt)).rejects.toThrow('execution_node_observation_state_mismatch');expect(await snapshot()).toEqual(before);
+  await f.db.exec('DROP TRIGGER suppress_node_state ON execution_nodes; DROP FUNCTION suppress_node_state();');await persistExecutionGraph(owner,next,current,receipt);expect((await events.list('team','workday',{limit:100,afterEventIndex:-1})).items).toHaveLength(steps.length+1);
   expect((await f.query('SELECT * FROM execution_nodes WHERE id=?',['report-node'])).rows).toEqual(original);
  }finally{await f.db.close();}
  // Original owning persistence/public reads with controlled graph input; native concurrency is a separate required proof.
