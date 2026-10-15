@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import assert from 'node:assert/strict';
+import { assignment as fullAttempt } from '../execution/fixtures/assignment.ts';
 import { compileAssignmentExecutionWindow, compileAssignmentCloseoutWindow, startAssignmentExecutionWindow, startAssignmentCloseoutWindow } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-execution-window-service.ts';
 import { compileAssignmentTimeBudget, beginAssignmentPreparationTimeBudget } from '../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-time-budget.ts';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn() }));
-vi.mock('../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts', () => ({ ProviderAssignmentRepository: class { get = mocks.get; } }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), events: vi.fn() }));
+vi.mock('../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts', async original => ({...await original<typeof import('../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts')>(), ProviderAssignmentRepository: class { get = mocks.get; } }));
+vi.mock('../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts',()=>({CapacityWorkdayEventRepository:class{create=mocks.events;}}));
+vi.mock('../../../../../src/api/capacity/transaction.ts',()=>({capacityTransaction:async(database:unknown,apply:(database:unknown)=>unknown)=>apply(database)}));
 const now = '2026-09-11T12:00:00Z';
 const executionRef = { nodeId: 'node', nodeRevision: 1, graphRevision: 2, attempt: 1 };
 const principal = { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider', scopes: [] };
@@ -16,6 +19,28 @@ function assignment() { return { id: 'assignment', capacityProviderId: 'provider
 beforeEach(() => { mocks.get.mockReset(); });
 
 describe('execution transition replay authority', () => {
+ it('commits one original execution or closeout transition observation with its state change and never reports success without that durable proof',async()=>{
+  for(const phase of ['execution','closeout']as const){
+   mocks.get.mockReset();mocks.events.mockReset().mockResolvedValue({id:'durable-original-observation'});
+   const base=assignment(),key=phase+'-start:assignment',window=phase+'Window';
+   const current={...base,teamId:'team',projectId:'project',workDayId:'workday',runnerId:'original-runner',
+    assignmentAttempt:{...fullAttempt,status:phase==='closeout'?'running':'leased',...(phase==='closeout'?{startedAt:'2026-09-11T11:59:00Z'}:{}),createdAt:'2026-09-11T11:59:00.000Z',deadline:'2026-09-11T12:03:00.000Z'},
+    capacityEnvelope:{budget:{time:{executionSeconds:180,closeoutSeconds:5,...(phase==='closeout'?{executionStartedAt:'2026-09-11T11:59:00Z',executionDeadlineAt:'2026-09-11T12:02:00Z'}:{}),preparationDeadlineAt:'2026-09-11T12:01:00.000Z',authorityDeadlineAt:'2026-09-11T12:03:00.000Z'}}},
+    metadata:phase==='execution'?{}:{executionWindow:{...base.metadata.executionWindow}}};
+   const metadata={...current.metadata,[window]:{idempotencyKey:key,startedAt:now,executionDeadlineAt:'2026-09-11T12:03:00.000Z',closeoutDeadlineAt:'2026-09-11T12:03:00.000Z',executionRef:{...executionRef}}};
+   const updated={...current,stateVersion:5,metadata};mocks.get.mockResolvedValueOnce(current).mockResolvedValueOnce(updated);
+   const run=vi.fn(),start=phase==='execution'?startAssignmentExecutionWindow:startAssignmentCloseoutWindow;
+   const result=await start({run}as never,principal,'assignment',{leaseToken:'current',expectedStateVersion:4,idempotencyKey:key},now);
+   expect(result).toBe(updated);expect(run).toHaveBeenCalledOnce();expect(mocks.events).toHaveBeenCalledExactlyOnceWith('team','workday',{
+    id:'assignment-'+phase+':assignment',projectId:'project',workdayId:'workday',assignmentId:'assignment',
+    eventType:'assignment.'+phase+'.started',status:'recorded',title:phase==='execution'?'Assignment execution started':'Assignment closeout started',message:null,parameters:{},metadata:{},refs:{},
+    context:{nodeId:fullAttempt.nodeId,nodeRevision:fullAttempt.nodeRevision,graphRevision:fullAttempt.graphRevision,status:phase==='execution'?'running':'closeout',leaseId:fullAttempt.leaseId,reservationId:fullAttempt.reservationId,runnerId:'original-runner'},createdAt:now});
+   expect(JSON.stringify(mocks.events.mock.calls)).not.toContain('current');
+   for(const cause of [null,new Error('original native observation failure')]){mocks.get.mockReset().mockResolvedValueOnce(current).mockResolvedValueOnce(updated);mocks.events.mockReset();if(cause)mocks.events.mockRejectedValueOnce(cause);else mocks.events.mockResolvedValueOnce(null);const denied=start({run:vi.fn()}as never,principal,'assignment',{leaseToken:'current',expectedStateVersion:4,idempotencyKey:key},now);if(cause)await expect(denied).rejects.toBe(cause);else await expect(denied).rejects.toMatchObject({code:'assignment_window_observation_missing'});}
+  }
+ });
+
+
   it.each([
     ['captured EI sub-second execution', '2026-10-01T20:25:40.992Z', 11],
     ['inside closeout reserve', '2026-10-01T20:25:36.363Z', 5],

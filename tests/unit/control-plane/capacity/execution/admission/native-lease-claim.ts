@@ -1,3 +1,4 @@
+import { proveNativeAssignmentWindows } from './fixtures/native-assignment-windows.ts';
 import { verifyNativeLeaseHistory, verifyNativeLeaseEventReadback } from '../../../../../acceptance/execution-inventory.ts';
 import { CapacityWorkdayEventRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { expect } from 'vitest';
@@ -90,4 +91,5 @@ export async function proveNativeLeaseClaim(
     for (const row of failed.audit) expect(audit).toContainEqual(row);
   }
   console.log(JSON.stringify({ nativeLeaseClaimFailedObservation: failed, nativeLeaseObservationFailedObservation: observationFailure, winningAssignmentId: winner.assignment?.id, competingClaims: results.length }));
+  return proveNativeAssignmentWindows(database,peer,accounting,peerAccounting,attempt);
 }

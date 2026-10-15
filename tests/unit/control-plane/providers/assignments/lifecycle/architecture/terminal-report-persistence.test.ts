@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { splitPostgresSqlStatements } from '../../../../../../../src/api/persistence/postgres-sql-statements.ts';
+import { executePostgresBatch } from '../../../../../../../src/api/support/control-plane-postgres.ts';
+import { CapacityWorkdayEventRepository } from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { workspaceId } from '../../architecture/workspace-cleanup-fixture.ts';
 import { principal, report, returnedCompletion, fixture, returnFixture, completionFixture } from './terminal-report-fixture.ts';
@@ -11,6 +15,8 @@ describe('provider terminal reporting through original transaction and resource 
 	it('native execution start records the original canonical running clock once and closeout cannot rewrite it or frozen authority', async () => {
 		const native = await cancellationDatabase('leased', false);
 		try {
+			const ddl=splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql','utf8')).filter(sql=>sql.startsWith('CREATE TABLE "capacity_workday_events" ('));expect(ddl).toHaveLength(1);await native.db.exec(ddl[0]!);
+			const owner={...native.owner,db:{transaction:async<T>(apply:(client:Parameters<typeof executePostgresBatch>[0])=>Promise<T>)=>native.db.transaction(transaction=>apply(transaction as unknown as Parameters<typeof executePostgresBatch>[0]))}};
 			const startedAt = '2026-10-02T21:00:00.500Z', budget = emptyCapacityBudget(native.attempt.deadline, 3);
 			const envelope = { ...native.assignment.capacityEnvelope, budget: { ...budget, time: { ...budget.time,
 				executionSeconds: 3, closeoutSeconds: 1, authorityDeadlineAt: native.attempt.deadline,
@@ -20,18 +26,36 @@ describe('provider terminal reporting through original transaction and resource 
 			const input = { leaseToken: 'lease-token', expectedStateVersion: native.assignment.stateVersion,
 				idempotencyKey: 'canonical-execution-start' }, original = structuredClone(input);
 			const provider = { ...principal, scopes: ['provider:assignments:write'] };
-			const started = await startAssignmentExecutionWindow(native.owner, provider, native.assignment.id, input, startedAt);
+
+			const proveInterruptedObservation=async(phase:'execution'|'closeout',invoke:()=>Promise<unknown>)=>{
+				const snapshot=async()=>({state:await native.snapshot(),runs:(await native.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows,events:(await native.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows});
+				const original=await snapshot();
+				await native.db.exec(`CREATE FUNCTION native_phase_observation_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type='assignment.${phase}.started' THEN RAISE EXCEPTION 'original native phase observation interrupted'; END IF;RETURN NEW;END $$;
+				 CREATE TRIGGER native_phase_observation_failure BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION native_phase_observation_failure();`);
+				try{await expect(invoke()).rejects.toThrow('original native phase observation interrupted');expect(await snapshot()).toEqual(original);}
+				finally{await native.db.exec('DROP TRIGGER native_phase_observation_failure ON capacity_workday_events;DROP FUNCTION native_phase_observation_failure();');}
+			};
+
+
+			await proveInterruptedObservation('execution',()=>startAssignmentExecutionWindow(owner,provider,native.assignment.id,input,startedAt));
+			const started = await startAssignmentExecutionWindow(owner, provider, native.assignment.id, input, startedAt);
 			expect(started.assignmentAttempt).toEqual({ ...native.attempt, status: 'running', startedAt });
+			const rawEvents=async()=>(await native.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows;
+			const executionEvents=await rawEvents();expect(executionEvents).toHaveLength(1);expect(executionEvents[0]).toMatchObject({assignment_id:native.assignment.id,run_id:native.attempt.workdayId,event_type:'assignment.execution.started',created_at:startedAt});
+			const publicEvents=await new CapacityWorkdayEventRepository(owner).list('team',native.attempt.workdayId);expect(publicEvents.items).toHaveLength(1);expect(publicEvents.items[0]).toMatchObject({eventType:'assignment.execution.started',assignmentId:native.assignment.id,createdAt:startedAt});
 			const running = await native.snapshot();
-			await expect(startAssignmentExecutionWindow(native.owner, { ...provider, membershipId: 'foreign' },
+			await expect(startAssignmentExecutionWindow(owner, { ...provider, membershipId: 'foreign' },
 				native.assignment.id, input, '2026-10-02T21:00:01.000Z')).rejects.toMatchObject({ status: 403 });
-			await expect(startAssignmentExecutionWindow(native.owner, provider, native.assignment.id,
+			await expect(startAssignmentExecutionWindow(owner, provider, native.assignment.id,
 				{ ...input, leaseToken: 'foreign' }, '2026-10-02T21:00:01.000Z')).rejects.toMatchObject({ code: 'assignment_execution_lease_invalid' });
-			const replay = await startAssignmentExecutionWindow(native.owner, provider, native.assignment.id, input,
+			const replay = await startAssignmentExecutionWindow(owner, provider, native.assignment.id, input,
 				'2026-10-02T21:00:01.000Z');
-			expect(replay).toEqual(started); expect(await native.snapshot()).toEqual(running);
-			const closed = await startAssignmentCloseoutWindow(native.owner, provider, native.assignment.id,
+			expect(replay).toEqual(started); expect(await native.snapshot()).toEqual(running);expect(await rawEvents()).toEqual(executionEvents);
+			await proveInterruptedObservation('closeout',()=>startAssignmentCloseoutWindow(owner,provider,native.assignment.id,{...input,expectedStateVersion:started.stateVersion,idempotencyKey:'canonical-closeout'},'2026-10-02T21:00:02.000Z'));
+			const closed = await startAssignmentCloseoutWindow(owner, provider, native.assignment.id,
 				{ ...input, expectedStateVersion: started.stateVersion, idempotencyKey: 'canonical-closeout' }, '2026-10-02T21:00:02.000Z');
+			const closeoutEvents=await rawEvents();expect(closeoutEvents).toHaveLength(2);expect(closeoutEvents[1]).toMatchObject({assignment_id:native.assignment.id,event_type:'assignment.closeout.started',created_at:'2026-10-02T21:00:02.000Z'});
+			const finalPublic=await new CapacityWorkdayEventRepository(owner).list('team',native.attempt.workdayId);expect(finalPublic.items).toHaveLength(2);for(const event of closeoutEvents){const visible=finalPublic.items.find(value=>value.id===event.id);expect(visible).toMatchObject({eventType:event.event_type,assignmentId:event.assignment_id,workdayId:event.workday_id,projectId:event.project_id,createdAt:event.created_at,context:JSON.parse(String(event.context_json)),parameters:{},metadata:{},refs:{}});}expect(JSON.stringify(finalPublic)).not.toContain('lease-token');
 			expect(closed.assignmentAttempt).toEqual(started.assignmentAttempt);
 			expect(closed.assignmentAttempt?.deadline).toBe(native.attempt.deadline);
 			expect(input).toEqual(original);
