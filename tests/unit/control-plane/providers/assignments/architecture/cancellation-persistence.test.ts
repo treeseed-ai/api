@@ -45,6 +45,9 @@ describe('cancellation retains productive and financial authority through origin
 
    const observations=(await f.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[f.assignment.id])).rows;
    expect.soft(observations,'active cancellation requires one durable owning observation').toHaveLength(1);
+   const originalEvent=observations[0]!;const columns=Object.keys(originalEvent),duplicate={...originalEvent,id:'denied-duplicate-event-index'};
+   await expect(f.query('INSERT INTO capacity_workday_events ('+columns.join(',')+') VALUES ('+columns.map(()=>'?').join(',')+')',columns.map(column=>Reflect.get(duplicate,column)))).rejects.toMatchObject({code:'23505'});
+   expect((await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows).toEqual(observations);
    if(observations.length===1){const event=observations[0]!;expect(event).toMatchObject({team_id:first.teamId,run_id:first.workDayId,assignment_id:first.id,event_type:'assignment.cancellation-requested',created_at:cancelNow});expect(await new CapacityWorkdayEventRepository(f.owner).get('team',first.workDayId!,String(event.id))).toMatchObject({eventType:'assignment.cancellation-requested',createdAt:cancelNow});}
    const snapshot=async()=>({custody:await f.snapshot(),events:(await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows,workdays:(await f.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows}),before=await snapshot();
    vi.setSystemTime(new Date(Date.parse(cancelNow)+1_000));const replay=await service.cancel('team',f.assignment.id,input);
