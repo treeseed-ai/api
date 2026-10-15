@@ -4635,3 +4635,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/monitoring/node-recovery-history.test.ts
     testName: "original retry retains an unchanged connected predecessor from its own earlier workday without denying its authority or publishing foreign observations"
+  api.golden.execution-node-history-admission-suppressed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/monitoring/node-assignment-history.test.ts
+    testName: "original admission rolls back assignment reservation and event writes when the exact ready node claim is suppressed"

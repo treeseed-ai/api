@@ -2730,3 +2730,6 @@ workflow:
   - id: execution-node-history-retained-neighbor
     action: { verifier: api.golden.execution-node-history-retained-neighbor }
     expect: { status: passed }
+  - id: execution-node-history-admission-suppressed
+    action: { verifier: api.golden.execution-node-history-admission-suppressed }
+    expect: { status: passed }
