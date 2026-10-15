@@ -1,3 +1,4 @@
+import { proveNativeSessionClosure } from './native-session-closure.ts';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { describe, expect, it, vi } from 'vitest';
@@ -112,6 +113,7 @@ describe('concurrent local execution in PostgreSQL', () => {
 			const projected = projectCommunicationInvocations({ teamId: 'team', revision: 1, sources, profiles });
 			expect(projected.nodes.filter(node => node.workdayId === 'sdk')).toHaveLength(8);
 			expect(projected.nodes.map(node => node.sourceRef.id)).toEqual(sources.map(source => source.id).sort());
+			await proveNativeSessionClosure(database,observer,deadline);
 		} finally {
 			try {
 				await observer.end();
