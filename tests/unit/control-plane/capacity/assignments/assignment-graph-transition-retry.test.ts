@@ -1,8 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import {recoveryAssignment} from '../../providers/assignments/architecture/cancellation-fixture.ts';
+import {ProviderAssignmentRepository,advanceAssignmentAttemptLifecycle} from '../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
+import {CapacityWorkdayEventRepository} from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
+import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import { commitLivingExecutionLifecycle } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/execution/living-execution-lifecycle.ts';
 import type { CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
 import { assignment } from '../execution/fixtures/assignment.ts';
-import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
+import { assignmentResultSchema,assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 
 const revisionConflict = () => Object.assign(new Error('concurrent graph revision'), {
 	code: '23505', constraint: 'execution_graph_revisions_pkey',
@@ -11,10 +14,17 @@ const revisionConflict = () => Object.assign(new Error('concurrent graph revisio
 const sourceRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
 	digest: `sha256:${'a'.repeat(64)}`, repository: 'library', commit: 'b'.repeat(40), path: 'proposals/one.mdx' };
 const attempt = assignmentAttemptSchema.parse({ ...assignment, nodeId: 'actor', graphRevision: 1, sourceRef });
-const input = (store: CapacityGovernanceDatabase) => ({ store,
-	assignment: { id: 'assignment', teamId: 'team', executionNodeId: 'actor', executionNodeRevision: 1,
-		graphRevision: 1, stateVersion: 1, assignmentAttempt: attempt } as never,
-	status: 'completed', now: '2026-09-13T12:00:00.000Z' });
+const now='2026-09-13T12:00:00.000Z';
+const result=assignmentResultSchema.parse({schemaVersion:'treeseed.assignment-result/v1',id:'unit-result',assignmentId:attempt.id,status:'completed',summary:'Controlled unit result input.',references:[],verification:[],diagnostics:[],usage:{elapsedSeconds:0},completedAt:now});
+const originalAssignment=()=>({...recoveryAssignment(false),id:attempt.id,teamId:attempt.teamId,projectId:attempt.projectId,workDayId:attempt.workdayId,
+ executionNodeId:attempt.nodeId,executionNodeRevision:attempt.nodeRevision,graphRevision:attempt.graphRevision,stateVersion:1,assignmentAttempt:attempt});
+const input=(store:CapacityGovernanceDatabase)=>({store,assignment:originalAssignment(),status:'completed',now,result});
+// Unit query/retry collaborators; native concurrent SQL proof remains separate.
+beforeEach(()=>{
+ vi.spyOn(ProviderAssignmentRepository.prototype,'get').mockResolvedValue({...originalAssignment(),status:'completed',stateVersion:2,updatedAt:now,assignmentAttempt:advanceAssignmentAttemptLifecycle(attempt,'completed',now),assignmentResult:result});
+ vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementation(async(teamId,runId,value)=>({...value,teamId,runId,eventIndex:0}));
+});
+afterEach(()=>vi.restoreAllMocks());
 const operations = [{ query: 'same assignment transition' }, { query: 'same teardown' }];
 const nodeRow = { id: 'actor', team_id: 'team', project_id: 'project',
 	work_item_id: 'work', kind: 'acting', pair_role: 'actor', source_ref_json: sourceRef, authority_refs_json: [],
