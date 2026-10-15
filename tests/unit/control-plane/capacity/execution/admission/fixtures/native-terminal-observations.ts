@@ -24,13 +24,13 @@ export async function proveNativeTerminalObservation(
   'execution_nodes','execution_graph_revisions','capacity_reservations','capacity_admission_counters','capacity_usage_actuals','capacity_ledger_entries']
   .map(async table=>[table,(await peer.pool.query('SELECT * FROM '+table+' ORDER BY 1')).rows])));
  const before=await state(),failures:unknown[]=[];
- for(const mode of ['zero-write','event-insert']as const){
-  const sql=mode==='zero-write'?"IF NEW.status='failed' THEN RETURN NULL; END IF;":"IF NEW.event_type='assignment.failed' THEN RAISE EXCEPTION 'retained native terminal observation interruption'; END IF;";
+ for(const mode of ['zero-write','event-insert','node-event-insert','node-event-zero-write']as const){
+  const sql=mode==='node-event-zero-write'?"IF NEW.event_type='execution.node.state' THEN RETURN NULL; END IF;":mode==='node-event-insert'?"IF NEW.event_type='execution.node.state' THEN RAISE EXCEPTION 'retained native node interruption'; END IF;":mode==='zero-write'?"IF NEW.status='failed' THEN RETURN NULL; END IF;":"IF NEW.event_type='assignment.failed' THEN RAISE EXCEPTION 'retained native terminal observation interruption'; END IF;";
   await database.pool.query('CREATE FUNCTION native_terminal_observation_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN '+sql+' RETURN NEW;END $$');
   await database.pool.query(mode==='zero-write'?'CREATE TRIGGER native_terminal_observation_failure BEFORE UPDATE ON capacity_provider_assignments FOR EACH ROW EXECUTE FUNCTION native_terminal_observation_failure()':'CREATE TRIGGER native_terminal_observation_failure BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION native_terminal_observation_failure()');
   let failure:unknown;try{await owners[0]!.failProviderAssignment(principal,attempt.id,input);}catch(error){failure={message:String(error),state:await state()};}
   finally{await database.pool.query('DROP TRIGGER native_terminal_observation_failure ON '+(mode==='zero-write'?'capacity_provider_assignments':'capacity_workday_events'));await database.pool.query('DROP FUNCTION native_terminal_observation_failure()');}
-  expect(failure).toMatchObject({message:expect.stringContaining(mode==='zero-write'?'assignment_terminal_observation_state_mismatch':'retained native terminal observation interruption'),state:before});
+  expect(failure).toMatchObject({message:expect.stringContaining(mode==='node-event-zero-write'?'execution_node_observation_missing':mode==='node-event-insert'?'retained native node interruption':mode==='zero-write'?'assignment_terminal_observation_state_mismatch':'retained native terminal observation interruption'),state:before});
   failures.push(structuredClone(failure));expect(await state()).toEqual(before);
  }
  const results=await Promise.all(owners.map(owner=>owner.failProviderAssignment(principal,attempt.id,input)));expect(results.filter(Boolean)).toHaveLength(1);
@@ -48,5 +48,5 @@ export async function proveNativeTerminalObservation(
  expect(await new CapacityWorkdayEventRepository(peerAccounting).get(attempt.teamId,attempt.workdayId,String(nodeRows[0]!.id))).toMatchObject({eventType:'execution.node.state',context:JSON.parse(String(nodeRows[0]!.context_json))});
  const after=await state();for(const table of ['capacity_reservations','capacity_admission_counters','capacity_usage_actuals','capacity_ledger_entries'])expect(after[table]).toEqual(before[table]);
  expect(await owners[1]!.failProviderAssignment(principal,attempt.id,input)).toBeNull();expect(await state()).toEqual(after);expect({input,principal,attempt,settlement}).toEqual(held);
- expect(failures).toHaveLength(2);console.log(JSON.stringify({nativeTerminalObservationFailures:failures.map(value=>createHash('sha256').update(JSON.stringify(value)).digest('hex')),assignmentId:attempt.id,eventId:event.id}));
+ expect(failures).toHaveLength(4);console.log(JSON.stringify({nativeTerminalObservationFailures:failures.map(value=>createHash('sha256').update(JSON.stringify(value)).digest('hex')),assignmentId:attempt.id,eventId:event.id}));
 }
