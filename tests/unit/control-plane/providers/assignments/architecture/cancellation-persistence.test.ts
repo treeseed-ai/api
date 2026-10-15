@@ -46,14 +46,25 @@ describe('cancellation retains productive and financial authority through origin
 			const before = await new ProviderAssignmentRepository(native.owner).get('team', native.assignment.id);
 			if (!before?.assignmentAttempt) throw new Error('Missing original canonical attempt');
 			const service = new OperatorAssignmentService(native.owner), input = { idempotencyKey: 'canonical-cancellation' };
-			const original = structuredClone(input), result = await service.cancel('team', before.id, input);
+			const original = structuredClone(input);
+   const snapshot=async()=>({custody:await native.snapshot(),events:(await native.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows,runs:(await native.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows}),initial=await snapshot();
+   const failures:unknown[]=[];
+   for(const mode of ['missing','interrupted']as const){
+    await native.db.exec('CREATE FUNCTION cancellation_terminal_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN '+(mode==='missing'?'RETURN NULL;':"RAISE EXCEPTION 'retained terminal cancellation interruption';")+' END $$');
+    await native.db.exec('CREATE TRIGGER cancellation_terminal_fault BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION cancellation_terminal_fault()');
+    let failure:unknown;try{await service.cancel('team',before.id,input);}catch(error){failure=error;}
+    finally{await native.db.exec('DROP TRIGGER cancellation_terminal_fault ON capacity_workday_events');await native.db.exec('DROP FUNCTION cancellation_terminal_fault()');}
+    expect(failure).toMatchObject({message:mode==='missing'?'Exact durable terminal cancellation observation required.':'retained terminal cancellation interruption'});
+    expect(await snapshot()).toEqual(initial);expect(input).toEqual(original);failures.push(failure);
+   }
+   const result=await service.cancel('team',before.id,input);expect(failures).toHaveLength(2);
 			expect(result.assignmentAttempt).toEqual({ ...before.assignmentAttempt, status: 'cancelled', finishedAt: cancelNow });
 			expect(result.attemptCount).toBe(before.attemptCount);
 			const events=(await native.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[before.id])).rows;expect.soft(events,'terminal cancellation requires one original durable observation').toHaveLength(1);
-			const terminal = await native.snapshot();
+			const terminal = await snapshot();
 			vi.setSystemTime(new Date(Date.parse(cancelNow)+1_000));
 			await service.cancel('team', before.id, input);
-			expect(await native.snapshot()).toEqual(terminal); expect(input).toEqual(original);
+			expect(await snapshot()).toEqual(terminal); expect(input).toEqual(original);
 			expect((await native.query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows).toEqual([{ total: 1 }]);
 		} finally { await native.db.close(); }
 	});
