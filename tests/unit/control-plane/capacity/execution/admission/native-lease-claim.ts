@@ -1,3 +1,4 @@
+import {verifyNativeCreationObservation} from './fixtures/native-creation-observations.ts';
 import { proveNativeAssignmentWindows } from './fixtures/native-assignment-windows.ts';
 import { verifyNativeLeaseHistory, verifyNativeLeaseEventReadback } from '../../../../../acceptance/execution-inventory.ts';
 import { CapacityWorkdayEventRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
@@ -14,6 +15,7 @@ export async function proveNativeLeaseClaim(
   database: ReturnType<typeof createControlPlanePostgresDatabase>, peer: ReturnType<typeof createControlPlanePostgresDatabase>,
   accounting: ControlPlaneStore, peerAccounting: ControlPlaneStore, attempt: AssignmentAttempt,
 ) {
+  await verifyNativeCreationObservation(peer,peerAccounting,attempt);
   const owners = [accounting, peerAccounting].map(host => {
     const run = host.run.bind(host);
     return createCapacityControlPlane(Object.assign(host, { run: async (sql: string, params: unknown[] = []) => { await run(sql, params); } }));

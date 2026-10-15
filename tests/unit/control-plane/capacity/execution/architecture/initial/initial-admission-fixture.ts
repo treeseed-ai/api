@@ -1,3 +1,4 @@
+import {executePostgresBatch} from '../../../../../../../src/api/support/control-plane-postgres.ts';
 import { readFileSync } from 'node:fs';
 import { DEFAULT_WORKDAY_POLICY, assignmentAttemptSchema, calculateAssignmentAllocation, compileWorkday, allocateWorkdayCapacity,
 	selectFairReadyNode, type AssignmentAttempt } from '@treeseed/sdk/agent-capacity';
@@ -57,7 +58,7 @@ export async function initialAdmission(admissionNow: string | (() => string) = '
 			if (missing.length) await base.db.exec(`${missing.join(';\n')};`);
 			await base.db.exec(readFileSync('drizzle/control-plane/0008_capability_ontology.sql', 'utf8'));
 		}
-		for (const table of ['capacity_provider_availability_sessions', 'treedx_proxy_handles']) {
+		for (const table of ['capacity_provider_availability_sessions', 'treedx_proxy_handles', 'capacity_workday_events']) {
 			const ddl = initial.filter(sql => sql.startsWith(`CREATE TABLE "${table}" (`));
 			if (ddl.length !== 1) throw new Error(`Missing original ${table} DDL`);
 			if (!completeOriginalTables) await base.db.exec(ddl[0]!);
@@ -86,7 +87,7 @@ export async function initialAdmission(admissionNow: string | (() => string) = '
 			JSON.stringify(value.sourceRef), JSON.stringify(value.authorityRefs), value.nodeRevision, value.agentClass, value.graphRevision, now, now]);
 		await seedNode(attempt);
 		const repository = new ProviderAssignmentRepository(base.owner);
-		const store = { ...base.owner, getProviderAssignment: (teamId: string, id: string) => repository.get(teamId, id) };
+		const store = { ...base.owner, db:{transaction:async<T>(apply:(client:Parameters<typeof executePostgresBatch>[0])=>Promise<T>)=>base.db.transaction(transaction=>apply(transaction as unknown as Parameters<typeof executePostgresBatch>[0]))}, getProviderAssignment: (teamId: string, id: string) => repository.get(teamId, id) };
 		const input = (value = attempt): Parameters<typeof admitLivingExecutionAssignment>[1] => {
 			const opportunity = allocateWorkdayCapacity({ now, remainingSeconds: 9, workdays: [{ plan,
 				committedSeconds: 0, planningCommittedSeconds: 0, maximumAdditionalSeconds: 9, actingReady: true }] })[plan.id];
