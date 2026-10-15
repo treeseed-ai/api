@@ -2688,3 +2688,9 @@ workflow:
   - id: execution-resource-closure-unit
     action: { verifier: api.golden.execution-resource-closure-unit }
     expect: { status: passed }
+  - id: estimate-fixed-source-unit
+    action: { verifier: api.golden.estimate-fixed-source-unit }
+    expect: { status: passed }
+  - id: estimate-fixed-source-native
+    action: { verifier: api.golden.estimate-fixed-source-native }
+    expect: { status: passed }

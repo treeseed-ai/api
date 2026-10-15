@@ -4565,3 +4565,13 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/resource-closure-unit.test.ts
     testName: "denies omitted foreign duplicated live or substituted native session and proxy records without changing retained observations"
+  api.golden.estimate-fixed-source-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/assignment-estimate-integration.test.ts
+    testName: "denies an estimator result after current fixed proposal authority changes while retaining allowed estimate refinements and original observations"
+  api.golden.estimate-fixed-source-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/estimate-source-native.test.ts
+    testName: "native PostgreSQL and TreeDX exact proposal reads reject moved fixed authority before estimator replay and retain unchanged valid estimate-only replay"
