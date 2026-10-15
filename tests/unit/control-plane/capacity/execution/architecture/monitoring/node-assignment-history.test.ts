@@ -22,3 +22,12 @@ it('original terminal service publishes one exact failed node observation with i
   expect((await f.query('SELECT * FROM capacity_reservations ORDER BY id')).rows).toEqual(before);const held=structuredClone(events);await f.service.fail(principal,f.attempt.id,input);expect(await read()).toEqual(held);
  }finally{vi.useRealTimers();await f.close();}
 });
+
+it('original admission rolls back assignment reservation and event writes when the exact ready node claim is suppressed',async()=>{
+ const f=await initialAdmission();try{
+  const snapshot=async()=>({custody:await f.snapshot(),events:(await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows,runs:(await f.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows}),before=await snapshot();
+  await f.db.exec("CREATE FUNCTION suppress_node_claim() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='assigned' THEN RETURN NULL; END IF; RETURN NEW; END $$;CREATE TRIGGER suppress_node_claim BEFORE UPDATE ON execution_nodes FOR EACH ROW EXECUTE FUNCTION suppress_node_claim();");
+  await expect(f.admit()).rejects.toThrow('execution_node_observation_state_mismatch');expect(await snapshot()).toEqual(before);
+  await f.db.exec('DROP TRIGGER suppress_node_claim ON execution_nodes;DROP FUNCTION suppress_node_claim();');await f.admit();expect((await f.query('SELECT status FROM execution_nodes WHERE id=?',[f.attempt.nodeId])).rows).toEqual([{status:'assigned'}]);
+ }finally{await f.db.close();}
+});
