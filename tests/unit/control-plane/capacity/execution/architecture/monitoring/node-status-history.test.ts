@@ -15,6 +15,7 @@ it('retains each owning graph node state and revision in complete public workday
   const ddl=splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql','utf8'));
   for(const table of['teams','capacity_workday_events']){const statements=ddl.filter(sql=>sql.startsWith('CREATE TABLE "'+table+'" ('));expect(statements).toHaveLength(1);await f.db.exec(statements[0]!);}
   const stamp='2026-10-02T21:00:00.000Z';await f.query('INSERT INTO teams(id,slug,name,created_at,updated_at) VALUES(?,?,?,?,?)',['team','team','Team',stamp,stamp]);
+  await f.db.exec(readFileSync('drizzle/control-plane/0044_execution_priority_dependency_provenance.sql','utf8'));
   const original=(await f.query('SELECT * FROM execution_nodes WHERE id=?',['report-node'])).rows;
   const node={...concurrentTerminalNodes(assignment.sourceRef)[0]!,workdayId:'workday',status:'proposed' as const};
   let current:TeamGraph={teamId:'team',revision:0,digest:'sha256:'+'0'.repeat(64),nodes:[],edges:[]};
