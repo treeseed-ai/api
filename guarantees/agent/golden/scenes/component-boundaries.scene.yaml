@@ -2727,3 +2727,6 @@ workflow:
   - id: execution-node-review-exhaustion-postgres-native
     action: { verifier: api.golden.execution-node-review-exhaustion-postgres-native }
     expect: { status: passed }
+  - id: execution-node-history-retained-neighbor
+    action: { verifier: api.golden.execution-node-history-retained-neighbor }
+    expect: { status: passed }
