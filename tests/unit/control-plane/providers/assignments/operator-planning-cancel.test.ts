@@ -1,3 +1,4 @@
+import {terminalAssignmentAuthority} from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-terminal-authority.ts';
 import * as transactions from '../../../../../src/api/capacity/transaction.ts';
 import {CapacityWorkdayEventRepository} from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -55,8 +56,15 @@ function setup(ready = true) {
 }
 afterEach(() => vi.useRealTimers());
 describe('operator planning boundary closeout', () => {
+ it('retains the original revocation clock on every already revoked handle without rewriting input during later cleanup',()=>{
+  const at='2026-10-02T21:00:04.000Z',later='2026-10-02T21:00:05.000Z',handle={id:'original-handle',status:'revoked',revokedAt:at};
+  const input={...recoveryAssignment(false),treedxProxyHandle:handle,capabilityHandles:{repository:[handle],treeDx:[handle],workflowOperations:[handle],secrets:[handle]}},held=structuredClone(input);
+  const actual=terminalAssignmentAuthority(input,later);expect(actual.proxyHandle).toEqual(handle);
+  for(const values of Object.values(actual.capabilityHandles))expect(values).toEqual([handle]);expect(input).toEqual(held);
+ });
+
  it('records one exact scoped active cancellation request without terminalizing or rewriting issued authority',async()=>{
-  const {service,database}=setup();fixture.assignment=recoveryAssignment(false);const before=structuredClone(fixture.assignment);vi.setSystemTime(new Date('2026-10-02T21:00:04.000Z'));
+  const {service,database}=setup();fixture.assignment={...recoveryAssignment(false)};const before=structuredClone(fixture.assignment);vi.setSystemTime(new Date('2026-10-02T21:00:04.000Z'));
   Object.assign(database,{run:vi.fn(async()=>{})});const transaction=vi.spyOn(transactions,'capacityTransaction').mockImplementation(async(store,apply)=>apply(store)),read=vi.spyOn(CapacityWorkdayEventRepository.prototype,'get').mockResolvedValue(null);
   database.first.mockImplementation(async(query,params)=>{if(query.startsWith('UPDATE capacity_provider_assignments SET metadata_json')){fixture.assignment={...fixture.assignment,metadata:JSON.parse(String(params[0])),stateVersion:Number(fixture.assignment.stateVersion)+1,lifecycleReason:params[1],updatedAt:params[2]};return{id:fixture.assignment.id};}throw new Error('Unexpected unit cancellation read');});
   const event=vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementation(async(teamId,runId,value)=>({...value,teamId,runId,eventIndex:0}));
