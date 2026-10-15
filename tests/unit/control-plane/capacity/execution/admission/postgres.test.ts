@@ -75,7 +75,7 @@ describe('living admission in disposable PostgreSQL', () => {
 					maxConcurrentRunners: 1, lanes: [{ id: 'workday', purpose: 'workday', maxConcurrentRunners: 1 }], nativeLimits: { modelConfigurationId: 'terra-medium' },
 					accountingObservation: { modelUsage: observed, capabilityUsage: { 'code-change': observed } } }])]);
 			let staleAdmissionRead = false;
-			const store = { ensureInitialized: () => database.migrate(),
+			const store = { db:database, ensureInitialized: () => database.migrate(),
 				run: async (sql: string, params: unknown[] = []) => { await database.prepare(sql).bind(...params).run(); },
 				first: (sql: string, params: unknown[] = []) => database.prepare(sql).bind(...params).first(),
 				all: async (sql: string, params: unknown[] = []) => (await database.prepare(sql).bind(...params).all()).results,
