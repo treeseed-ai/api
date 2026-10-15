@@ -1,3 +1,4 @@
+import {proveNativeTerminalObservation} from './fixtures/native-terminal-observations.ts';
 import { verifyNativeModelUsage, verifyNativeProviderUsage } from '../../../../../acceptance/execution-native-usage.ts';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -489,6 +490,7 @@ describe('living admission in disposable PostgreSQL', () => {
 				expect({ raw, owners }).toEqual(held); expect(await state()).toEqual(retained);
 				expect((await peerDatabase.pool.query('SELECT * FROM capacity_workday_events WHERE assignment_id=$1 ORDER BY event_index', [winner.id])).rows).toEqual(raw);
 			} finally { await rm(directory, { recursive: true, force: true }); }
+			await proveNativeTerminalObservation(database,peerDatabase,accounting,peerAccounting,winner,settlement);
 		} finally {
 			try { await Promise.all([database.close(), ...(peer ? [peer.close()] : [])]); }
 			finally { try { await admin.query(`DROP DATABASE "${name}"`); } finally { await admin.end(); } }
