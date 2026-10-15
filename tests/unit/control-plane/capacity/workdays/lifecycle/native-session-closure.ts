@@ -1,3 +1,4 @@
+import { CapacityWorkdayRunWriteRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run-write.ts';
 import { verifyNativeResourceClosure } from '../../../../../acceptance/execution-resource-closure.ts';
 import { verifyNativeInventory } from '../../../../../acceptance/execution-inventory.ts';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
@@ -18,6 +19,9 @@ export async function proveNativeSessionClosure(database: ReturnType<typeof crea
  const store = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, database);
  store.initializationPromise = Promise.resolve();
  const runs = new CapacityWorkdayRunRepository(store), sessions = new AvailabilitySessionRepository(store);
+ const writes=new CapacityWorkdayRunWriteRepository(store);
+ const lifecycle=Object.assign(store,{updateCapacityWorkdayRun:async(teamId:string,id:string,input:Record<string,unknown>)=>{const current=await runs.get(teamId,id);return current?writes.update({...current,...input},current.status):null;}});
+
  const original = (await runs.get('team', 'sdk'))!, now = new Date().toISOString();
  const plan = appliedWorkdaySchema.parse(original.parameters.appliedPlan);
  await database.pool.query("UPDATE capacity_workday_runs SET parameters_json=$1 WHERE id='sdk'", [JSON.stringify({ ...original.parameters, appliedPlan: { ...plan, state: 'closing', closingAt: now } })]);
@@ -36,7 +40,7 @@ export async function proveNativeSessionClosure(database: ReturnType<typeof crea
  try {
   await lock.query('BEGIN');
   await lock.query("SELECT id FROM capacity_provider_availability_sessions WHERE id='closure-owned' FOR NO KEY UPDATE");
-  pending = advanceLivingWorkday(store,closing,now);
+  pending = advanceLivingWorkday(lifecycle,closing,now);
   await eventObserved(async () => (await observer.query("SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%capacity_provider_availability_sessions%'")).rows.length > 0, deadline);
   // A different workday acquires this same session while closure waits. Its active work must survive.
   await lock.query(`INSERT INTO capacity_provider_assignments (id,membership_id,team_id,project_id,capacity_provider_id,provider_session_id,project_agent_class_id,work_day_id,mode,status,created_at,updated_at) VALUES ('closure-other-active','closure-membership','team','project','provider','closure-owned','closure-class','production','acting','running',$1,$1)`, [now]);
@@ -51,14 +55,14 @@ export async function proveNativeSessionClosure(database: ReturnType<typeof crea
   const held = await retained();
   await database.pool.query(`CREATE FUNCTION closure_interrupt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'retained native session closure interruption'; END $$`);
   await database.pool.query(`CREATE TRIGGER closure_interrupt BEFORE UPDATE ON capacity_provider_availability_sessions FOR EACH ROW EXECUTE FUNCTION closure_interrupt()`);
-  try { await expect(advanceLivingWorkday(store,ended,now)).rejects.toThrow('retained native session closure interruption'); }
+  try { await expect(advanceLivingWorkday(lifecycle,ended,now)).rejects.toThrow('retained native session closure interruption'); }
   finally { await database.pool.query('DROP TRIGGER closure_interrupt ON capacity_provider_availability_sessions'); await database.pool.query('DROP FUNCTION closure_interrupt()'); }
   expect(await sessions.get('team','closure-owned')).toMatchObject({ status:'open',closedAt:null });
   expect(await retained()).toEqual(held); expect(await runs.get('team','sdk')).toEqual(ended);
-  await Promise.all([advanceLivingWorkday(store,ended,now),advanceLivingWorkday(store,ended,now)]);
+  await Promise.all([advanceLivingWorkday(lifecycle,ended,now),advanceLivingWorkday(lifecycle,ended,now)]);
   const closed = await sessions.get('team','closure-owned');
   expect(closed).toMatchObject({ status:'closed',closedAt:now });
-  await advanceLivingWorkday(store,(await runs.get('team','sdk'))!,now);
+  await advanceLivingWorkday(lifecycle,(await runs.get('team','sdk'))!,now);
   expect(await sessions.get('team','closure-owned')).toEqual(closed);
   expect(await sessions.get('team','closure-unrelated')).toEqual(unrelated);
   expect(await retained()).toEqual(held); expect(await runs.get('team','sdk')).toEqual(ended);

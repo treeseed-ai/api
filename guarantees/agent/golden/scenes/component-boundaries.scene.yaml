@@ -2684,5 +2684,7 @@ workflow:
     expect: { status: passed }
   - id: execution-session-authority-unit
     action: { verifier: api.golden.execution-session-authority-unit }
+    expect: { status: passed }
   - id: execution-resource-closure-unit
     action: { verifier: api.golden.execution-resource-closure-unit }
+    expect: { status: passed }
