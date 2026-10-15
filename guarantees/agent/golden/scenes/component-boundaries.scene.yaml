@@ -2682,3 +2682,5 @@ workflow:
   - id: workday-terminal-observation-premodel-postgres-native
     action: { verifier: api.golden.workday-terminal-observation-premodel-postgres-native }
     expect: { status: passed }
+  - id: execution-session-authority-unit
+    action: { verifier: api.golden.execution-session-authority-unit }
