@@ -13,6 +13,20 @@ function atNow() { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new 
 // No authenticated HTTP, provider-generated clocks/usage, physical teardown,
 // or separate PostgreSQL connection concurrency is claimed.
 describe('cancellation retains productive and financial authority through original SQL', () => {
+ it('native retry publishes one original owning observation and unchanged replay retains terminal authority and first request clock',async()=>{
+  const f=await cancellationDatabase('returned');try{
+   atNow();await f.query("UPDATE execution_nodes SET status='failed' WHERE id=?",[f.attempt.nodeId]);
+   const service=new OperatorAssignmentService(f.owner),input={idempotencyKey:'original-retry',actorId:'operator',reason:'Original bounded retry request.'},held=structuredClone(input);
+   const first=await service.requeue('team',f.assignment.id,input);
+   const observations=(await f.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[f.assignment.id])).rows;
+   expect.soft(observations,'retry requires one original durable owning observation').toHaveLength(1);
+   const actual=await new ProviderAssignmentRepository(f.owner).get('team',f.assignment.id);expect(actual!.assignmentAttempt).toEqual(f.attempt);expect(actual!.status).toBe('returned');
+   const snapshot=async()=>({custody:await f.snapshot(),events:(await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows,runs:(await f.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows}),before=await snapshot();
+   vi.setSystemTime(new Date(Date.parse(cancelNow)+1_000));await service.requeue('team',f.assignment.id,input);expect(await snapshot()).toEqual(before);expect(input).toEqual(held);
+   expect(first.assignment.assignmentAttempt).toEqual(f.attempt);
+  }finally{await f.db.close();}
+ });
+
  it('native active cancellation publishes one owning request observation and exact replay preserves the first request clock and immutable attempt',async()=>{
   const f=await cancellationDatabase();try{
    atNow();
