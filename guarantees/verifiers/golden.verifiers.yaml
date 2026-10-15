@@ -4625,3 +4625,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-node-history-native.test.ts
     testName: "original native planning closeout observes every unclaimed cancellation before exact tick replay without changing the original deadline or financial authority"
+  api.golden.execution-node-review-exhaustion-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/monitoring/node-review-exhaustion-postgres.test.ts
+    testName: "native exhausted review projection retains the exact node revisions written by SQL in its independently read graph digest"
