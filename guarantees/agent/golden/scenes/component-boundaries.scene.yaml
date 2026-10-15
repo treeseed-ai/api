@@ -2666,3 +2666,19 @@ workflow:
   - id: recovery-observation-premodel-postgres-native
     action: { verifier: api.golden.recovery-observation-premodel-postgres-native }
     expect: { status: passed }
+
+  - id: workday-terminal-observation-unit
+    action: { verifier: api.golden.workday-terminal-observation-unit }
+    expect: { status: passed }
+
+  - id: workday-terminal-observation-zero-write-native
+    action: { verifier: api.golden.workday-terminal-observation-zero-write-native }
+    expect: { status: passed }
+
+  - id: workday-terminal-observation-measured-postgres-native
+    action: { verifier: api.golden.workday-terminal-observation-measured-postgres-native }
+    expect: { status: passed }
+
+  - id: workday-terminal-observation-premodel-postgres-native
+    action: { verifier: api.golden.workday-terminal-observation-premodel-postgres-native }
+    expect: { status: passed }

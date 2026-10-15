@@ -4531,3 +4531,27 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/recovery-observation-postgres.test.ts
     testName: "native PostgreSQL pre-execution recovery settles once only with its original terminal observation after atomic rollback and independent replay"
+
+  api.golden.workday-terminal-observation-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-terminalization-graph-custody.test.ts
+    testName: "requires each exact workday terminal observation and rejects missing or conflicting scope before reporting closure"
+
+  api.golden.workday-terminal-observation-zero-write-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/architecture/terminalization-persistence.test.ts
+    testName: "native workday stop aborts prior settlement when an original assignment transition is suppressed"
+
+  api.golden.workday-terminal-observation-measured-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/recovery-observation-postgres.test.ts
+    testName: "native PostgreSQL workday stop preserves measured settlement and exact terminal observation through suppressed state interrupted writes and independent calls"
+
+  api.golden.workday-terminal-observation-premodel-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/recovery-observation-postgres.test.ts
+    testName: "native PostgreSQL unstarted workday stop settles once with original terminal observation only after atomic rollback and independent calls"
