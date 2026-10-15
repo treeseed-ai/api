@@ -71,10 +71,24 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 			edge.sourceRef ? JSON.stringify(edge.sourceRef) : null,edge.graphRevisionCreated,null,now,
 			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt,revisionRecord.graphDigest],
 	});
-	await database.batch(operations);
+	await database.batch(operations.slice(0,2));
+	const prior=await database.first('SELECT revision,graph_digest,created_at,rule_revision,changed_source_refs_json,changes_json FROM execution_graph_revisions WHERE team_id=? ORDER BY revision DESC LIMIT 1',[graph.teamId]);
+	if(prior&&Number(prior.revision)>=graph.revision){
+		const json=(value:unknown)=>typeof value==='string'?JSON.parse(value):value;
+		if(Number(prior.revision)===graph.revision&&prior.graph_digest===revisionRecord.graphDigest&&prior.created_at===revisionRecord.createdAt
+			&&Number(prior.rule_revision)===revisionRecord.ruleRevision&&stable(json(prior.changed_source_refs_json))===stable(revisionRecord.changedSourceRefs)&&stable(json(prior.changes_json))===stable(revisionRecord.changes))return revisionRecord;
+		throw new CapacityOperationError(409,'execution_graph_revision_conflict','The execution graph changed concurrently; reconcile again.');
+	}
+	await database.batch(operations.slice(2));
 	const committed = await database.first('SELECT revision,graph_digest FROM execution_graph_revisions WHERE team_id=? ORDER BY revision DESC LIMIT 1', [graph.teamId]);
 	if (Number(committed?.revision) !== graph.revision || text(committed?.graph_digest) !== graph.digest) {
 		throw new CapacityOperationError(409, 'execution_graph_revision_conflict', 'The execution graph changed concurrently; reconcile again.');
+	}
+	const rows=await database.all('SELECT id,team_id,project_id,workday_id,status,node_revision,graph_revision_updated FROM execution_nodes WHERE team_id=? ORDER BY id',[graph.teamId]);
+	const persisted=new Map(rows.map(value=>[String(value.id),value]));
+	for(const node of graph.nodes){const actual=persisted.get(node.id);
+		if(!actual||actual.team_id!==node.teamId||actual.project_id!==node.projectId||String(actual.workday_id??'')!==String(node.workdayId??'')
+			||actual.status!==node.status||Number(actual.node_revision)!==node.nodeRevision||Number(actual.graph_revision_updated)!==node.graphRevisionUpdated)throw new Error('execution_node_observation_state_mismatch');
 	}
 	await recordExecutionNodeObservations(database,current.nodes,graph.nodes,'graph:'+graph.teamId+':'+graph.revision,now);
 	return revisionRecord;

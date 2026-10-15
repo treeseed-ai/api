@@ -393,9 +393,10 @@ describe('normalized living execution graph persistence', () => {
 	it('uses the append-only graph revision as the optimistic lock and receipt', async () => {
 		const operations: Array<{ query: string; params: unknown[] }> = [];
 		const next = graph(2, [node('ready')]);
-		const store = {
+		let reads=0; const store = {
 			db:{transaction:async(apply:(client:unknown)=>Promise<unknown>)=>apply({query:async(sql:string,params:unknown[])=>{
-				if(sql.startsWith('SELECT revision,graph_digest'))return{rows:[{revision:2,graph_digest:next.digest}]};
+				if(sql.startsWith('SELECT revision,graph_digest'))return{rows:[{revision:++reads===1?1:2,graph_digest:next.digest}]};
+				if(sql.startsWith('SELECT id,team_id,project_id,workday_id,status'))return{rows:next.nodes.map(value=>({id:value.id,team_id:value.teamId,project_id:value.projectId,workday_id:value.workdayId??null,status:value.status,node_revision:value.nodeRevision,graph_revision_updated:value.graphRevisionUpdated}))};
 				operations.push({query:sql.replace(/\$\d+/gu,'?'),params});return{rows:[]};}})},
 		};
 		await persistExecutionGraph(store, next, graph(1), revision(2, next.digest));
@@ -415,9 +416,10 @@ describe('normalized living execution graph persistence', () => {
 		const current = graph(1, [unchanged, changed]);
 		const next = graph(2, [unchanged, { ...changed, status: 'ready', graphRevisionUpdated: 2 }]);
 		const operations: Array<{ query: string; params: unknown[] }> = [];
-		const store = {
+		let reads=0; const store = {
 			db:{transaction:async(apply:(client:unknown)=>Promise<unknown>)=>apply({query:async(sql:string,params:unknown[])=>{
-				if(sql.startsWith('SELECT revision,graph_digest'))return{rows:[{revision:2,graph_digest:next.digest}]};
+				if(sql.startsWith('SELECT revision,graph_digest'))return{rows:[{revision:++reads===1?1:2,graph_digest:next.digest}]};
+				if(sql.startsWith('SELECT id,team_id,project_id,workday_id,status'))return{rows:next.nodes.map(value=>({id:value.id,team_id:value.teamId,project_id:value.projectId,workday_id:value.workdayId??null,status:value.status,node_revision:value.nodeRevision,graph_revision_updated:value.graphRevisionUpdated}))};
 				operations.push({query:sql.replace(/\$\d+/gu,'?'),params});return{rows:[]};}})},
 		};
 		await persistExecutionGraph(store, next, current, revision(2, next.digest));
