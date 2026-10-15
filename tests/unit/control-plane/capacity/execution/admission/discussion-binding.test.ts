@@ -1,3 +1,5 @@
+import {admissionUnitCollaborators} from '../fixtures/admission-unit-collaborators.ts';
+admissionUnitCollaborators();
 import { PGlite } from '@electric-sql/pglite';
 import { describe, expect, it, vi } from 'vitest';
 import { assignmentAttemptSchema, calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';

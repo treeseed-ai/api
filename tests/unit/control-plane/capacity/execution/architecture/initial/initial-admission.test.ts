@@ -1,3 +1,4 @@
+import {CapacityWorkdayEventRepository} from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { describe, expect, it } from 'vitest';
 import { assignmentAttemptSchema, type ProviderAssignment } from '@treeseed/sdk/agent-capacity';
 import { initialAdmission, invalidAdmissionBindings } from './initial-admission-fixture.ts';
@@ -11,6 +12,30 @@ import { createExecutionGraphService, persistExecutionGraph } from '../../../../
 import type { GraphRevision } from '@treeseed/sdk/agent-capacity';
 
 describe('initial living assignment native admission', () => {
+ it('native initial admission publishes one exact scoped creation observation and retains unchanged authority on replay',async()=>{
+  const f=await initialAdmission();try{
+
+   const input=f.input(),held=structuredClone(input),snapshot=async()=>({custody:await f.snapshot(),events:(await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows,workdays:(await f.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows}),original=await snapshot();
+   for(const mode of ['missing','interrupted']as const){
+    const body=mode==='missing'?'RETURN NULL;':"RAISE EXCEPTION 'retained native creation observation interruption';";
+    await f.db.exec('CREATE FUNCTION native_creation_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN '+body+' END $$');
+    await f.db.exec('CREATE TRIGGER native_creation_failure BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION native_creation_failure()');
+    try{await expect(f.admit(input)).rejects.toThrow(mode==='missing'?'Assignment creation requires its exact durable owning observation.':'retained native creation observation interruption');expect(await snapshot()).toEqual(original);expect(input).toEqual(held);}
+    finally{await f.db.exec('DROP TRIGGER native_creation_failure ON capacity_workday_events');await f.db.exec('DROP FUNCTION native_creation_failure()');}
+   }
+   const values=await Promise.all([f.admit(input),f.admit(structuredClone(input))]),admitted=values[0]!;expect(values[1]).toEqual(admitted);
+
+   const raw=(await f.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[f.attempt.id])).rows;
+   expect(raw,'native successful assignment creation requires one durable observation').toHaveLength(1);
+   const event=raw[0]!;expect(event).toMatchObject({team_id:f.attempt.teamId,run_id:f.attempt.workdayId,workday_id:f.attempt.workdayId,project_id:f.attempt.projectId,assignment_id:f.attempt.id,event_type:'assignment.created',status:'recorded',created_at:f.attempt.createdAt});
+   expect(JSON.parse(String(event.context_json))).toMatchObject({nodeId:f.attempt.nodeId,nodeRevision:f.attempt.nodeRevision,graphRevision:f.attempt.graphRevision,status:'created',leaseId:f.attempt.leaseId,reservationId:f.attempt.reservationId});
+   expect(await new CapacityWorkdayEventRepository(f.store).get(f.attempt.teamId,f.attempt.workdayId,String(event.id))).toMatchObject({eventType:'assignment.created',assignmentId:f.attempt.id,createdAt:f.attempt.createdAt});
+   const before={custody:await f.snapshot(),events:raw,workdays:(await f.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows};
+   for(const value of await Promise.all([f.admit(input),f.admit(structuredClone(input))]))expect(value).toEqual(admitted);
+   expect({custody:await f.snapshot(),events:(await f.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[f.attempt.id])).rows,workdays:(await f.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows}).toEqual(before);expect(input).toEqual(held);
+  }finally{await f.db.close();}
+ });
+
 	it('native execution assignment inspection filters every retained status through the original repository without changing admission or financial history', async () => {
 		const f = await initialAdmission();
 		try {
