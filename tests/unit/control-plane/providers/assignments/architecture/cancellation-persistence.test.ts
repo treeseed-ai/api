@@ -1,3 +1,4 @@
+import * as transactions from '../../../../../../src/api/capacity/transaction.ts';
 import {CapacityWorkdayEventRepository} from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OperatorAssignmentService } from '../../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
@@ -13,6 +14,13 @@ function atNow() { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new 
 // No authenticated HTTP, provider-generated clocks/usage, physical teardown,
 // or separate PostgreSQL connection concurrency is claimed.
 describe('cancellation retains productive and financial authority through original SQL', () => {
+ it('retains the first actual revocation and updated clock when a stale released cancellation resumes after another cleanup has completed',async()=>{
+  const f=await cancellationDatabase('returned',true);let release=()=>{},entered=()=>{};const gate=new Promise<void>(resolve=>release=resolve),ready=new Promise<void>(resolve=>entered=resolve);let held=false,pending:ReturnType<OperatorAssignmentService['cancel']>|undefined;const real=transactions.capacityTransaction;
+  const spy=vi.spyOn(transactions,'capacityTransaction').mockImplementation(async(store,apply)=>{const result=await real(store,apply);if(!held&&result&&typeof result==='object'&&Reflect.get(result,'status')==='cancelled'){held=true;entered();await gate;}return result;});
+  try{atNow();await settleCapacityReservationExactlyOnce(f.owner,terminalUsage);const service=new OperatorAssignmentService(f.owner),input={idempotencyKey:'original-delayed-cleanup',actorId:'operator',reason:'Retain original exact cleanup.'};pending=service.cancel('team',f.assignment.id,input);await Promise.race([ready,pending.then(()=>{throw new Error('Original terminal transaction barrier was not reached');})]);vi.setSystemTime(new Date(Date.parse(cancelNow)+1_000));const second=await service.cancel('team',f.assignment.id,input),before=await f.snapshot();release();const first=await pending;pending=undefined;expect(first).toEqual(second);expect(await f.snapshot()).toEqual(before);
+  }finally{release();if(pending)await pending.catch(()=>undefined);spy.mockRestore();await f.db.close();vi.useRealTimers();}
+ });
+
  it('native retry publishes one original owning observation and unchanged replay retains terminal authority and first request clock',async()=>{
   const f=await cancellationDatabase('returned');try{
    atNow();await f.query("UPDATE execution_nodes SET status='failed' WHERE id=?",[f.attempt.nodeId]);
