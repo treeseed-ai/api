@@ -1,3 +1,5 @@
+import {admissionUnitCollaborators} from './fixtures/admission-unit-collaborators.ts';
+admissionUnitCollaborators();
 import {CapacityWorkdayEventRepository} from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { admitLivingExecutionAssignment } from '../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts';
@@ -12,7 +14,7 @@ const accountingLimits = { modelConfigurationId: 'terra-medium', dailyActiveSeco
 	capabilityLimits: { 'code-change': { dailyActiveSecondsLimit: 28800 } } };
 const readyNode = () => vi.fn(async (_query: string, _params?: unknown[]) => ({ id: 'node' }));
 const batch = () => vi.fn(async (_operations: Array<{ query: string; params: unknown[] }>) => []);
-const committedAssignment = () => ({ id: assignment.id, teamId: assignment.teamId, capacityProviderId: assignment.provider.providerId,
+const committedAssignment = () => ({ id: assignment.id,createdAt:assignment.createdAt, teamId: assignment.teamId, capacityProviderId: assignment.provider.providerId,
 	executionNodeId: assignment.nodeId, executionNodeRevision: assignment.nodeRevision, assignmentAttempt: assignment,
 	explanation: { metadata: { allocation } } });
 
