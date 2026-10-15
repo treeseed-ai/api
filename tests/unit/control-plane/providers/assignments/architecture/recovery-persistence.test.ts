@@ -13,6 +13,17 @@ async function transactionalRecovery(started = false) {
 // REAL original SQL/service/row lock/transaction. Native PGlite transactions
 // do NOT establish independent PostgreSQL connection concurrency or provider teardown.
 describe('expired assignment recovery through original SQL and transaction authority', () => {
+ it('native expired recovery rolls back original settlement when its assignment transition is suppressed',async()=>{
+  const f=await transactionalRecovery();try{
+   const snapshot=async()=>({custody:await f.snapshot(),events:(await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows,runs:(await f.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows}),before=await snapshot();
+   await f.db.exec("CREATE FUNCTION recovery_zero_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='failed' THEN RETURN NULL;END IF;RETURN NEW;END $$");
+   await f.db.exec('CREATE TRIGGER recovery_zero_write BEFORE UPDATE ON capacity_provider_assignments FOR EACH ROW EXECUTE FUNCTION recovery_zero_write()');
+   let failure:unknown;try{await recoverExpiredProviderAssignments(f.transactionalOwner,{now:cancelNow,teamId:'team',providerId:'provider'});}catch(error){failure=error;}
+   finally{await f.db.exec('DROP TRIGGER recovery_zero_write ON capacity_provider_assignments');await f.db.exec('DROP FUNCTION recovery_zero_write()');}
+   expect.soft(failure,'suppressed original state must abort every preceding settlement write').toMatchObject({message:'assignment_recovery_observation_state_mismatch'});expect(await snapshot()).toEqual(before);
+  }finally{await f.db.close();}
+ });
+
 	it('late recovery retains unknown executed usage and the original attempt without a fabricated zero settlement or a reopened ready node', async () => {
 		const { db, transactionalOwner, query, assignment, snapshot } = await transactionalRecovery(true);
 		try {
@@ -23,6 +34,7 @@ describe('expired assignment recovery through original SQL and transaction autho
 			expect(result).toEqual({ scanned: 1, recovered: 1, safeRetries: 0, terminalFailures: 0, completed: 0, operatorActions: 1,
 				results: [{ assignmentId: assignment.id, disposition: 'operator-action', status: 'expired', reasonCode: 'expired_lease_execution_usage_unknown' }] });
 			const after = await snapshot();
+   const observations=(await query('SELECT * FROM capacity_workday_events WHERE assignment_id=?',[assignment.id])).rows;expect.soft(observations,'expired recovery must publish its original terminal observation').toHaveLength(1);
 			for (const table of ['capacity_reservations', 'capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_admission_counters', 'capacity_reservation_counter_claims'])
 				expect(after[table]).toEqual(before[table]);
 			const row = (await query('SELECT * FROM capacity_provider_assignments WHERE id=?', [assignment.id])).rows[0]!;
