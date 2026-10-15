@@ -8,7 +8,7 @@ import {CapacityWorkdayEventRepository} from '../../../../../../src/api/capacity
 export function admissionUnitCollaborators(){
  beforeEach(()=>{
   vi.spyOn(transactions,'capacityTransaction').mockImplementation(async(store,apply)=>apply(store));
-  vi.spyOn(ProviderAssignmentRepository.prototype,'get').mockImplementation(function(teamId,id){
+  vi.spyOn(ProviderAssignmentRepository.prototype,'get').mockImplementation(function(this:ProviderAssignmentRepository,teamId,id){
    const database=Reflect.get(this,'database') as {getProviderAssignment:ProviderAssignmentRepository['get']};
    return database.getProviderAssignment(teamId,id);
   });

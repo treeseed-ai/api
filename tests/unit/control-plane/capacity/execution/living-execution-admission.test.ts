@@ -3,7 +3,7 @@ admissionUnitCollaborators();
 import {CapacityWorkdayEventRepository} from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { admitLivingExecutionAssignment } from '../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts';
-import { calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema,calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
 
 import { assignment } from './fixtures/assignment.ts';
 const allocation = { ...calculateAssignmentAllocation({ estimate: assignment.estimate, measurements: [],
@@ -22,7 +22,7 @@ describe('living execution admission', () => {
 	it('rejects missing or substituted creation observations while retaining exact original admission input',async()=>{
 		for(const field of [null,'teamId','runId','id','projectId','workdayId','assignmentId','eventType','status','title','message','parameters','context','refs','metadata','createdAt']){
 			const committed=committedAssignment(),store={getProviderAssignment:vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed),batch:batch(),first:readyNode()};
-			const input={principal:{teamId:'team',capacityProviderId:'provider',membershipId:'membership'},accountingLimits,assignment,allocation,projectAgentClassId:'class',providerSessionId:'session',executionProviderId:'codex',laneId:'lane',lanePurpose:'workday' as const,executionKind:'workday' as const,workdayConcurrencyLimit:1,predecessorResults:[],treedxProxyHandle:{id:'tdx_assignment'},now:assignment.createdAt},held=structuredClone(input);
+			const input={principal:{teamId:'team',capacityProviderId:'provider',membershipId:'membership'},accountingLimits,assignment:assignmentAttemptSchema.parse(assignment),allocation,projectAgentClassId:'class',providerSessionId:'session',executionProviderId:'codex',laneId:'lane',lanePurpose:'workday' as const,executionKind:'workday' as const,workdayConcurrencyLimit:1,predecessorResults:[],treedxProxyHandle:{id:'tdx_assignment'},now:assignment.createdAt},held=structuredClone(input);
 			vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementationOnce(async(teamId,runId,value)=>field===null?null:{...value,teamId,runId,eventIndex:0,[field]:'substituted'});
 			await expect(admitLivingExecutionAssignment(store as never,input)).rejects.toMatchObject({code:'assignment_creation_observation_conflict',status:409});expect(input).toEqual(held);
 		}
