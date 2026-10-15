@@ -48,7 +48,7 @@ describe('living execution result projection', () => {
 	});
 	it('denies missing or conflicting terminal observations without accepting another owner scope or fabricated receipt',async()=>{
 		const assignment=recoveryAssignment(false),now='2026-10-02T21:00:02.000Z';if(!assignment.assignmentAttempt)throw new Error('Missing complete attempt');
-		const written={...assignment,status:'failed',stateVersion:assignment.stateVersion+1,updatedAt:now,assignmentAttempt:advanceAssignmentAttemptLifecycle(assignment.assignmentAttempt,'failed',now)};
+		const written={...assignment,status:'failed' as const,stateVersion:assignment.stateVersion+1,updatedAt:now,assignmentAttempt:advanceAssignmentAttemptLifecycle(assignment.assignmentAttempt,'failed',now)};
 		const get=vi.spyOn(ProviderAssignmentRepository.prototype,'get').mockResolvedValue(written),create=vi.spyOn(CapacityWorkdayEventRepository.prototype,'create');
 		const db:CapacityGovernanceDatabase={ensureInitialized:async()=>{},run:async()=>{},batch:async()=>{},all:async()=>[],first:async<R extends Record<string,unknown>>(query:string)=>query.includes('FOR UPDATE')?{id:assignment.id}as unknown as R:null};
 		try{

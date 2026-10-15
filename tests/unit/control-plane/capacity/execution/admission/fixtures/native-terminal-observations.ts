@@ -18,7 +18,7 @@ export async function proveNativeTerminalObservation(
  const principal={teamId:attempt.teamId,membershipId:'membership',capacityProviderId:attempt.provider.providerId};
  const issued=await new ProviderAssignmentRepository(peerAccounting).get(attempt.teamId,attempt.id);if(!issued?.leaseToken)throw new Error('Original native winning lease required');
  const input={leaseToken:issued.leaseToken,code:'assignment_timeout',retryable:false,activeSeconds:settlement.activeSeconds,
-  elapsedSeconds:settlement.elapsedSeconds,providerUnits:settlement.providerUnits,actualUsd:settlement.usd,usage:settlement.usageActual};
+  elapsedSeconds:settlement.elapsedSeconds,providerUnits:settlement.providerUnits,actualUsd:settlement.usd,usage:{...settlement.usageActual}};
  const held=structuredClone({input,principal,attempt,settlement}),owners=[accounting,peerAccounting].map(store=>new ProviderAssignmentLifecycleService(store));
  const state=async()=>Object.fromEntries(await Promise.all(['capacity_provider_assignments','capacity_workday_runs','capacity_workday_events',
   'execution_nodes','execution_graph_revisions','capacity_reservations','capacity_admission_counters','capacity_usage_actuals','capacity_ledger_entries']
