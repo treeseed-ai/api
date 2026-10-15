@@ -158,6 +158,17 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 	const claims = capabilityCounterClaims(assignment, input.accountingLimits, input.now);
 	const admissionToken = randomUUID();
 	return capacityTransaction(store,async database=>{
+		const session = await database.first(`SELECT id,membership_id,team_id,capacity_provider_id,status,available_from,available_until,expires_at
+			FROM capacity_provider_availability_sessions WHERE id=? FOR NO KEY UPDATE`, [input.providerSessionId]);
+		if (!session || session.team_id!==principal.teamId || session.membership_id!==principal.membershipId
+			|| session.capacity_provider_id!==principal.capacityProviderId || session.status!=='open'
+			|| !Number.isFinite(Date.parse(String(session.available_from))) || Date.parse(String(session.available_from))>Date.parse(input.now)
+			|| !Number.isFinite(Date.parse(String(session.expires_at))) || Date.parse(String(session.expires_at))<=Date.parse(input.now)
+			|| (session.available_until!==null && (!Number.isFinite(Date.parse(String(session.available_until)))
+				|| Date.parse(String(session.available_until))<=Date.parse(input.now)))) throw new CapacityGovernanceError(
+				'provider_availability_session_unavailable','New admission requires the exact open and unexpired provider availability session.',409,
+				{sessionId:input.providerSessionId});
+
 		await database.batch([
 			// Serializes admissions for this workday before checking its per-kind
 			// concurrency. The count in the reservation INSERT is therefore atomic.
