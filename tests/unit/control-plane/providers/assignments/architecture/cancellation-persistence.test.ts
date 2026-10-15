@@ -1,3 +1,6 @@
+import {readFileSync} from 'node:fs';
+import {splitPostgresSqlStatements} from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
+import {CapacityWorkdayEventRepository} from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OperatorAssignmentService } from '../../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
 import { settleCapacityReservationExactlyOnce } from '../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
@@ -12,6 +15,20 @@ function atNow() { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new 
 // No authenticated HTTP, provider-generated clocks/usage, physical teardown,
 // or separate PostgreSQL connection concurrency is claimed.
 describe('cancellation retains productive and financial authority through original SQL', () => {
+ it('native active cancellation publishes one owning request observation and exact replay preserves the first request clock and immutable attempt',async()=>{
+  const f=await cancellationDatabase();try{
+   atNow();const ddl=splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql','utf8')).filter(sql=>sql.startsWith('CREATE TABLE "capacity_workday_events" ('));expect(ddl).toHaveLength(1);await f.db.exec(ddl[0]!);
+   const input={idempotencyKey:'original-cancel-request',actorId:'operator',reason:'Original bounded cancellation request.'},held=structuredClone(input),service=new OperatorAssignmentService(f.owner),first=await service.cancel('team',f.assignment.id,input);
+   const observations=(await f.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[f.assignment.id])).rows;
+   expect.soft(observations,'active cancellation requires one durable owning observation').toHaveLength(1);
+   if(observations.length===1){const event=observations[0]!;expect(event).toMatchObject({team_id:first.teamId,run_id:first.workDayId,assignment_id:first.id,event_type:'assignment.cancellation-requested',created_at:cancelNow});expect(await new CapacityWorkdayEventRepository(f.owner).get('team',first.workDayId!,String(event.id))).toMatchObject({eventType:'assignment.cancellation-requested',createdAt:cancelNow});}
+   const snapshot=async()=>({custody:await f.snapshot(),events:(await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows,workdays:(await f.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows}),before=await snapshot();
+   vi.setSystemTime(new Date(Date.parse(cancelNow)+1_000));const replay=await service.cancel('team',f.assignment.id,input);
+   console.log(JSON.stringify({nativeCancellationRequestReplay:{firstVersion:first.stateVersion,replayedVersion:replay.stateVersion,observations:observations.length}}));
+   expect(replay).toEqual(first);expect(await snapshot()).toEqual(before);expect(input).toEqual(held);expect(replay.assignmentAttempt).toEqual(f.attempt);
+  }finally{await f.db.close();}
+ });
+
 	it('native operator cancellation advances only canonical terminal metadata and retains exact failed history on replay', async () => {
 		const native = await cancellationDatabase('returned', true);
 		try {
