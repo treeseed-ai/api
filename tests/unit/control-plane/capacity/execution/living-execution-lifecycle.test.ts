@@ -1,9 +1,10 @@
+import {CapacityWorkdayEventRepository} from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { livingExecutionLifecycleOperations } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/execution/living-execution-lifecycle.ts';
+import { commitLivingExecutionLifecycle, livingExecutionLifecycleOperations } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/execution/living-execution-lifecycle.ts';
 import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
 import { recoveryAssignment } from '../../providers/assignments/architecture/cancellation-fixture.ts';
-import { advanceAssignmentAttemptLifecycle } from '../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
+import { ProviderAssignmentRepository, advanceAssignmentAttemptLifecycle } from '../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 
 const digest = `sha256:${'a'.repeat(64)}`, commit = 'b'.repeat(40);
 const sourceRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1, digest,
@@ -16,6 +17,49 @@ const row = (id: string, status: string, pairRole: 'actor' | 'reviewer' = 'actor
 	graph_revision_created: 1, graph_revision_updated: 1 });
 
 describe('living execution result projection', () => {
+	it('requires exact persisted terminal state before publishing an immutable scoped token-free observation', async () => {
+		const assignment=recoveryAssignment(false),now='2026-10-02T21:00:02.000Z';
+		if(!assignment.assignmentAttempt)throw new Error('Missing original complete attempt');
+		const held=structuredClone(assignment);
+		for(const [status,canonical]of [['completed','completed'],['failed','failed'],['cancelled','cancelled'],['returned','blocked']]as const){
+			const written={...assignment,status,stateVersion:assignment.stateVersion+1,updatedAt:now,
+				assignmentAttempt:advanceAssignmentAttemptLifecycle(assignment.assignmentAttempt,canonical,now)};
+			const get=vi.spyOn(ProviderAssignmentRepository.prototype,'get').mockResolvedValue(written);
+			const create=vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementation(async(teamId,runId,value)=>({...value,teamId,runId,eventIndex:0}));
+			const db:CapacityGovernanceDatabase={ensureInitialized:async()=>{},run:async()=>{},batch:async()=>{},all:async()=>[],
+				first:async<R extends Record<string,unknown>>(query:string)=>query.includes('FOR UPDATE')?{id:assignment.id}as unknown as R:null};
+			try{
+				expect(await commitLivingExecutionLifecycle({store:db,assignment,status,now},[],db)).toBe(true);
+				expect(create).toHaveBeenCalledOnce();expect(create.mock.calls[0]).toEqual([assignment.teamId,assignment.workDayId,{
+					id:'assignment-terminal:'+assignment.id+':'+written.stateVersion,projectId:assignment.projectId,workdayId:assignment.workDayId,assignmentId:assignment.id,
+					eventType:'assignment.'+status,status:'recorded',title:'Assignment '+status,message:null,parameters:{},metadata:{},refs:{},createdAt:now,
+					context:{nodeId:assignment.assignmentAttempt.nodeId,nodeRevision:assignment.assignmentAttempt.nodeRevision,graphRevision:assignment.assignmentAttempt.graphRevision,
+						status,leaseId:assignment.assignmentAttempt.leaseId,reservationId:assignment.assignmentAttempt.reservationId,runnerId:written.runnerId??null,resultId:null},
+				}]);expect(JSON.stringify(create.mock.calls)).not.toContain('lease-token');expect(assignment).toEqual(held);
+				for(const changed of [null,{...written,status:'leased'},{...written,stateVersion:assignment.stateVersion},{...written,updatedAt:assignment.createdAt},
+					{...written,workDayId:'foreign'},{...written,projectId:'foreign'},{...written,executionNodeId:'foreign'},{...written,executionNodeRevision:99},
+					{...written,graphRevision:99},{...written,assignmentAttempt:assignment.assignmentAttempt},{...written,assignmentResult:{id:'foreign'}}]){
+					get.mockResolvedValueOnce(changed as typeof written|null);create.mockClear();
+					await expect(commitLivingExecutionLifecycle({store:db,assignment,status,now},[],db)).rejects.toThrow('assignment_terminal_observation_state_mismatch');
+					expect(create).not.toHaveBeenCalled();expect(assignment).toEqual(held);
+				}
+			}finally{get.mockRestore();create.mockRestore();}
+		}
+	});
+	it('denies missing or conflicting terminal observations without accepting another owner scope or fabricated receipt',async()=>{
+		const assignment=recoveryAssignment(false),now='2026-10-02T21:00:02.000Z';if(!assignment.assignmentAttempt)throw new Error('Missing complete attempt');
+		const written={...assignment,status:'failed',stateVersion:assignment.stateVersion+1,updatedAt:now,assignmentAttempt:advanceAssignmentAttemptLifecycle(assignment.assignmentAttempt,'failed',now)};
+		const get=vi.spyOn(ProviderAssignmentRepository.prototype,'get').mockResolvedValue(written),create=vi.spyOn(CapacityWorkdayEventRepository.prototype,'create');
+		const db:CapacityGovernanceDatabase={ensureInitialized:async()=>{},run:async()=>{},batch:async()=>{},all:async()=>[],first:async<R extends Record<string,unknown>>(query:string)=>query.includes('FOR UPDATE')?{id:assignment.id}as unknown as R:null};
+		try{
+			create.mockResolvedValueOnce(null);await expect(commitLivingExecutionLifecycle({store:db,assignment,status:'failed',now},[],db)).rejects.toThrow('assignment_terminal_observation_conflict');
+			for(const field of ['id','projectId','workdayId','assignmentId','eventType','status','title','message','parameters','context','refs','metadata','createdAt']){
+				create.mockImplementationOnce(async(teamId,runId,value)=>({...value,teamId,runId,eventIndex:0,[field]:'changed'}));
+				await expect(commitLivingExecutionLifecycle({store:db,assignment,status:'failed',now},[],db)).rejects.toThrow('assignment_terminal_observation_conflict');
+			}
+		}finally{get.mockRestore();create.mockRestore();}
+	});
+
 	it('canonical lifecycle advances preserve first execution and terminal clocks without manufacturing either during lease preparation', () => {
 		const attempt = recoveryAssignment(false).assignmentAttempt;
 		if (!attempt) throw new Error('Missing original complete attempt');
