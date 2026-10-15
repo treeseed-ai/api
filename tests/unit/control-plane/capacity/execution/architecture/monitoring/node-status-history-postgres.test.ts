@@ -30,6 +30,13 @@ it('native PostgreSQL competing graph producers retain every node state in indep
    expect(page.items.every(event=>event.runId==='workday'&&event.workdayId==='workday'&&event.teamId==='team'&&event.projectId==='project'&&event.assignmentId===null)).toBe(true);
    const held=await f.snapshot(),history=structuredClone(page);await persistExecutionGraph(f.stores[1],next,current,receipt);expect(await f.snapshot()).toEqual(held);expect(await events.list('team','workday',{limit:100,afterEventIndex:-1})).toEqual(history);current=next;
   }
+  // Native operational-state input after an original graph receipt. The
+  // writer must replay that receipt without restoring its older node state.
+  await f.left.pool.query("UPDATE execution_nodes SET status='assigned' WHERE id=$1",[node.id]);
+  const later=await f.snapshot(),retainedHistory=await events.list('team','workday',{limit:100,afterEventIndex:-1}),retainedRevision=(await f.right.pool.query('SELECT * FROM execution_graph_revisions WHERE team_id=$1 AND revision=$2',['team',current.revision])).rows[0]!;
+  const replayReceipt:GraphRevision={schemaVersion:'treeseed.graph-revision/v1',teamId:'team',revision:current.revision,ruleRevision:1,changedSourceRefs:[node.sourceRef],graphDigest:current.digest,createdAt:String(retainedRevision.created_at),changes:{added:[],changed:[node.id],completed:[],blocked:[],stale:[node.id],addedEdges:[],removedEdges:[]}};
+  await persistExecutionGraph(f.stores[1],current,{...current,revision:current.revision-1,nodes:current.nodes.map(value=>({...value,status:'cancelled',graphRevisionUpdated:current.revision-1}))},replayReceipt);expect(await f.snapshot()).toEqual(later);expect(await events.list('team','workday',{limit:100,afterEventIndex:-1})).toEqual(retainedHistory);
+  await f.left.pool.query("UPDATE execution_nodes SET status='stale' WHERE id=$1",[node.id]);
   const before=await f.snapshot(),history=await events.list('team','workday',{limit:100,afterEventIndex:-1});
   // Fault injection only in this disposable native database; production uses no trigger or second writer.
   await f.left.pool.query("CREATE FUNCTION interrupt_node_history() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type='execution.node.state' THEN RAISE EXCEPTION 'controlled_node_observation_interruption'; END IF; RETURN NEW; END $$");
@@ -38,6 +45,10 @@ it('native PostgreSQL competing graph producers retain every node state in indep
   const receipt:GraphRevision={schemaVersion:'treeseed.graph-revision/v1',teamId:'team',revision:changed.revision,ruleRevision:1,changedSourceRefs:[node.sourceRef],graphDigest:changed.digest,createdAt:new Date().toISOString(),changes:{added:[],changed:[node.id],completed:[],blocked:[],stale:[],addedEdges:[],removedEdges:[]}};
   await expect(persistExecutionGraph(f.stores[0],changed,current,receipt)).rejects.toThrow('controlled_node_observation_interruption');expect(await f.snapshot()).toEqual(before);expect(await events.list('team','workday',{limit:100,afterEventIndex:-1})).toEqual(history);
   await f.left.pool.query('DROP TRIGGER interrupt_node_history ON capacity_workday_events');await f.left.pool.query('DROP FUNCTION interrupt_node_history()');
+  await f.left.pool.query("CREATE FUNCTION suppress_node_state() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='ready' THEN RETURN NULL; END IF; RETURN NEW; END $$");
+  await f.left.pool.query('CREATE TRIGGER suppress_node_state BEFORE UPDATE ON execution_nodes FOR EACH ROW EXECUTE FUNCTION suppress_node_state()');
+  await expect(persistExecutionGraph(f.stores[0],changed,current,receipt)).rejects.toThrow('execution_node_observation_state_mismatch');expect(await f.snapshot()).toEqual(before);expect(await events.list('team','workday',{limit:100,afterEventIndex:-1})).toEqual(history);
+  await f.left.pool.query('DROP TRIGGER suppress_node_state ON execution_nodes');await f.left.pool.query('DROP FUNCTION suppress_node_state()');
   await persistExecutionGraph(f.stores[1],changed,current,receipt);expect((await events.list('team','workday',{limit:100,afterEventIndex:-1})).items).toHaveLength(steps.length+1);
  }finally{await f.close();}
  // Controlled graph inputs exercise the original owning producer and independent native public repository, not model/governance outcomes.
