@@ -27,4 +27,8 @@ export async function verifyNativeCreationObservation(peer:ReturnType<typeof cre
  expect(event).toMatchObject({team_id:attempt.teamId,run_id:attempt.workdayId,workday_id:attempt.workdayId,project_id:attempt.projectId,assignment_id:attempt.id,status:'recorded',created_at:assignment[0]!.created_at});
  expect(JSON.parse(String(event.context_json))).toEqual({nodeId:attempt.nodeId,nodeRevision:attempt.nodeRevision,graphRevision:attempt.graphRevision,status:'created',leaseId:attempt.leaseId,reservationId:attempt.reservationId,runnerId:null});
  expect(await new CapacityWorkdayEventRepository(owner).get(attempt.teamId,attempt.workdayId,String(event.id))).toMatchObject({eventType:'assignment.created',createdAt:event.created_at,context:JSON.parse(String(event.context_json)),parameters:{},metadata:{},refs:{}});
+ const nodeRows=(await peer.pool.query("SELECT * FROM capacity_workday_events WHERE run_id=$1 AND event_type='execution.node.state' AND context_json::jsonb->>'nodeId'=$2 ORDER BY event_index",[attempt.workdayId,attempt.nodeId])).rows;expect(nodeRows).toHaveLength(1);
+ expect(JSON.parse(String(nodeRows[0]!.context_json))).toMatchObject({nodeId:attempt.nodeId,nodeRevision:attempt.nodeRevision,status:'assigned',previousStatus:'ready'});
+ expect(await new CapacityWorkdayEventRepository(owner).get(attempt.teamId,attempt.workdayId,String(nodeRows[0]!.id))).toMatchObject({eventType:'execution.node.state',context:JSON.parse(String(nodeRows[0]!.context_json))});
+
 }

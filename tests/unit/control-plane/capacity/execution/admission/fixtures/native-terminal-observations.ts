@@ -42,6 +42,10 @@ export async function proveNativeTerminalObservation(
  expect(event).toMatchObject({team_id:attempt.teamId,run_id:attempt.workdayId,workday_id:attempt.workdayId,project_id:attempt.projectId,assignment_id:attempt.id,created_at:terminal?.updatedAt});
  expect(JSON.parse(String(event.context_json))).toEqual(context);expect(JSON.stringify(event)).not.toContain(issued.leaseToken);
  expect(await new CapacityWorkdayEventRepository(peerAccounting).get(attempt.teamId,attempt.workdayId,String(event.id))).toMatchObject({eventType:'assignment.failed',context,createdAt:terminal?.updatedAt});
+ const nodeRows=(await peer.pool.query("SELECT * FROM capacity_workday_events WHERE run_id=$1 AND event_type='execution.node.state' ORDER BY event_index",[attempt.workdayId])).rows;expect(nodeRows).toHaveLength(1);
+ const prior=(before.execution_nodes as Array<Record<string,unknown>>).find(node=>node.id===attempt.nodeId)!;
+ expect(JSON.parse(String(nodeRows[0]!.context_json))).toMatchObject({nodeId:attempt.nodeId,nodeRevision:attempt.nodeRevision,status:'failed',previousStatus:prior.status});
+ expect(await new CapacityWorkdayEventRepository(peerAccounting).get(attempt.teamId,attempt.workdayId,String(nodeRows[0]!.id))).toMatchObject({eventType:'execution.node.state',context:JSON.parse(String(nodeRows[0]!.context_json))});
  const after=await state();for(const table of ['capacity_reservations','capacity_admission_counters','capacity_usage_actuals','capacity_ledger_entries'])expect(after[table]).toEqual(before[table]);
  expect(await owners[1]!.failProviderAssignment(principal,attempt.id,input)).toBeNull();expect(await state()).toEqual(after);expect({input,principal,attempt,settlement}).toEqual(held);
  expect(failures).toHaveLength(2);console.log(JSON.stringify({nativeTerminalObservationFailures:failures.map(value=>createHash('sha256').update(JSON.stringify(value)).digest('hex')),assignmentId:attempt.id,eventId:event.id}));

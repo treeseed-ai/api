@@ -1,3 +1,4 @@
+import{readExecutionNodeStates,recordExecutionNodeObservations}from'../../../../../../control-plane/repositories/capacity/execution/execution-node-observations.ts';
 import {isDeepStrictEqual} from 'node:util';
 import {CapacityWorkdayEventRepository,type CapacityWorkdayEventWrite} from '../../../../../repositories/capacity/workdays/workday-event.ts';
 import { createHash } from 'node:crypto';
@@ -33,6 +34,9 @@ export async function commitLivingExecutionLifecycle(
 		const node = await database.first(`SELECT id FROM execution_nodes WHERE id=? AND team_id=? AND node_revision=?
 			AND status IN ('assigned','running') FOR UPDATE`, [assignment.executionNodeId, assignment.teamId, assignment.executionNodeRevision]);
 		if (!node) return false;
+		const linked=await database.all<{from_node_id:string;to_node_id:string}>("SELECT from_node_id,to_node_id FROM execution_edges WHERE team_id=? AND graph_revision_removed IS NULL AND (from_node_id=? OR to_node_id=?)",[assignment.teamId,assignment.executionNodeId,assignment.executionNodeId]);
+		const nodeIds=[assignment.executionNodeId!,...linked.flatMap(edge=>[edge.from_node_id,edge.to_node_id])];
+		const beforeNodes=await readExecutionNodeStates(database,assignment.teamId,assignment.workDayId!,nodeIds);
 		const projection = await livingExecutionLifecycleOperations({ ...input, store: database });
 		await database.batch([...operations.slice(0, 1), ...projection, ...operations.slice(1)]);
         const attempt=assignment.assignmentAttempt;
@@ -54,6 +58,7 @@ export async function commitLivingExecutionLifecycle(
         const observation=await new CapacityWorkdayEventRepository(database).create(assignment.teamId,assignment.workDayId,event);
         if(!observation||Object.entries(event).some(([key,value])=>!isDeepStrictEqual(Reflect.get(observation,key),value)))throw new Error('assignment_terminal_observation_conflict');
 
+		await recordExecutionNodeObservations(database,beforeNodes,await readExecutionNodeStates(database,assignment.teamId,assignment.workDayId!,nodeIds),event.id,input.now);
 		return true;
 	};
 	// An inherited transaction owns preceding settlement and must be rolled

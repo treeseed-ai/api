@@ -1,3 +1,4 @@
+import{readExecutionNodeStates,recordExecutionNodeObservations}from'../../../../../control-plane/repositories/capacity/execution/execution-node-observations.ts';
 import {capacityTransaction} from '../../../../transaction.ts';
 import {ProviderAssignmentRepository} from '../../../../repositories/capacity/assignments/assignment.ts';
 import {CapacityWorkdayEventRepository,type CapacityWorkdayEventWrite} from '../../../../repositories/capacity/workdays/workday-event.ts';
@@ -169,11 +170,12 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 				'provider_availability_session_unavailable','New admission requires the exact open and unexpired provider availability session.',409,
 				{sessionId:input.providerSessionId});
 
+		await database.run("SELECT id FROM capacity_workday_runs WHERE team_id=? AND id=? AND status='running' FOR UPDATE",[assignment.teamId,assignment.workdayId]);
+		const beforeNodes=await readExecutionNodeStates(database,assignment.teamId,assignment.workdayId,[assignment.nodeId]);
 		await database.batch([
 			// Serializes admissions for this workday before checking its per-kind
 			// concurrency. The count in the reservation INSERT is therefore atomic.
-			{ query: `SELECT id FROM capacity_workday_runs WHERE team_id=? AND id=? AND status='running' FOR UPDATE`,
-				params: [assignment.teamId, assignment.workdayId] },
+
 			...(input.invocationId ? [{ query: `SELECT id FROM agent_invocation_requests WHERE id=? AND team_id=? FOR UPDATE`,
 				params: [input.invocationId, assignment.teamId] }] : []),
 			...initializeCapabilityCounters(assignment, claims, input.now),
@@ -350,6 +352,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		if(!observed||observed.teamId!==assignment.teamId||observed.runId!==assignment.workdayId
 			||Object.entries(event).some(([key,value])=>!isDeepStrictEqual(Reflect.get(observed,key),value)))throw new CapacityGovernanceError(
 			'assignment_creation_observation_conflict','Assignment creation requires its exact durable owning observation.',409,{assignmentId:assignment.id});
+		await recordExecutionNodeObservations(database,beforeNodes,await readExecutionNodeStates(database,assignment.teamId,assignment.workdayId,[assignment.nodeId]),event.id,accepted.createdAt);
 		return accepted;
 	});
 }

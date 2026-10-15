@@ -20,3 +20,10 @@ export async function recordExecutionNodeObservations(database:CapacityGovernanc
   if(!observed||observed.teamId!==node.teamId||observed.runId!==node.workdayId||Object.entries(value).some(([key,expected])=>!isDeepStrictEqual(Reflect.get(observed,key),expected)))throw new Error('execution_node_observation_missing');
  }
 }
+
+/** Read only existing canonical state fields on the transaction that owns their mutation. */
+export async function readExecutionNodeStates(database:CapacityGovernanceDatabase,teamId:string,workdayId:string,ids:readonly string[]){
+ if(!ids.length)return[];const unique=[...new Set(ids)].sort();
+ const nodes=await database.all<Parameters<typeof recordExecutionNodeObservations>[1][number]>(`SELECT id,team_id AS "teamId",project_id AS "projectId",COALESCE(workday_id,?) AS "workdayId",status,node_revision AS "nodeRevision",graph_revision_updated AS "graphRevisionUpdated" FROM execution_nodes WHERE team_id=? AND id IN (${unique.map(()=>'?').join(',')}) ORDER BY id FOR UPDATE`,[workdayId,teamId,...unique]);
+ if(nodes.some(node=>node.teamId!==teamId||node.workdayId!==workdayId))throw new Error('execution_node_observation_scope_invalid');return nodes;
+}
