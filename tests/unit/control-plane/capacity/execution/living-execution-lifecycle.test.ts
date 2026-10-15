@@ -1,3 +1,4 @@
+import {concurrentTerminalNodes,concurrentTerminalAttempt} from './fixtures/concurrent-terminal.ts';
 import {CapacityWorkdayEventRepository} from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { commitLivingExecutionLifecycle, livingExecutionLifecycleOperations } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/execution/living-execution-lifecycle.ts';
@@ -17,6 +18,12 @@ const row = (id: string, status: string, pairRole: 'actor' | 'reviewer' = 'actor
 	graph_revision_created: 1, graph_revision_updated: 1 });
 
 describe('living execution result projection', () => {
+ it('requires complete canonical authority for every original native concurrent terminal fixture before allocating PostgreSQL',()=>{
+  const nodes=concurrentTerminalNodes(sourceRef);expect(nodes).toHaveLength(5);
+  const attempts=nodes.map(node=>concurrentTerminalAttempt(node,'2026-10-15T02:20:00.000Z'));expect(new Set(attempts.map(value=>value.id)).size).toBe(5);
+  for(const [index,attempt]of attempts.entries()){expect(attempt.authorityRefs.length).toBeGreaterThan(0);expect(attempt.nodeId).toBe(nodes[index]!.id);expect(attempt.sourceRef).toEqual(sourceRef);expect(()=>concurrentTerminalAttempt({...nodes[index]!,authorityRefs:[]},attempt.createdAt)).toThrow();}
+ });
+
 	it('requires exact persisted terminal state before publishing an immutable scoped token-free observation', async () => {
 		const assignment=recoveryAssignment(false),now='2026-10-02T21:00:02.000Z';
 		if(!assignment.assignmentAttempt)throw new Error('Missing original complete attempt');

@@ -1,5 +1,5 @@
-import {assignment as completeAssignment} from '../../fixtures/assignment.ts';
-import {assignmentAttemptSchema,assignmentResultSchema} from '@treeseed/sdk/agent-capacity';
+import {concurrentTerminalNodes,concurrentTerminalAttempt} from '../../fixtures/concurrent-terminal.ts';
+import {assignmentResultSchema} from '@treeseed/sdk/agent-capacity';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { describe, expect, it } from 'vitest';
@@ -32,13 +32,7 @@ describe('concurrent terminal graph revision custody', () => {
 			await db.pool.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,created_at,updated_at) VALUES ('engineer','team','project','engineer','Engineer',$1,$1)`, [now]);
 			const sourceRef = { store: 'treedx' as const, model: 'proposal', id: 'proposal', revision: 1,
 				digest, repository: 'library', commit: 'b'.repeat(40), path: 'proposals/one.mdx' };
-			const nodes: ExecutionNode[] = Array.from({ length: 5 }, (_, index) => ({
-				schemaVersion: 'treeseed.execution-node/v1', id: `node-${index}`, teamId: 'team', projectId: 'project',
-				kind: 'planning', pairRole: null, sourceRef, authorityRefs: [], ruleRevision: 1, nodeRevision: 1,
-				estimate: completeAssignment.estimate, requiredCapabilities: ['treeseed.coordination.planning'],
-				requestedPermissions: { content: { read: ['proposal'], write: [] }, tools: ['source.read'] }, workspace: 'read-only',
-				agentClass: 'engineer', status: 'running', graphRevisionCreated: 1, graphRevisionUpdated: 1,
-			}));
+			const nodes=concurrentTerminalNodes(sourceRef);
 			const store = { db, ensureInitialized: async () => {},
 				run: async (sql: string, params: unknown[] = []) => { await db.prepare(sql).bind(...params).run(); },
 				first: <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => db.prepare(sql).bind(...params).first<T>(),
@@ -54,12 +48,7 @@ describe('concurrent terminal graph revision custody', () => {
 			// placeholders. This case proves SQL projection/concurrency, not admission or model usage.
 			await db.pool.query("INSERT INTO capacity_workday_runs (id,team_id,status,execution_mode,created_at,updated_at) VALUES ('terminal-workday','team','running','simulation',$1,$1)",[now]);
 			await db.pool.query("INSERT INTO capacity_execution_providers (id,capacity_provider_id,display_name,adapter,native_unit,max_concurrent_runners,created_at,updated_at) VALUES ('codex','provider','Controlled executor','codex','seconds',1,$1,$1)",[now]);
-			const attempts=new Map(nodes.map(node=>[node.id,assignmentAttemptSchema.parse({...completeAssignment,
-				id:'assignment-'+node.id,idempotencyKey:'assignment-'+node.id,nodeId:node.id,workdayId:'terminal-workday',graphRevision:1,nodeRevision:1,
-				sourceRef,authorityRefs:[],requiredCapabilities:node.requiredCapabilities,estimate:node.estimate,
-				effectiveProfile:{...completeAssignment.effectiveProfile,activity:'planning',permissionCeiling:node.requestedPermissions},
-				workspace:{mode:'read-only'},grant:{...completeAssignment.grant,contentRead:[sourceRef],sourceWrite:[],tools:['source.read']},contextRefs:[sourceRef],
-				reservationId:'reservation-'+node.id,createdAt:now,deadline:new Date(Date.parse(now)+Date.parse(completeAssignment.deadline)-Date.parse(completeAssignment.createdAt)).toISOString()})]));
+			const attempts=new Map(nodes.map(node=>[node.id,concurrentTerminalAttempt(node,now)]));
 			const results=new Map(nodes.map(node=>[node.id,assignmentResultSchema.parse({schemaVersion:'treeseed.assignment-result/v1',id:'result-'+node.id,
 				assignmentId:attempts.get(node.id)!.id,status:'completed',summary:'Controlled native SQL result input, no model execution claimed.',references:[],verification:[],diagnostics:[],usage:{elapsedSeconds:0},completedAt:now})]));
 			for(const node of nodes){const attempt=attempts.get(node.id)!;
