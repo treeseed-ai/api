@@ -1,3 +1,7 @@
+import { verifyNativeResourceClosure } from '../../../../../acceptance/execution-resource-closure.ts';
+import { verifyNativeInventory } from '../../../../../acceptance/execution-inventory.ts';
+import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
+import { serializeAvailabilitySessionRow } from '../../../../../../src/api/capacity/repositories/accounts/availability-session.ts';
 import { expect } from 'vitest';
 import type pg from 'pg';
 import type { createControlPlanePostgresDatabase } from '../../../../../../src/api/support/control-plane-postgres.ts';
@@ -58,6 +62,16 @@ export async function proveNativeSessionClosure(database: ReturnType<typeof crea
   expect(await sessions.get('team','closure-owned')).toEqual(closed);
   expect(await sessions.get('team','closure-unrelated')).toEqual(unrelated);
   expect(await retained()).toEqual(held); expect(await runs.get('team','sdk')).toEqual(ended);
+  // Controlled original native proxy rows prove inventory reconciliation, not a TreeDX/model execution.
+  const proxy={id:'closure-handle',teamId:'team',projectId:'project',assignmentId:'closure-assignment',repositoryId:'library',workspaceId:null,status:'revoked',revokedAt:now};
+  await database.pool.query(`INSERT INTO treedx_proxy_handles (id,team_id,project_id,assignment_id,repository_id,status,issued_at,revoked_at,created_at,updated_at) VALUES ('closure-handle','team','project','closure-assignment','library','revoked',$1,$1,$1,$1)`,[now]);
+  await database.pool.query("UPDATE capacity_provider_assignments SET treedx_proxy_handle_json=$1,workspace_context_json=$2 WHERE id='closure-assignment'",[JSON.stringify(proxy),JSON.stringify({treedxProxyHandle:proxy})]);
+  const originals={assignments:(await observer.query("SELECT * FROM capacity_provider_assignments WHERE work_day_id='sdk' ORDER BY id")).rows,sessions:(await observer.query("SELECT * FROM capacity_provider_availability_sessions WHERE team_id='team' ORDER BY id")).rows,proxies:(await observer.query("SELECT * FROM treedx_proxy_handles WHERE assignment_id='closure-assignment' ORDER BY id")).rows};
+  verifyNativeResourceClosure(originals.assignments,originals.sessions,originals.proxies,ended);
+  const publicSessions=await verifyNativeInventory(originals.sessions,cursor=>sessions.listPage('team',{limit:1,cursor:decodeCapacityPageCursor(cursor)}),1,'descending','openedAt');
+  for(const session of originals.sessions)expect(publicSessions.find(value=>value.id===session.id)).toEqual(serializeAvailabilitySessionRow(session));
+  const observed=structuredClone(originals);for(const field of['status','assignment_id','workspace_id']){const changed=structuredClone(originals);changed.proxies[0]![field]='foreign';expect(()=>verifyNativeResourceClosure(changed.assignments,changed.sessions,changed.proxies,ended)).toThrow('ACCEPTANCE_NATIVE_RESOURCE');}
+  expect((await observer.query("SELECT * FROM treedx_proxy_handles WHERE assignment_id='closure-assignment' ORDER BY id")).rows).toEqual(observed.proxies);
  } finally {
   await lock.query('ROLLBACK'); lock.release();
   if (pending) await pending.catch(() => undefined);

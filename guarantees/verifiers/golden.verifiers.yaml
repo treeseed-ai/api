@@ -4560,3 +4560,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/session-authority-unit.test.ts
     testName: "denies missing foreign closed stale and malformed locked sessions before downstream writes while retaining exact replay authority"
+  api.golden.execution-resource-closure-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/resource-closure-unit.test.ts
+    testName: "denies omitted foreign duplicated live or substituted native session and proxy records without changing retained observations"

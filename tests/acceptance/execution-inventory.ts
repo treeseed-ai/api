@@ -428,7 +428,7 @@ export async function verifyNativeGraphRevisionInventory(native: unknown, teamId
 
 /** Independent owning SQL inventory bounds public reads; matching read-backs alone cannot prove completeness. */
 export async function verifyNativeInventory(native: unknown, fetch: (cursor?: string) => unknown | Promise<unknown>, limit: number,
-	direction: 'ascending' | 'descending' = 'descending'): Promise<Row[]> {
+	direction: 'ascending' | 'descending' = 'descending', publicClock: 'createdAt' | 'openedAt' = 'createdAt'): Promise<Row[]> {
 	assert.ok(Number.isSafeInteger(limit) && limit > 0 && limit <= 200, 'ACCEPTANCE_NATIVE_INVENTORY: Canonical page size required');
 	assert.ok(direction === 'ascending' || direction === 'descending');
 	assert.ok(Array.isArray(native), 'ACCEPTANCE_NATIVE_INVENTORY: Complete native collection required');
@@ -445,7 +445,7 @@ export async function verifyNativeInventory(native: unknown, fetch: (cursor?: st
 		const response = row(await fetch(cursor)), page = row(response.page);
 		assert.ok(Array.isArray(response.items), 'ACCEPTANCE_NATIVE_INVENTORY: Explicit public collection required');
 		const items = response.items.map(row), slice = expected.slice(observed.length, observed.length + limit);
-		assert.deepEqual(items.map(value => ({ id: value.id, createdAt: value.createdAt })), slice,
+		assert.deepEqual(items.map(value => ({ id: value.id, createdAt: value[publicClock] })), slice,
 			'ACCEPTANCE_NATIVE_INVENTORY: Public producer omitted duplicated substituted or reordered native records');
 		observed.push(...items);
 		const more = observed.length < expected.length;
