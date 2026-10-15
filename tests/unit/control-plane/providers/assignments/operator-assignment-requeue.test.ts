@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import * as transactions from '../../../../../src/api/capacity/transaction.ts';
+import {CapacityWorkdayEventRepository} from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
+import {recoveryAssignment} from './architecture/cancellation-fixture.ts';
+import {afterEach,describe,expect,it,vi} from 'vitest';
+afterEach(()=>{vi.restoreAllMocks();vi.useRealTimers();});
 import type { CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
 
 const { getAssignment } = vi.hoisted(() => ({ getAssignment: vi.fn() }));
@@ -13,23 +17,24 @@ import { OperatorAssignmentService } from '../../../../../src/api/capacity/servi
 
 describe('operator assignment requeue', () => {
 	it('reopens a returned graph node without requiring its reusable reservation to be settled', async () => {
-		getAssignment.mockResolvedValue({
-			id: 'assignment-1', teamId: 'team-1', status: 'returned', leaseState: 'released',
-			reservationId: 'reservation-1', executionNodeId: 'node-1', executionNodeRevision: 1,
-			stateVersion: 4, metadata: { retained: true },
-		});
+  vi.useFakeTimers({toFake:['Date']});const now='2026-10-02T21:00:04.000Z';vi.setSystemTime(new Date(now));
+  const assignment={...recoveryAssignment(false),status:'returned',leaseState:'released',stateVersion:4,metadata:{retained:true}},written={...assignment,stateVersion:5,updatedAt:now,metadata:{...assignment.metadata,operatorRetry:{requestedAt:now,requestedBy:null,reason:null}}};
+  getAssignment.mockReset().mockResolvedValueOnce(assignment).mockResolvedValueOnce(assignment).mockResolvedValueOnce(written);
+  vi.spyOn(transactions,'capacityTransaction').mockImplementation(async(store,apply)=>apply(store));
+  const observation=vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementation(async(teamId,runId,value)=>({...value,teamId,runId,eventIndex:0}));
 		const unexpected = async () => { throw new Error('Unexpected requeue database operation'); };
 		const database = {
 			ensureInitialized: vi.fn(),
 			first: vi.fn().mockResolvedValue({ node_revision: 2, status: 'ready' }),
-			run: unexpected, all: unexpected, batch: unexpected,
+			run: vi.fn(async()=>{}), all: unexpected, batch: unexpected,
 		} satisfies CapacityGovernanceDatabase;
 
-		const result = await new OperatorAssignmentService(database).requeue('team-1', 'assignment-1', {
+		const result = await new OperatorAssignmentService(database).requeue(assignment.teamId, assignment.id, {
 			idempotencyKey: 'retry-1',
 		});
 
 		expect(result).toMatchObject({ demand: null, alreadyLeasable: false });
+  expect(result.assignment).toEqual(written);expect(database.run).toHaveBeenCalledOnce();expect(observation).toHaveBeenCalledOnce();expect(observation.mock.calls[0]).toEqual([assignment.teamId,assignment.workDayId,{id:'assignment-retry:'+assignment.id+':5',projectId:assignment.projectId,workdayId:assignment.workDayId,assignmentId:assignment.id,eventType:'assignment.retry-requested',status:'recorded',title:'Assignment retry requested',message:null,parameters:{idempotencyKey:'retry-1',actorId:null,reason:null},metadata:{},refs:{},createdAt:now,context:{nodeId:assignment.executionNodeId,nodeRevision:2,graphRevision:assignment.graphRevision,status:'returned',stateVersion:5,leaseId:assignment.assignmentAttempt!.leaseId,reservationId:assignment.reservationId,runnerId:assignment.runnerId}}]);
 		expect(database.first).toHaveBeenCalledOnce();
 		expect(database.first.mock.calls[0]?.[0]).toContain("target.status='ready'");
 		expect(database.first.mock.calls[0]?.[0]).toContain('marked_assignment');
