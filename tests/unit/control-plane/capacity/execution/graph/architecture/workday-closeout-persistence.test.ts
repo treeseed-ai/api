@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { splitPostgresSqlStatements } from '../../../../../../../src/api/persistence/postgres-sql-statements.ts';
 import { appliedWorkdaySchema, assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import { canonicalStandardsJson } from '@treeseed/sdk/standards';
 import { assignment } from '../../fixtures/assignment.ts';
@@ -147,7 +148,13 @@ describe('canonical single report at the real lifecycle and SQL boundary', () =>
 		try {
 			const run = (await reads.get('team', 'workday'))!;
 			const original = structuredClone(run);
+            const ddl=splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql','utf8')).filter(sql=>sql.startsWith('CREATE TABLE "capacity_provider_availability_sessions" ('));expect(ddl).toHaveLength(1);await db.exec(ddl[0]!);
+            for(const id of ['sdk-session','unrelated-session'])await query('INSERT INTO capacity_provider_availability_sessions (id,membership_id,team_id,capacity_provider_id,status,opened_at,refreshed_at,expires_at,available_from,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',[id,'membership','team','provider','open',now,now,'2099-10-02T21:01:00.000Z',now,now,now]);
+            await query("UPDATE capacity_provider_assignments SET provider_session_id='sdk-session' WHERE id='assignment-report'");
+            const unrelated=(await query("SELECT * FROM capacity_provider_availability_sessions WHERE id='unrelated-session'")).rows;
 			const result = await advanceLivingWorkday(store as never, run, now);
+            expect((await query("SELECT status,closed_at FROM capacity_provider_availability_sessions WHERE id='sdk-session'")).rows).toEqual([{status:'closed',closed_at:now}]);
+            expect((await query("SELECT * FROM capacity_provider_availability_sessions WHERE id='unrelated-session'")).rows).toEqual(unrelated);
 			expect(result).toMatchObject({ status: 'completed', plan: { state: 'ended', reportRef } });
 			expect(run).toEqual(original);
 			const rows = (await query('SELECT parameters_json,report_refs_json FROM capacity_workday_runs')).rows;
@@ -166,6 +173,7 @@ describe('canonical single report at the real lifecycle and SQL boundary', () =>
 			expect(() => verifyNativeReporterCloseout(settled, assignments, nodes, later)).toThrow('ACCEPTANCE_NATIVE_REPORT_CLOSEOUT');
 			expect((await query('SELECT * FROM audit_events ORDER BY id')).rows).toEqual(audits);
 			const repeated = await advanceLivingWorkday(store as never, settled, now);
+            expect((await query("SELECT status,closed_at FROM capacity_provider_availability_sessions WHERE id='sdk-session'")).rows).toEqual([{status:'closed',closed_at:now}]);
 			expect(repeated.changed).toBe(false);
 			expect((await query('SELECT COUNT(*)::int AS count FROM capacity_workday_runs')).rows).toEqual([{ count: 1 }]);
 		} finally { await db.close(); }
