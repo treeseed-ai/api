@@ -1,3 +1,4 @@
+import type{PoolClient}from'pg';
 import { readFileSync } from 'node:fs';
 import { expect } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
@@ -110,6 +111,7 @@ export async function livingGraphDatabase() {
 			let index = 0; return db.query<Record<string, unknown>>(sql.replace(/\?/gu, () => `$${++index}`), params);
 		};
 		const store = {
+			db:{transaction:<T>(apply:(client:PoolClient)=>Promise<T>)=>db.transaction(transaction=>apply(transaction as unknown as PoolClient))},
 			all: async (sql: string, params: unknown[] = []) => (await query(sql, params)).rows,
 			first: async (sql: string, params: unknown[] = []) => (await query(sql, params)).rows[0] ?? null,
 			batch: (operations: Array<{ query: string; params: unknown[] }>) => db.transaction(async transaction => {

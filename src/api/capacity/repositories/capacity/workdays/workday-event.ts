@@ -55,20 +55,16 @@ export interface CapacityWorkdayEventWrite {
 export class CapacityWorkdayEventRepository {
 	constructor(private readonly database: CapacityGovernanceDatabase) {}
 
-	createOperations(teamId: string, runId: string, value: CapacityWorkdayEventWrite): Array<{query:string;params:unknown[]}> {
-		return [
+	async create(teamId: string, runId: string, value: CapacityWorkdayEventWrite) {
+		await this.database.ensureInitialized();
+		await this.database.batch([
 			{ query: `UPDATE capacity_workday_runs SET next_event_index = next_event_index + 1 WHERE id = ? AND team_id = ? AND NOT EXISTS (SELECT 1 FROM capacity_workday_events WHERE id = ?)`, params: [runId, teamId, value.id] },
 			{ query: `INSERT INTO capacity_workday_events (id, run_id, team_id, project_id, workday_id, assignment_id, event_index, event_type, status, title, message, parameters_json, context_json, refs_json, metadata_json, created_at)
 				SELECT ?, id, team_id, ?, ?, ?, next_event_index - 1, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM capacity_workday_runs
 				WHERE id = ? AND team_id = ? AND NOT EXISTS (SELECT 1 FROM capacity_workday_events WHERE id = ?)`,
 				params: [value.id, value.projectId, value.workdayId, value.assignmentId, value.eventType, value.status, value.title, value.message, JSON.stringify(value.parameters), JSON.stringify(value.context), JSON.stringify(value.refs), JSON.stringify(value.metadata), value.createdAt, runId, teamId, value.id] },
-		];
-	}
-
-	async create(teamId: string, runId: string, value: CapacityWorkdayEventWrite) {
-		await this.database.ensureInitialized();
-		await this.database.batch(this.createOperations(teamId,runId,value));
-		return this.get(teamId,runId,value.id);
+		]);
+		return this.get(teamId, runId, value.id);
 	}
 
 	async get(teamId: string, runId: string, eventId: string) {

@@ -1,3 +1,4 @@
+import{executePostgresBatch}from'../../../../../../../src/api/support/control-plane-postgres.ts';
 import{readFileSync}from'node:fs';
 import{expect,it}from'vitest';
 import type{ExecutionNode,GraphRevision}from'@treeseed/sdk/agent-capacity';
@@ -11,6 +12,7 @@ import{digest,type TeamGraph}from'../../../../../../../src/api/control-plane/rep
 
 it('retains each owning graph node state and revision in complete public workday history with exact replay and conflict rollback',async()=>{
  const f=await closeoutDatabase();
+ const owner={...f.owner,db:{transaction:<T>(apply:(client:Parameters<typeof executePostgresBatch>[0])=>Promise<T>)=>f.db.transaction(transaction=>apply(transaction as unknown as Parameters<typeof executePostgresBatch>[0]))}};
  try{
   const ddl=splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql','utf8'));
   for(const table of['teams','capacity_workday_events']){const statements=ddl.filter(sql=>sql.startsWith('CREATE TABLE "'+table+'" ('));expect(statements).toHaveLength(1);await f.db.exec(statements[0]!);}
@@ -20,11 +22,11 @@ it('retains each owning graph node state and revision in complete public workday
   const node={...concurrentTerminalNodes(assignment.sourceRef)[0]!,workdayId:'workday',status:'proposed' as const};
   let current:TeamGraph={teamId:'team',revision:0,digest:'sha256:'+'0'.repeat(64),nodes:[],edges:[]};
   const steps:ExecutionNode['status'][]=['proposed','blocked','ready','assigned','running','completed','ready','assigned','running','failed','cancelled','stale'];
-  const events=new CapacityWorkdayEventRepository(f.owner),service=createExecutionGraphService({...f.owner,principalCanAccessTeam:async()=>true,getTeamAccessSummary:async()=>({permissions:['projects:read:team']})});
+  const events=new CapacityWorkdayEventRepository(owner),service=createExecutionGraphService({...f.owner,principalCanAccessTeam:async()=>true,getTeamAccessSummary:async()=>({permissions:['projects:read:team']})});
   for(const[index,status]of steps.entries()){
    const revision=index+1,nextNode={...node,status,nodeRevision:index>=6?2:1,graphRevisionUpdated:revision},next:TeamGraph={...current,revision,nodes:[nextNode]};next.digest=digest({teamId:next.teamId,nodes:next.nodes,edges:next.edges});
    const receipt:GraphRevision={schemaVersion:'treeseed.graph-revision/v1',teamId:'team',revision,ruleRevision:1,changedSourceRefs:[node.sourceRef],graphDigest:next.digest,createdAt:new Date(Date.parse(stamp)+index).toISOString(),changes:{added:index?[]:[node.id],changed:index?[node.id]:[],completed:status==='completed'?[node.id]:[],blocked:status==='blocked'?[node.id]:[],stale:status==='stale'?[node.id]:[],addedEdges:[],removedEdges:[]}};
-   await persistExecutionGraph(f.owner,next,current,receipt);
+   await persistExecutionGraph(owner,next,current,receipt);
    const page=await events.list('team','workday',{limit:100,afterEventIndex:-1});
    expect(page.items.map(event=>event.eventType)).toEqual(steps.slice(0,index+1).map(()=>'execution.node.state'));
    expect(page.items.map(event=>event.eventIndex)).toEqual(Array.from({length:index+1},(_,n)=>n));
@@ -32,16 +34,16 @@ it('retains each owning graph node state and revision in complete public workday
    expect(page.items.at(-1)?.context).toEqual({nodeId:node.id,nodeRevision:nextNode.nodeRevision,graphRevision:revision,status,previousStatus:index?steps[index-1]:null});
    expect(page.items.every(event=>event.runId==='workday'&&event.workdayId==='workday'&&event.teamId==='team'&&event.projectId==='project'&&event.assignmentId===null)).toBe(true);expect(page.page.hasMore).toBe(false);
    expect(await service.node({id:'reader',roles:[],permissions:[]},'team',node.id)).toEqual(nextNode);
-   const retained=structuredClone(page);await persistExecutionGraph(f.owner,next,current,receipt);expect(await events.list('team','workday',{limit:100,afterEventIndex:-1})).toEqual(retained);
-   if(index>0){const stale={...next,revision:revision+1,digest:'sha256:'+'f'.repeat(64)};await expect(persistExecutionGraph(f.owner,stale,{...current,nodes:[]},{...receipt,revision:revision+1,graphDigest:stale.digest})).rejects.toMatchObject({code:'execution_graph_revision_conflict'});expect(await events.list('team','workday',{limit:100,afterEventIndex:-1})).toEqual(retained);}
+   const retained=structuredClone(page);await persistExecutionGraph(owner,next,current,receipt);expect(await events.list('team','workday',{limit:100,afterEventIndex:-1})).toEqual(retained);
+   if(index>0){const stale={...next,revision:revision+1,digest:'sha256:'+'f'.repeat(64)};await expect(persistExecutionGraph(owner,stale,{...current,nodes:[]},{...receipt,revision:revision+1,graphDigest:stale.digest})).rejects.toMatchObject({code:'execution_graph_revision_conflict'});expect(await events.list('team','workday',{limit:100,afterEventIndex:-1})).toEqual(retained);}
    current=next;
   }
   const snapshot=async()=>({nodes:(await f.query('SELECT * FROM execution_nodes ORDER BY id')).rows,revisions:(await f.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows,events:(await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows,runs:(await f.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows}),before=await snapshot();
   await f.db.exec("CREATE FUNCTION suppress_node_history() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type='execution.node.state' THEN RETURN NULL; END IF; RETURN NEW; END $$; CREATE TRIGGER suppress_node_history BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION suppress_node_history();");
   const next={...current,revision:current.revision+1,nodes:current.nodes.map(node=>({...node,status:'ready' as const,graphRevisionUpdated:current.revision+1}))};next.digest=digest({teamId:next.teamId,nodes:next.nodes,edges:next.edges});
   const receipt:GraphRevision={schemaVersion:'treeseed.graph-revision/v1',teamId:'team',revision:next.revision,ruleRevision:1,changedSourceRefs:[node.sourceRef],graphDigest:next.digest,createdAt:'2026-10-02T21:00:01.000Z',changes:{added:[],changed:[node.id],completed:[],blocked:[],stale:[],addedEdges:[],removedEdges:[]}};
-  await expect(persistExecutionGraph(f.owner,next,current,receipt)).rejects.toThrow('execution_node_observation_missing');expect(await snapshot()).toEqual(before);
-  await f.db.exec('DROP TRIGGER suppress_node_history ON capacity_workday_events; DROP FUNCTION suppress_node_history();');await persistExecutionGraph(f.owner,next,current,receipt);expect((await events.list('team','workday',{limit:100,afterEventIndex:-1})).items).toHaveLength(steps.length+1);
+  await expect(persistExecutionGraph(owner,next,current,receipt)).rejects.toThrow('execution_node_observation_missing');expect(await snapshot()).toEqual(before);
+  await f.db.exec('DROP TRIGGER suppress_node_history ON capacity_workday_events; DROP FUNCTION suppress_node_history();');await persistExecutionGraph(owner,next,current,receipt);expect((await events.list('team','workday',{limit:100,afterEventIndex:-1})).items).toHaveLength(steps.length+1);
   expect((await f.query('SELECT * FROM execution_nodes WHERE id=?',['report-node'])).rows).toEqual(original);
  }finally{await f.db.close();}
  // Original owning persistence/public reads with controlled graph input; native concurrency is a separate required proof.

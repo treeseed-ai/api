@@ -394,8 +394,9 @@ describe('normalized living execution graph persistence', () => {
 		const operations: Array<{ query: string; params: unknown[] }> = [];
 		const next = graph(2, [node('ready')]);
 		const store = {
-			batch: async (input: typeof operations) => { operations.push(...input); },
-			first: async () => ({ revision: 2, graph_digest: next.digest }),
+			db:{transaction:async(apply:(client:unknown)=>Promise<unknown>)=>apply({query:async(sql:string,params:unknown[])=>{
+				if(sql.startsWith('SELECT revision,graph_digest'))return{rows:[{revision:2,graph_digest:next.digest}]};
+				operations.push({query:sql.replace(/\$\d+/gu,'?'),params});return{rows:[]};}})},
 		};
 		await persistExecutionGraph(store, next, graph(1), revision(2, next.digest));
 		expect(operations.some((operation) => operation.query.includes('estimate_json=excluded.estimate_json'))).toBe(true);
@@ -415,8 +416,9 @@ describe('normalized living execution graph persistence', () => {
 		const next = graph(2, [unchanged, { ...changed, status: 'ready', graphRevisionUpdated: 2 }]);
 		const operations: Array<{ query: string; params: unknown[] }> = [];
 		const store = {
-			batch: async (input: typeof operations) => { operations.push(...input); },
-			first: async () => ({ revision: 2, graph_digest: next.digest }),
+			db:{transaction:async(apply:(client:unknown)=>Promise<unknown>)=>apply({query:async(sql:string,params:unknown[])=>{
+				if(sql.startsWith('SELECT revision,graph_digest'))return{rows:[{revision:2,graph_digest:next.digest}]};
+				operations.push({query:sql.replace(/\$\d+/gu,'?'),params});return{rows:[]};}})},
 		};
 		await persistExecutionGraph(store, next, current, revision(2, next.digest));
 		const nodeWrites = operations.filter((operation) => operation.query.includes('INSERT INTO execution_nodes'));
@@ -428,8 +430,7 @@ describe('normalized living execution graph persistence', () => {
 	it('fails closed when another reconciliation wins the graph revision', async () => {
 		const next = graph(2);
 		const store = {
-			batch: async () => undefined,
-			first: async () => ({ revision: 3, graph_digest: `sha256:${'f'.repeat(64)}` }),
+			db:{transaction:async(apply:(client:unknown)=>Promise<unknown>)=>apply({query:async(sql:string)=>({rows:sql.startsWith('SELECT revision,graph_digest')?[{revision:3,graph_digest:`sha256:${'f'.repeat(64)}`}]:[]})})},
 		};
 		await expect(persistExecutionGraph(store, next, graph(1), revision(2, next.digest)))
 			.rejects.toMatchObject({ code: 'execution_graph_revision_conflict' });
@@ -460,6 +461,7 @@ describe('graph operational-state admission fence in PostgreSQL', () => {
 			await database.pool.query(`INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ('team','team','Team',$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('project','team','project','Project',$1,$1)`, [now]);
 			const store = {
+				db:database,
 				batch: (operations: Array<{ query: string; params: unknown[] }>) => database.batch(operations),
 				first: (sql: string, params: unknown[]) => database.prepare(sql).bind(...params).first(),
 			};
