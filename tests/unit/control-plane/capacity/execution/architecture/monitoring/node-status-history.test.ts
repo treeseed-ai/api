@@ -1,35 +1,41 @@
-import {readFileSync,readdirSync} from 'node:fs';
-import {expect,it} from 'vitest';
-import {closeoutDatabase} from '../../graph/architecture/closeout-sql-fixture.ts';
-import {splitPostgresSqlStatements} from '../../../../../../../src/api/persistence/postgres-sql-statements.ts';
-import {CapacityWorkdayEventRepository} from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
-import {assignment} from '../../fixtures/assignment.ts';
+import{readFileSync}from'node:fs';
+import{expect,it}from'vitest';
+import type{ExecutionNode,GraphRevision}from'@treeseed/sdk/agent-capacity';
+import{closeoutDatabase}from'../../graph/architecture/closeout-sql-fixture.ts';
+import{concurrentTerminalNodes}from'../../fixtures/concurrent-terminal.ts';
+import{assignment}from'../../fixtures/assignment.ts';
+import{splitPostgresSqlStatements}from'../../../../../../../src/api/persistence/postgres-sql-statements.ts';
+import{CapacityWorkdayEventRepository}from'../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
+import{persistExecutionGraph,createExecutionGraphService}from'../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import{digest,type TeamGraph}from'../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
 
-it('retains every exact owning node status transition in the original public workday history without replacing unrelated resources or synthesizing prior history',async()=>{
+it('retains each owning graph node state and revision in complete public workday history with exact replay and conflict rollback',async()=>{
  const f=await closeoutDatabase();
  try{
-  const ddl=splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql','utf8')).filter(sql=>sql.startsWith('CREATE TABLE "capacity_workday_events" ('));expect(ddl).toHaveLength(1);await f.db.exec(ddl[0]!);
-  // Load owning migrations by their native declaration; the original schema has no node-observation producer.
-  for(const path of readdirSync('drizzle/control-plane').filter(path=>/^[0-9]+_execution_node_observations\.sql$/u.test(path)).sort())await f.db.exec(readFileSync('drizzle/control-plane/'+path,'utf8'));
+  const ddl=splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql','utf8'));
+  for(const table of['teams','capacity_workday_events']){const statements=ddl.filter(sql=>sql.startsWith('CREATE TABLE "'+table+'" ('));expect(statements).toHaveLength(1);await f.db.exec(statements[0]!);}
+  const stamp='2026-10-02T21:00:00.000Z';await f.query('INSERT INTO teams(id,slug,name,created_at,updated_at) VALUES(?,?,?,?,?)',['team','team','Team',stamp,stamp]);
   const original=(await f.query('SELECT * FROM execution_nodes WHERE id=?',['report-node'])).rows;
-  const stamp='2026-10-02T21:00:00.000Z',id='observed-native-node';
-  await f.query(`INSERT INTO execution_nodes (id,team_id,project_id,workday_id,kind,source_ref_json,authority_refs_json,rule_revision,node_revision,agent_class,status,graph_revision_created,graph_revision_updated,created_at,updated_at)
-   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[id,'team','project','workday','acting',JSON.stringify(assignment.sourceRef),JSON.stringify(assignment.authorityRefs),1,1,'engineer','proposed',1,1,stamp,stamp]);
-  const steps=['proposed','blocked','ready','assigned','running','completed','ready','assigned','running','failed','cancelled','stale'];
-  let revision=1;
-  for(const [index,status]of steps.entries()){
-   if(index){if(status==='ready'&&index>5)revision++;await f.query('UPDATE execution_nodes SET status=?,node_revision=?,updated_at=? WHERE id=?',[status,revision,new Date(Date.parse(stamp)+index).toISOString(),id]);}
-   const events=await new CapacityWorkdayEventRepository(f.owner).list('team','workday',{limit:100});
-   expect(events.items.map(event=>event.eventType)).toEqual(steps.slice(0,index+1).map(()=>'execution.node.state'));
-   expect(events.items.map(event=>event.eventIndex)).toEqual(Array.from({length:index+1},(_,n)=>n));
-   expect(events.items.map(event=>event.context.status)).toEqual(steps.slice(0,index+1));
-   expect(events.items.at(-1)?.context).toEqual({nodeId:id,nodeRevision:revision,graphRevision:1,status,previousStatus:index?steps[index-1]:null});
-   expect(events.items.every(event=>event.runId==='workday'&&event.workdayId==='workday'&&event.teamId==='team'&&event.projectId==='project'&&event.assignmentId===null)).toBe(true);
-   expect(events.page.hasMore).toBe(false);
+  const node={...concurrentTerminalNodes(assignment.sourceRef)[0]!,workdayId:'workday',status:'proposed' as const};
+  let current:TeamGraph={teamId:'team',revision:0,digest:'sha256:'+'0'.repeat(64),nodes:[],edges:[]};
+  const steps:ExecutionNode['status'][]=['proposed','blocked','ready','assigned','running','completed','ready','assigned','running','failed','cancelled','stale'];
+  const events=new CapacityWorkdayEventRepository(f.owner),service=createExecutionGraphService({...f.owner,principalCanAccessTeam:async()=>true,getTeamAccessSummary:async()=>({permissions:['projects:read:team']})});
+  for(const[index,status]of steps.entries()){
+   const revision=index+1,nextNode={...node,status,nodeRevision:index>=6?2:1,graphRevisionUpdated:revision},next:TeamGraph={...current,revision,nodes:[nextNode]};next.digest=digest({teamId:next.teamId,nodes:next.nodes,edges:next.edges});
+   const receipt:GraphRevision={schemaVersion:'treeseed.graph-revision/v1',teamId:'team',revision,ruleRevision:1,changedSourceRefs:[node.sourceRef],graphDigest:next.digest,createdAt:new Date(Date.parse(stamp)+index).toISOString(),changes:{added:index?[]:[node.id],changed:index?[node.id]:[],completed:status==='completed'?[node.id]:[],blocked:status==='blocked'?[node.id]:[],stale:status==='stale'?[node.id]:[],addedEdges:[],removedEdges:[]}};
+   await persistExecutionGraph(f.owner,next,current,receipt);
+   const page=await events.list('team','workday',{limit:100,afterEventIndex:-1});
+   expect(page.items.map(event=>event.eventType)).toEqual(steps.slice(0,index+1).map(()=>'execution.node.state'));
+   expect(page.items.map(event=>event.eventIndex)).toEqual(Array.from({length:index+1},(_,n)=>n));
+   expect(page.items.map(event=>event.context.status)).toEqual(steps.slice(0,index+1));
+   expect(page.items.at(-1)?.context).toEqual({nodeId:node.id,nodeRevision:nextNode.nodeRevision,graphRevision:revision,status,previousStatus:index?steps[index-1]:null});
+   expect(page.items.every(event=>event.runId==='workday'&&event.workdayId==='workday'&&event.teamId==='team'&&event.projectId==='project'&&event.assignmentId===null)).toBe(true);expect(page.page.hasMore).toBe(false);
+   expect(await service.node({id:'reader',roles:[],permissions:[]},'team',node.id)).toEqual(nextNode);
+   const retained=structuredClone(page);await persistExecutionGraph(f.owner,next,current,receipt);expect(await events.list('team','workday',{limit:100,afterEventIndex:-1})).toEqual(retained);
+   if(index>0){const stale={...next,revision:revision+1,digest:'sha256:'+'f'.repeat(64)};await expect(persistExecutionGraph(f.owner,stale,{...current,nodes:[]},{...receipt,revision:revision+1,graphDigest:stale.digest})).rejects.toMatchObject({code:'execution_graph_revision_conflict'});expect(await events.list('team','workday',{limit:100,afterEventIndex:-1})).toEqual(retained);}
+   current=next;
   }
-  const before=(await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows;
-  await f.query('UPDATE execution_nodes SET status=status,updated_at=updated_at WHERE id=?',[id]);expect((await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows).toEqual(before);
   expect((await f.query('SELECT * FROM execution_nodes WHERE id=?',['report-node'])).rows).toEqual(original);
  }finally{await f.db.close();}
- // Real original DDL/public repository with controlled state inputs, not native PostgreSQL concurrency or a managed workday.
+ // Original owning persistence/public reads with controlled graph input; native concurrency is a separate required proof.
 });
