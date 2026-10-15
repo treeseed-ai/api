@@ -1,3 +1,5 @@
+import{capacityTransaction}from'../../../../transaction.ts';
+import{readExecutionNodeStates,recordExecutionNodeObservations}from'../../../../../control-plane/repositories/capacity/execution/execution-node-observations.ts';
 import { createHash } from 'node:crypto';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { decodeDurableJsonObject } from '../../../../durable-json.ts';
@@ -49,8 +51,12 @@ export async function tickCapacityWorkdayRun(
 		for (const turn of turns) await cancellation.cancel(teamId, String(turn.id), {
 			idempotencyKey: `planning-boundary:${runId}:${turn.id}`, reason: 'Planning window ended; unused capacity returns to acting and review.',
 		});
-		await store.run(`UPDATE execution_nodes SET status='cancelled',updated_at=?
+		await capacityTransaction(store,async transaction=>{
+			const ids=(await transaction.all<{id:string}>("SELECT id FROM execution_nodes WHERE team_id=? AND workday_id=? AND kind IN ('planning','estimating') AND status IN ('ready','blocked') ORDER BY id FOR UPDATE",[teamId,runId])).map(node=>node.id),beforeNodes=await readExecutionNodeStates(transaction,teamId,runId,ids);
+		await transaction.run(`UPDATE execution_nodes SET status='cancelled',updated_at=?
 			WHERE team_id=? AND workday_id=? AND kind IN ('planning','estimating') AND status IN ('ready','blocked')`, [now, teamId, runId]);
+			await recordExecutionNodeObservations(transaction,beforeNodes,await readExecutionNodeStates(transaction,teamId,runId,ids),'planning-boundary:'+runId+':'+(eventId??now),now);
+		});
 	}
 	const lifecycle = await advanceLivingWorkday(store, run, now);
 	const executionGraph = run.executionKind === 'conversation'
