@@ -19,6 +19,7 @@ describe('exact estimator result integration', () => {
 			const input={frozen,candidate,current:{...frozen,...changed},agentClass:'engineer'},held=structuredClone(input);
 			expect.soft(()=>mergeAssignmentEstimate(input)).toThrow('Current proposal authority no longer matches');expect(input).toEqual(held);
 		}
+		for(const status of ['draft','discussing','ready']){const current={...candidate,status},input={frozen,candidate,current,agentClass:'engineer'},held=structuredClone(input);expect(mergeAssignmentEstimate(input)).toEqual(current);expect(input).toEqual(held);}
 	});
 
 	it('finalizes only a matching external approval after all owner and reviewer estimates arrive', async () => {
