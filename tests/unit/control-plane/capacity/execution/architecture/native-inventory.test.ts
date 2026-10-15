@@ -22,14 +22,14 @@ const envelope = { requestedSeconds: assignment.limits.maximumSeconds, reservedS
 	reservationId: assignment.reservationId, projectAgentClassId: 'class', mode: 'acting', limits: assignment.limits };
 const explanation = { teamId: assignment.teamId, assignmentId: assignment.id, metadata: { allocation: { allocatedSeconds: assignment.limits.maximumSeconds } } };
 
-const nativeAssignment = { id: assignment.id, team_id: assignment.teamId, project_id: assignment.projectId,
+const nativeAssignment = { provider_session_id: 'session',workspace_context_json:'{}',treedx_proxy_handle_json:'{}', id: assignment.id, team_id: assignment.teamId, project_id: assignment.projectId,
 	work_day_id: assignment.workdayId, membership_id: 'membership', capacity_provider_id: assignment.provider.providerId,
 	mode: 'acting', lane_id: 'workday', lane_purpose: 'workday', status: 'pending', lease_state: 'unleased', reservation_id: assignment.reservationId, execution_kind: 'workday',
 	project_agent_class_id: 'class',
 	execution_node_id: assignment.nodeId, execution_node_revision: assignment.nodeRevision, graph_revision: assignment.graphRevision,
 	assignment_attempt_json: JSON.stringify(assignment), assignment_result_json: null, lifecycle_output_json: '{}',
 	capacity_envelope_json: JSON.stringify(envelope), explanation_json: JSON.stringify(explanation) };
-const publicAssignment = { id: assignment.id, teamId: assignment.teamId, projectId: assignment.projectId,
+const publicAssignment = { providerSessionId:'session',workspaceContext:{},treedxProxyHandle:{}, id: assignment.id, teamId: assignment.teamId, projectId: assignment.projectId,
 	workDayId: assignment.workdayId, membershipId: 'membership', capacityProviderId: assignment.provider.providerId,
 	laneId: 'workday', lanePurpose: 'workday', status: 'pending', leaseState: 'unleased', reservationId: assignment.reservationId, assignmentAttempt: assignment, assignmentResult: null,
 	projectAgentClassId: 'class', lifecycleOutput: {}, capacityEnvelope: envelope, explanation,
@@ -199,6 +199,7 @@ describe('independent native producer inventory reconciliation', () => {
     .toThrow('ACCEPTANCE_NATIVE_LANE');
    expect(changed).toEqual(before);
   }
+  for(const field of ['providerSessionId','workspaceContext','treedxProxyHandle'])for(const value of [undefined,null,'foreign',{},[],false,7]){if(field!=='providerSessionId'&&value&&typeof value==='object'&&!Array.isArray(value)&&!Object.keys(value).length)continue;const changed={...visible,[field]:value},before=structuredClone(changed);expect.soft(()=>verifyNativeAssignmentReadback(original,changed,scope,[nativeReservation],[original])).toThrow('ACCEPTANCE_NATIVE_RESOURCE');expect(changed).toEqual(before);}
   const chatNodes = [{ id: 'chat-node', team_id: scope.teamId, workday_id: scope.id, kind: 'communication' }];
   const chatBefore = structuredClone(chatNodes);
   expect(() => verifyNativeCommunicationEdges(chatNodes, [], scope, ['chat-node'])).not.toThrow();
