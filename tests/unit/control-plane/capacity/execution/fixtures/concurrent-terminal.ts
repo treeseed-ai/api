@@ -17,5 +17,5 @@ export function concurrentTerminalAttempt(node:ExecutionNode,now:string){
 				sourceRef,authorityRefs:node.authorityRefs,requiredCapabilities:node.requiredCapabilities,estimate:node.estimate,
 				effectiveProfile:{...completeAssignment.effectiveProfile,activity:'planning',permissionCeiling:node.requestedPermissions},
 				workspace:{mode:'read-only'},grant:{...completeAssignment.grant,contentRead:[sourceRef],sourceWrite:[],tools:['source.read']},contextRefs:[sourceRef],
-				reservationId:'reservation-'+node.id,createdAt:now,deadline:new Date(Date.parse(now)+Date.parse(completeAssignment.deadline)-Date.parse(completeAssignment.createdAt)).toISOString()});
+				leaseId:'lease-'+node.id,reservationId:'reservation-'+node.id,createdAt:now,deadline:new Date(Date.parse(now)+Date.parse(completeAssignment.deadline)-Date.parse(completeAssignment.createdAt)).toISOString()});
 }

@@ -8,7 +8,7 @@ import { recoveryAssignment } from '../../providers/assignments/architecture/can
 import { ProviderAssignmentRepository, advanceAssignmentAttemptLifecycle } from '../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 
 const digest = `sha256:${'a'.repeat(64)}`, commit = 'b'.repeat(40);
-const sourceRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1, digest,
+const sourceRef = { store: 'treedx' as const, model: 'proposal', id: 'proposal', revision: 1, digest,
 	repository: 'library', commit, path: 'proposals/one.mdx' };
 const row = (id: string, status: string, pairRole: 'actor' | 'reviewer' = 'actor', workItemId = id, revision = 1) => ({ id, team_id: 'team', project_id: 'project', work_item_id: workItemId,
 	kind: pairRole === 'reviewer' ? 'reviewing' : 'acting', pair_role: pairRole, source_ref_json: sourceRef, authority_refs_json: [], rule_revision: 1,
