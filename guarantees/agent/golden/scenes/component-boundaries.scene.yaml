@@ -2586,3 +2586,31 @@ workflow:
   - id: policy-override-native
     action: { verifier: api.golden.policy-override-native }
     expect: { status: passed }
+
+  - id: terminal-observation-state-unit
+    action: { verifier: api.golden.terminal-observation-state-unit }
+    expect: { status: passed }
+
+  - id: terminal-observation-conflict-unit
+    action: { verifier: api.golden.terminal-observation-conflict-unit }
+    expect: { status: passed }
+
+  - id: terminal-observation-zero-write-native
+    action: { verifier: api.golden.terminal-observation-zero-write-native }
+    expect: { status: passed }
+
+  - id: terminal-observation-postgres-native
+    action: { verifier: api.golden.terminal-observation-postgres-native }
+    expect: { status: passed }
+
+  - id: creation-observation-native
+    action: { verifier: api.golden.creation-observation-native }
+    expect: { status: passed }
+
+  - id: creation-observation-denials-unit
+    action: { verifier: api.golden.creation-observation-denials-unit }
+    expect: { status: passed }
+
+  - id: concurrent-terminal-fixture-unit
+    action: { verifier: api.golden.concurrent-terminal-fixture-unit }
+    expect: { status: passed }

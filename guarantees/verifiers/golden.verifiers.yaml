@@ -4411,3 +4411,45 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/execution-start.test.ts
     testName: "real public allocation overrides preserve team defaults and existing Workday authority through versioned policy replacement and original start replay"
+
+  api.golden.terminal-observation-state-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-execution-lifecycle.test.ts
+    testName: "requires exact persisted terminal state before publishing an immutable scoped token-free observation"
+
+  api.golden.terminal-observation-conflict-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-execution-lifecycle.test.ts
+    testName: "denies missing or conflicting terminal observations without accepting another owner scope or fabricated receipt"
+
+  api.golden.terminal-observation-zero-write-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
+    testName: "native terminal observation rolls back a zero-row assignment update and retains original accounting before exact retry"
+
+  api.golden.terminal-observation-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-observation-postgres.test.ts
+    testName: "native terminal observation rolls back suppressed state and event writes then serializes matching public reports without changing prior settlement"
+
+  api.golden.creation-observation-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/initial-admission.test.ts
+    testName: "native initial admission publishes one exact scoped creation observation and retains unchanged authority on replay"
+
+  api.golden.creation-observation-denials-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-execution-admission.test.ts
+    testName: "rejects missing or substituted creation observations while retaining exact original admission input"
+
+  api.golden.concurrent-terminal-fixture-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-execution-lifecycle.test.ts
+    testName: "requires complete canonical authority for every original native concurrent terminal fixture before allocating PostgreSQL"

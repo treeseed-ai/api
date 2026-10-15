@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { splitPostgresSqlStatements } from '../../../../../../../src/api/persistence/postgres-sql-statements.ts';
 import { executePostgresBatch } from '../../../../../../../src/api/support/control-plane-postgres.ts';
 import { CapacityWorkdayEventRepository } from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -12,10 +10,25 @@ import { startAssignmentExecutionWindow, startAssignmentCloseoutWindow } from '.
 // REAL owning SQL/transaction boundary with supplied clocks and usage.
 afterEach(() => vi.useRealTimers());
 describe('provider terminal reporting through original transaction and resource custody', () => {
+ it('native terminal observation rolls back a zero-row assignment update and retains original accounting before exact retry',async()=>{
+  const native=await completionFixture();try{
+   const before={state:await native.snapshot(),graph:(await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows,workdays:(await native.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows,events:(await native.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows};
+   await native.db.exec("CREATE FUNCTION native_terminal_zero_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='completed' THEN RETURN NULL; END IF; RETURN NEW; END $$");
+   await native.db.exec('CREATE TRIGGER native_terminal_zero_write BEFORE UPDATE ON capacity_provider_assignments FOR EACH ROW EXECUTE FUNCTION native_terminal_zero_write()');
+   const input={leaseToken:'lease-token',activeSeconds:1,elapsedSeconds:2,completion:returnedCompletion,output:{assignmentResult:native.result}},held=structuredClone(input);
+   let failure:unknown;try{await native.service.complete(principal,native.assignment.id,input);}catch(error){failure=error;}
+   finally{await native.db.exec('DROP TRIGGER native_terminal_zero_write ON capacity_provider_assignments');await native.db.exec('DROP FUNCTION native_terminal_zero_write()');}
+   const observed={state:await native.snapshot(),graph:(await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows,workdays:(await native.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows,events:(await native.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows};
+   console.log(JSON.stringify({nativeTerminalZeroWrite:{status:(await native.repository.get('team',native.assignment.id))?.status,eventCount:observed.events.length}}));
+   expect(failure).toMatchObject({message:'assignment_terminal_observation_state_mismatch'});expect(observed).toEqual(before);expect(input).toEqual(held);
+   expect((await native.service.complete(principal,native.assignment.id,input))?.assignment.status).toBe('completed');
+   expect((await native.query('SELECT * FROM capacity_workday_events WHERE assignment_id=?',[native.assignment.id])).rows).toHaveLength(1);
+  }finally{await native.close();}
+ });
+
 	it('native execution start records the original canonical running clock once and closeout cannot rewrite it or frozen authority', async () => {
 		const native = await cancellationDatabase('leased', false);
 		try {
-			const ddl=splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql','utf8')).filter(sql=>sql.startsWith('CREATE TABLE "capacity_workday_events" ('));expect(ddl).toHaveLength(1);await native.db.exec(ddl[0]!);
 			const owner={...native.owner,db:{transaction:async<T>(apply:(client:Parameters<typeof executePostgresBatch>[0])=>Promise<T>)=>native.db.transaction(transaction=>apply(transaction as unknown as Parameters<typeof executePostgresBatch>[0]))}};
 			const startedAt = '2026-10-02T21:00:00.500Z', budget = emptyCapacityBudget(native.attempt.deadline, 3);
 			const envelope = { ...native.assignment.capacityEnvelope, budget: { ...budget, time: { ...budget.time,
@@ -66,6 +79,7 @@ describe('provider terminal reporting through original transaction and resource 
 		for (const status of ['completed', 'failed', 'cancelled', 'returned'] as const) {
 			const native = status === 'returned' ? await returnFixture() : await completionFixture();
 			try {
+
 				if (status === 'cancelled') await native.query('UPDATE capacity_provider_assignments SET metadata_json=? WHERE id=?',
 					[JSON.stringify({ ...native.assignment.metadata, cancellationRequested: true }), native.assignment.id]);
 				const before = await native.repository.get('team', native.assignment.id);
@@ -76,6 +90,13 @@ describe('provider terminal reporting through original transaction and resource 
 				const transition = () => status === 'completed' ? native.service.complete(principal, before.id, input)
 					: status === 'failed' ? native.service.fail(principal, before.id, { ...input, retryable: false })
 						: native.service.return(principal, before.id, input);
+
+                const snapshot=async()=>({state:await native.snapshot(),graph:(await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows,workdays:(await native.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows,events:(await native.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows});
+                const originalCustody=await snapshot();
+                await native.db.exec("CREATE FUNCTION native_terminal_event_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'retained terminal event interruption'; END $$");
+                await native.db.exec('CREATE TRIGGER native_terminal_event_failure BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION native_terminal_event_failure()');
+                try{await expect(transition()).rejects.toThrow('retained terminal event interruption');expect(await snapshot()).toEqual(originalCustody);expect(input).toEqual(original);}
+                finally{await native.db.exec('DROP TRIGGER native_terminal_event_failure ON capacity_workday_events');await native.db.exec('DROP FUNCTION native_terminal_event_failure()');}
 				const result = await transition(), persisted = await native.repository.get('team', before.id);
 				const expected = { ...before.assignmentAttempt, status: status === 'returned' ? 'blocked' : status,
 					finishedAt: '2026-10-02T21:00:02.000Z' };
@@ -85,10 +106,20 @@ describe('provider terminal reporting through original transaction and resource 
 				const raw = (await native.query('SELECT assignment_attempt_json FROM capacity_provider_assignments WHERE id=?', [before.id])).rows[0];
 				expect(JSON.parse(String(raw?.assignment_attempt_json))).toEqual(expected);
 				expect(persisted?.attemptCount).toBe(before.attemptCount);
+                const observations=(await native.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[before.id])).rows;
+                expect(observations,'every original terminal transition requires exactly one durable scoped observation').toHaveLength(1);
+                const event=observations[0]!;expect(event).toMatchObject({team_id:before.teamId,run_id:before.workDayId,workday_id:before.workDayId,project_id:before.projectId,assignment_id:before.id,event_type:'assignment.'+status,status:'recorded',created_at:expected.finishedAt});
+                expect(JSON.parse(String(event.context_json))).toMatchObject({nodeId:before.assignmentAttempt.nodeId,nodeRevision:before.assignmentAttempt.nodeRevision,graphRevision:before.assignmentAttempt.graphRevision,leaseId:before.assignmentAttempt.leaseId,reservationId:before.assignmentAttempt.reservationId,status});
+                expect(JSON.stringify(event)).not.toContain('lease-token');
+                const events=new CapacityWorkdayEventRepository(native.owner),visible=await events.list(before.teamId,before.workDayId!,{limit:100});
+                expect(visible.page).toEqual({limit:100,hasMore:false,nextCursor:null});expect(visible.items.find(value=>value.id===event.id)).toMatchObject({eventType:'assignment.'+status,createdAt:expected.finishedAt,assignmentId:before.id,context:JSON.parse(String(event.context_json))});
+
 				const terminal = await native.snapshot(), graph = (await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows;
 				await expect(transition()).resolves.toBeNull();
 				expect(await native.snapshot()).toEqual(terminal);
 				expect((await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows).toEqual(graph);
+                expect((await native.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[before.id])).rows).toEqual(observations);
+                expect(await events.list(before.teamId,before.workDayId!,{limit:100})).toEqual(visible);
 				expect(input).toEqual(original);
 				expect((await native.query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows).toEqual([{ total: 1 }]);
 			} finally { await native.close(); }

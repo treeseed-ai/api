@@ -1,6 +1,9 @@
+import {admissionUnitCollaborators} from './fixtures/admission-unit-collaborators.ts';
+admissionUnitCollaborators();
+import {CapacityWorkdayEventRepository} from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { admitLivingExecutionAssignment } from '../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts';
-import { calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema,calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
 
 import { assignment } from './fixtures/assignment.ts';
 const allocation = { ...calculateAssignmentAllocation({ estimate: assignment.estimate, measurements: [],
@@ -11,11 +14,20 @@ const accountingLimits = { modelConfigurationId: 'terra-medium', dailyActiveSeco
 	capabilityLimits: { 'code-change': { dailyActiveSecondsLimit: 28800 } } };
 const readyNode = () => vi.fn(async (_query: string, _params?: unknown[]) => ({ id: 'node' }));
 const batch = () => vi.fn(async (_operations: Array<{ query: string; params: unknown[] }>) => []);
-const committedAssignment = () => ({ id: assignment.id, teamId: assignment.teamId, capacityProviderId: assignment.provider.providerId,
+const committedAssignment = () => ({ id: assignment.id,createdAt:assignment.createdAt, teamId: assignment.teamId, capacityProviderId: assignment.provider.providerId,
 	executionNodeId: assignment.nodeId, executionNodeRevision: assignment.nodeRevision, assignmentAttempt: assignment,
 	explanation: { metadata: { allocation } } });
 
 describe('living execution admission', () => {
+	it('rejects missing or substituted creation observations while retaining exact original admission input',async()=>{
+		for(const field of [null,'teamId','runId','id','projectId','workdayId','assignmentId','eventType','status','title','message','parameters','context','refs','metadata','createdAt']){
+			const committed=committedAssignment(),store={getProviderAssignment:vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed),batch:batch(),first:readyNode()};
+			const input={principal:{teamId:'team',capacityProviderId:'provider',membershipId:'membership'},accountingLimits,assignment:assignmentAttemptSchema.parse(assignment),allocation,projectAgentClassId:'class',providerSessionId:'session',executionProviderId:'codex',laneId:'lane',lanePurpose:'workday' as const,executionKind:'workday' as const,workdayConcurrencyLimit:1,predecessorResults:[],treedxProxyHandle:{id:'tdx_assignment'},now:assignment.createdAt},held=structuredClone(input);
+			vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementationOnce(async(teamId,runId,value)=>field===null?null:{...value,teamId,runId,eventIndex:0,[field]:'substituted'});
+			await expect(admitLivingExecutionAssignment(store as never,input)).rejects.toMatchObject({code:'assignment_creation_observation_conflict',status:409});expect(input).toEqual(held);
+		}
+	});
+
 	it('fails closed when an assignment has no allocator-issued active phase', async () => {
 		const store = { getProviderAssignment: vi.fn().mockResolvedValue(null), batch: batch(), first: readyNode() };
 		await expect(admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
@@ -27,12 +39,14 @@ describe('living execution admission', () => {
 		expect(store.batch).not.toHaveBeenCalled();
 	});
 	it('claims the node, reservation, and immutable attempt in one batch without legacy demand/allocation authority', async () => {
+        const observation=vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementation(async(teamId,runId,value)=>({...value,teamId,runId,eventIndex:0}));
 		const committed = committedAssignment();
 		const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed), batch: batch(), first: readyNode() };
 		await expect(admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
 			accountingLimits, assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'codex', laneId: 'lane',
 			lanePurpose: 'workday', executionKind: 'workday', workdayConcurrencyLimit: 1, predecessorResults: [], treedxProxyHandle: { id: 'tdx_assignment', status: 'issued',
 				allowedPaths: [], allowedReadPaths: [], allowedWritePaths: [], scopes: [], allowedOperations: [] }, now: assignment.createdAt })).resolves.toBe(committed);
+		expect(observation,'every successful admission must publish its owning creation observation').toHaveBeenCalledOnce();observation.mockRestore();
 		const sql = store.batch.mock.calls[0]![0].map((operation: { query: string }) => operation.query).join('\n');
 		expect(sql).toMatch(/FOR UPDATE/u);
 		expect(sql).toMatch(/capacity_workday_runs WHERE team_id=\? AND id=\? AND status='running' FOR UPDATE/u);
