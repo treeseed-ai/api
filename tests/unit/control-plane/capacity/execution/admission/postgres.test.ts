@@ -1,3 +1,4 @@
+import {proveNativeCreationRollback} from './fixtures/native-creation-observations.ts';
 import { verifyNativeModelUsage, verifyNativeProviderUsage } from '../../../../../acceptance/execution-native-usage.ts';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -102,6 +103,7 @@ describe('living admission in disposable PostgreSQL', () => {
 				projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'codex', laneId: 'workday', lanePurpose: 'workday',
 				executionKind: 'workday', workdayConcurrencyLimit: 1, predecessorResults: [], treedxProxyHandle: { id: `tdx-${attempt.id}` }, now: attempt.createdAt,
 			});
+			await proveNativeCreationRollback(database,peerDatabase,attempts[0]!,run);
 			const results = await Promise.allSettled(attempts.map((attempt, index) => run(attempt, index === 0 ? store as never : peerAccounting)));
 			expect(results.filter(result => result.status === 'fulfilled'), results.map(result => result.status === 'rejected' ? String(result.reason) : 'admitted').join('\n')).toHaveLength(1);
 			const counters = await database.pool.query('SELECT committed_amount FROM capacity_admission_counters');
