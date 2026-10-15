@@ -1,3 +1,4 @@
+import type{PoolClient}from'pg';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { describe, expect, it } from 'vitest';
@@ -22,6 +23,10 @@ async function database() {
 				await db.exec(statement);
 			}
 		}
+		const initial=splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql','utf8'));
+		for(const table of ['capacity_workday_runs','capacity_workday_events']){const statements=initial.filter(sql=>sql.startsWith('CREATE TABLE "'+table+'" ('));if(statements.length!==1)throw new Error('Original native workday DDL required');await db.exec(statements[0]!);}
+		await db.exec(readFileSync('drizzle/control-plane/0031_workday_execution_mode_authority.sql','utf8'));
+		await db.query("INSERT INTO capacity_workday_runs(id,team_id,status,execution_mode,created_at,updated_at) VALUES('architecture-workday','team','running','simulation',$1,$1)",['2026-09-16T12:00:00.000Z']);
 		return db;
 	} catch (error) { await db.close(); throw error; }
 }
@@ -32,6 +37,7 @@ async function persist(db: PGlite, next: TeamGraph, current: TeamGraph) {
 		return db.query(sql.replace(/\?/gu, () => `$${++index}`), params);
 	};
 	const store = {
+		db:{transaction:<T>(apply:(client:PoolClient)=>Promise<T>)=>db.transaction(transaction=>apply(transaction as unknown as PoolClient))},
 		batch: (operations: Array<{ query: string; params: unknown[] }>) => db.transaction(async transaction => {
 			for (const operation of operations) {
 				let index = 0;
