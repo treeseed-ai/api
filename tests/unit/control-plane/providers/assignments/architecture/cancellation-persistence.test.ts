@@ -16,7 +16,19 @@ describe('cancellation retains productive and financial authority through origin
  it('native active cancellation publishes one owning request observation and exact replay preserves the first request clock and immutable attempt',async()=>{
   const f=await cancellationDatabase();try{
    atNow();
-   const input={idempotencyKey:'original-cancel-request',actorId:'operator',reason:'Original bounded cancellation request.'},held=structuredClone(input),service=new OperatorAssignmentService(f.owner),first=await service.cancel('team',f.assignment.id,input);
+
+   const input={idempotencyKey:'original-cancel-request',actorId:'operator',reason:'Original bounded cancellation request.'},held=structuredClone(input),service=new OperatorAssignmentService(f.owner);
+   const snapshotBefore=async()=>({custody:await f.snapshot(),events:(await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows,workdays:(await f.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows}),initial=await snapshotBefore();
+   const failures:unknown[]=[];
+   for(const mode of ['missing','interrupted']as const){
+    await f.db.exec('CREATE FUNCTION native_cancellation_observation_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN '+(mode==='missing'?'RETURN NULL;':"RAISE EXCEPTION 'retained cancellation observation interruption';")+' END $$');
+    await f.db.exec('CREATE TRIGGER native_cancellation_observation_failure BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION native_cancellation_observation_failure()');
+    let failure:unknown;try{await service.cancel('team',f.assignment.id,input);}catch(error){failure=error;}
+    finally{await f.db.exec('DROP TRIGGER native_cancellation_observation_failure ON capacity_workday_events');await f.db.exec('DROP FUNCTION native_cancellation_observation_failure()');}
+    expect(failure).toMatchObject({message:mode==='missing'?'Exact durable cancellation request observation required.':'retained cancellation observation interruption'});expect(await snapshotBefore()).toEqual(initial);expect(input).toEqual(held);failures.push(failure);
+   }
+   const first=await service.cancel('team',f.assignment.id,input);expect(failures).toHaveLength(2);
+
    const observations=(await f.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[f.assignment.id])).rows;
    expect.soft(observations,'active cancellation requires one durable owning observation').toHaveLength(1);
    if(observations.length===1){const event=observations[0]!;expect(event).toMatchObject({team_id:first.teamId,run_id:first.workDayId,assignment_id:first.id,event_type:'assignment.cancellation-requested',created_at:cancelNow});expect(await new CapacityWorkdayEventRepository(f.owner).get('team',first.workDayId!,String(event.id))).toMatchObject({eventType:'assignment.cancellation-requested',createdAt:cancelNow});}
