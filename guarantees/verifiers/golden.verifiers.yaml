@@ -4565,3 +4565,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/resource-closure-unit.test.ts
     testName: "denies omitted foreign duplicated live or substituted native session and proxy records without changing retained observations"
+  api.golden.execution-delayed-cleanup-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/cancellation-persistence.test.ts
+    testName: "retains the first actual revocation and updated clock when a stale released cancellation resumes after another cleanup has completed"

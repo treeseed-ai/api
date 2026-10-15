@@ -1,3 +1,5 @@
+import * as transactions from '../../../../../../../src/api/capacity/transaction.ts';
+import {eventObserved} from '../../../../realtime/architecture/session-postgres-fixture.ts';
 import {ControlPlaneStore} from '../../../../../../../src/api/persistence/store.ts';
 import {createCapacityControlPlane} from '../../../../../../../src/api/capacity/control-plane.ts';
 import {createWorkdayService} from '../../../../../../../src/api/control-plane/repositories/capacity/workday-service.ts';
@@ -128,7 +130,13 @@ async function exerciseNativeCancellation(status: 'leased' | 'returned' | 'retry
    expect(failed).toMatchObject({message:expect.stringContaining(mode==='interrupted'?'retained native cancellation interruption':status==='leased'?'Exact durable cancellation request observation required.':status==='returned'?'Exact durable terminal cancellation observation required.':'Exact durable retry observation required.')});
    expect(await snapshot()).toEqual(before);failures.push(failed);
   }
-  const outcomes=await Promise.all(calls.map(call=>call()));expect(outcomes[0]).toEqual(outcomes[1]);
+  const outcomes=[];
+  if(status==='returned'){
+   let release=()=>{},entered=()=>{},held=false,firstClock='';const gate=new Promise<void>(resolve=>release=resolve),ready=new Promise<void>(resolve=>entered=resolve),real=transactions.capacityTransaction;
+   const spy=vi.spyOn(transactions,'capacityTransaction').mockImplementation(async(store,apply)=>{const result=await real(store,apply);if(!held&&result&&typeof result==='object'&&Reflect.get(result,'status')==='cancelled'){held=true;firstClock=String(Reflect.get(result,'updatedAt'));entered();await gate;}return result;});
+   const pending=calls[0]!();try{await Promise.race([ready,pending.then(()=>{throw new Error('Original native terminal transaction barrier not reached');})]);await eventObserved(()=>Date.now()>Date.parse(firstClock));const second=await calls[1]!(),beforeCleanup=await snapshot();release();outcomes.push(await pending,second);expect(await snapshot()).toEqual(beforeCleanup);}finally{release();await pending.catch(()=>undefined);spy.mockRestore();}
+  }else outcomes.push(...await Promise.all(calls.map(call=>call())));
+  expect(outcomes[0]).toEqual(outcomes[1]);
   const first=outcomes[0]!;expect(first).toMatchObject({status:status==='leased'?'leased':status==='returned'?'cancelled':'returned',stateVersion:2});
   expect(first.assignmentAttempt).toEqual(status!=='returned'?{...attempt}:{...attempt,status:'cancelled',finishedAt:first.assignmentAttempt!.finishedAt});
   const raw=(await native.right.pool.query('SELECT * FROM capacity_workday_events WHERE assignment_id=$1 ORDER BY event_index',[attempt.id])).rows;
