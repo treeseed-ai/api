@@ -57,6 +57,17 @@ function setup(ready = true) {
 beforeEach(()=>{vi.spyOn(transactions,'capacityTransaction').mockImplementation(async(store,apply)=>apply(store));vi.spyOn(CapacityWorkdayEventRepository.prototype,'get').mockResolvedValue(null);vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementation(async(teamId,runId,value)=>({...value,teamId,runId,eventIndex:0}));});
 afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks();});
 describe('operator planning boundary closeout', () => {
+ it('rejects each missing or conflicting cancellation request observation without certifying another scope or changing issued attempt authority',async()=>{
+  const substitutions=[null,...['id','projectId','workdayId','assignmentId','eventType','status','createdAt','teamId','runId'].map(field=>({field,value:'foreign'})),{field:'context',value:{}},{field:'parameters',value:{}}];
+  for(const replacement of substitutions){
+   const {service,database}=setup();fixture.assignment={...recoveryAssignment(false)};const before=structuredClone(fixture.assignment);
+   database.first.mockImplementation(async(query,params)=>{if(query.startsWith('UPDATE capacity_provider_assignments SET metadata_json')){fixture.assignment={...fixture.assignment,metadata:JSON.parse(String(params[0])),stateVersion:Number(fixture.assignment.stateVersion)+1,lifecycleReason:params[1],updatedAt:params[2]};return{id:fixture.assignment.id};}throw new Error('Unexpected denial unit query');});
+   const event=vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementation(async(teamId,runId,value)=>replacement===null?null:{...value,teamId,runId,eventIndex:0,[replacement.field]:replacement.value});
+   try{await expect(service.cancel('team',String(before.id),{idempotencyKey:'denied-original',actorId:'operator',reason:'Original request.'})).rejects.toMatchObject({code:'capacity_assignment_cancel_conflict'});expect(fixture.assignment.assignmentAttempt).toEqual(before.assignmentAttempt);expect(fixture.settle).not.toHaveBeenCalled();}
+   finally{event.mockRestore();}
+  }
+ });
+
  it('retains the original revocation clock on every already revoked handle without rewriting input during later cleanup',()=>{
   const at='2026-10-02T21:00:04.000Z',later='2026-10-02T21:00:05.000Z',handle={id:'original-handle',status:'revoked',revokedAt:at};
   const input={...recoveryAssignment(false),treedxProxyHandle:handle,capabilityHandles:{repository:[handle],treeDx:[handle],workflowOperations:[handle],secrets:[handle]}},held=structuredClone(input);

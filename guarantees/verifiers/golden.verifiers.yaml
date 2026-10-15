@@ -4453,3 +4453,39 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/living-execution-lifecycle.test.ts
     testName: "requires complete canonical authority for every original native concurrent terminal fixture before allocating PostgreSQL"
+
+  api.golden.cancellation-request-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
+    testName: "records one exact scoped active cancellation request without terminalizing or rewriting issued authority"
+
+  api.golden.cancellation-request-denials-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
+    testName: "rejects each missing or conflicting cancellation request observation without certifying another scope or changing issued attempt authority"
+
+  api.golden.cancellation-revocation-clock-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
+    testName: "retains the original revocation clock on every already revoked handle without rewriting input during later cleanup"
+
+  api.golden.cancellation-request-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/cancellation-persistence.test.ts
+    testName: "native active cancellation publishes one owning request observation and exact replay preserves the first request clock and immutable attempt"
+
+  api.golden.cancellation-request-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-postgres.test.ts
+    testName: "native PostgreSQL active cancellation serializes original request and exact public history after missing and interrupted observations"
+
+  api.golden.cancellation-terminal-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-postgres.test.ts
+    testName: "native PostgreSQL released cancellation serializes original terminal state and exact public history after missing and interrupted observations"

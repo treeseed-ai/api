@@ -114,6 +114,10 @@ async function exerciseNativeCancellation(status: 'leased' | 'returned') {
   const calls=services.map(service=>()=>service.cancel(native.principal,'team',attempt.id,body,'original-native-cancellation'));
   const snapshot=async()=>Object.fromEntries(await Promise.all(['capacity_provider_assignments','capacity_workday_runs','capacity_workday_events','execution_nodes','capacity_reservations','capacity_admission_counters','capacity_reservation_counter_claims','capacity_usage_actuals','capacity_ledger_entries'].map(async table=>[table,(await native.right.pool.query('SELECT * FROM '+table+' ORDER BY 1,2')).rows])));
   const before=await snapshot(),failures:unknown[]=[];
+  await expect(services[0]!.cancel(undefined,'team',attempt.id,body,'denied')).rejects.toMatchObject({status:401});
+  await expect(services[0]!.cancel(native.principal,'foreign-team',attempt.id,body,'denied')).rejects.toMatchObject({status:404});
+  await expect(services[0]!.cancel(native.principal,'team',attempt.id,body,'')).rejects.toMatchObject({status:400});
+  expect(await snapshot()).toEqual(before);
   for(const mode of ['missing','interrupted']as const){
    await native.left.pool.query('CREATE FUNCTION native_cancel_observation_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN '+(mode==='missing'?'RETURN NULL;':"RAISE EXCEPTION 'retained native cancellation interruption';")+' END $$');
    await native.left.pool.query('CREATE TRIGGER native_cancel_observation_fault BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION native_cancel_observation_fault()');

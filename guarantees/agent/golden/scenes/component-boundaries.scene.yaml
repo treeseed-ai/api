@@ -2614,3 +2614,27 @@ workflow:
   - id: concurrent-terminal-fixture-unit
     action: { verifier: api.golden.concurrent-terminal-fixture-unit }
     expect: { status: passed }
+
+  - id: cancellation-request-unit
+    action: { verifier: api.golden.cancellation-request-unit }
+    expect: { status: passed }
+
+  - id: cancellation-request-denials-unit
+    action: { verifier: api.golden.cancellation-request-denials-unit }
+    expect: { status: passed }
+
+  - id: cancellation-revocation-clock-unit
+    action: { verifier: api.golden.cancellation-revocation-clock-unit }
+    expect: { status: passed }
+
+  - id: cancellation-request-native
+    action: { verifier: api.golden.cancellation-request-native }
+    expect: { status: passed }
+
+  - id: cancellation-request-postgres-native
+    action: { verifier: api.golden.cancellation-request-postgres-native }
+    expect: { status: passed }
+
+  - id: cancellation-terminal-postgres-native
+    action: { verifier: api.golden.cancellation-terminal-postgres-native }
+    expect: { status: passed }
