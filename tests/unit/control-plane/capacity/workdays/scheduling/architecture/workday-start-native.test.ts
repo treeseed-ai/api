@@ -384,7 +384,7 @@ describe('first manual and recurring admission through the same public owning pa
 				endsAt: new Date(Date.parse(original.startsAt) + original.durationSeconds * 1000).toISOString() });
 			expect(first.schedule?.intent).toEqual(original); expect(first.schedule?.lastRunId).toBe(first.run.id);
 			expect(truth.workdays).toHaveLength(1); expect(truth.receipts.map(row => row.operation).sort()).toEqual(['workday.preflight', 'workday.start']);
-			expectNodeBirthHistory(truth); expect(truth.nodes.length).toBeGreaterThan(0); expectNodeBirthHistory(truth); expect(truth.events.filter(event=>event.event_type!=='execution.node.state').map(row => row.event_type)).toEqual(['workday.started', 'assignment.polling_ready']);
+			expectNodeBirthHistory(truth); expect(truth.nodes.length).toBeGreaterThan(0); expect(truth.events.filter(event=>event.event_type!=='execution.node.state').map(row => row.event_type)).toEqual(['workday.started', 'assignment.polling_ready']);
 			expect(truth.assignments).toEqual([]); expect(truth.ledger).toEqual([]);
 			expect((await f.store.tickCapacityWorkdaySchedule('team', 'schedule', f.intent.startsAt))?.action).toBe('active_run');
 			expect(await f.snapshot()).toEqual(truth); expect(f.calls).toHaveLength(1); expect(f.intent).toEqual(original);
@@ -396,7 +396,7 @@ describe('first manual and recurring admission through the same public owning pa
 			const outcomes = await Promise.allSettled([f.store.tickCapacityWorkdaySchedule('team', 'schedule', f.intent.startsAt), f.store.tickCapacityWorkdaySchedule('team', 'schedule', f.intent.startsAt)]);
 			const truth = await f.snapshot(); expect(truth.workdays).toHaveLength(1);
 			expect(truth.receipts.filter(row => row.operation === 'workday.start')).toHaveLength(1);
-			expect(truth.events.filter(event=>event.event_type!=='execution.node.state').map(row => row.event_type)).toEqual(['workday.started', 'assignment.polling_ready']);
+			expectNodeBirthHistory(truth); expect(truth.events.filter(event=>event.event_type!=='execution.node.state').map(row => row.event_type)).toEqual(['workday.started', 'assignment.polling_ready']);
 			expect(outcomes.filter(outcome => outcome.status === 'fulfilled' && outcome.value?.action === 'created')).toHaveLength(1);
 			expect(truth.assignments).toEqual([]); expect(truth.reservations).toEqual([]); expect(truth.ledger).toEqual([]);
 			const replay = await f.store.tickCapacityWorkdaySchedule('team', 'schedule', f.intent.startsAt); expect(replay?.run?.id).toBe(truth.workdays[0]?.id);
