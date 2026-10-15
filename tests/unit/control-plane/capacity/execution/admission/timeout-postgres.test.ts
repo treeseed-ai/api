@@ -78,6 +78,11 @@ describe('terminal timeout PostgreSQL custody', () => {
 			expect(stored).toHaveLength(1);
 			const issued = assignmentAttemptSchema.parse(JSON.parse(stored[0]!.assignment_attempt_json));
 			expect(issued.deadline).toBe(expired); expect(issued.limits.maximumSeconds).toBe(reservedSeconds);
+			// Acting timeout inputs require the same owning run as the planning fixture.
+			// A missing run must still deny and roll back the terminal transition.
+			if (!phase) await db.pool.query(`INSERT INTO capacity_workday_runs
+				(id,team_id,capacity_provider_id,scenario_id,status,environment,execution_kind,trigger_kind,execution_mode,parameters_json,created_at,updated_at)
+				VALUES ($1,'team','provider','profile:default','running','local','workday','manual','simulation','{}',$2,$2)`, [issued.workdayId, now]);
 			await db.pool.query(`INSERT INTO execution_nodes
 				(id,team_id,project_id,workday_id,work_item_id,kind,pair_role,source_ref_json,authority_refs_json,
 				rule_revision,node_revision,agent_class,status,graph_revision_created,graph_revision_updated,created_at,updated_at,
@@ -129,6 +134,14 @@ describe('terminal timeout PostgreSQL custody', () => {
 			expect(usages).toHaveLength(1);
 			expect(usages[0]).toMatchObject({ active_seconds: activeSeconds, input_tokens: 200, output_tokens: 30 });
 			expect(await store.all("SELECT id FROM capacity_ledger_entries WHERE phase='overrun_hold'")).toHaveLength(0);
+			if (!returned) {
+				const observations = await store.all("SELECT * FROM capacity_workday_events WHERE assignment_id='assignment'");
+				expect(observations).toHaveLength(1);
+				expect(observations[0]).toMatchObject({ team_id: issued.teamId, project_id: issued.projectId,
+					run_id: issued.workdayId, workday_id: issued.workdayId, event_type: phase ? 'assignment.cancelled' : 'assignment.failed' });
+				const terminal = await repository.get('team', 'assignment');
+				expect(observations[0]!.created_at).toBe(terminal!.updatedAt);
+			}
 		} finally {
 			await db.close(); await admin.query(`DROP DATABASE "${name}"`); await admin.end();
 		}

@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cancellationDatabase, cancelNow } from '../../../../providers/assignments/architecture/cancellation-fixture.ts';
 import { terminalUsage } from '../../../accounting/architecture/settlement-fixture.ts';
@@ -7,18 +6,12 @@ import { terminalizeCapacityWorkdayAssignments } from '../../../../../../../src/
 import { maintainCapacityWorkdayRuns } from '../../../../../../../src/api/capacity/services/capacity/workdays/lifecycle/workday-recovery-service.ts';
 import { CapacityWorkdayEventService } from '../../../../../../../src/api/capacity/services/capacity/workdays/content/workday-event-service.ts';
 import { CapacityWorkdayRunWriteRepository } from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run-write.ts';
-import { splitPostgresSqlStatements } from '../../../../../../../src/api/persistence/postgres-sql-statements.ts';
 
 afterEach(() => vi.useRealTimers());
 async function fixture() {
 	const base = await cancellationDatabase('returned', true);
 	try {
-		const original = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
-		for (const prefix of ['CREATE TABLE "capacity_workday_events" (', 'CREATE UNIQUE INDEX "idx_capacity_workday_events_run_index"']) {
-			const statements = original.filter(sql => sql.startsWith(prefix));
-			if (statements.length !== 1) throw new Error(`Missing original event authority ${prefix}`);
-			await base.db.exec(statements[0]!);
-		}
+		// The shared cancellation fixture owns the original event table and index.
 		const events = new CapacityWorkdayEventService(base.owner);
 		return { ...base, recovery: { ...base.owner,
 			terminalizeCapacityWorkdayAssignments: (team: string, run: string, input: Record<string, unknown>) =>
