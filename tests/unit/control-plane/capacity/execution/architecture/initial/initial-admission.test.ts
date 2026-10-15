@@ -14,7 +14,17 @@ import type { GraphRevision } from '@treeseed/sdk/agent-capacity';
 describe('initial living assignment native admission', () => {
  it('native initial admission publishes one exact scoped creation observation and retains unchanged authority on replay',async()=>{
   const f=await initialAdmission();try{
-   const input=f.input(),held=structuredClone(input),admitted=await f.admit(input);
+
+   const input=f.input(),held=structuredClone(input),snapshot=async()=>({custody:await f.snapshot(),events:(await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows,workdays:(await f.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows}),original=await snapshot();
+   for(const mode of ['missing','interrupted']as const){
+    const body=mode==='missing'?'RETURN NULL;':"RAISE EXCEPTION 'retained native creation observation interruption';";
+    await f.db.exec('CREATE FUNCTION native_creation_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN '+body+' END $$');
+    await f.db.exec('CREATE TRIGGER native_creation_failure BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION native_creation_failure()');
+    try{await expect(f.admit(input)).rejects.toThrow(mode==='missing'?'Assignment creation requires its exact durable owning observation.':'retained native creation observation interruption');expect(await snapshot()).toEqual(original);expect(input).toEqual(held);}
+    finally{await f.db.exec('DROP TRIGGER native_creation_failure ON capacity_workday_events');await f.db.exec('DROP FUNCTION native_creation_failure()');}
+   }
+   const values=await Promise.all([f.admit(input),f.admit(structuredClone(input))]),admitted=values[0]!;expect(values[1]).toEqual(admitted);
+
    const raw=(await f.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[f.attempt.id])).rows;
    expect(raw,'native successful assignment creation requires one durable observation').toHaveLength(1);
    const event=raw[0]!;expect(event).toMatchObject({team_id:f.attempt.teamId,run_id:f.attempt.workdayId,workday_id:f.attempt.workdayId,project_id:f.attempt.projectId,assignment_id:f.attempt.id,event_type:'assignment.created',status:'recorded',created_at:f.attempt.createdAt});
