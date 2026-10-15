@@ -1,3 +1,6 @@
+import {ControlPlaneStore} from '../../../../../../../src/api/persistence/store.ts';
+import {createCapacityControlPlane} from '../../../../../../../src/api/capacity/control-plane.ts';
+import {createWorkdayService} from '../../../../../../../src/api/control-plane/repositories/capacity/workday-service.ts';
 import {copyNativeAssignmentCustody} from '../native-assignment-custody.ts';
 import { describe, expect, it } from 'vitest';
 import { postgresGraph } from '../../../../capacity/execution/graph/architecture/living/living-postgres-fixture.ts';
@@ -97,3 +100,55 @@ describe('unresolved recovery with independent native PostgreSQL connections', (
 		await exercisePostgresRecovery(true);
 	});
 });
+
+async function exerciseNativeCancellation(status: 'leased' | 'returned' | 'retry') {
+ const native=await postgresGraph();
+ try {
+  const supplied=await cancellationDatabase(status==='leased'?'leased':'returned',status==='returned');const attempt=supplied.attempt;
+  try {
+   if(status==='returned')await settleCapacityReservationExactlyOnce(supplied.owner,terminalUsage);
+   if(status==='retry')await supplied.query("UPDATE execution_nodes SET status='failed' WHERE id=?",[attempt.nodeId]);
+   await copyNativeAssignmentCustody(native.left,supplied,['capacity_workday_runs','execution_nodes','capacity_reservations','capacity_provider_assignments','capacity_admission_counters','capacity_reservation_counter_claims','capacity_usage_actuals','capacity_ledger_entries']);
+  }finally{await supplied.db.close();}
+  const owners=[native.left,native.right].map(db=>{const host=new ControlPlaneStore({TREESEED_ENVIRONMENT:'test'},db);host.initializationPromise=Promise.resolve();return createCapacityControlPlane(host);});
+  const services=owners.map(owner=>createAssignmentService(owner)),body={reason:'Original independent native cancellation'},held=structuredClone(body);
+  const calls=services.map(service=>async()=>status==='retry'?(await service.retry(native.principal,'team',attempt.id,body,'original-native-cancellation')).assignment:service.cancel(native.principal,'team',attempt.id,body,'original-native-cancellation'));
+  const snapshot=async()=>Object.fromEntries(await Promise.all(['capacity_provider_assignments','capacity_workday_runs','capacity_workday_events','execution_nodes','capacity_reservations','capacity_admission_counters','capacity_reservation_counter_claims','capacity_usage_actuals','capacity_ledger_entries'].map(async table=>[table,(await native.right.pool.query('SELECT * FROM '+table+' ORDER BY 1,2')).rows])));
+  const before=await snapshot(),failures:unknown[]=[];
+  await expect(services[0]![status==='retry'?'retry':'cancel'](undefined,'team',attempt.id,body,'denied')).rejects.toMatchObject({status:401});
+  await expect(services[0]![status==='retry'?'retry':'cancel'](native.principal,'foreign-team',attempt.id,body,'denied')).rejects.toMatchObject({status:404});
+  await expect(services[0]![status==='retry'?'retry':'cancel'](native.principal,'team',attempt.id,body,'')).rejects.toMatchObject({status:400});
+  expect(await snapshot()).toEqual(before);
+  for(const mode of ['missing','interrupted']as const){
+   await native.left.pool.query('CREATE FUNCTION native_cancel_observation_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN '+(mode==='missing'?'RETURN NULL;':"RAISE EXCEPTION 'retained native cancellation interruption';")+' END $$');
+   await native.left.pool.query('CREATE TRIGGER native_cancel_observation_fault BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION native_cancel_observation_fault()');
+   let failed:unknown;
+   try{await calls[0]!();}catch(error){failed=error;}
+   finally{await native.left.pool.query('DROP TRIGGER native_cancel_observation_fault ON capacity_workday_events');await native.left.pool.query('DROP FUNCTION native_cancel_observation_fault()');}
+   expect(failed).toMatchObject({message:expect.stringContaining(mode==='interrupted'?'retained native cancellation interruption':status==='leased'?'Exact durable cancellation request observation required.':status==='returned'?'Exact durable terminal cancellation observation required.':'Exact durable retry observation required.')});
+   expect(await snapshot()).toEqual(before);failures.push(failed);
+  }
+  const outcomes=await Promise.all(calls.map(call=>call()));expect(outcomes[0]).toEqual(outcomes[1]);
+  const first=outcomes[0]!;expect(first).toMatchObject({status:status==='leased'?'leased':status==='returned'?'cancelled':'returned',stateVersion:2});
+  expect(first.assignmentAttempt).toEqual(status!=='returned'?{...attempt}:{...attempt,status:'cancelled',finishedAt:first.assignmentAttempt!.finishedAt});
+  const raw=(await native.right.pool.query('SELECT * FROM capacity_workday_events WHERE assignment_id=$1 ORDER BY event_index',[attempt.id])).rows;
+  expect(raw).toHaveLength(1);const row=raw[0]!,type=status==='leased'?'assignment.cancellation-requested':status==='returned'?'assignment.cancelled':'assignment.retry-requested';
+  expect(row).toMatchObject({event_type:type,team_id:attempt.teamId,project_id:attempt.projectId,run_id:attempt.workdayId,workday_id:attempt.workdayId});
+  const retry=first.metadata.operatorRetry;const observedAt=status==='retry'&&retry&&typeof retry==='object'&&!Array.isArray(retry)?Reflect.get(retry,'requestedAt'):status==='leased'?first.metadata.cancellationRequestedAt:first.assignmentAttempt!.finishedAt;expect(row.created_at).toBe(observedAt);
+  if(status==='retry'){const node=(await native.right.pool.query('SELECT status,node_revision FROM execution_nodes WHERE id=$1',[attempt.nodeId])).rows;expect(node).toEqual([{status:'ready',node_revision:2}]);expect(JSON.parse(String(row.context_json))).toMatchObject({nodeId:attempt.nodeId,nodeRevision:2,stateVersion:2});}
+  expect(JSON.stringify(row)).not.toContain('lease-token');
+  const publicEvents=await createWorkdayService(owners[1]!).events(native.principal,'team',attempt.workdayId,{limit:1});
+  expect(publicEvents.items).toHaveLength(1);expect(publicEvents.page.hasMore).toBe(false);expect(publicEvents.items[0]).toMatchObject({id:row.id,eventType:type,createdAt:observedAt});
+  expect(await services[1]!.show(native.principal,'team',attempt.id)).toMatchObject(first);
+  const after=await snapshot();for(const table of ['capacity_reservations','capacity_admission_counters','capacity_reservation_counter_claims','capacity_usage_actuals','capacity_ledger_entries'])expect(after[table]).toEqual(before[table]);
+  expect(await calls[1]!()).toEqual(first);expect(await snapshot()).toEqual(after);expect(body).toEqual(held);expect(failures).toHaveLength(2);
+ }finally{await native.close();}
+}
+
+
+describe('native public cancellation observation custody',()=>{
+ it('native PostgreSQL active cancellation serializes original request and exact public history after missing and interrupted observations',async()=>exerciseNativeCancellation('leased'));
+ it('native PostgreSQL released cancellation serializes original terminal state and exact public history after missing and interrupted observations',async()=>exerciseNativeCancellation('returned'));
+});
+
+it('native PostgreSQL public retry serializes original node reopening and exact public history after missing and interrupted observations',async()=>exerciseNativeCancellation('retry'));

@@ -2614,3 +2614,71 @@ workflow:
   - id: concurrent-terminal-fixture-unit
     action: { verifier: api.golden.concurrent-terminal-fixture-unit }
     expect: { status: passed }
+
+  - id: cancellation-request-unit
+    action: { verifier: api.golden.cancellation-request-unit }
+    expect: { status: passed }
+
+  - id: cancellation-request-denials-unit
+    action: { verifier: api.golden.cancellation-request-denials-unit }
+    expect: { status: passed }
+
+  - id: cancellation-revocation-clock-unit
+    action: { verifier: api.golden.cancellation-revocation-clock-unit }
+    expect: { status: passed }
+
+  - id: cancellation-request-native
+    action: { verifier: api.golden.cancellation-request-native }
+    expect: { status: passed }
+
+  - id: cancellation-request-postgres-native
+    action: { verifier: api.golden.cancellation-request-postgres-native }
+    expect: { status: passed }
+
+  - id: cancellation-terminal-postgres-native
+    action: { verifier: api.golden.cancellation-terminal-postgres-native }
+    expect: { status: passed }
+
+  - id: retry-observation-unit
+    action: { verifier: api.golden.retry-observation-unit }
+    expect: { status: passed }
+
+  - id: retry-observation-native
+    action: { verifier: api.golden.retry-observation-native }
+    expect: { status: passed }
+
+  - id: retry-observation-postgres-native
+    action: { verifier: api.golden.retry-observation-postgres-native }
+    expect: { status: passed }
+
+  - id: recovery-observation-unit
+    action: { verifier: api.golden.recovery-observation-unit }
+    expect: { status: passed }
+
+  - id: recovery-observation-zero-write-native
+    action: { verifier: api.golden.recovery-observation-zero-write-native }
+    expect: { status: passed }
+
+  - id: recovery-observation-unknown-postgres-native
+    action: { verifier: api.golden.recovery-observation-unknown-postgres-native }
+    expect: { status: passed }
+
+  - id: recovery-observation-premodel-postgres-native
+    action: { verifier: api.golden.recovery-observation-premodel-postgres-native }
+    expect: { status: passed }
+
+  - id: workday-terminal-observation-unit
+    action: { verifier: api.golden.workday-terminal-observation-unit }
+    expect: { status: passed }
+
+  - id: workday-terminal-observation-zero-write-native
+    action: { verifier: api.golden.workday-terminal-observation-zero-write-native }
+    expect: { status: passed }
+
+  - id: workday-terminal-observation-measured-postgres-native
+    action: { verifier: api.golden.workday-terminal-observation-measured-postgres-native }
+    expect: { status: passed }
+
+  - id: workday-terminal-observation-premodel-postgres-native
+    action: { verifier: api.golden.workday-terminal-observation-premodel-postgres-native }
+    expect: { status: passed }

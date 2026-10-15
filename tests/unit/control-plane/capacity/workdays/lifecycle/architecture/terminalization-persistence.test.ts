@@ -11,6 +11,17 @@ function clock() { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new 
 // Supplied clocks/usage are not provider-generated measurements, authenticated
 // transport, independent PostgreSQL connections or physical teardown evidence.
 describe('workday terminalization retains actual assignment and settlement custody', () => {
+ it('native workday stop aborts prior settlement when an original assignment transition is suppressed',async()=>{
+  const f=await cancellationDatabase('returned',false);try{
+   clock();const snapshot=async()=>({custody:await f.snapshot(),events:(await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows,runs:(await f.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows}),before=await snapshot();
+   await f.db.exec("CREATE FUNCTION workday_stop_zero_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='failed' THEN RETURN NULL;END IF;RETURN NEW;END $$");
+   await f.db.exec('CREATE TRIGGER workday_stop_zero_write BEFORE UPDATE ON capacity_provider_assignments FOR EACH ROW EXECUTE FUNCTION workday_stop_zero_write()');
+   let failure:unknown;try{await terminalizeCapacityWorkdayAssignments(f.owner,'team','workday',{now:cancelNow});}catch(error){failure=error;}
+   finally{await f.db.exec('DROP TRIGGER workday_stop_zero_write ON capacity_provider_assignments');await f.db.exec('DROP FUNCTION workday_stop_zero_write()');}
+   expect.soft(failure,'a suppressed original terminal row must roll back preceding settlement').toMatchObject({message:'workday_assignment_observation_state_mismatch'});expect(await snapshot()).toEqual(before);
+  }finally{await f.db.close();}
+ });
+
 	it('native deadline terminalization retains unknown operator-action usage and every original budget claim without fabricating zero settlement', async () => {
 		for (const status of ['expired', 'failed', 'cancelled']) {
 		for (const reservationState of ['reserved', 'consuming']) {
@@ -59,6 +70,7 @@ describe('workday terminalization retains actual assignment and settlement custo
 				expect(after?.status).toBe('failed');
 				expect(after?.assignmentAttempt).toEqual({ ...before.assignmentAttempt, status: 'failed', finishedAt: cancelNow });
 				expect(after?.attemptCount).toBe(before.attemptCount);
+    const events=(await native.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[before.id])).rows;expect.soft(events,'workday stop requires each original assignment terminal observation').toHaveLength(1);
 				const terminal = await native.snapshot();
 				await terminalizeCapacityWorkdayAssignments(native.owner, 'team', 'workday', { now: '2026-10-02T21:00:05.000Z' });
 				expect(await native.snapshot()).toEqual(terminal);

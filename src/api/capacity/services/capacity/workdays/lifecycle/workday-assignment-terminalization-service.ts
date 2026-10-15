@@ -1,3 +1,6 @@
+import {isDeepStrictEqual} from 'node:util';
+import {capacityTransaction} from '../../../../transaction.ts';
+import {CapacityWorkdayEventRepository,type CapacityWorkdayEventWrite} from '../../../../repositories/capacity/workdays/workday-event.ts';
 import { MAX_CAPACITY_PAGE_LIMIT } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
@@ -209,6 +212,7 @@ export async function terminalizeCapacityWorkdayAssignments(
 		: now;
 
 	while (true) {
+  const processed=await capacityTransaction(database,async database=>{
 		const assignments = await database.all<TerminalAssignmentRow>(
 			`SELECT assignment.id, assignment.membership_id, assignment.reservation_id, assignment.state_version,
 			        assignment.lifecycle_output_json
@@ -222,10 +226,10 @@ export async function terminalizeCapacityWorkdayAssignments(
 			   AND NOT (? > ? AND assignment.status = 'leased' AND assignment.lease_state = 'leased'
 			     AND assignment.lease_token IS NOT NULL AND assignment.lease_expires_at IS NOT NULL AND assignment.lease_expires_at > ?)
 			 ORDER BY assignment.created_at ASC, assignment.id ASC
-			 LIMIT ?`,
+			 LIMIT ? FOR UPDATE OF assignment`,
 			[teamId, runId, preserveUntil, now, now, MAX_CAPACITY_PAGE_LIMIT],
 		);
-		if (assignments.length === 0) break;
+		if (assignments.length === 0) return 0;
 
 		const admittedAssignments = await settleTerminalAssignments(database, assignments, teamId, runId, now, input);
 		const assignmentsByVersion = new Map<number, TerminalAssignmentRow[]>();
@@ -292,7 +296,20 @@ export async function terminalizeCapacityWorkdayAssignments(
 			];
 		});
 		await database.batch(stateOperations);
-		if (assignments.length < MAX_CAPACITY_PAGE_LIMIT) break;
+  const repository=new ProviderAssignmentRepository(database),writer=new CapacityWorkdayEventRepository(database);
+  for(const row of assignments){
+   const original=admittedAssignments.get(row.id),written=await repository.get(teamId,row.id);
+   if(!original?.assignmentAttempt||!written||written.status!=='failed'||written.leaseState!=='released'||written.leaseToken!==null||written.leaseExpiresAt!==null
+    ||written.stateVersion!==original.stateVersion+1||written.updatedAt!==now||written.workDayId!==runId||written.projectId!==original.projectId||written.lifecycleCode!==(input.code??'workday_terminalized')
+    ||!isDeepStrictEqual(written.assignmentAttempt,advanceAssignmentAttemptLifecycle(original.assignmentAttempt,'failed',now))||!isDeepStrictEqual(written.assignmentResult,original.assignmentResult))throw new Error('workday_assignment_observation_state_mismatch');
+   const attempt=original.assignmentAttempt,event:CapacityWorkdayEventWrite={id:'assignment-terminal:'+row.id+':'+written.stateVersion,projectId:original.projectId,workdayId:runId,assignmentId:row.id,eventType:'assignment.failed',status:'recorded',title:'Assignment failed',message:null,parameters:{},metadata:{},refs:{},createdAt:now,
+    context:{nodeId:attempt.nodeId,nodeRevision:attempt.nodeRevision,graphRevision:attempt.graphRevision,status:'failed',leaseId:attempt.leaseId,reservationId:attempt.reservationId,runnerId:written.runnerId,resultId:written.assignmentResult?.id??null}};
+   const observed=await writer.create(teamId,runId,event);
+   if(!observed||observed.teamId!==teamId||observed.runId!==runId||Object.entries(event).some(([key,value])=>!isDeepStrictEqual(Reflect.get(observed,key),value)))throw new Error('workday_assignment_observation_conflict');
+  }
+  return assignments.length;
+  });
+  if(processed<MAX_CAPACITY_PAGE_LIMIT)break;
 	}
 	await database.run(
 		`UPDATE execution_nodes SET status='cancelled',updated_at=?

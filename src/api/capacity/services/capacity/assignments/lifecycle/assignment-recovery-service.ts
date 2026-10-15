@@ -1,3 +1,5 @@
+import {isDeepStrictEqual} from 'node:util';
+import {CapacityWorkdayEventRepository,type CapacityWorkdayEventWrite} from '../../../../repositories/capacity/workdays/workday-event.ts';
 import { createHash } from 'node:crypto';
 import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../../../database.ts';
 import { ProviderAssignmentRepository,serializeProviderAssignmentRow,advanceAssignmentAttemptLifecycle,type DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
@@ -181,7 +183,16 @@ async function recoverLocked(database: CapacityGovernanceDatabase, assignment: D
 	}
 	await database.batch(transitionOperations(assignment, result, observed, now, recoveryTrigger));
 	const recovered = await new ProviderAssignmentRepository(database).get(assignment.teamId, assignment.id);
-	if (!recovered || recovered.stateVersion !== assignment.stateVersion + 1 || recovered.status !== result.status) return null;
+ if(!recovered||recovered.stateVersion!==assignment.stateVersion+1||recovered.status!==result.status||recovered.updatedAt!==now||recovered.lifecycleCode!==result.reasonCode
+  ||!isDeepStrictEqual(recovered.assignmentAttempt,assignment.assignmentAttempt?advanceAssignmentAttemptLifecycle(assignment.assignmentAttempt,result.status==='returned'?'blocked':result.status,now):null)
+  ||!isDeepStrictEqual(recovered.assignmentResult,assignment.assignmentResult))throw new Error('assignment_recovery_observation_state_mismatch');
+ if(!assignment.workDayId||recovered.workDayId!==assignment.workDayId||recovered.projectId!==assignment.projectId)throw new Error('assignment_recovery_observation_scope_missing');
+ const event:CapacityWorkdayEventWrite={id:'assignment-terminal:'+assignment.id+':'+recovered.stateVersion,projectId:assignment.projectId,workdayId:assignment.workDayId,assignmentId:assignment.id,
+  eventType:'assignment.'+result.status,status:'recorded',title:'Assignment '+result.status,message:null,parameters:{},metadata:{},refs:{},createdAt:now,
+  context:{nodeId:assignment.executionNodeId,nodeRevision:assignment.executionNodeRevision,graphRevision:assignment.graphRevision,status:result.status,leaseId:assignment.assignmentAttempt?.leaseId??null,
+   reservationId:assignment.reservationId,runnerId:recovered.runnerId,resultId:recovered.assignmentResult?.id??null,recoveryDisposition:result.disposition,recoveryReasonCode:result.reasonCode}};
+ const observedEvent=await new CapacityWorkdayEventRepository(database).create(assignment.teamId,assignment.workDayId,event);
+ if(!observedEvent||observedEvent.teamId!==assignment.teamId||observedEvent.runId!==assignment.workDayId||Object.entries(event).some(([key,value])=>!isDeepStrictEqual(Reflect.get(observedEvent,key),value)))throw new Error('assignment_recovery_observation_conflict');
 	if (assignment.operationHandoffId) await recoverOperationHandoff(database,assignment.operationHandoffId,assignment.id,{retry:result.disposition==='safe-retry',completed:result.status==='completed'},now);
 	return result;
 }

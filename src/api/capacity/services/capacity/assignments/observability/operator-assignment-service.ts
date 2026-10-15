@@ -1,3 +1,5 @@
+import {isDeepStrictEqual} from 'node:util';
+import {CapacityWorkdayEventRepository,type CapacityWorkdayEventWrite} from '../../../../repositories/capacity/workdays/workday-event.ts';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { ProviderAssignmentRepository, advanceAssignmentAttemptLifecycle } from '../../../../repositories/capacity/assignments/assignment.ts';
@@ -146,18 +148,44 @@ export class OperatorAssignmentService {
 		const operationKey = idempotencyKey(input.idempotencyKey);
 		let assignment = await this.assignments.getForCancellation(teamId, assignmentId);
 		if (!assignment) throw new CapacityGovernanceError('capacity_assignment_not_found', 'Assignment does not exist.', 404, { assignmentId });
-		if (assignment.status === 'leased' && assignment.leaseState === 'leased') {
-			const now = new Date().toISOString(), metadata = { ...(assignment.metadata ?? {}), cancellationRequested: true,
-				cancellationReason: 'operator_cancelled', cancellationRequestedAt: now, cancellationRequestedBy: input.actorId ?? null };
-			const requested = await this.database.first(
-				`UPDATE capacity_provider_assignments SET metadata_json = ?, lifecycle_code = 'operator_cancellation_requested', lifecycle_reason = ?, state_version = state_version + 1, updated_at = ? WHERE id = ? AND team_id = ? AND state_version = ? AND status = 'leased' AND lease_state = 'leased' RETURNING id`,
-				[JSON.stringify(metadata), input.reason ?? 'Assignment cancellation requested by a team operator.', now, assignmentId, teamId, assignment.stateVersion],
-			);
-			if (!requested) throw new CapacityGovernanceError('capacity_assignment_cancel_conflict', 'Assignment changed during cancellation.', 409, { assignmentId });
-			const cancelling = await this.assignments.getForCancellation(teamId, assignmentId);
-			if (!cancelling) throw new CapacityGovernanceError('capacity_assignment_not_found', 'Assignment disappeared during cancellation.', 500, { assignmentId });
+
+		if(assignment.status==='leased'&&assignment.leaseState==='leased')return capacityTransaction(this.database,async database=>{
+			await database.run('SELECT id FROM capacity_provider_assignments WHERE id=? AND team_id=? FOR UPDATE',[assignmentId,teamId]);
+			const repository=new ProviderAssignmentRepository(database),original=await repository.getForCancellation(teamId,assignmentId);
+			if(!original||original.status!=='leased'||original.leaseState!=='leased'||!original.workDayId)throw new CapacityGovernanceError(
+				'capacity_assignment_cancel_conflict','Exact active assignment and workday required for cancellation request.',409,{assignmentId});
+			const writer=new CapacityWorkdayEventRepository(database),eventId='assignment-cancellation-requested:'+assignmentId;
+			const existing=await writer.get(teamId,original.workDayId,eventId),requested=original.metadata.cancellationRequested===true;
+			const reason=input.reason??'Assignment cancellation requested by a team operator.',actorId=input.actorId??null;
+			if(requested&&(!existing||original.metadata.cancellationRequestedBy!==actorId||original.lifecycleReason!==reason))throw new CapacityGovernanceError(
+				'capacity_assignment_cancel_conflict','Cancellation request replay differs from its original owning observation.',409,{assignmentId});
+			if(!requested&&existing)throw new CapacityGovernanceError('capacity_assignment_cancel_conflict','Unmatched cancellation observation already exists.',409,{assignmentId});
+			let cancelling=original;
+			if(!requested){
+				const now=new Date().toISOString(),metadata={...original.metadata,cancellationRequested:true,cancellationReason:'operator_cancelled',cancellationRequestedAt:now,cancellationRequestedBy:actorId};
+				const changed=await database.first("UPDATE capacity_provider_assignments SET metadata_json=?,lifecycle_code='operator_cancellation_requested',lifecycle_reason=?,state_version=state_version+1,updated_at=? WHERE id=? AND team_id=? AND state_version=? AND status='leased' AND lease_state='leased' RETURNING id",
+					[JSON.stringify(metadata),reason,now,assignmentId,teamId,original.stateVersion]);
+				if(!changed)throw new CapacityGovernanceError('capacity_assignment_cancel_conflict','Assignment changed during cancellation.',409,{assignmentId});
+				const actual=await repository.getForCancellation(teamId,assignmentId);
+				if(!actual||actual.stateVersion!==original.stateVersion+1||actual.updatedAt!==now||actual.status!==original.status||actual.leaseState!==original.leaseState
+					||!isDeepStrictEqual(actual.assignmentAttempt,original.assignmentAttempt)||!isDeepStrictEqual(actual.metadata,metadata))throw new CapacityGovernanceError(
+					'capacity_assignment_cancel_conflict','Cancellation request did not retain exact issued state.',409,{assignmentId});
+				cancelling=actual;
+			}
+			const version=existing?.context.stateVersion??cancelling.stateVersion,at=cancelling.metadata.cancellationRequestedAt;
+			if(!Number.isInteger(version)||Number(version)<1||Number(version)>cancelling.stateVersion||typeof at!=='string'||!Number.isFinite(Date.parse(at)))throw new CapacityGovernanceError(
+				'capacity_assignment_cancel_conflict','Original cancellation request version and clock required.',409,{assignmentId});
+			const attempt=cancelling.assignmentAttempt,parameters={idempotencyKey:existing?.parameters.idempotencyKey??operationKey,actorId,reason};
+			if(typeof parameters.idempotencyKey!=='string'||!parameters.idempotencyKey.trim())throw new CapacityGovernanceError('capacity_assignment_cancel_conflict','Original cancellation request identity required.',409,{assignmentId});
+			const event:CapacityWorkdayEventWrite={id:eventId,projectId:cancelling.projectId,workdayId:original.workDayId,assignmentId,
+				eventType:'assignment.cancellation-requested',status:'recorded',title:'Assignment cancellation requested',message:null,parameters,metadata:{},refs:{},createdAt:at,
+				context:{nodeId:cancelling.executionNodeId,nodeRevision:cancelling.executionNodeRevision,graphRevision:cancelling.graphRevision,status:cancelling.status,
+					leaseId:attempt?.leaseId??null,reservationId:cancelling.reservationId,runnerId:cancelling.runnerId,stateVersion:version}};
+			const observed=existing??await writer.create(teamId,original.workDayId,event);
+			if(!observed||observed.teamId!==teamId||observed.runId!==original.workDayId||Object.entries(event).some(([key,value])=>!isDeepStrictEqual(Reflect.get(observed,key),value)))throw new CapacityGovernanceError(
+				'capacity_assignment_cancel_conflict','Exact durable cancellation request observation required.',409,{assignmentId});
 			return cancelling;
-		}
+		});
 		const failedCleanup = assignment.status === 'failed' && assignment.leaseState === 'released';
 		if (assignment.status !== 'cancelled' && !failedCleanup && (!['pending', 'returned', 'expired'].includes(assignment.status) || !['unleased', 'released', 'expired'].includes(assignment.leaseState))) throw new CapacityGovernanceError(
 			'capacity_assignment_active_lease_conflict', 'An active or terminal assignment cannot be safely cancelled.', 409,
@@ -172,8 +200,16 @@ export class OperatorAssignmentService {
 			`SELECT active_seconds, elapsed_seconds, input_tokens, cached_input_tokens, reasoning_tokens, output_tokens, actual_usd FROM capacity_usage_actuals WHERE id = ? AND assignment_id = ? AND accounting_mode = 'aggregate' LIMIT 1`,
 			[`usage:${assignment.id}:${assignment.attemptCount}:aggregate`, assignment.id]);
 		terminalPerformance(assignment, { completion: { disposition: 'cancelled' } }, 'failed', now, record(settledUsage));
-		if (assignment.status !== 'cancelled' && !failedCleanup) {
-			const phaseCancelled = await planningBoundaryCancellation(this.database, assignment, { code: 'operator_cancelled' }, now);
+
+		if(assignment.status!=='cancelled'&&!failedCleanup)assignment=await capacityTransaction(this.database,async database=>{
+			await database.run('SELECT id FROM capacity_provider_assignments WHERE id=? AND team_id=? FOR UPDATE',[assignmentId,teamId]);
+			const repository=new ProviderAssignmentRepository(database);let assignment=await repository.getForCancellation(teamId,assignmentId);
+			if(!assignment)throw new CapacityGovernanceError('capacity_assignment_not_found','Assignment disappeared during cancellation.',500,{assignmentId});
+			if(assignment.status==='cancelled')return assignment;
+			if(!['pending','returned','expired'].includes(assignment.status)||!['unleased','released','expired'].includes(assignment.leaseState)||!assignment.workDayId)throw new CapacityGovernanceError(
+				'capacity_assignment_cancel_conflict','Exact released assignment and workday required for terminal cancellation.',409,{assignmentId});
+			const before=assignment;
+			const phaseCancelled = await planningBoundaryCancellation(database, assignment, { code: 'operator_cancelled' }, now);
 			const code = phaseCancelled ? 'planning_boundary_cancelled' : 'operator_cancelled';
 			const reason = phaseCancelled ? 'Unfinished planning turn cancelled at its authoritative phase boundary.'
 				: input.reason ?? 'Assignment cancelled by a team operator.';
@@ -185,18 +221,27 @@ export class OperatorAssignmentService {
 			// than manufacturing executable authority for cleanup.
 			const attempt = assignment.assignmentAttempt
 				? JSON.stringify(advanceAssignmentAttemptLifecycle(assignment.assignmentAttempt, 'cancelled', now)) : null;
-			const fenced = await this.database.first(
+			const fenced = await database.first(
 				`UPDATE capacity_provider_assignments SET status = 'cancelled', assignment_attempt_json = COALESCE(?, assignment_attempt_json), lease_state = 'released', lifecycle_code = ?, lifecycle_reason = ?, failed_at = COALESCE(failed_at, ?), lifecycle_output_json = ?, state_version = state_version + 1, updated_at = ? WHERE id = ? AND team_id = ? AND state_version = ? AND status IN ('pending','returned','expired') AND lease_state IN ('unleased','released','expired') RETURNING id`,
 				[attempt, code, reason, now, JSON.stringify(output), now, assignmentId, teamId, assignment.stateVersion],
 			);
 			if (!fenced) throw new CapacityGovernanceError('capacity_assignment_cancel_conflict', 'Assignment changed during cancellation.', 409, { assignmentId });
-			assignment = await this.assignments.getForCancellation(teamId, assignmentId);
+			assignment = await repository.getForCancellation(teamId, assignmentId);
 			if (!assignment) throw new CapacityGovernanceError('capacity_assignment_not_found', 'Assignment disappeared during cancellation.', 500, { assignmentId });
-		}
+			if(assignment.stateVersion!==before.stateVersion+1||assignment.status!=='cancelled'||assignment.updatedAt!==now)throw new CapacityGovernanceError(
+				'capacity_assignment_cancel_conflict','Cancellation did not commit its exact original terminal state.',409,{assignmentId});
+			const issued=before.assignmentAttempt,event:CapacityWorkdayEventWrite={id:'assignment-terminal:'+assignmentId+':'+assignment.stateVersion,
+				projectId:assignment.projectId,workdayId:before.workDayId,assignmentId,eventType:'assignment.cancelled',status:'recorded',title:'Assignment cancelled',message:null,parameters:{},metadata:{},refs:{},createdAt:now,
+				context:{nodeId:assignment.executionNodeId,nodeRevision:assignment.executionNodeRevision,graphRevision:assignment.graphRevision,status:'cancelled',leaseId:issued?.leaseId??null,reservationId:assignment.reservationId,runnerId:assignment.runnerId,resultId:assignment.assignmentResult?.id??null}};
+			const observed=await new CapacityWorkdayEventRepository(database).create(teamId,before.workDayId!,event);
+			if(!observed||observed.teamId!==teamId||observed.runId!==before.workDayId||Object.entries(event).some(([key,value])=>!isDeepStrictEqual(Reflect.get(observed,key),value)))throw new CapacityGovernanceError(
+				'capacity_assignment_cancel_conflict','Exact durable terminal cancellation observation required.',409,{assignmentId});
+			return assignment;
+		});
 		const terminalAuthority = terminalAssignmentAuthority(assignment, now);
 		await this.database.batch([
-			{ query: `UPDATE capacity_provider_assignments SET treedx_proxy_handle_json = ?, workspace_context_json = ?, updated_at = ? WHERE id = ? AND team_id = ? AND status IN ('cancelled','failed')`, params: [JSON.stringify(terminalAuthority.proxyHandle), JSON.stringify(terminalAuthority.workspaceContext), now, assignmentId, teamId] },
-			{ query: `UPDATE treedx_proxy_handles SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE assignment_id = ? AND team_id = ?`, params: [now, now, assignmentId, teamId] },
+			{ query: `UPDATE capacity_provider_assignments SET treedx_proxy_handle_json = ?, workspace_context_json = ?, updated_at = ? WHERE id = ? AND team_id = ? AND status IN ('cancelled','failed') AND (treedx_proxy_handle_json::jsonb IS DISTINCT FROM ?::jsonb OR workspace_context_json::jsonb IS DISTINCT FROM ?::jsonb)`, params: [JSON.stringify(terminalAuthority.proxyHandle), JSON.stringify(terminalAuthority.workspaceContext), now, assignmentId, teamId,JSON.stringify(terminalAuthority.proxyHandle),JSON.stringify(terminalAuthority.workspaceContext)] },
+			{ query: `UPDATE treedx_proxy_handles SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE assignment_id = ? AND team_id = ? AND (status<>'revoked' OR revoked_at IS NULL)`, params: [now, now, assignmentId, teamId] },
 		]);
 		if (this.closeWorkspace) await this.closeWorkspace(assignment);
 		await releaseCapacityReservationsExactlyOnce(this.database, [{
@@ -206,7 +251,7 @@ export class OperatorAssignmentService {
 		}]);
 		await this.database.batch([
 			...(assignment.executionNodeId ? [{ query: `UPDATE execution_nodes SET status='cancelled',updated_at=?
-				WHERE team_id=? AND id=? AND node_revision=?
+				WHERE team_id=? AND id=? AND node_revision=? AND status<>'cancelled'
 				AND EXISTS (SELECT 1 FROM capacity_provider_assignments WHERE id=? AND team_id=?)`,
 				params: [now, teamId, assignment.executionNodeId, assignment.executionNodeRevision, assignmentId, teamId] }] : []),
 		]);
@@ -225,12 +270,23 @@ export class OperatorAssignmentService {
 			'capacity_assignment_requeue_unsafe', 'Only a released returned, failed, expired, or cancelled assignment can be requeued.', 409,
 			{ assignmentId, status: assignment.status, leaseState: assignment.leaseState },
 		);
-		if (assignment.executionNodeId) {
+		if (assignment.executionNodeId) return capacityTransaction(this.database,async database=>{
+   await database.run('SELECT id FROM capacity_provider_assignments WHERE id=? AND team_id=? FOR UPDATE',[assignmentId,teamId]);
+   const repository=new ProviderAssignmentRepository(database),original=await repository.get(teamId,assignmentId);
+   if(!original||!original.workDayId||!original.executionNodeId||!['returned','failed','expired','cancelled'].includes(original.status)||original.leaseState==='leased')throw new CapacityGovernanceError('capacity_assignment_requeue_conflict','Exact released assignment and owning workday required for retry.',409,{assignmentId});
+   const assignment=original,writer=new CapacityWorkdayEventRepository(database),key=idempotencyKey(input.idempotencyKey);
+   const previous=record(assignment.metadata.operatorRetry),at=previous.requestedAt;
+   if(at!==undefined){
+    const retained=await writer.get(teamId,assignment.workDayId!,'assignment-retry:'+assignmentId+':'+assignment.stateVersion);
+    if(!retained||retained.eventType!=='assignment.retry-requested'||retained.createdAt!==at||retained.projectId!==assignment.projectId||retained.assignmentId!==assignmentId
+     ||retained.context.stateVersion!==assignment.stateVersion||retained.parameters.idempotencyKey!==key||retained.parameters.actorId!==(input.actorId??null)||retained.parameters.reason!==(input.reason??null))throw new CapacityGovernanceError('capacity_assignment_requeue_conflict','Retry replay requires its exact original owning observation.',409,{assignmentId});
+    return{assignment,demand:null,alreadyLeasable:false};
+   }
 			const now = new Date().toISOString();
 			const retryMetadata = { ...(assignment.metadata ?? {}), operatorRetry: {
 				requestedAt: now, requestedBy: input.actorId ?? null, reason: input.reason ?? null,
 			} };
-			const reopened = await this.database.first(`WITH target AS (
+			const reopened = await database.first(`WITH target AS (
 				SELECT team_id,id,project_id,work_item_id,pair_role,source_ref_json,authority_refs_json,node_revision,status
 				FROM execution_nodes WHERE team_id=? AND id=? AND node_revision>=? FOR UPDATE
 			), marked_assignment AS (
@@ -261,7 +317,7 @@ export class OperatorAssignmentService {
 				[teamId, assignment.executionNodeId, assignment.executionNodeRevision,
 					JSON.stringify(retryMetadata), now, assignment.id, teamId, assignment.stateVersion, now, now]);
 			if (!reopened) {
-				const current = await this.database.first('SELECT node_revision,status FROM execution_nodes WHERE team_id=? AND id=? LIMIT 1',
+				const current = await database.first('SELECT node_revision,status FROM execution_nodes WHERE team_id=? AND id=? LIMIT 1',
 					[teamId, assignment.executionNodeId]);
 				if (String(current?.status ?? '') !== 'ready') throw new CapacityGovernanceError(
 					'capacity_assignment_requeue_conflict',
@@ -270,8 +326,14 @@ export class OperatorAssignmentService {
 						nodeRevision: current?.node_revision ?? null, nodeStatus: current?.status ?? null },
 				);
 			}
-			return { assignment, demand: null, alreadyLeasable: false };
-		}
+   const written=await repository.get(teamId,assignmentId);
+   if(!reopened||!written||written.status!==assignment.status||written.stateVersion!==assignment.stateVersion+1||written.updatedAt!==now||!isDeepStrictEqual(written.assignmentAttempt,assignment.assignmentAttempt)||!isDeepStrictEqual(written.assignmentResult,assignment.assignmentResult)||!isDeepStrictEqual(written.metadata,retryMetadata))throw new CapacityGovernanceError('capacity_assignment_requeue_conflict','Retry did not retain exact original terminal authority.',409,{assignmentId});
+   const event:CapacityWorkdayEventWrite={id:'assignment-retry:'+assignmentId+':'+written.stateVersion,projectId:assignment.projectId,workdayId:assignment.workDayId,assignmentId,eventType:'assignment.retry-requested',status:'recorded',title:'Assignment retry requested',message:null,parameters:{idempotencyKey:key,actorId:input.actorId??null,reason:input.reason??null},metadata:{},refs:{},createdAt:now,
+    context:{nodeId:assignment.executionNodeId,nodeRevision:Number(reopened.node_revision),graphRevision:assignment.graphRevision,status:assignment.status,stateVersion:written.stateVersion,leaseId:assignment.assignmentAttempt?.leaseId??null,reservationId:assignment.reservationId,runnerId:assignment.runnerId}};
+   const observed=await writer.create(teamId,assignment.workDayId!,event);
+   if(!observed||observed.teamId!==teamId||observed.runId!==assignment.workDayId||Object.entries(event).some(([key,value])=>!isDeepStrictEqual(Reflect.get(observed,key),value)))throw new CapacityGovernanceError('capacity_assignment_requeue_conflict','Exact durable retry observation required.',409,{assignmentId});
+   return {assignment:written,demand:null,alreadyLeasable:false};
+		});
 		throw new CapacityGovernanceError('capacity_assignment_graph_provenance_required',
 			'Only a living-graph assignment can be requeued; this assignment has no execution node.', 409, { assignmentId });
 	}

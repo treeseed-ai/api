@@ -1,3 +1,4 @@
+import { executePostgresBatch } from '../../../../../../../src/api/support/control-plane-postgres.ts';
 import { readFileSync } from 'node:fs';
 import { createHash, generateKeyPairSync } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -81,18 +82,13 @@ activityProfiles:
 			VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, ['binding', 'team', 'project', 'instance', 'library', 'planning-library', '.', 'staging', 'a'.repeat(40), JSON.stringify({ resolvedRef: 'a'.repeat(40) }), now, now]);
 		const outside = async (): Promise<never> => { throw new Error('Unrelated host mutation is outside first-start coverage'); };
 		const project = (id: string) => first<{ id: string; teamId: string; slug: string; metadata: unknown }>('SELECT id,team_id AS "teamId",slug,metadata_json::jsonb AS metadata FROM projects WHERE id=?', [id]);
-		const host: CapacityControlPlaneHost = {
+  const transactionAuthority={transaction:async<T>(apply:(client:Parameters<typeof executePostgresBatch>[0])=>Promise<T>)=>
+   db.transaction(transaction=>apply(transaction as unknown as Parameters<typeof executePostgresBatch>[0]))};
+  const host:CapacityControlPlaneHost & {db:typeof transactionAuthority}={
+   db:transactionAuthority,
 			config: { TREESEED_TREEDX_URL: endpoint, TREESEED_ENVIRONMENT: 'test' }, ensureInitialized: async () => undefined,
 			all, first, run: async (sql, values = []) => { await query(sql, values); },
-			batch: operations => db.transaction(async transaction => {
-				const results = [];
-				for (const operation of operations) {
-					let index = 0;
-					const result = await transaction.query(operation.query.replace(/\?/gu, () => `$${++index}`), operation.params ?? []);
-					results.push({ results: result.rows });
-				}
-				return results;
-			}), createTeam: outside, prepareTeamDeletion: outside, getProject: project,
+			batch: operations => transactionAuthority.transaction(client=>executePostgresBatch(client,operations)), createTeam: outside, prepareTeamDeletion: outside, getProject: project,
 			getProjectByTeamAndSlug: outside, listTreeDxSharesForRecipient: outside,
 			getProjectDetails: async id => { const value = await project(id); return value ? { project: value } : null; },
 			getProjectTreeDxLibrary: id => first(`SELECT id,repository_id AS "repositoryId",content_path AS "contentPath",instance_id AS "instanceId",

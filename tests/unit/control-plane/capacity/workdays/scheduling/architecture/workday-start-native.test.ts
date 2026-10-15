@@ -435,6 +435,7 @@ describe('first manual and recurring admission through the same public owning pa
 	});
 	it('retains required event failure history and refuses to replay a failed partial admission as a successful native start', async () => {
 		const f = await workdayStartDatabase(); try {
+			expect(Reflect.get(f.store,'db')?.transaction,'owning start recovery must retain its configured transaction authority').toBeTypeOf('function');
 			const planned = await f.preflight();
 			await f.db.exec(`CREATE FUNCTION isolated_poll_ready_stop() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
 				IF NEW.event_type='assignment.polling_ready' THEN RAISE EXCEPTION 'isolated required event interruption'; END IF; RETURN NEW; END $$;

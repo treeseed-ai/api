@@ -1,3 +1,4 @@
+import {executePostgresBatch} from '../../../../../../src/api/support/control-plane-postgres.ts';
 import { readFileSync } from 'node:fs';
 import { assignmentAttemptSchema, emptyCapacityBudget } from '@treeseed/sdk/agent-capacity';
 import { splitPostgresSqlStatements } from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
@@ -35,6 +36,9 @@ export async function cancellationDatabase(status = 'leased', started = false) {
 			if (ddl.length !== 1) throw new Error(`Missing original ${table} DDL`);
 			await fixture.db.exec(ddl[0]!);
 		}
+  const eventIndex=original.filter(sql=>sql.startsWith('CREATE UNIQUE INDEX "idx_capacity_workday_events_run_index"'));
+  if(eventIndex.length!==1)throw new Error('Missing original workday event index authority');
+  await fixture.db.exec(eventIndex[0]!);
 		const attempt = assignmentAttemptSchema.parse({ ...frozenAttempt, status: 'created' });
 		const budget = emptyCapacityBudget(attempt.deadline, attempt.limits.maximumSeconds);
 		const time = { ...budget.time, authorityDeadlineAt: attempt.deadline,
@@ -53,6 +57,6 @@ export async function cancellationDatabase(status = 'leased', started = false) {
 		await fixture.query("UPDATE execution_nodes SET kind='acting',status='running',agent_class=?,node_revision=1 WHERE id='report-node'", [attempt.agentClass]);
 		const assignment = await new ProviderAssignmentRepository(fixture.owner).get('team', attempt.id);
 		if (!assignment) throw new Error('Missing isolated parsed cancellation assignment');
-		return { ...fixture, attempt, assignment };
+		return { ...fixture, attempt, assignment,owner:{...fixture.owner,db:{transaction:async<T>(apply:(client:Parameters<typeof executePostgresBatch>[0])=>Promise<T>)=>fixture.db.transaction(transaction=>apply(transaction as unknown as Parameters<typeof executePostgresBatch>[0]))}} };
 	} catch (error) { await fixture.db.close(); throw error; }
 }

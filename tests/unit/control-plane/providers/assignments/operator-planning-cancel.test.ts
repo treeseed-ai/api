@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {terminalAssignmentAuthority} from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-terminal-authority.ts';
+import * as transactions from '../../../../../src/api/capacity/transaction.ts';
+import {CapacityWorkdayEventRepository} from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
+import {beforeEach,afterEach,describe,expect,it,vi} from 'vitest';
 import { assignmentAttemptSchema, compileWorkday, emptyCapacityBudget } from '@treeseed/sdk/agent-capacity';
 import { recoveryAssignment } from './architecture/cancellation-fixture.ts';
 import { compileCapacityWorkdayRunRecord } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
@@ -43,16 +46,44 @@ function setup(ready = true) {
 		if (query.includes("node.kind IN ('acting','reviewing')")) return ready ? { id: 'actor' } : null;
 		if (query.includes('capacity_usage_actuals')) return { active_seconds: 0, elapsed_seconds: 2.635 };
 		if (query.startsWith('UPDATE capacity_provider_assignments SET status')) {
-			fixture.assignment = { ...fixture.assignment, status: 'cancelled', leaseState: 'released' };
+			fixture.assignment = {...fixture.assignment,status:'cancelled',leaseState:'released',stateVersion:Number(fixture.assignment.stateVersion)+1,assignmentAttempt:params[0]?JSON.parse(String(params[0])):fixture.assignment.assignmentAttempt,lifecycleCode:params[1],lifecycleReason:params[2],failedAt:fixture.assignment.failedAt??params[3],lifecycleOutput:JSON.parse(String(params[4])),updatedAt:params[5]};
 			return { id: 'assignment', params };
 		}
 		return null;
 	});
-	const database = { ensureInitialized: vi.fn(), first, batch: vi.fn() };
+	const database = { ensureInitialized: vi.fn(),run:vi.fn(async()=>{}), first, batch: vi.fn() };
 	return { database, service: new OperatorAssignmentService(database as never) };
 }
-afterEach(() => vi.useRealTimers());
+beforeEach(()=>{vi.spyOn(transactions,'capacityTransaction').mockImplementation(async(store,apply)=>apply(store));vi.spyOn(CapacityWorkdayEventRepository.prototype,'get').mockResolvedValue(null);vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementation(async(teamId,runId,value)=>({...value,teamId,runId,eventIndex:0}));});
+afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks();});
 describe('operator planning boundary closeout', () => {
+ it('rejects each missing or conflicting cancellation request observation without certifying another scope or changing issued attempt authority',async()=>{
+  const substitutions=[null,...['id','projectId','workdayId','assignmentId','eventType','status','createdAt','teamId','runId'].map(field=>({field,value:'foreign'})),{field:'context',value:{}},{field:'parameters',value:{}}];
+  for(const replacement of substitutions){
+   const {service,database}=setup();fixture.assignment={...recoveryAssignment(false)};const before=structuredClone(fixture.assignment);
+   database.first.mockImplementation(async(query,params)=>{if(query.startsWith('UPDATE capacity_provider_assignments SET metadata_json')){fixture.assignment={...fixture.assignment,metadata:JSON.parse(String(params[0])),stateVersion:Number(fixture.assignment.stateVersion)+1,lifecycleReason:params[1],updatedAt:params[2]};return{id:fixture.assignment.id};}throw new Error('Unexpected denial unit query');});
+   const event=vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementation(async(teamId,runId,value)=>replacement===null?null:{...value,teamId,runId,eventIndex:0,[replacement.field]:replacement.value});
+   try{await expect(service.cancel('team',String(before.id),{idempotencyKey:'denied-original',actorId:'operator',reason:'Original request.'})).rejects.toMatchObject({code:'capacity_assignment_cancel_conflict'});expect(fixture.assignment.assignmentAttempt).toEqual(before.assignmentAttempt);expect(fixture.settle).not.toHaveBeenCalled();}
+   finally{event.mockRestore();}
+  }
+ });
+
+ it('retains the original revocation clock on every already revoked handle without rewriting input during later cleanup',()=>{
+  const at='2026-10-02T21:00:04.000Z',later='2026-10-02T21:00:05.000Z',handle={id:'original-handle',status:'revoked',revokedAt:at};
+  const input={...recoveryAssignment(false),treedxProxyHandle:handle,capabilityHandles:{repository:[handle],treeDx:[handle],workflowOperations:[handle],secrets:[handle]}},held=structuredClone(input);
+  const actual=terminalAssignmentAuthority(input,later);expect(actual.proxyHandle).toEqual(handle);
+  for(const values of Object.values(actual.capabilityHandles))expect(values).toEqual([handle]);expect(input).toEqual(held);
+ });
+
+ it('records one exact scoped active cancellation request without terminalizing or rewriting issued authority',async()=>{
+  const {service,database}=setup();fixture.assignment={...recoveryAssignment(false)};const before=structuredClone(fixture.assignment);vi.setSystemTime(new Date('2026-10-02T21:00:04.000Z'));
+  Object.assign(database,{run:vi.fn(async()=>{})});const transaction=vi.spyOn(transactions,'capacityTransaction').mockImplementation(async(store,apply)=>apply(store)),read=vi.spyOn(CapacityWorkdayEventRepository.prototype,'get').mockResolvedValue(null);
+  database.first.mockImplementation(async(query,params)=>{if(query.startsWith('UPDATE capacity_provider_assignments SET metadata_json')){fixture.assignment={...fixture.assignment,metadata:JSON.parse(String(params[0])),stateVersion:Number(fixture.assignment.stateVersion)+1,lifecycleReason:params[1],updatedAt:params[2]};return{id:fixture.assignment.id};}throw new Error('Unexpected unit cancellation read');});
+  const event=vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementation(async(teamId,runId,value)=>({...value,teamId,runId,eventIndex:0}));
+  try{await service.cancel('team',String(fixture.assignment.id),{idempotencyKey:'unit-request',actorId:'operator',reason:'Original unit request.'});expect(event,'active request must publish its exact owning observation').toHaveBeenCalledOnce();expect(event.mock.calls[0]).toEqual(['team',before.workDayId,{id:'assignment-cancellation-requested:'+before.id,projectId:before.projectId,workdayId:before.workDayId,assignmentId:before.id,eventType:'assignment.cancellation-requested',status:'recorded',title:'Assignment cancellation requested',message:null,parameters:{idempotencyKey:'unit-request',actorId:'operator',reason:'Original unit request.'},metadata:{},refs:{},createdAt:'2026-10-02T21:00:04.000Z',context:{nodeId:before.executionNodeId,nodeRevision:before.executionNodeRevision,graphRevision:before.graphRevision,status:'leased',leaseId:(before.assignmentAttempt as {leaseId:string}).leaseId,reservationId:before.reservationId,runnerId:before.runnerId,stateVersion:2}}]);expect(fixture.assignment.assignmentAttempt).toEqual(before.assignmentAttempt);expect(fixture.settle).not.toHaveBeenCalled();}
+  finally{event.mockRestore();transaction.mockRestore();read.mockRestore();}
+ });
+
 	it('denies missing malformed and incomplete measured usage before cancelling a released productive attempt', async () => {
 		for (const measurements of [null, {}, { active_seconds: 1 }, { elapsed_seconds: 1 },
 			{ active_seconds: '1', elapsed_seconds: 1 }, { active_seconds: 1, elapsed_seconds: -1 },
