@@ -2721,3 +2721,6 @@ workflow:
   - id: execution-node-history-workday
     action: { verifier: api.golden.execution-node-history-workday }
     expect: { status: passed }
+  - id: execution-node-history-planning-close-native
+    action: { verifier: api.golden.execution-node-history-planning-close-native }
+    expect: { status: passed }
