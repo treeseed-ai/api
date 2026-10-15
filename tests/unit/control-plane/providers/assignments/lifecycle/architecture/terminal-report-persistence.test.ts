@@ -1,3 +1,6 @@
+import {readFileSync} from 'node:fs';
+import {splitPostgresSqlStatements} from '../../../../../../../src/api/persistence/postgres-sql-statements.ts';
+import {CapacityWorkdayEventRepository} from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { workspaceId } from '../../architecture/workspace-cleanup-fixture.ts';
 import { principal, report, returnedCompletion, fixture, returnFixture, completionFixture } from './terminal-report-fixture.ts';
@@ -42,6 +45,8 @@ describe('provider terminal reporting through original transaction and resource 
 		for (const status of ['completed', 'failed', 'cancelled', 'returned'] as const) {
 			const native = status === 'returned' ? await returnFixture() : await completionFixture();
 			try {
+                const ddl=splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql','utf8')).filter(sql=>sql.startsWith('CREATE TABLE "capacity_workday_events" ('));expect(ddl).toHaveLength(1);await native.db.exec(ddl[0]!);
+
 				if (status === 'cancelled') await native.query('UPDATE capacity_provider_assignments SET metadata_json=? WHERE id=?',
 					[JSON.stringify({ ...native.assignment.metadata, cancellationRequested: true }), native.assignment.id]);
 				const before = await native.repository.get('team', native.assignment.id);
@@ -61,10 +66,20 @@ describe('provider terminal reporting through original transaction and resource 
 				const raw = (await native.query('SELECT assignment_attempt_json FROM capacity_provider_assignments WHERE id=?', [before.id])).rows[0];
 				expect(JSON.parse(String(raw?.assignment_attempt_json))).toEqual(expected);
 				expect(persisted?.attemptCount).toBe(before.attemptCount);
+                const observations=(await native.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[before.id])).rows;
+                expect(observations,'every original terminal transition requires exactly one durable scoped observation').toHaveLength(1);
+                const event=observations[0]!;expect(event).toMatchObject({team_id:before.teamId,run_id:before.workDayId,workday_id:before.workDayId,project_id:before.projectId,assignment_id:before.id,event_type:'assignment.'+status,status:'recorded',created_at:expected.finishedAt});
+                expect(JSON.parse(String(event.context_json))).toMatchObject({nodeId:before.assignmentAttempt.nodeId,nodeRevision:before.assignmentAttempt.nodeRevision,graphRevision:before.assignmentAttempt.graphRevision,leaseId:before.assignmentAttempt.leaseId,reservationId:before.assignmentAttempt.reservationId,status});
+                expect(JSON.stringify(event)).not.toContain('lease-token');
+                const events=new CapacityWorkdayEventRepository(native.owner),visible=await events.list(before.teamId,before.workDayId!,{limit:100});
+                expect(visible.page).toEqual({limit:100,hasMore:false,nextCursor:null});expect(visible.items.find(value=>value.id===event.id)).toMatchObject({eventType:'assignment.'+status,createdAt:expected.finishedAt,assignmentId:before.id,context:JSON.parse(String(event.context_json))});
+
 				const terminal = await native.snapshot(), graph = (await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows;
 				await expect(transition()).resolves.toBeNull();
 				expect(await native.snapshot()).toEqual(terminal);
 				expect((await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows).toEqual(graph);
+                expect((await native.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[before.id])).rows).toEqual(observations);
+                expect(await events.list(before.teamId,before.workDayId!,{limit:100})).toEqual(visible);
 				expect(input).toEqual(original);
 				expect((await native.query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows).toEqual([{ total: 1 }]);
 			} finally { await native.close(); }
