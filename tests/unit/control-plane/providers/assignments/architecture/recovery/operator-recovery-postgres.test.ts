@@ -1,3 +1,4 @@
+import {copyNativeAssignmentCustody} from '../native-assignment-custody.ts';
 import { describe, expect, it } from 'vitest';
 import { postgresGraph } from '../../../../capacity/execution/graph/architecture/living/living-postgres-fixture.ts';
 import { cancellationDatabase } from '../cancellation-fixture.ts';
@@ -16,32 +17,12 @@ async function exercisePostgresRecovery(dispute: boolean) {
 			// Controlled original owning fixture inputs, not fabricated provider charges.
 			const supplied = await cancellationDatabase('expired');
 			try {
-				const now = supplied.attempt.createdAt;
-				await native.left.pool.query(`INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('project','team','project','Project',$1,$1)`, [now]);
-				for (const id of ['isolated-class-row', supplied.attempt.agentClass]) await native.left.pool.query(
-					`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,created_at,updated_at) VALUES ($1,'team','project',$1,$1,$2,$2)`, [id, now]);
-				await native.left.pool.query(`INSERT INTO capacity_providers (id,fingerprint,public_jwk_json,display_name,created_at,updated_at) VALUES ('provider','recovery-input','{}','Controlled recovery provider',$1,$1)`, [now]);
-				await native.left.pool.query(`INSERT INTO capacity_provider_team_memberships (id,team_id,capacity_provider_id,approved_at,approved_by_id,created_at,updated_at) VALUES ('membership','team','provider',$1,'operator',$1,$1)`, [now]);
-				await native.left.pool.query(`INSERT INTO capacity_execution_providers (id,capacity_provider_id,display_name,adapter,native_unit,max_concurrent_runners,created_at,updated_at) VALUES ($1,'provider','Controlled executor','codex','seconds',1,$2,$2)`, [supplied.attempt.provider.executionProviderId, now]);
+
 				await supplied.query("UPDATE capacity_provider_assignments SET lease_state='expired',metadata_json=? WHERE id=?",
 					[JSON.stringify({ leaseRecovery: { disposition: 'operator-action' } }), supplied.assignment.id]);
 				if (dispute) await settleCapacityReservationExactlyOnce(supplied.owner, { ...terminalUsage,
 					activeSeconds: 0, elapsedSeconds: 0, source: 'capacity_workday_deadline_terminalization', usageActual: undefined });
-				for (const table of ['capacity_workday_runs', 'execution_nodes', 'capacity_reservations', 'capacity_provider_assignments',
-					'capacity_admission_counters', 'capacity_reservation_counter_claims', ...(dispute ? ['capacity_usage_actuals', 'capacity_ledger_entries'] : [])]) {
-					const current = await native.left.pool.query<{ column_name: string }>('SELECT column_name FROM information_schema.columns WHERE table_schema=\'public\' AND table_name=$1', [table]);
-					const names = new Set(current.rows.map(column => column.column_name));
-					for (const row of (await supplied.query(`SELECT * FROM ${table}`)).rows) {
-						// Full owning migrations remove retired nullable columns that the
-						// older original-DDL fixture still exposes. Never discard a fact.
-						for (const column of Object.keys(row).filter(name => !names.has(name))) {
-							const emptyRetired = column === 'decision_input_json' ? '{}' : column === 'allocation_slice_ids_json' ? '[]' : null;
-							expect(row[column], `${table}.${column}`).toBe(emptyRetired);
-						}
-						const columns = Object.keys(row).filter(name => names.has(name)), values = columns.map(name => row[name]);
-						await native.left.pool.query(`INSERT INTO ${table} (${columns.map(name => `"${name}"`).join(',')}) VALUES (${values.map((_, index) => `$${index + 1}`).join(',')})`, values);
-					}
-				}
+				await copyNativeAssignmentCustody(native.left,supplied,['capacity_workday_runs','execution_nodes','capacity_reservations','capacity_provider_assignments','capacity_admission_counters','capacity_reservation_counter_claims',...(dispute?['capacity_usage_actuals','capacity_ledger_entries']:[])]);
 			} finally { await supplied.db.close(); }
 			const audit = () => native.left.pool.query('SELECT * FROM capacity_audit_events ORDER BY id');
 			const assignments = () => native.left.pool.query('SELECT * FROM capacity_provider_assignments ORDER BY id');
