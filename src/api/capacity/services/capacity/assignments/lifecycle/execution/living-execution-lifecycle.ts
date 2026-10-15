@@ -1,7 +1,9 @@
+import {isDeepStrictEqual} from 'node:util';
+import {CapacityWorkdayEventRepository,type CapacityWorkdayEventWrite} from '../../../../../repositories/capacity/workdays/workday-event.ts';
 import { createHash } from 'node:crypto';
 import type { AssignmentResult, ExecutionEdge, ExecutionNode } from '@treeseed/sdk/agent-capacity';
 import type { DurableProviderAssignment } from '../../../../../repositories/capacity/assignments/assignment.ts';
-import { advanceAssignmentAttemptLifecycle } from '../../../../../repositories/capacity/assignments/assignment.ts';
+import { advanceAssignmentAttemptLifecycle, ProviderAssignmentRepository } from '../../../../../repositories/capacity/assignments/assignment.ts';
 import type { CapacityGovernanceDatabase } from '../../../../../database.ts';
 import { decodeExecutionEdge, decodeExecutionNode } from '../../../../../../control-plane/repositories/capacity/execution/execution-graph-storage.ts';
 import { capacityTransaction } from '../../../../../transaction.ts';
@@ -33,6 +35,25 @@ export async function commitLivingExecutionLifecycle(
 		if (!node) return false;
 		const projection = await livingExecutionLifecycleOperations({ ...input, store: database });
 		await database.batch([...operations.slice(0, 1), ...projection, ...operations.slice(1)]);
+        const attempt=assignment.assignmentAttempt;
+        const written=await new ProviderAssignmentRepository(database).get(assignment.teamId,assignment.id);
+        const canonicalStatus=input.status==='returned'?'blocked':input.status==='completed'?'completed':input.status==='cancelled'?'cancelled':'failed';
+        if(!written||written.status!==input.status||written.stateVersion!==assignment.stateVersion+1||written.updatedAt!==input.now
+            ||written.workDayId!==attempt.workdayId||written.projectId!==attempt.projectId
+            ||written.executionNodeId!==attempt.nodeId||written.executionNodeRevision!==attempt.nodeRevision||written.graphRevision!==attempt.graphRevision
+            ||!isDeepStrictEqual(written.assignmentAttempt,advanceAssignmentAttemptLifecycle(attempt,canonicalStatus,input.now))
+            ||!isDeepStrictEqual(written.assignmentResult??null,input.result??null))throw new Error('assignment_terminal_observation_state_mismatch');
+
+        if(!assignment.workDayId||attempt.workdayId!==assignment.workDayId||attempt.teamId!==assignment.teamId||attempt.projectId!==assignment.projectId)throw new Error('assignment_terminal_observation_scope_missing');
+        const event:CapacityWorkdayEventWrite={
+            id:'assignment-terminal:'+assignment.id+':'+(assignment.stateVersion+1),projectId:assignment.projectId,workdayId:assignment.workDayId,assignmentId:assignment.id,
+            eventType:'assignment.'+input.status,status:'recorded',title:'Assignment '+input.status,message:null,parameters:{},metadata:{},refs:{},createdAt:input.now,
+            context:{nodeId:attempt.nodeId,nodeRevision:attempt.nodeRevision,graphRevision:attempt.graphRevision,status:input.status,
+                leaseId:attempt.leaseId,reservationId:attempt.reservationId,runnerId:written.runnerId??null,resultId:written.assignmentResult?.id??null},
+        };
+        const observation=await new CapacityWorkdayEventRepository(database).create(assignment.teamId,assignment.workDayId,event);
+        if(!observation||Object.entries(event).some(([key,value])=>!isDeepStrictEqual(Reflect.get(observation,key),value)))throw new Error('assignment_terminal_observation_conflict');
+
 		return true;
 	};
 	// An inherited transaction owns preceding settlement and must be rolled
