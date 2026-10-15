@@ -4,7 +4,7 @@ import {ControlPlaneStore} from '../../../../../../../src/api/persistence/store.
 import {createCapacityControlPlane} from '../../../../../../../src/api/capacity/control-plane.ts';
 import {createWorkdayService} from '../../../../../../../src/api/control-plane/repositories/capacity/workday-service.ts';
 import {copyNativeAssignmentCustody} from '../native-assignment-custody.ts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { postgresGraph } from '../../../../capacity/execution/graph/architecture/living/living-postgres-fixture.ts';
 import { cancellationDatabase } from '../cancellation-fixture.ts';
 import { OperatorAssignmentService } from '../../../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
