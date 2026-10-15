@@ -6,10 +6,14 @@ function record(value: unknown): JsonRecord {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
+function revokedHandle(value:unknown,now:string):JsonRecord {
+ const original=record(value);return original.status==='revoked'?{...original}:{...original,status:'revoked',revokedAt:now};
+}
+
 export function revokeAssignmentCapabilityHandles(value: unknown, now: string): JsonRecord {
 	const handles = record(value);
 	const revoke = (entries: unknown) => Array.isArray(entries)
-		? entries.map((entry) => ({ ...record(entry), status: 'revoked', revokedAt: now }))
+		? entries.map((entry) => revokedHandle(entry,now))
 		: [];
 	return {
 		...handles,
@@ -21,7 +25,7 @@ export function revokeAssignmentCapabilityHandles(value: unknown, now: string): 
 }
 
 export function terminalAssignmentAuthority(assignment: DurableProviderAssignment, now: string) {
-	const proxyHandle = { ...record(assignment.treedxProxyHandle), status: 'revoked', revokedAt: now };
+	const proxyHandle = revokedHandle(assignment.treedxProxyHandle,now);
 	const workspaceContext = record(assignment.workspaceContext);
 	const capabilityHandles = revokeAssignmentCapabilityHandles(
 		assignment.capabilityHandles ?? workspaceContext.capabilityHandles,

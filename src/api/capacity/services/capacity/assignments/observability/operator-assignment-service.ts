@@ -223,8 +223,8 @@ export class OperatorAssignmentService {
 		}
 		const terminalAuthority = terminalAssignmentAuthority(assignment, now);
 		await this.database.batch([
-			{ query: `UPDATE capacity_provider_assignments SET treedx_proxy_handle_json = ?, workspace_context_json = ?, updated_at = ? WHERE id = ? AND team_id = ? AND status IN ('cancelled','failed')`, params: [JSON.stringify(terminalAuthority.proxyHandle), JSON.stringify(terminalAuthority.workspaceContext), now, assignmentId, teamId] },
-			{ query: `UPDATE treedx_proxy_handles SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE assignment_id = ? AND team_id = ?`, params: [now, now, assignmentId, teamId] },
+			{ query: `UPDATE capacity_provider_assignments SET treedx_proxy_handle_json = ?, workspace_context_json = ?, updated_at = ? WHERE id = ? AND team_id = ? AND status IN ('cancelled','failed') AND (treedx_proxy_handle_json::jsonb IS DISTINCT FROM ?::jsonb OR workspace_context_json::jsonb IS DISTINCT FROM ?::jsonb)`, params: [JSON.stringify(terminalAuthority.proxyHandle), JSON.stringify(terminalAuthority.workspaceContext), now, assignmentId, teamId,JSON.stringify(terminalAuthority.proxyHandle),JSON.stringify(terminalAuthority.workspaceContext)] },
+			{ query: `UPDATE treedx_proxy_handles SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE assignment_id = ? AND team_id = ? AND (status<>'revoked' OR revoked_at IS NULL)`, params: [now, now, assignmentId, teamId] },
 		]);
 		if (this.closeWorkspace) await this.closeWorkspace(assignment);
 		await releaseCapacityReservationsExactlyOnce(this.database, [{
@@ -234,7 +234,7 @@ export class OperatorAssignmentService {
 		}]);
 		await this.database.batch([
 			...(assignment.executionNodeId ? [{ query: `UPDATE execution_nodes SET status='cancelled',updated_at=?
-				WHERE team_id=? AND id=? AND node_revision=?
+				WHERE team_id=? AND id=? AND node_revision=? AND status<>'cancelled'
 				AND EXISTS (SELECT 1 FROM capacity_provider_assignments WHERE id=? AND team_id=?)`,
 				params: [now, teamId, assignment.executionNodeId, assignment.executionNodeRevision, assignmentId, teamId] }] : []),
 		]);
