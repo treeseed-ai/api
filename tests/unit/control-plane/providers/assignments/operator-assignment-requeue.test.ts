@@ -7,7 +7,8 @@ import type { CapacityGovernanceDatabase } from '../../../../../src/api/capacity
 
 const { getAssignment } = vi.hoisted(() => ({ getAssignment: vi.fn() }));
 
-vi.mock('../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts', () => ({
+vi.mock('../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts', async importOriginal => ({
+ ...await importOriginal<typeof import('../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts')>(),
 	ProviderAssignmentRepository: class {
 		get = getAssignment;
 	},
