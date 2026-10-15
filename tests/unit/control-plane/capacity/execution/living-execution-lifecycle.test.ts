@@ -20,7 +20,7 @@ const row = (id: string, status: string, pairRole: 'actor' | 'reviewer' = 'actor
 describe('living execution result projection', () => {
  it('requires complete canonical authority for every original native concurrent terminal fixture before allocating PostgreSQL',()=>{
   const nodes=concurrentTerminalNodes(sourceRef);expect(nodes).toHaveLength(5);
-  const attempts=nodes.map(node=>concurrentTerminalAttempt(node,'2026-10-15T02:20:00.000Z'));expect(new Set(attempts.map(value=>value.id)).size).toBe(5);
+  const attempts=nodes.map(node=>concurrentTerminalAttempt(node,'2026-10-15T02:20:00.000Z'));expect(new Set(attempts.map(value=>value.id)).size).toBe(5);expect(new Set(attempts.map(value=>value.leaseId)).size).toBe(5);expect(new Set(attempts.map(value=>value.reservationId)).size).toBe(5);
   for(const [index,attempt]of attempts.entries()){expect(attempt.authorityRefs.length).toBeGreaterThan(0);expect(attempt.nodeId).toBe(nodes[index]!.id);expect(attempt.sourceRef).toEqual(sourceRef);expect(()=>concurrentTerminalAttempt({...nodes[index]!,authorityRefs:[]},attempt.createdAt)).toThrow();}
  });
 
