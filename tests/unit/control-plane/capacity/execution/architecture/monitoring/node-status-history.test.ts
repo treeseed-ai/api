@@ -38,6 +38,13 @@ it('retains each owning graph node state and revision in complete public workday
    if(index>0){const stale={...next,revision:revision+1,digest:'sha256:'+'f'.repeat(64)};await expect(persistExecutionGraph(owner,stale,{...current,nodes:[]},{...receipt,revision:revision+1,graphDigest:stale.digest})).rejects.toMatchObject({code:'execution_graph_revision_conflict'});expect(await events.list('team','workday',{limit:100,afterEventIndex:-1})).toEqual(retained);}
    current=next;
   }
+  // Controlled native SQL advances operational state after the graph receipt;
+  // replay must preserve that later state, without claiming admission proof.
+  await f.query("UPDATE execution_nodes SET status='assigned' WHERE id=?",[node.id]);
+  const later=(await f.query('SELECT * FROM execution_nodes ORDER BY id')).rows,retainedHistory=await events.list('team','workday',{limit:100,afterEventIndex:-1});
+  const replayReceipt:GraphRevision={schemaVersion:'treeseed.graph-revision/v1',teamId:'team',revision:current.revision,ruleRevision:1,changedSourceRefs:[node.sourceRef],graphDigest:current.digest,createdAt:new Date(Date.parse(stamp)+steps.length-1).toISOString(),changes:{added:[],changed:[node.id],completed:[],blocked:[],stale:[node.id],addedEdges:[],removedEdges:[]}};
+  await persistExecutionGraph(owner,current,{...current,revision:current.revision-1},replayReceipt);expect((await f.query('SELECT * FROM execution_nodes ORDER BY id')).rows).toEqual(later);expect(await events.list('team','workday',{limit:100,afterEventIndex:-1})).toEqual(retainedHistory);
+  await f.query("UPDATE execution_nodes SET status='stale' WHERE id=?",[node.id]);
   const snapshot=async()=>({nodes:(await f.query('SELECT * FROM execution_nodes ORDER BY id')).rows,revisions:(await f.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows,events:(await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows,runs:(await f.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows}),before=await snapshot();
   await f.db.exec("CREATE FUNCTION suppress_node_history() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type='execution.node.state' THEN RETURN NULL; END IF; RETURN NEW; END $$; CREATE TRIGGER suppress_node_history BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION suppress_node_history();");
   const next={...current,revision:current.revision+1,nodes:current.nodes.map(node=>({...node,status:'ready' as const,graphRevisionUpdated:current.revision+1}))};next.digest=digest({teamId:next.teamId,nodes:next.nodes,edges:next.edges});
