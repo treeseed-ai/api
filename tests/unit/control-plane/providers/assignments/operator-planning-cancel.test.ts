@@ -1,3 +1,4 @@
+import * as transactions from '../../../../../src/api/capacity/transaction.ts';
 import {CapacityWorkdayEventRepository} from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { assignmentAttemptSchema, compileWorkday, emptyCapacityBudget } from '@treeseed/sdk/agent-capacity';
@@ -56,10 +57,11 @@ afterEach(() => vi.useRealTimers());
 describe('operator planning boundary closeout', () => {
  it('records one exact scoped active cancellation request without terminalizing or rewriting issued authority',async()=>{
   const {service,database}=setup();fixture.assignment=recoveryAssignment(false);const before=structuredClone(fixture.assignment);
+  Object.assign(database,{run:vi.fn(async()=>{})});const transaction=vi.spyOn(transactions,'capacityTransaction').mockImplementation(async(store,apply)=>apply(store)),read=vi.spyOn(CapacityWorkdayEventRepository.prototype,'get').mockResolvedValue(null);
   database.first.mockImplementation(async(query,params)=>{if(query.startsWith('UPDATE capacity_provider_assignments SET metadata_json')){fixture.assignment={...fixture.assignment,metadata:JSON.parse(String(params[0])),stateVersion:Number(fixture.assignment.stateVersion)+1,lifecycleReason:params[1],updatedAt:params[2]};return{id:fixture.assignment.id};}throw new Error('Unexpected unit cancellation read');});
   const event=vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementation(async(teamId,runId,value)=>({...value,teamId,runId,eventIndex:0}));
   try{await service.cancel('team',String(fixture.assignment.id),{idempotencyKey:'unit-request',actorId:'operator',reason:'Original unit request.'});expect(event,'active request must publish its exact owning observation').toHaveBeenCalledOnce();expect(fixture.assignment.assignmentAttempt).toEqual(before.assignmentAttempt);expect(fixture.settle).not.toHaveBeenCalled();}
-  finally{event.mockRestore();}
+  finally{event.mockRestore();transaction.mockRestore();read.mockRestore();}
  });
 
 	it('denies missing malformed and incomplete measured usage before cancelling a released productive attempt', async () => {

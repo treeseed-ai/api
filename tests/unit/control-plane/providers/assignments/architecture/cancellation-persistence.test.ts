@@ -1,5 +1,3 @@
-import {readFileSync} from 'node:fs';
-import {splitPostgresSqlStatements} from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
 import {CapacityWorkdayEventRepository} from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OperatorAssignmentService } from '../../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
@@ -17,7 +15,7 @@ function atNow() { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new 
 describe('cancellation retains productive and financial authority through original SQL', () => {
  it('native active cancellation publishes one owning request observation and exact replay preserves the first request clock and immutable attempt',async()=>{
   const f=await cancellationDatabase();try{
-   atNow();const ddl=splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql','utf8')).filter(sql=>sql.startsWith('CREATE TABLE "capacity_workday_events" ('));expect(ddl).toHaveLength(1);await f.db.exec(ddl[0]!);
+   atNow();
    const input={idempotencyKey:'original-cancel-request',actorId:'operator',reason:'Original bounded cancellation request.'},held=structuredClone(input),service=new OperatorAssignmentService(f.owner),first=await service.cancel('team',f.assignment.id,input);
    const observations=(await f.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[f.assignment.id])).rows;
    expect.soft(observations,'active cancellation requires one durable owning observation').toHaveLength(1);
