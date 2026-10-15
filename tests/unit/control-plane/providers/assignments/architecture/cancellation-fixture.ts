@@ -36,6 +36,9 @@ export async function cancellationDatabase(status = 'leased', started = false) {
 			if (ddl.length !== 1) throw new Error(`Missing original ${table} DDL`);
 			await fixture.db.exec(ddl[0]!);
 		}
+  const eventIndex=original.filter(sql=>sql.startsWith('CREATE UNIQUE INDEX "idx_capacity_workday_events_run_index"'));
+  if(eventIndex.length!==1)throw new Error('Missing original workday event index authority');
+  await fixture.db.exec(eventIndex[0]!);
 		const attempt = assignmentAttemptSchema.parse({ ...frozenAttempt, status: 'created' });
 		const budget = emptyCapacityBudget(attempt.deadline, attempt.limits.maximumSeconds);
 		const time = { ...budget.time, authorityDeadlineAt: attempt.deadline,

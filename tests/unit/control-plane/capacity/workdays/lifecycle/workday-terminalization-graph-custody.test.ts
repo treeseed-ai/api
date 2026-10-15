@@ -4,7 +4,7 @@ import * as settlement from '../../../../../../src/api/capacity/services/capacit
 import {CapacityWorkdayEventRepository} from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import {recoveryAssignment} from '../../../providers/assignments/architecture/cancellation-fixture.ts';
 import {beforeEach,afterEach,describe,expect,it,vi} from 'vitest';
-beforeEach(()=>vi.spyOn(transactions,'capacityTransaction').mockImplementation(async(store,apply)=>apply(store)));
+beforeEach(()=>{vi.spyOn(transactions,'capacityTransaction').mockImplementation(async(store,apply)=>apply(store));});
 afterEach(()=>vi.restoreAllMocks());
 import { terminalizeCapacityWorkdayAssignments } from '../../../../../../src/api/capacity/services/capacity/workdays/lifecycle/workday-assignment-terminalization-service.ts';
 import { MAX_CAPACITY_PAGE_LIMIT } from '@treeseed/sdk/capacity-pagination';
