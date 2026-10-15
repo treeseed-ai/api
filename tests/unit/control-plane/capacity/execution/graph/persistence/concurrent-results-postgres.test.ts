@@ -1,3 +1,5 @@
+import {assignment as completeAssignment} from '../../fixtures/assignment.ts';
+import {assignmentAttemptSchema,assignmentResultSchema} from '@treeseed/sdk/agent-capacity';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { describe, expect, it } from 'vitest';
@@ -33,7 +35,7 @@ describe('concurrent terminal graph revision custody', () => {
 			const nodes: ExecutionNode[] = Array.from({ length: 5 }, (_, index) => ({
 				schemaVersion: 'treeseed.execution-node/v1', id: `node-${index}`, teamId: 'team', projectId: 'project',
 				kind: 'planning', pairRole: null, sourceRef, authorityRefs: [], ruleRevision: 1, nodeRevision: 1,
-				estimate: { expectedSeconds: 180, maximumSeconds: 180 }, requiredCapabilities: ['treeseed.coordination.planning'],
+				estimate: completeAssignment.estimate, requiredCapabilities: ['treeseed.coordination.planning'],
 				requestedPermissions: { content: { read: ['proposal'], write: [] }, tools: ['source.read'] }, workspace: 'read-only',
 				agentClass: 'engineer', status: 'running', graphRevisionCreated: 1, graphRevisionUpdated: 1,
 			}));
@@ -47,20 +49,34 @@ describe('concurrent terminal graph revision custody', () => {
 				ruleRevision: 1, changedSourceRefs: [sourceRef], graphDigest: digest, createdAt: now,
 				changes: { added: nodes.map(node => node.id), changed: [], completed: [], blocked: [], stale: [], addedEdges: [], removedEdges: [] } };
 			await persistExecutionGraph(store, graph, { ...graph, revision: 0, nodes: [] }, receipt);
-			for (const node of nodes) await db.pool.query(`INSERT INTO capacity_provider_assignments
-				(id,team_id,project_id,project_agent_class_id,capacity_provider_id,membership_id,mode,status,lease_state,state_version,graph_revision,
-				assignment_attempt_json,execution_node_id,execution_node_revision,created_at,updated_at)
-				VALUES ($1,'team','project','engineer','provider','membership','planning','leased','leased',1,1,$4,$2,1,$3,$3)`,
-				[`assignment-${node.id}`, node.id, now, JSON.stringify({ sourceRef, graphRevision: 1, nodeRevision: 1, nodeId: node.id })]);
+
+			// Complete controlled canonical inputs replace former four-field
+			// placeholders. This case proves SQL projection/concurrency, not admission or model usage.
+			await db.pool.query("INSERT INTO capacity_workday_runs (id,team_id,status,execution_mode,created_at,updated_at) VALUES ('terminal-workday','team','running','simulation',$1,$1)",[now]);
+			await db.pool.query("INSERT INTO capacity_execution_providers (id,capacity_provider_id,display_name,adapter,native_unit,max_concurrent_runners,created_at,updated_at) VALUES ('codex','provider','Controlled executor','codex','seconds',1,$1,$1)",[now]);
+			const attempts=new Map(nodes.map(node=>[node.id,assignmentAttemptSchema.parse({...completeAssignment,
+				id:'assignment-'+node.id,idempotencyKey:'assignment-'+node.id,nodeId:node.id,workdayId:'terminal-workday',graphRevision:1,nodeRevision:1,
+				sourceRef,authorityRefs:[],requiredCapabilities:node.requiredCapabilities,estimate:node.estimate,
+				effectiveProfile:{...completeAssignment.effectiveProfile,activity:'planning',permissionCeiling:node.requestedPermissions},
+				workspace:{mode:'read-only'},grant:{...completeAssignment.grant,contentRead:[sourceRef],sourceWrite:[],tools:['source.read']},contextRefs:[sourceRef],
+				reservationId:'reservation-'+node.id,createdAt:now,deadline:new Date(Date.parse(now)+Date.parse(completeAssignment.deadline)-Date.parse(completeAssignment.createdAt)).toISOString()})]));
+			const results=new Map(nodes.map(node=>[node.id,assignmentResultSchema.parse({schemaVersion:'treeseed.assignment-result/v1',id:'result-'+node.id,
+				assignmentId:attempts.get(node.id)!.id,status:'completed',summary:'Controlled native SQL result input, no model execution claimed.',references:[],verification:[],diagnostics:[],usage:{elapsedSeconds:0},completedAt:now})]));
+			for(const node of nodes){const attempt=attempts.get(node.id)!;
+				await db.pool.query("INSERT INTO capacity_reservations (id,idempotency_key,membership_id,capacity_provider_id,project_agent_class_id,assignment_id,mode,team_id,project_id,work_day_id,state,requested_seconds,reserved_seconds,created_at,updated_at) VALUES ($1,$1,'membership','provider','engineer',$2,'planning','team','project','terminal-workday','reserved',$3,$3,$4,$4)",[attempt.reservationId,attempt.id,attempt.limits.maximumSeconds,now]);
+				await db.pool.query("INSERT INTO capacity_provider_assignments (id,team_id,project_id,project_agent_class_id,capacity_provider_id,membership_id,mode,status,lease_state,state_version,graph_revision,assignment_attempt_json,execution_node_id,execution_node_revision,work_day_id,reservation_id,execution_provider_id,capacity_envelope_json,created_at,updated_at) VALUES ($1,'team','project','engineer','provider','membership','planning','leased','leased',1,1,$2,$3,1,'terminal-workday',$4,'codex',$5,$6,$6)",
+				 [attempt.id,JSON.stringify(attempt),node.id,attempt.reservationId,JSON.stringify({teamId:attempt.teamId,projectId:attempt.projectId,workDayId:attempt.workdayId,mode:'planning',projectAgentClassId:'engineer',capacityProviderId:'provider',executionProviderId:'codex',reservationId:attempt.reservationId,requestedSeconds:attempt.limits.maximumSeconds,reservedSeconds:attempt.limits.maximumSeconds}),now]);
+			}
+
 			// Hold the common row so all five real connections contend together.
 			const blocker = await db.pool.connect();
 			await blocker.query('BEGIN'); await blocker.query("SELECT id FROM teams WHERE id='team' FOR UPDATE");
-			const writes = nodes.map(node => commitLivingExecutionLifecycle({ store,
-				assignment: { id: `assignment-${node.id}`, teamId: 'team', executionNodeId: node.id,
-					executionNodeRevision: 1, graphRevision: 1, stateVersion: 1,
-					assignmentAttempt: { sourceRef, graphRevision: 1, nodeRevision: 1, nodeId: node.id } } as never,
-				status: 'completed', now }, [{ query: 'UPDATE capacity_provider_assignments SET status=? WHERE id=?',
-					params: ['completed', `assignment-${node.id}`] }]));
+
+			const writes=nodes.map(node=>{const attempt=attempts.get(node.id)!,result=results.get(node.id)!;
+				return commitLivingExecutionLifecycle({store,assignment:{id:attempt.id,teamId:attempt.teamId,projectId:attempt.projectId,workDayId:attempt.workdayId,
+					executionNodeId:node.id,executionNodeRevision:1,graphRevision:1,stateVersion:1,assignmentAttempt:attempt}as never,status:'completed',now,result},
+					[{query:"UPDATE capacity_provider_assignments SET status='completed',lease_state='released',state_version=state_version+1,assignment_result_json=?,updated_at=? WHERE id=?",params:[JSON.stringify(result),now,attempt.id]}]);
+			});
 			const staleProjection = persistExecutionGraph(store, { ...graph, revision: 2 }, graph, { ...receipt, revision: 2 })
 				.catch(error => { expect(error).toMatchObject({ code: 'execution_graph_revision_conflict' }); });
 			await blocker.query('COMMIT'); blocker.release();
