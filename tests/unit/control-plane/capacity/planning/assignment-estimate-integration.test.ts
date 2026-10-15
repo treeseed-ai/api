@@ -14,6 +14,13 @@ const candidate = { ...frozen, executionPlan: { workItems: [
 ] } };
 
 describe('exact estimator result integration', () => {
+	it('denies an estimator result after current fixed proposal authority changes while retaining allowed estimate refinements and original observations',()=>{
+		for(const changed of [{title:'Different fixed title'},{request:'Different fixed request'},{summary:'Different fixed summary'},{projectId:'foreign-project'},{id:'foreign-proposal'}]){
+			const input={frozen,candidate,current:{...frozen,...changed},agentClass:'engineer'},held=structuredClone(input);
+			expect.soft(()=>mergeAssignmentEstimate(input)).toThrow('Current proposal authority no longer matches');expect(input).toEqual(held);
+		}
+	});
+
 	it('finalizes only a matching external approval after all owner and reviewer estimates arrive', async () => {
 		const complete = { ...frozen, executionPlan: { workItems: frozen.executionPlan.workItems.map(item => ({
 			...item, estimate, reviewEstimate: estimate,
