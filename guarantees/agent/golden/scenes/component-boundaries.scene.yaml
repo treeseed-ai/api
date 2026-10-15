@@ -2598,3 +2598,15 @@ workflow:
   - id: terminal-observation-zero-write-native
     action: { verifier: api.golden.terminal-observation-zero-write-native }
     expect: { status: passed }
+
+  - id: terminal-observation-postgres-native
+    action: { verifier: api.golden.terminal-observation-postgres-native }
+    expect: { status: passed }
+
+  - id: creation-observation-native
+    action: { verifier: api.golden.creation-observation-native }
+    expect: { status: passed }
+
+  - id: creation-observation-denials-unit
+    action: { verifier: api.golden.creation-observation-denials-unit }
+    expect: { status: passed }

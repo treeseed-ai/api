@@ -4429,3 +4429,21 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
     testName: "native terminal observation rolls back a zero-row assignment update and retains original accounting before exact retry"
+
+  api.golden.terminal-observation-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-observation-postgres.test.ts
+    testName: "native terminal observation rolls back suppressed state and event writes then serializes matching public reports without changing prior settlement"
+
+  api.golden.creation-observation-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/initial-admission.test.ts
+    testName: "native initial admission publishes one exact scoped creation observation and retains unchanged authority on replay"
+
+  api.golden.creation-observation-denials-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-execution-admission.test.ts
+    testName: "rejects missing or substituted creation observations while retaining exact original admission input"

@@ -64,7 +64,7 @@ describe('concurrent terminal graph revision custody', () => {
 				assignmentId:attempts.get(node.id)!.id,status:'completed',summary:'Controlled native SQL result input, no model execution claimed.',references:[],verification:[],diagnostics:[],usage:{elapsedSeconds:0},completedAt:now})]));
 			for(const node of nodes){const attempt=attempts.get(node.id)!;
 				await db.pool.query("INSERT INTO capacity_reservations (id,idempotency_key,membership_id,capacity_provider_id,project_agent_class_id,assignment_id,mode,team_id,project_id,work_day_id,state,requested_seconds,reserved_seconds,created_at,updated_at) VALUES ($1,$1,'membership','provider','engineer',$2,'planning','team','project','terminal-workday','reserved',$3,$3,$4,$4)",[attempt.reservationId,attempt.id,attempt.limits.maximumSeconds,now]);
-				await db.pool.query("INSERT INTO capacity_provider_assignments (id,team_id,project_id,project_agent_class_id,capacity_provider_id,membership_id,mode,status,lease_state,state_version,graph_revision,assignment_attempt_json,execution_node_id,execution_node_revision,work_day_id,reservation_id,execution_provider_id,capacity_envelope_json,created_at,updated_at) VALUES ($1,'team','project','engineer','provider','membership','planning','leased','leased',1,1,$2,$3,1,'terminal-workday',$4,'codex',$5,$6,$6)",
+				await db.pool.query("INSERT INTO capacity_provider_assignments (id,team_id,project_id,project_agent_class_id,capacity_provider_id,membership_id,mode,status,lease_state,state_version,graph_revision,assignment_attempt_json,execution_node_id,execution_node_revision,work_day_id,reservation_id,execution_provider_id,capacity_envelope_json,attempt_count,created_at,updated_at) VALUES ($1,'team','project','engineer','provider','membership','planning','leased','leased',1,1,$2,$3,1,'terminal-workday',$4,'codex',$5,1,$6,$6)",
 				 [attempt.id,JSON.stringify(attempt),node.id,attempt.reservationId,JSON.stringify({teamId:attempt.teamId,projectId:attempt.projectId,workDayId:attempt.workdayId,mode:'planning',projectAgentClassId:'engineer',capacityProviderId:'provider',executionProviderId:'codex',reservationId:attempt.reservationId,requestedSeconds:attempt.limits.maximumSeconds,reservedSeconds:attempt.limits.maximumSeconds}),now]);
 			}
 
@@ -75,7 +75,7 @@ describe('concurrent terminal graph revision custody', () => {
 			const writes=nodes.map(node=>{const attempt=attempts.get(node.id)!,result=results.get(node.id)!;
 				return commitLivingExecutionLifecycle({store,assignment:{id:attempt.id,teamId:attempt.teamId,projectId:attempt.projectId,workDayId:attempt.workdayId,
 					executionNodeId:node.id,executionNodeRevision:1,graphRevision:1,stateVersion:1,assignmentAttempt:attempt}as never,status:'completed',now,result},
-					[{query:"UPDATE capacity_provider_assignments SET status='completed',lease_state='released',state_version=state_version+1,assignment_result_json=?,updated_at=? WHERE id=?",params:[JSON.stringify(result),now,attempt.id]}]);
+					[{query:"UPDATE capacity_provider_assignments SET status='completed',lease_state='released',state_version=state_version+1,assignment_result_json=?,completed_at=?,updated_at=? WHERE id=?",params:[JSON.stringify(result),now,now,attempt.id]}]);
 			});
 			const staleProjection = persistExecutionGraph(store, { ...graph, revision: 2 }, graph, { ...receipt, revision: 2 })
 				.catch(error => { expect(error).toMatchObject({ code: 'execution_graph_revision_conflict' }); });
