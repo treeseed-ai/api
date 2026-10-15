@@ -1,3 +1,4 @@
+import { AvailabilitySessionRepository } from '../../../../repositories/accounts/availability-session.ts';
 import { appliedWorkdaySchema, assignmentResultSchema, compilePlanningRounds, workdayPlanningEndsAt, type AppliedWorkday, type AssignmentResult } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
@@ -160,6 +161,7 @@ export async function advanceLivingWorkday(store: CapacityGovernanceDatabase & {
 			completedAt = completedAt ?? now;
 		}
 	}
+	if (next.state === 'ended') await new AvailabilitySessionRepository(store).closeIdleWorkdaySessions(run.teamId,run.id,now);
 	if (same(next, plan) && status === run.status) return { changed: false, plan: next, status };
 	const updated = await store.updateCapacityWorkdayRun(run.teamId, run.id, {
 		status, completedAt, parameters: { ...run.parameters, appliedPlan: next },

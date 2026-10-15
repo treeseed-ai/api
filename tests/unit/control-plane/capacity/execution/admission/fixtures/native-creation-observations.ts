@@ -1,3 +1,4 @@
+import { proveNativeClosedSessionAdmission } from './native-admission-session.ts';
 import {createHash} from 'node:crypto';
 import {expect} from 'vitest';
 import type {AssignmentAttempt} from '@treeseed/sdk/agent-capacity';
@@ -8,6 +9,7 @@ import {CapacityWorkdayEventRepository} from '../../../../../../../src/api/capac
 
 /** Reuse the original native admission and independent peer; no clocks or limits change. */
 export async function proveNativeCreationRollback(database:ReturnType<typeof createControlPlanePostgresDatabase>,peer:ReturnType<typeof createControlPlanePostgresDatabase>,attempt:AssignmentAttempt,admit:(value:AssignmentAttempt)=>Promise<DurableProviderAssignment>){
+ await proveNativeClosedSessionAdmission(database,peer,attempt,admit);
  const state=async()=>Object.fromEntries(await Promise.all(['capacity_provider_assignments','capacity_reservations','execution_nodes','treedx_proxy_handles','capacity_workday_runs','capacity_workday_events','capacity_admission_counters','capacity_reservation_counter_claims'].map(async table=>[table,(await peer.pool.query('SELECT * FROM '+table+' ORDER BY 1')).rows])));
  const before=await state(),held=structuredClone(attempt),failures:unknown[]=[];
  for(const mode of ['missing','interrupted']as const){

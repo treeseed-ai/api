@@ -104,6 +104,28 @@ export class AvailabilitySessionRepository {
 		return this.get(teamId, sessionId);
 	}
 
+	/** Retire only sessions referenced by this workday, after every consumer and reservation has closed. */
+	async closeIdleWorkdaySessions(teamId: string, workdayId: string, now: string) {
+		const referenced = await this.database.all('SELECT DISTINCT provider_session_id FROM capacity_provider_assignments WHERE team_id=? AND work_day_id=? AND provider_session_id IS NOT NULL', [teamId, workdayId]);
+		if (!referenced.length) return;
+		const owned = `EXISTS (SELECT 1 FROM capacity_provider_assignments owned
+			WHERE owned.team_id=? AND owned.work_day_id=? AND owned.provider_session_id=session.id
+			AND owned.membership_id=session.membership_id AND owned.capacity_provider_id=session.capacity_provider_id
+			AND owned.team_id=session.team_id)`;
+		// The same row lock is acquired by final admission. A separate statement
+		// after that lock observes claims committed while closure was waiting.
+		await this.database.batch([
+			{ query: `SELECT session.id FROM capacity_provider_availability_sessions session WHERE ${owned} ORDER BY session.id FOR NO KEY UPDATE`, params: [teamId,workdayId] },
+			{ query: `UPDATE capacity_provider_availability_sessions session SET status='closed',closed_at=COALESCE(closed_at,?),updated_at=?
+				WHERE session.status IN ('open','draining') AND ${owned}
+				AND NOT EXISTS (SELECT 1 FROM capacity_provider_assignments active
+					WHERE active.provider_session_id=session.id AND (active.status IN ('pending','leased','running')
+					OR EXISTS (SELECT 1 FROM capacity_reservations reservation WHERE reservation.assignment_id=active.id
+						AND reservation.team_id=active.team_id AND reservation.state NOT IN ('consumed','released','expired','failed'))))`,
+				params: [now,now,teamId,workdayId] },
+		]);
+	}
+
 	async get(teamId: string, sessionId: string) {
 		await this.database.ensureInitialized();
 		return serializeAvailabilitySessionRow(await this.database.first(`SELECT * FROM capacity_provider_availability_sessions WHERE id = ? AND team_id = ? LIMIT 1`, [sessionId, teamId]));

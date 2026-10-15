@@ -195,6 +195,13 @@ export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: R
 	assert.equal(visible.id, native.id); assert.equal(visible.workDayId, run.id); assert.equal(visible.teamId, run.teamId);
 	assert.equal(visible.status, native.status); assert.equal(visible.membershipId, native.membership_id);
 	assert.equal(visible.capacityProviderId, native.capacity_provider_id);
+	assert.ok(typeof native.provider_session_id==='string'&&native.provider_session_id.trim()===native.provider_session_id&&native.provider_session_id,'ACCEPTANCE_NATIVE_RESOURCE');
+	assert.equal(visible.providerSessionId,native.provider_session_id,'ACCEPTANCE_NATIVE_RESOURCE');
+	for(const[column,field]of[['workspace_context_json','workspaceContext'],['treedx_proxy_handle_json','treedxProxyHandle']]as const){
+		assert.equal(typeof native[column],'string','ACCEPTANCE_NATIVE_RESOURCE');const original:unknown=JSON.parse(String(native[column]));
+		assert.ok(original&&typeof original==='object'&&!Array.isArray(original),'ACCEPTANCE_NATIVE_RESOURCE');assert.deepEqual(visible[field],original,'ACCEPTANCE_NATIVE_RESOURCE');
+	}
+
 	assert.ok(typeof native.lane_id === 'string' && native.lane_id.trim() === native.lane_id && native.lane_id
 		&& typeof native.lane_purpose === 'string' && ['workday', 'communication'].includes(native.lane_purpose), 'ACCEPTANCE_NATIVE_LANE: Original issued lane custody required');
 	assert.equal(visible.laneId, native.lane_id, 'ACCEPTANCE_NATIVE_LANE: Public lane differs from native issuance');
@@ -421,7 +428,7 @@ export async function verifyNativeGraphRevisionInventory(native: unknown, teamId
 
 /** Independent owning SQL inventory bounds public reads; matching read-backs alone cannot prove completeness. */
 export async function verifyNativeInventory(native: unknown, fetch: (cursor?: string) => unknown | Promise<unknown>, limit: number,
-	direction: 'ascending' | 'descending' = 'descending'): Promise<Row[]> {
+	direction: 'ascending' | 'descending' = 'descending', publicClock: 'createdAt' | 'openedAt' = 'createdAt'): Promise<Row[]> {
 	assert.ok(Number.isSafeInteger(limit) && limit > 0 && limit <= 200, 'ACCEPTANCE_NATIVE_INVENTORY: Canonical page size required');
 	assert.ok(direction === 'ascending' || direction === 'descending');
 	assert.ok(Array.isArray(native), 'ACCEPTANCE_NATIVE_INVENTORY: Complete native collection required');
@@ -438,7 +445,7 @@ export async function verifyNativeInventory(native: unknown, fetch: (cursor?: st
 		const response = row(await fetch(cursor)), page = row(response.page);
 		assert.ok(Array.isArray(response.items), 'ACCEPTANCE_NATIVE_INVENTORY: Explicit public collection required');
 		const items = response.items.map(row), slice = expected.slice(observed.length, observed.length + limit);
-		assert.deepEqual(items.map(value => ({ id: value.id, createdAt: value.createdAt })), slice,
+		assert.deepEqual(items.map(value => ({ id: value.id, createdAt: value[publicClock] })), slice,
 			'ACCEPTANCE_NATIVE_INVENTORY: Public producer omitted duplicated substituted or reordered native records');
 		observed.push(...items);
 		const more = observed.length < expected.length;

@@ -4555,3 +4555,28 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/recovery-observation-postgres.test.ts
     testName: "native PostgreSQL unstarted workday stop settles once with original terminal observation only after atomic rollback and independent calls"
+  api.golden.execution-session-authority-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/session-authority-unit.test.ts
+    testName: "denies missing foreign closed stale and malformed locked sessions before downstream writes while retaining exact replay authority"
+  api.golden.execution-resource-closure-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/resource-closure-unit.test.ts
+    testName: "denies omitted foreign duplicated live or substituted native session and proxy records without changing retained observations"
+  api.golden.execution-delayed-cleanup-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/cancellation-persistence.test.ts
+    testName: "retains the first actual revocation and updated clock when a stale released cancellation resumes after another cleanup has completed"
+  api.golden.estimate-fixed-source-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/assignment-estimate-integration.test.ts
+    testName: "denies an estimator result after current fixed proposal authority changes while retaining allowed estimate refinements and original observations"
+  api.golden.estimate-fixed-source-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/estimate-source-native.test.ts
+    testName: "native PostgreSQL and TreeDX exact proposal reads reject moved fixed authority before estimator replay and retain unchanged valid estimate-only replay"

@@ -238,11 +238,19 @@ export class OperatorAssignmentService {
 				'capacity_assignment_cancel_conflict','Exact durable terminal cancellation observation required.',409,{assignmentId});
 			return assignment;
 		});
-		const terminalAuthority = terminalAssignmentAuthority(assignment, now);
-		await this.database.batch([
-			{ query: `UPDATE capacity_provider_assignments SET treedx_proxy_handle_json = ?, workspace_context_json = ?, updated_at = ? WHERE id = ? AND team_id = ? AND status IN ('cancelled','failed') AND (treedx_proxy_handle_json::jsonb IS DISTINCT FROM ?::jsonb OR workspace_context_json::jsonb IS DISTINCT FROM ?::jsonb)`, params: [JSON.stringify(terminalAuthority.proxyHandle), JSON.stringify(terminalAuthority.workspaceContext), now, assignmentId, teamId,JSON.stringify(terminalAuthority.proxyHandle),JSON.stringify(terminalAuthority.workspaceContext)] },
-			{ query: `UPDATE treedx_proxy_handles SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE assignment_id = ? AND team_id = ? AND (status<>'revoked' OR revoked_at IS NULL)`, params: [now, now, assignmentId, teamId] },
+		assignment = await capacityTransaction(this.database, async database => {
+			await database.run('SELECT id FROM capacity_provider_assignments WHERE id=? AND team_id=? FOR UPDATE', [assignmentId, teamId]);
+			const current = await new ProviderAssignmentRepository(database).getForCancellation(teamId, assignmentId);
+			if (!current || !['cancelled','failed'].includes(current.status) || current.reservationId !== reservationId)
+				throw new CapacityGovernanceError('capacity_assignment_cancel_conflict', 'Exact current terminal authority is required for cleanup.', 409, {assignmentId});
+			const cleanupNow = new Date().toISOString();
+		const terminalAuthority = terminalAssignmentAuthority(current, cleanupNow);
+		await database.batch([
+			{ query: `UPDATE capacity_provider_assignments SET treedx_proxy_handle_json = ?, workspace_context_json = ?, updated_at = ? WHERE id = ? AND team_id = ? AND status IN ('cancelled','failed') AND (treedx_proxy_handle_json::jsonb IS DISTINCT FROM ?::jsonb OR workspace_context_json::jsonb IS DISTINCT FROM ?::jsonb)`, params: [JSON.stringify(terminalAuthority.proxyHandle), JSON.stringify(terminalAuthority.workspaceContext), cleanupNow, assignmentId, teamId,JSON.stringify(terminalAuthority.proxyHandle),JSON.stringify(terminalAuthority.workspaceContext)] },
+			{ query: `UPDATE treedx_proxy_handles SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE assignment_id = ? AND team_id = ? AND (status<>'revoked' OR revoked_at IS NULL)`, params: [now, cleanupNow, assignmentId, teamId] },
 		]);
+			return current;
+		});
 		if (this.closeWorkspace) await this.closeWorkspace(assignment);
 		await releaseCapacityReservationsExactlyOnce(this.database, [{
 			settlementKey: `operator-cancel:${teamId}:${operationKey}`, teamId, membershipId: assignment.membershipId,

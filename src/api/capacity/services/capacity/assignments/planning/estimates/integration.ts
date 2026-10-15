@@ -57,9 +57,8 @@ export function mergeAssignmentEstimate(input: {
 			!== stable(frozenItems[itemIndex][reviewer ? 'reviewEstimate' : 'estimate'])))) {
 		throw new CapacityGovernanceError('assignment_estimate_unrelated_change', 'Estimator result changed another work item estimate.', 409);
 	}
-	if (currentItems.some((item, itemIndex) => item.id !== frozenItems[itemIndex].id
-		|| stable(withoutEstimate(item)) !== stable(withoutEstimate(frozenItems[itemIndex])))) {
-		throw new CapacityGovernanceError('assignment_estimate_source_changed', 'Current proposal work items no longer match the frozen assignment source.', 409);
+	if (proposalApprovalFingerprint(input.current) !== proposalApprovalFingerprint(input.frozen)) {
+		throw new CapacityGovernanceError('assignment_estimate_source_changed', 'Current proposal authority no longer matches the frozen assignment source.', 409);
 	}
 	const field = reviewer ? 'reviewEstimate' : 'estimate';
 	for (const target of targets) {

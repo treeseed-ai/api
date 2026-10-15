@@ -1,3 +1,4 @@
+import { verifyManagedResourceClosure } from './execution-resource-closure.ts';
 import { verifyNativeProviderUsage } from './execution-native-usage.ts';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -124,6 +125,7 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 					inventoryReads.push({ args, cursor, returned }); return returned;
 				}, 200, direction);
 				const publicAssignments = await inventory(assignments, ['assignments', 'list', '--workday', id]);
+				await verifyManagedResourceClosure(nativeInventory,read,assignments,run);
 				const nativeEvents = await nativeInventory('SELECT * FROM capacity_workday_events WHERE run_id=$1 AND team_id=$2 ORDER BY id', [id, run.teamId]);
 				verifyNativeLeaseHistory(assignments,nativeEvents,run);
 				const reservations = await nativeInventory('SELECT * FROM capacity_reservations WHERE work_day_id=$1 ORDER BY id', [id]);

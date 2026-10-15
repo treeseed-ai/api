@@ -2682,3 +2682,18 @@ workflow:
   - id: workday-terminal-observation-premodel-postgres-native
     action: { verifier: api.golden.workday-terminal-observation-premodel-postgres-native }
     expect: { status: passed }
+  - id: execution-session-authority-unit
+    action: { verifier: api.golden.execution-session-authority-unit }
+    expect: { status: passed }
+  - id: execution-resource-closure-unit
+    action: { verifier: api.golden.execution-resource-closure-unit }
+    expect: { status: passed }
+  - id: execution-delayed-cleanup-native
+    action: { verifier: api.golden.execution-delayed-cleanup-native }
+    expect: { status: passed }
+  - id: estimate-fixed-source-unit
+    action: { verifier: api.golden.estimate-fixed-source-unit }
+    expect: { status: passed }
+  - id: estimate-fixed-source-native
+    action: { verifier: api.golden.estimate-fixed-source-native }
+    expect: { status: passed }

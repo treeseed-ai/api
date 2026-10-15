@@ -1,3 +1,4 @@
+import { proveInitialSessionDenials } from './initial-session-authority.ts';
 import {CapacityWorkdayEventRepository} from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { describe, expect, it } from 'vitest';
 import { assignmentAttemptSchema, type ProviderAssignment } from '@treeseed/sdk/agent-capacity';
@@ -14,6 +15,7 @@ import type { GraphRevision } from '@treeseed/sdk/agent-capacity';
 describe('initial living assignment native admission', () => {
  it('native initial admission publishes one exact scoped creation observation and retains unchanged authority on replay',async()=>{
   const f=await initialAdmission();try{
+   await proveInitialSessionDenials(f);
 
    const input=f.input(),held=structuredClone(input),snapshot=async()=>({custody:await f.snapshot(),events:(await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows,workdays:(await f.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows}),original=await snapshot();
    for(const mode of ['missing','interrupted']as const){

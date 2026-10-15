@@ -323,6 +323,7 @@ describe('living workday lifecycle', () => {
 			? [{ id: 'reporting:workday:project/reporter', kind: 'reporting', status: 'completed' }]
 			: sql.includes('assignment_result_json') ? [{ id: 'assignment', assignment_result_json: JSON.stringify(reportResult),
 				integrated_at: now, integration_json: JSON.stringify({ resultId: reportResult.id, references: reportResult.references, publication: false }) }]
+			: sql.includes('SELECT DISTINCT provider_session_id') ? []
 			: sql.includes('JOIN execution_edges') ? [{ status: 'completed' }] : [{ state: 'consumed' }]), updateCapacityWorkdayRun };
 		const result = await advanceLivingWorkday(store as never, closingRun, now);
 		expect(result).toMatchObject({ changed: true, status: 'completed', plan: { state: 'ended', endedAt: now, reportRef: reportReference } });
