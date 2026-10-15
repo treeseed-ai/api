@@ -51,7 +51,12 @@ function setup(ready = true) {
 		}
 		return null;
 	});
-	const database = { ensureInitialized: vi.fn(),run:vi.fn(async()=>{}), first, batch: vi.fn() };
+	let nodeStatus='ready';
+    const all=vi.fn(async(sql:string,params:unknown[])=>{
+     if(!sql.startsWith('SELECT id,team_id AS "teamId"')||!sql.includes('FROM execution_nodes')||JSON.stringify(params)!==JSON.stringify([fixture.assignment.workDayId,fixture.assignment.teamId,fixture.assignment.executionNodeId]))throw new Error('Unexpected unit cancellation node read');
+     return [{id:fixture.assignment.executionNodeId,teamId:fixture.assignment.teamId,projectId:fixture.assignment.projectId,workdayId:fixture.assignment.workDayId,status:nodeStatus,nodeRevision:fixture.assignment.executionNodeRevision,graphRevisionUpdated:fixture.assignment.graphRevision}];
+    });
+    const database = { ensureInitialized: vi.fn(),run:vi.fn(async()=>{}), all, first, batch: vi.fn(async(operations:Array<{query:string}>)=>{if(operations.some(operation=>operation.query.startsWith("UPDATE execution_nodes SET status='cancelled'")))nodeStatus='cancelled';}) };
 	return { database, service: new OperatorAssignmentService(database as never) };
 }
 beforeEach(()=>{vi.spyOn(transactions,'capacityTransaction').mockImplementation(async(store,apply)=>apply(store));vi.spyOn(CapacityWorkdayEventRepository.prototype,'get').mockResolvedValue(null);vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementation(async(teamId,runId,value)=>({...value,teamId,runId,eventIndex:0}));});

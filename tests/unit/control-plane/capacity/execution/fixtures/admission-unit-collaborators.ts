@@ -17,3 +17,14 @@ export function admissionUnitCollaborators(){
  });
  afterEach(()=>vi.restoreAllMocks());
 }
+
+/** Controlled unit node snapshots; actual transactional SQL is proved by the native cases. */
+export function admissionNodeObservationStore(attempt=assignment){
+ let reads=0;
+ return {run:vi.fn(async(sql:string,params:unknown[])=>{
+  if(sql!=="SELECT id FROM capacity_workday_runs WHERE team_id=? AND id=? AND status='running' FOR UPDATE"||params[0]!==attempt.teamId||params[1]!==attempt.workdayId)throw new Error('Unexpected unit admission lock');
+ }),all:vi.fn(async(sql:string,params:unknown[])=>{
+  if(!sql.startsWith('SELECT id,team_id AS "teamId"')||!sql.includes('FROM execution_nodes')||JSON.stringify(params)!==JSON.stringify([attempt.workdayId,attempt.teamId,attempt.nodeId]))throw new Error('Unexpected unit admission node read');
+  return [{id:attempt.nodeId,teamId:attempt.teamId,projectId:attempt.projectId,workdayId:attempt.workdayId,status:reads++===0?'ready':'assigned',nodeRevision:attempt.nodeRevision,graphRevisionUpdated:attempt.graphRevision}];
+ })};
+}

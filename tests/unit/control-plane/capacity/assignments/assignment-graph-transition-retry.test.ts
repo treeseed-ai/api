@@ -87,7 +87,7 @@ describe('concurrent assignment graph completion', () => {
 		const store = fixture(() => null);
 		const database = { run: vi.fn(async () => {}), first: vi.fn(async (sql: string) =>
 			 sql.includes('SELECT revision') ? { revision: 10 } : { id: sql.includes('capacity_provider_assignments') ? attempt.id : attempt.nodeId }),
-			all: vi.fn(async (sql: string) => sql.includes('execution_nodes') ? [structuredClone(nodeRow)] : []),
+			all: vi.fn(async (sql: string) => sql.startsWith('SELECT id,team_id AS "teamId"') ? [{id:attempt.nodeId,teamId:attempt.teamId,projectId:attempt.projectId,workdayId:attempt.workdayId,status:nodeRow.status,nodeRevision:nodeRow.node_revision,graphRevisionUpdated:nodeRow.graph_revision_updated}] : sql.includes('execution_nodes') ? [structuredClone(nodeRow)] : []),
 			batch: vi.fn(async () => { throw error; }) } as unknown as CapacityGovernanceDatabase;
 		await expect(commitLivingExecutionLifecycle(input(store.store), operations, database)).rejects.toBe(error);
 		expect(store.transaction).not.toHaveBeenCalled();

@@ -1,4 +1,4 @@
-import {admissionUnitCollaborators} from './fixtures/admission-unit-collaborators.ts';
+import {admissionUnitCollaborators,admissionNodeObservationStore} from './fixtures/admission-unit-collaborators.ts';
 admissionUnitCollaborators();
 import {CapacityWorkdayEventRepository} from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { describe, expect, it, vi } from 'vitest';
@@ -21,7 +21,7 @@ const committedAssignment = () => ({ id: assignment.id,createdAt:assignment.crea
 describe('living execution admission', () => {
 	it('rejects missing or substituted creation observations while retaining exact original admission input',async()=>{
 		for(const field of [null,'teamId','runId','id','projectId','workdayId','assignmentId','eventType','status','title','message','parameters','context','refs','metadata','createdAt']){
-			const committed=committedAssignment(),store={getProviderAssignment:vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed),batch:batch(),first:readyNode()};
+			const committed=committedAssignment(),store={...admissionNodeObservationStore(),getProviderAssignment:vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed),batch:batch(),first:readyNode()};
 			const input={principal:{teamId:'team',capacityProviderId:'provider',membershipId:'membership'},accountingLimits,assignment:assignmentAttemptSchema.parse(assignment),allocation,projectAgentClassId:'class',providerSessionId:'session',executionProviderId:'codex',laneId:'lane',lanePurpose:'workday' as const,executionKind:'workday' as const,workdayConcurrencyLimit:1,predecessorResults:[],treedxProxyHandle:{id:'tdx_assignment'},now:assignment.createdAt},held=structuredClone(input);
 			vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementationOnce(async(teamId,runId,value)=>field===null?null:{...value,teamId,runId,eventIndex:0,[field]:'substituted'});
 			await expect(admitLivingExecutionAssignment(store as never,input)).rejects.toMatchObject({code:'assignment_creation_observation_conflict',status:409});expect(input).toEqual(held);
@@ -29,7 +29,7 @@ describe('living execution admission', () => {
 	});
 
 	it('fails closed when an assignment has no allocator-issued active phase', async () => {
-		const store = { getProviderAssignment: vi.fn().mockResolvedValue(null), batch: batch(), first: readyNode() };
+		const store = { ...admissionNodeObservationStore(), getProviderAssignment: vi.fn().mockResolvedValue(null), batch: batch(), first: readyNode() };
 		await expect(admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
 			accountingLimits, assignment: assignment as never, allocation: { ...allocation, opportunity: undefined } as never,
 			projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'codex', laneId: 'lane',
@@ -41,15 +41,18 @@ describe('living execution admission', () => {
 	it('claims the node, reservation, and immutable attempt in one batch without legacy demand/allocation authority', async () => {
         const observation=vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementation(async(teamId,runId,value)=>({...value,teamId,runId,eventIndex:0}));
 		const committed = committedAssignment();
-		const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed), batch: batch(), first: readyNode() };
+		const store = { ...admissionNodeObservationStore(), getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed), batch: batch(), first: readyNode() };
 		await expect(admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
 			accountingLimits, assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'codex', laneId: 'lane',
 			lanePurpose: 'workday', executionKind: 'workday', workdayConcurrencyLimit: 1, predecessorResults: [], treedxProxyHandle: { id: 'tdx_assignment', status: 'issued',
 				allowedPaths: [], allowedReadPaths: [], allowedWritePaths: [], scopes: [], allowedOperations: [] }, now: assignment.createdAt })).resolves.toBe(committed);
-		expect(observation,'every successful admission must publish its owning creation observation').toHaveBeenCalledOnce();observation.mockRestore();
+		expect(observation.mock.calls.filter(([, , value])=>value.eventType==='assignment.created'),'every successful admission must publish one owning creation observation').toHaveLength(1);
+        expect(observation.mock.calls.filter(([, , value])=>value.eventType==='execution.node.state')).toHaveLength(1);
+        expect(observation.mock.calls[1]![2].context).toEqual({nodeId:assignment.nodeId,nodeRevision:assignment.nodeRevision,graphRevision:assignment.graphRevision,status:'assigned',previousStatus:'ready'});observation.mockRestore();
 		const sql = store.batch.mock.calls[0]![0].map((operation: { query: string }) => operation.query).join('\n');
 		expect(sql).toMatch(/FOR UPDATE/u);
-		expect(sql).toMatch(/capacity_workday_runs WHERE team_id=\? AND id=\? AND status='running' FOR UPDATE/u);
+		expect(store.run).toHaveBeenCalledExactlyOnceWith("SELECT id FROM capacity_workday_runs WHERE team_id=? AND id=? AND status='running' FOR UPDATE",[assignment.teamId,assignment.workdayId]);
+        expect(store.run.mock.invocationCallOrder[0]).toBeLessThan(store.batch.mock.invocationCallOrder[0]!);
 		expect(sql).toMatch(/active\.execution_kind=\?[\s\S]*active\.status IN \('pending','leased','running'\)\) < \?/u);
 		expect(sql).toMatch(/prior\.status<>'returned'/u);
 		expect(sql).toMatch(/review_pair\.provenance='review-pair'/u);
@@ -86,7 +89,7 @@ describe('living execution admission', () => {
 	});
 
 	it('rejects assignment duration changes after allocator sizing without writing a reservation', async () => {
-		const store = { getProviderAssignment: vi.fn().mockResolvedValue(null), batch: vi.fn() };
+		const store = { ...admissionNodeObservationStore(), getProviderAssignment: vi.fn().mockResolvedValue(null), batch: vi.fn() };
 		await expect(admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
 			accountingLimits, assignment: assignment as never, allocation: { ...allocation, allocatedSeconds: 2 },
 			projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'codex', laneId: 'lane',
@@ -96,7 +99,7 @@ describe('living execution admission', () => {
 	});
 
 	it('explains a workday lane race rather than misreporting a lost graph node', async () => {
-		const store = { getProviderAssignment: vi.fn().mockResolvedValue(null), batch: batch(),
+		const store = { ...admissionNodeObservationStore(), getProviderAssignment: vi.fn().mockResolvedValue(null), batch: batch(),
 			first: vi.fn(async (query: string, _params?: unknown[]) => query.includes('active_count') ? { active_count: 1 } : { id: 'node' }) };
 		await expect(admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
 			accountingLimits, assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'codex', laneId: 'lane',
@@ -109,7 +112,7 @@ describe('living execution admission', () => {
 
 	it('refuses to re-admit a completed execution-node revision while permitting an explicit returned retry', async () => {
 		const committed = committedAssignment();
-		const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed), batch: batch(), first: readyNode() };
+		const store = { ...admissionNodeObservationStore(), getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed), batch: batch(), first: readyNode() };
 		await admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
 			accountingLimits, assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'codex', laneId: 'lane',
 			lanePurpose: 'workday', executionKind: 'workday', workdayConcurrencyLimit: 1, predecessorResults: [], treedxProxyHandle: { id: 'tdx_assignment', status: 'issued',
@@ -128,7 +131,7 @@ describe('living execution admission', () => {
 
 	it('binds a conversation invocation to the assignment in the admission transaction', async () => {
 		const committed = committedAssignment();
-		const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed),
+		const store = { ...admissionNodeObservationStore(), getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed),
 			batch: batch(), first: vi.fn(async () => ({ id: 'node', status: 'running', assignment_id: assignment.id })) };
 		await admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
 			accountingLimits, assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'codex', laneId: 'communication',
@@ -153,7 +156,7 @@ describe('living execution admission', () => {
 	});
 	it('fails closed when a committed conversation assignment lacks the exact invocation binding', async () => {
 		const committed = committedAssignment();
-		const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed),
+		const store = { ...admissionNodeObservationStore(), getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed),
 			batch: vi.fn(async () => []), first: vi.fn(async () => ({ status: 'running', assignment_id: 'other-active-assignment' })) };
 		await expect(admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
 			accountingLimits, assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: assignment.provider.executionProviderId, laneId: 'communication',

@@ -1,4 +1,4 @@
-import {admissionUnitCollaborators} from '../fixtures/admission-unit-collaborators.ts';
+import {admissionUnitCollaborators,admissionNodeObservationStore} from '../fixtures/admission-unit-collaborators.ts';
 admissionUnitCollaborators();
 import { PGlite } from '@electric-sql/pglite';
 import { describe, expect, it, vi } from 'vitest';
@@ -20,7 +20,7 @@ async function admissionOperations(attemptId: string = assignment.id) {
 			requestedSeconds: 3, reservedSeconds: 3, workDayId: attempt.workdayId, capacityProviderId: attempt.provider.providerId,
 			executionProviderId: attempt.provider.executionProviderId, reservationId: attempt.reservationId, projectAgentClassId: 'class' },
 		created_at: attempt.createdAt, updated_at: attempt.createdAt });
-	const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed),
+	const store = { ...admissionNodeObservationStore(attempt), getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed),
 		batch: async (batch: typeof operations) => { operations = batch; },
 		first: vi.fn(async () => ({ id: attempt.nodeId, status: 'running', assignment_id: attempt.id })) };
 	await admitLivingExecutionAssignment(store as never, {
