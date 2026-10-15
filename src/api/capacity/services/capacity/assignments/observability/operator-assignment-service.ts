@@ -1,3 +1,4 @@
+import{readExecutionNodeStates,readExecutionNodeNeighborhood,recordExecutionNodeObservations}from'../../../../../control-plane/repositories/capacity/execution/execution-node-observations.ts';
 import {isDeepStrictEqual} from 'node:util';
 import {CapacityWorkdayEventRepository,type CapacityWorkdayEventWrite} from '../../../../repositories/capacity/workdays/workday-event.ts';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
@@ -257,12 +258,16 @@ export class OperatorAssignmentService {
 			reservationId, assignmentId, activeSeconds: 0, elapsedSeconds: 0, source: 'operator_assignment_cancel',
 			existingSettlementPolicy: 'replay', metadata: { actorId: input.actorId ?? null, reason: input.reason ?? null },
 		}]);
-		await this.database.batch([
+		await capacityTransaction(this.database,async database=>{
+			const nodeIds=assignment.executionNodeId?[assignment.executionNodeId]:[],beforeNodes=await readExecutionNodeStates(database,teamId,assignment.workDayId!,nodeIds);
+		await database.batch([
 			...(assignment.executionNodeId ? [{ query: `UPDATE execution_nodes SET status='cancelled',updated_at=?
 				WHERE team_id=? AND id=? AND node_revision=? AND status<>'cancelled'
 				AND EXISTS (SELECT 1 FROM capacity_provider_assignments WHERE id=? AND team_id=?)`,
 				params: [now, teamId, assignment.executionNodeId, assignment.executionNodeRevision, assignmentId, teamId] }] : []),
 		]);
+			await recordExecutionNodeObservations(database,beforeNodes,await readExecutionNodeStates(database,teamId,assignment.workDayId!,nodeIds),'operator-cancel:'+assignment.id+':'+assignment.stateVersion,now);
+		});
 		const cancelled = await this.assignments.getForCancellation(teamId, assignmentId);
 		const expectedStatus = failedCleanup ? 'failed' : 'cancelled';
 		if (!cancelled || cancelled.status !== expectedStatus) throw new CapacityGovernanceError('capacity_assignment_cancel_conflict', 'Assignment changed during cancellation.', 409, { assignmentId });
@@ -294,6 +299,7 @@ export class OperatorAssignmentService {
 			const retryMetadata = { ...(assignment.metadata ?? {}), operatorRetry: {
 				requestedAt: now, requestedBy: input.actorId ?? null, reason: input.reason ?? null,
 			} };
+			const beforeNodes=await readExecutionNodeNeighborhood(database,teamId,assignment.workDayId!,assignment.executionNodeId!);
 			const reopened = await database.first(`WITH target AS (
 				SELECT team_id,id,project_id,work_item_id,pair_role,source_ref_json,authority_refs_json,node_revision,status
 				FROM execution_nodes WHERE team_id=? AND id=? AND node_revision>=? FOR UPDATE
@@ -340,6 +346,7 @@ export class OperatorAssignmentService {
     context:{nodeId:assignment.executionNodeId,nodeRevision:Number(reopened.node_revision),graphRevision:assignment.graphRevision,status:assignment.status,stateVersion:written.stateVersion,leaseId:assignment.assignmentAttempt?.leaseId??null,reservationId:assignment.reservationId,runnerId:assignment.runnerId}};
    const observed=await writer.create(teamId,assignment.workDayId!,event);
    if(!observed||observed.teamId!==teamId||observed.runId!==assignment.workDayId||Object.entries(event).some(([key,value])=>!isDeepStrictEqual(Reflect.get(observed,key),value)))throw new CapacityGovernanceError('capacity_assignment_requeue_conflict','Exact durable retry observation required.',409,{assignmentId});
+   await recordExecutionNodeObservations(database,beforeNodes,await readExecutionNodeStates(database,teamId,assignment.workDayId!,beforeNodes.map(node=>node.id)),event.id,now);
    return {assignment:written,demand:null,alreadyLeasable:false};
 		});
 		throw new CapacityGovernanceError('capacity_assignment_graph_provenance_required',

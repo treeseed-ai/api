@@ -5,7 +5,7 @@ import{recoverExpiredProviderAssignments}from'../../../../../../../src/api/capac
 import{executePostgresBatch}from'../../../../../../../src/api/support/control-plane-postgres.ts';
 import{CapacityWorkdayEventRepository}from'../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 
-for(const mode of ['retry','cancel','recover']as const)it('original '+mode+' retains exactly one actual node transition and public observation through unchanged replay',async()=>{
+async function prove(mode:'retry'|'cancel'|'recover'){
  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date(cancelNow));const f=await cancellationDatabase(mode==='recover'?'leased':'returned');
  try{
   const owner=Object.assign(f.owner,{db:{transaction:<T>(apply:(client:Parameters<typeof executePostgresBatch>[0])=>Promise<T>)=>f.db.transaction(transaction=>apply(transaction as unknown as Parameters<typeof executePostgresBatch>[0]))}});
@@ -17,4 +17,7 @@ for(const mode of ['retry','cancel','recover']as const)it('original '+mode+' ret
   expect(nodes[0]).toMatchObject({teamId:'team',runId:f.attempt.workdayId,workdayId:f.attempt.workdayId,projectId:f.attempt.projectId,assignmentId:null,context:{nodeId:f.attempt.nodeId,nodeRevision:after.node_revision,graphRevision:after.graph_revision_updated,status:after.status,previousStatus:before.status}});
   const retained=structuredClone(events);await run();expect(await read()).toEqual(retained);
  }finally{vi.useRealTimers();await f.db.close();}
-});
+}
+it('original retry retains exactly one actual node transition and public observation through unchanged replay',()=>prove('retry'));
+it('original cancel retains exactly one actual node transition and public observation through unchanged replay',()=>prove('cancel'));
+it('original recover retains exactly one actual node transition and public observation through unchanged replay',()=>prove('recover'));

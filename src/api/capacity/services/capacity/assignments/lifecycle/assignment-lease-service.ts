@@ -1,3 +1,4 @@
+import{readExecutionNodeStates,recordExecutionNodeObservations}from'../../../../../control-plane/repositories/capacity/execution/execution-node-observations.ts';
 import { capacityTransaction } from '../../../../transaction.ts';
 import { CapacityWorkdayEventRepository } from '../../../../repositories/capacity/workdays/workday-event.ts';
 import type { ProviderAssignmentExplanation,ProviderNextAssignmentRequest } from '@treeseed/sdk/agent-capacity';
@@ -411,6 +412,7 @@ export async function leaseNextProviderAssignment(
 		if (!nodeRow) return { assignment: null, leaseToken: null, leaseSeconds, diagnostics: leaseDiagnostics };
 	}
 	const leased = await capacityTransaction(store, async transaction => {
+	const nodeIds=assignment.status==='returned'&&assignment.executionNodeId?[assignment.executionNodeId]:[],beforeNodes=await readExecutionNodeStates(transaction,assignment.teamId,assignment.workDayId!,nodeIds);
 	if (assignment.status === 'returned' && assignment.executionNodeId) {
 		await transaction.batch([leaseOperation, {
 			query: `UPDATE execution_nodes SET status='assigned',updated_at=?
@@ -432,6 +434,7 @@ export async function leaseNextProviderAssignment(
 			});
 			if (!observation) throw new CapacityGovernanceError('assignment_lease_observation_missing', 'Committed lease requires durable workday observation.', 409);
 		}
+		if(claimed?.leaseToken===leaseToken&&claimed.workDayId)await recordExecutionNodeObservations(transaction,beforeNodes,await readExecutionNodeStates(transaction,claimed.teamId,claimed.workDayId,nodeIds),'assignment-lease:'+claimed.id+':'+claimed.stateVersion,now);
 		return claimed;
 	});
 	if (!leased || leased.leaseToken !== leaseToken || (input.runnerId && leased.runnerId !== input.runnerId)) {

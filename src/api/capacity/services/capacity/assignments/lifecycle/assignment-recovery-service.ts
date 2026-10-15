@@ -1,3 +1,4 @@
+import{readExecutionNodeStates,recordExecutionNodeObservations}from'../../../../../control-plane/repositories/capacity/execution/execution-node-observations.ts';
 import {isDeepStrictEqual} from 'node:util';
 import {CapacityWorkdayEventRepository,type CapacityWorkdayEventWrite} from '../../../../repositories/capacity/workdays/workday-event.ts';
 import { createHash } from 'node:crypto';
@@ -171,6 +172,7 @@ async function recoverOne(database: CapacityGovernanceDatabase, assignment: Dura
 }
 
 async function recoverLocked(database: CapacityGovernanceDatabase, assignment: DurableProviderAssignment, now: string) {
+	const nodeIds=assignment.executionNodeId?[assignment.executionNodeId]:[],beforeNodes=await readExecutionNodeStates(database,assignment.teamId,assignment.workDayId!,nodeIds);
 	const observed = await evidence(database, assignment);
 	const result = decideAssignmentRecovery(assignment, observed);
 	const leaseExpiry = assignment.leaseExpiresAt ? Date.parse(assignment.leaseExpiresAt) : Number.NaN;
@@ -194,6 +196,7 @@ async function recoverLocked(database: CapacityGovernanceDatabase, assignment: D
  const observedEvent=await new CapacityWorkdayEventRepository(database).create(assignment.teamId,assignment.workDayId,event);
  if(!observedEvent||observedEvent.teamId!==assignment.teamId||observedEvent.runId!==assignment.workDayId||Object.entries(event).some(([key,value])=>!isDeepStrictEqual(Reflect.get(observedEvent,key),value)))throw new Error('assignment_recovery_observation_conflict');
 	if (assignment.operationHandoffId) await recoverOperationHandoff(database,assignment.operationHandoffId,assignment.id,{retry:result.disposition==='safe-retry',completed:result.status==='completed'},now);
+	await recordExecutionNodeObservations(database,beforeNodes,await readExecutionNodeStates(database,assignment.teamId,assignment.workDayId!,nodeIds),event.id,now);
 	return result;
 }
 
