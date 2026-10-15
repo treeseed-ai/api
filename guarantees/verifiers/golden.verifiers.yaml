@@ -4507,3 +4507,27 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-postgres.test.ts
     testName: "native PostgreSQL public retry serializes original node reopening and exact public history after missing and interrupted observations"
+
+  api.golden.recovery-observation-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery-authority.test.ts
+    testName: "requires exact scoped recovery observations and refuses missing or conflicting reports without changing supplied terminal authority"
+
+  api.golden.recovery-observation-zero-write-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery-persistence.test.ts
+    testName: "native expired recovery rolls back original settlement when its assignment transition is suppressed"
+
+  api.golden.recovery-observation-unknown-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/recovery-observation-postgres.test.ts
+    testName: "native PostgreSQL unknown executed recovery retains all usage holds through suppressed state and missing or interrupted observations before independent replay"
+
+  api.golden.recovery-observation-premodel-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/recovery-observation-postgres.test.ts
+    testName: "native PostgreSQL pre-execution recovery settles once only with its original terminal observation after atomic rollback and independent replay"

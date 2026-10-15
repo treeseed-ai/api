@@ -2650,3 +2650,19 @@ workflow:
   - id: retry-observation-postgres-native
     action: { verifier: api.golden.retry-observation-postgres-native }
     expect: { status: passed }
+
+  - id: recovery-observation-unit
+    action: { verifier: api.golden.recovery-observation-unit }
+    expect: { status: passed }
+
+  - id: recovery-observation-zero-write-native
+    action: { verifier: api.golden.recovery-observation-zero-write-native }
+    expect: { status: passed }
+
+  - id: recovery-observation-unknown-postgres-native
+    action: { verifier: api.golden.recovery-observation-unknown-postgres-native }
+    expect: { status: passed }
+
+  - id: recovery-observation-premodel-postgres-native
+    action: { verifier: api.golden.recovery-observation-premodel-postgres-native }
+    expect: { status: passed }
