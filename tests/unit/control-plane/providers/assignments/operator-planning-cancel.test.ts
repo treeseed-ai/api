@@ -1,7 +1,7 @@
 import {terminalAssignmentAuthority} from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-terminal-authority.ts';
 import * as transactions from '../../../../../src/api/capacity/transaction.ts';
 import {CapacityWorkdayEventRepository} from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {beforeEach,afterEach,describe,expect,it,vi} from 'vitest';
 import { assignmentAttemptSchema, compileWorkday, emptyCapacityBudget } from '@treeseed/sdk/agent-capacity';
 import { recoveryAssignment } from './architecture/cancellation-fixture.ts';
 import { compileCapacityWorkdayRunRecord } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
@@ -46,15 +46,16 @@ function setup(ready = true) {
 		if (query.includes("node.kind IN ('acting','reviewing')")) return ready ? { id: 'actor' } : null;
 		if (query.includes('capacity_usage_actuals')) return { active_seconds: 0, elapsed_seconds: 2.635 };
 		if (query.startsWith('UPDATE capacity_provider_assignments SET status')) {
-			fixture.assignment = { ...fixture.assignment, status: 'cancelled', leaseState: 'released' };
+			fixture.assignment = {...fixture.assignment,status:'cancelled',leaseState:'released',stateVersion:Number(fixture.assignment.stateVersion)+1,assignmentAttempt:params[0]?JSON.parse(String(params[0])):fixture.assignment.assignmentAttempt,lifecycleCode:params[1],lifecycleReason:params[2],failedAt:fixture.assignment.failedAt??params[3],lifecycleOutput:JSON.parse(String(params[4])),updatedAt:params[5]};
 			return { id: 'assignment', params };
 		}
 		return null;
 	});
-	const database = { ensureInitialized: vi.fn(), first, batch: vi.fn() };
+	const database = { ensureInitialized: vi.fn(),run:vi.fn(async()=>{}), first, batch: vi.fn() };
 	return { database, service: new OperatorAssignmentService(database as never) };
 }
-afterEach(() => vi.useRealTimers());
+beforeEach(()=>{vi.spyOn(transactions,'capacityTransaction').mockImplementation(async(store,apply)=>apply(store));vi.spyOn(CapacityWorkdayEventRepository.prototype,'get').mockResolvedValue(null);vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementation(async(teamId,runId,value)=>({...value,teamId,runId,eventIndex:0}));});
+afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks();});
 describe('operator planning boundary closeout', () => {
  it('retains the original revocation clock on every already revoked handle without rewriting input during later cleanup',()=>{
   const at='2026-10-02T21:00:04.000Z',later='2026-10-02T21:00:05.000Z',handle={id:'original-handle',status:'revoked',revokedAt:at};
