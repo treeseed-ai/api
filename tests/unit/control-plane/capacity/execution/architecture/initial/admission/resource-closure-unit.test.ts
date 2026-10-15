@@ -15,7 +15,7 @@ describe('native exact workday resource closure',()=>{
   const changes:Array<(value:typeof exact)=>void>=[value=>{value.assignments=[];},value=>{value.sessions=[];},value=>{value.proxies=[];},value=>{value.assignments.push(owner);},value=>{value.sessions.push(session);},value=>{value.proxies.push(handle);},value=>{value.assignments[0]!.status='running';},value=>{value.assignments[0]!.provider_session_id='foreign';},value=>{value.assignments[0]!.treedx_proxy_handle_json='{}';},value=>{value.assignments[0]!.workspace_context_json='{}';},value=>{value.assignments[0]!.treedx_proxy_handle_json='null';}];
   for(const field of['team_id','membership_id','capacity_provider_id','status','closed_at'])changes.push(value=>{value.sessions[0]![field]='foreign';});
   for(const field of['id','assignment_id','team_id','project_id','repository_id','workspace_id','status','revoked_at'])changes.push(value=>{value.proxies[0]![field]='foreign';});
-  changes.push(value=>{value.sessions[0]!.closed_at='2026-10-15T11:59:59.998Z';},value=>{value.proxies[0]!.revoked_at='2026-10-15T12:00:00.001Z';});
+  changes.push(value=>{value.sessions[0]!.closed_at='2026-10-15T11:59:59.998Z';},value=>{const future={...proxy,revokedAt:'2026-10-15T12:00:00.003Z'};value.proxies[0]!.revoked_at=future.revokedAt;value.assignments[0]!.treedx_proxy_handle_json=JSON.stringify(future);value.assignments[0]!.workspace_context_json=JSON.stringify({treedxProxyHandle:future});});
   for(const change of changes){const failed=structuredClone(exact);change(failed);const before=structuredClone(failed);expect(()=>inspect(failed)).toThrow('ACCEPTANCE_NATIVE_RESOURCE');expect(failed).toEqual(before);}inspect(exact);expect(exact).toEqual(held);
  });
 });

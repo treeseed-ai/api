@@ -17,12 +17,12 @@ export function verifyNativeResourceClosure(assignments:Row[],sessions:Row[],pro
   const session=sessions.filter(value=>value.id===owner.provider_session_id);assert.equal(session.length,1,code);const availability=session[0]!;
   assert.equal(availability.team_id,owner.team_id,code);assert.equal(availability.membership_id,owner.membership_id,code);assert.equal(availability.capacity_provider_id,owner.capacity_provider_id,code);
   assert.equal(availability.status,'closed',code);const closed=Date.parse(String(availability.closed_at));
-  const terminal=Date.parse(String(owner.completed_at??owner.failed_at??owner.returned_at));assert.ok(Number.isFinite(closed)&&Number.isFinite(terminal)&&closed>=terminal,code);
+  const terminal=Date.parse(String(owner.completed_at??owner.failed_at??owner.returned_at));assert.ok(Number.isFinite(closed)&&Number.isFinite(terminal)&&Number.isFinite(Date.parse(String(availability.opened_at)))&&closed>=Date.parse(String(availability.opened_at)),code);
   const handles=proxies.filter(value=>value.assignment_id===owner.id);assert.equal(handles.length,1,code);const handle=handles[0]!,snapshot=json(owner.treedx_proxy_handle_json);
   assert.equal(handle.id,snapshot.id,code);assert.equal(handle.team_id,owner.team_id,code);assert.equal(handle.project_id,owner.project_id,code);
   assert.equal(snapshot.teamId,owner.team_id,code);assert.equal(snapshot.projectId,owner.project_id,code);assert.equal(snapshot.assignmentId,owner.id,code);
   assert.equal(handle.status,'revoked',code);assert.equal(snapshot.status,'revoked',code);assert.equal(snapshot.revokedAt,handle.revoked_at,code);
-  assert.ok(Number.isFinite(Date.parse(String(handle.revoked_at)))&&Date.parse(String(handle.revoked_at))<=terminal,code);
+  assert.ok([handle.revoked_at,owner.created_at,owner.updated_at].every(value=>Number.isFinite(Date.parse(String(value))))&&Date.parse(String(handle.revoked_at))>=Date.parse(String(owner.created_at))&&Date.parse(String(handle.revoked_at))<=Date.parse(String(owner.updated_at)),code);
   assert.equal(handle.repository_id,snapshot.repositoryId,code);assert.equal(handle.workspace_id,snapshot.workspaceId,code);
   assert.deepEqual(json(owner.workspace_context_json).treedxProxyHandle,snapshot,code);
  }
