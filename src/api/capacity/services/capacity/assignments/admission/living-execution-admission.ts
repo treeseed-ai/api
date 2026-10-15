@@ -352,7 +352,11 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		if(!observed||observed.teamId!==assignment.teamId||observed.runId!==assignment.workdayId
 			||Object.entries(event).some(([key,value])=>!isDeepStrictEqual(Reflect.get(observed,key),value)))throw new CapacityGovernanceError(
 			'assignment_creation_observation_conflict','Assignment creation requires its exact durable owning observation.',409,{assignmentId:assignment.id});
-		await recordExecutionNodeObservations(database,beforeNodes,await readExecutionNodeStates(database,assignment.teamId,assignment.workdayId,[assignment.nodeId]),event.id,accepted.createdAt);
+		const afterNodes=await readExecutionNodeStates(database,assignment.teamId,assignment.workdayId,[assignment.nodeId]);
+		if(beforeNodes.some(node=>node.id===assignment.nodeId&&node.nodeRevision===assignment.nodeRevision&&node.status==='ready')
+			&&(afterNodes.length!==1||afterNodes[0]!.status!=='assigned'||afterNodes[0]!.nodeRevision!==assignment.nodeRevision))
+			throw new Error('execution_node_observation_state_mismatch');
+		await recordExecutionNodeObservations(database,beforeNodes,afterNodes,event.id,accepted.createdAt);
 		return accepted;
 	});
 }
