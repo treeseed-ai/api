@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { splitPostgresSqlStatements } from '../../../../../../../src/api/persistence/postgres-sql-statements.ts';
 import { executePostgresBatch } from '../../../../../../../src/api/support/control-plane-postgres.ts';
 import { CapacityWorkdayEventRepository } from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -14,7 +12,6 @@ afterEach(() => vi.useRealTimers());
 describe('provider terminal reporting through original transaction and resource custody', () => {
  it('native terminal observation rolls back a zero-row assignment update and retains original accounting before exact retry',async()=>{
   const native=await completionFixture();try{
-   const ddl=splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql','utf8')).filter(sql=>sql.startsWith('CREATE TABLE "capacity_workday_events" ('));expect(ddl).toHaveLength(1);await native.db.exec(ddl[0]!);
    const before={state:await native.snapshot(),graph:(await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows,workdays:(await native.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows,events:(await native.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows};
    await native.db.exec("CREATE FUNCTION native_terminal_zero_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='completed' THEN RETURN NULL; END IF; RETURN NEW; END $$");
    await native.db.exec('CREATE TRIGGER native_terminal_zero_write BEFORE UPDATE ON capacity_provider_assignments FOR EACH ROW EXECUTE FUNCTION native_terminal_zero_write()');
@@ -32,7 +29,6 @@ describe('provider terminal reporting through original transaction and resource 
 	it('native execution start records the original canonical running clock once and closeout cannot rewrite it or frozen authority', async () => {
 		const native = await cancellationDatabase('leased', false);
 		try {
-			const ddl=splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql','utf8')).filter(sql=>sql.startsWith('CREATE TABLE "capacity_workday_events" ('));expect(ddl).toHaveLength(1);await native.db.exec(ddl[0]!);
 			const owner={...native.owner,db:{transaction:async<T>(apply:(client:Parameters<typeof executePostgresBatch>[0])=>Promise<T>)=>native.db.transaction(transaction=>apply(transaction as unknown as Parameters<typeof executePostgresBatch>[0]))}};
 			const startedAt = '2026-10-02T21:00:00.500Z', budget = emptyCapacityBudget(native.attempt.deadline, 3);
 			const envelope = { ...native.assignment.capacityEnvelope, budget: { ...budget, time: { ...budget.time,
@@ -83,7 +79,6 @@ describe('provider terminal reporting through original transaction and resource 
 		for (const status of ['completed', 'failed', 'cancelled', 'returned'] as const) {
 			const native = status === 'returned' ? await returnFixture() : await completionFixture();
 			try {
-                const ddl=splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql','utf8')).filter(sql=>sql.startsWith('CREATE TABLE "capacity_workday_events" ('));expect(ddl).toHaveLength(1);await native.db.exec(ddl[0]!);
 
 				if (status === 'cancelled') await native.query('UPDATE capacity_provider_assignments SET metadata_json=? WHERE id=?',
 					[JSON.stringify({ ...native.assignment.metadata, cancellationRequested: true }), native.assignment.id]);
