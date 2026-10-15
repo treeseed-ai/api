@@ -11,6 +11,23 @@ import { startAssignmentExecutionWindow, startAssignmentCloseoutWindow } from '.
 // REAL owning SQL/transaction boundary with supplied clocks and usage.
 afterEach(() => vi.useRealTimers());
 describe('provider terminal reporting through original transaction and resource custody', () => {
+ it('native terminal observation rolls back a zero-row assignment update and retains original accounting before exact retry',async()=>{
+  const native=await completionFixture();try{
+   const ddl=splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql','utf8')).filter(sql=>sql.startsWith('CREATE TABLE "capacity_workday_events" ('));expect(ddl).toHaveLength(1);await native.db.exec(ddl[0]!);
+   const before={state:await native.snapshot(),graph:(await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows,workdays:(await native.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows,events:(await native.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows};
+   await native.db.exec("CREATE FUNCTION native_terminal_zero_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='completed' THEN RETURN NULL; END IF; RETURN NEW; END $$");
+   await native.db.exec('CREATE TRIGGER native_terminal_zero_write BEFORE UPDATE ON capacity_provider_assignments FOR EACH ROW EXECUTE FUNCTION native_terminal_zero_write()');
+   const input={leaseToken:'lease-token',activeSeconds:1,elapsedSeconds:2,completion:returnedCompletion,output:{assignmentResult:native.result}},held=structuredClone(input);
+   let failure:unknown;try{await native.service.complete(principal,native.assignment.id,input);}catch(error){failure=error;}
+   finally{await native.db.exec('DROP TRIGGER native_terminal_zero_write ON capacity_provider_assignments');await native.db.exec('DROP FUNCTION native_terminal_zero_write()');}
+   const observed={state:await native.snapshot(),graph:(await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows,workdays:(await native.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows,events:(await native.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows};
+   console.log(JSON.stringify({nativeTerminalZeroWrite:{status:(await native.repository.get('team',native.assignment.id))?.status,eventCount:observed.events.length}}));
+   expect(failure).toMatchObject({message:'assignment_terminal_observation_state_mismatch'});expect(observed).toEqual(before);expect(input).toEqual(held);
+   expect((await native.service.complete(principal,native.assignment.id,input))?.assignment.status).toBe('completed');
+   expect((await native.query('SELECT * FROM capacity_workday_events WHERE assignment_id=?',[native.assignment.id])).rows).toHaveLength(1);
+  }finally{await native.close();}
+ });
+
 	it('native execution start records the original canonical running clock once and closeout cannot rewrite it or frozen authority', async () => {
 		const native = await cancellationDatabase('leased', false);
 		try {
