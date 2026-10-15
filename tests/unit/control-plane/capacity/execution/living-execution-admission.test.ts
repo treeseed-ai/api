@@ -1,3 +1,4 @@
+import {CapacityWorkdayEventRepository} from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { admitLivingExecutionAssignment } from '../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts';
 import { calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
@@ -27,12 +28,14 @@ describe('living execution admission', () => {
 		expect(store.batch).not.toHaveBeenCalled();
 	});
 	it('claims the node, reservation, and immutable attempt in one batch without legacy demand/allocation authority', async () => {
+        const observation=vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementation(async(teamId,runId,value)=>({...value,teamId,runId,eventIndex:0}));
 		const committed = committedAssignment();
 		const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed), batch: batch(), first: readyNode() };
 		await expect(admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
 			accountingLimits, assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'codex', laneId: 'lane',
 			lanePurpose: 'workday', executionKind: 'workday', workdayConcurrencyLimit: 1, predecessorResults: [], treedxProxyHandle: { id: 'tdx_assignment', status: 'issued',
 				allowedPaths: [], allowedReadPaths: [], allowedWritePaths: [], scopes: [], allowedOperations: [] }, now: assignment.createdAt })).resolves.toBe(committed);
+		expect(observation,'every successful admission must publish its owning creation observation').toHaveBeenCalledOnce();observation.mockRestore();
 		const sql = store.batch.mock.calls[0]![0].map((operation: { query: string }) => operation.query).join('\n');
 		expect(sql).toMatch(/FOR UPDATE/u);
 		expect(sql).toMatch(/capacity_workday_runs WHERE team_id=\? AND id=\? AND status='running' FOR UPDATE/u);
