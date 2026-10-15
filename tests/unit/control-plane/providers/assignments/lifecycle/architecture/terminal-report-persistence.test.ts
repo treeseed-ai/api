@@ -90,6 +90,13 @@ describe('provider terminal reporting through original transaction and resource 
 				const transition = () => status === 'completed' ? native.service.complete(principal, before.id, input)
 					: status === 'failed' ? native.service.fail(principal, before.id, { ...input, retryable: false })
 						: native.service.return(principal, before.id, input);
+
+                const snapshot=async()=>({state:await native.snapshot(),graph:(await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows,workdays:(await native.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows,events:(await native.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows});
+                const originalCustody=await snapshot();
+                await native.db.exec("CREATE FUNCTION native_terminal_event_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'retained terminal event interruption'; END $$");
+                await native.db.exec('CREATE TRIGGER native_terminal_event_failure BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION native_terminal_event_failure()');
+                try{await expect(transition()).rejects.toThrow('retained terminal event interruption');expect(await snapshot()).toEqual(originalCustody);expect(input).toEqual(original);}
+                finally{await native.db.exec('DROP TRIGGER native_terminal_event_failure ON capacity_workday_events');await native.db.exec('DROP FUNCTION native_terminal_event_failure()');}
 				const result = await transition(), persisted = await native.repository.get('team', before.id);
 				const expected = { ...before.assignmentAttempt, status: status === 'returned' ? 'blocked' : status,
 					finishedAt: '2026-10-02T21:00:02.000Z' };
