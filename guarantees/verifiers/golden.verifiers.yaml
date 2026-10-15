@@ -4447,3 +4447,9 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/living-execution-admission.test.ts
     testName: "rejects missing or substituted creation observations while retaining exact original admission input"
+
+  api.golden.concurrent-terminal-fixture-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-execution-lifecycle.test.ts
+    testName: "requires complete canonical authority for every original native concurrent terminal fixture before allocating PostgreSQL"

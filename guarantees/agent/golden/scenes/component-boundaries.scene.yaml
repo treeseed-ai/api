@@ -2610,3 +2610,7 @@ workflow:
   - id: creation-observation-denials-unit
     action: { verifier: api.golden.creation-observation-denials-unit }
     expect: { status: passed }
+
+  - id: concurrent-terminal-fixture-unit
+    action: { verifier: api.golden.concurrent-terminal-fixture-unit }
+    expect: { status: passed }
