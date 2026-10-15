@@ -162,12 +162,14 @@ export async function livingExecutionLifecycleOperations(input: {
 	target.graphRevisionUpdated = nextRevision;
 	const changed = [target.id];
 	if (revisionRequested && actor) {
+		// Both original SQL updates advance their revisions in either disposition.
+		target.nodeRevision += 1; actor.nodeRevision += 1;
 		if (reviewExhausted) {
 			target.status = 'failed';
 			actor.status = 'blocked';
 		} else {
-			target.nodeRevision += 1; target.status = 'blocked';
-			actor.nodeRevision += 1; actor.status = 'ready';
+			target.status = 'blocked';
+			actor.status = 'ready';
 		}
 		actor.graphRevisionUpdated = nextRevision;
 		changed.push(actor.id);
