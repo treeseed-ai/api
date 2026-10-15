@@ -2697,3 +2697,27 @@ workflow:
   - id: estimate-fixed-source-native
     action: { verifier: api.golden.estimate-fixed-source-native }
     expect: { status: passed }
+  - id: execution-node-history-unit
+    action: { verifier: api.golden.execution-node-history-unit }
+    expect: { status: passed }
+  - id: execution-node-history-postgres-native
+    action: { verifier: api.golden.execution-node-history-postgres-native }
+    expect: { status: passed }
+  - id: execution-node-history-admission
+    action: { verifier: api.golden.execution-node-history-admission }
+    expect: { status: passed }
+  - id: execution-node-history-terminal
+    action: { verifier: api.golden.execution-node-history-terminal }
+    expect: { status: passed }
+  - id: execution-node-history-retry
+    action: { verifier: api.golden.execution-node-history-retry }
+    expect: { status: passed }
+  - id: execution-node-history-cancel
+    action: { verifier: api.golden.execution-node-history-cancel }
+    expect: { status: passed }
+  - id: execution-node-history-recovery
+    action: { verifier: api.golden.execution-node-history-recovery }
+    expect: { status: passed }
+  - id: execution-node-history-workday
+    action: { verifier: api.golden.execution-node-history-workday }
+    expect: { status: passed }

@@ -4580,3 +4580,43 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/planning/estimate-source-native.test.ts
     testName: "native PostgreSQL and TreeDX exact proposal reads reject moved fixed authority before estimator replay and retain unchanged valid estimate-only replay"
+  api.golden.execution-node-history-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/monitoring/node-status-history.test.ts
+    testName: "retains each owning graph node state and revision in complete public workday history with exact replay and conflict rollback"
+  api.golden.execution-node-history-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/monitoring/node-status-history-postgres.test.ts
+    testName: "native PostgreSQL competing graph producers retain every node state in independent complete public history and roll back interrupted observation writes"
+  api.golden.execution-node-history-admission:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/monitoring/node-assignment-history.test.ts
+    testName: "original concurrent admission publishes one exact ready to assigned node observation and retains it unchanged on replay"
+  api.golden.execution-node-history-terminal:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/monitoring/node-assignment-history.test.ts
+    testName: "original terminal service publishes one exact failed node observation with its released attempt and preserves settled history on duplicate report"
+  api.golden.execution-node-history-retry:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/monitoring/node-recovery-history.test.ts
+    testName: "original retry retains exactly one actual node transition and public observation through unchanged replay"
+  api.golden.execution-node-history-cancel:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/monitoring/node-recovery-history.test.ts
+    testName: "original cancel retains exactly one actual node transition and public observation through unchanged replay"
+  api.golden.execution-node-history-recovery:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/monitoring/node-recovery-history.test.ts
+    testName: "original recover retains exactly one actual node transition and public observation through unchanged replay"
+  api.golden.execution-node-history-workday:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/monitoring/node-workday-history.test.ts
+    testName: "original workday stop retains every claimed and unclaimed node cancellation in exact public history without cancelling another workday or replaying settlement"
