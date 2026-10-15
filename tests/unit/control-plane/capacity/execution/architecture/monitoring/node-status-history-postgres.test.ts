@@ -50,6 +50,11 @@ it('native PostgreSQL competing graph producers retain every node state in indep
   await expect(persistExecutionGraph(f.stores[0],changed,current,receipt)).rejects.toThrow('execution_node_observation_state_mismatch');expect(await f.snapshot()).toEqual(before);expect(await events.list('team','workday',{limit:100,afterEventIndex:-1})).toEqual(history);
   await f.left.pool.query('DROP TRIGGER suppress_node_state ON execution_nodes');await f.left.pool.query('DROP FUNCTION suppress_node_state()');
   await persistExecutionGraph(f.stores[1],changed,current,receipt);expect((await events.list('team','workday',{limit:100,afterEventIndex:-1})).items).toHaveLength(steps.length+1);
+  const priorRunHistory=await events.list('team','workday',{limit:100,afterEventIndex:-1}),freshAt=new Date().toISOString();
+  await f.left.pool.query("INSERT INTO capacity_workday_runs(id,team_id,status,execution_mode,created_at,updated_at) VALUES('workday-next','team','running','simulation',$1,$1)",[freshAt]);
+  const fresh={...changed,revision:changed.revision+1,nodes:changed.nodes.map(value=>({...value,workdayId:'workday-next',nodeRevision:value.nodeRevision+1,graphRevisionUpdated:changed.revision+1}))};fresh.digest=digest({teamId:fresh.teamId,nodes:fresh.nodes,edges:fresh.edges});
+  await persistExecutionGraph(f.stores[0],fresh,changed,{...receipt,revision:fresh.revision,graphDigest:fresh.digest,createdAt:freshAt});
+  const newRunHistory=await events.list('team','workday-next',{limit:100,afterEventIndex:-1});expect(newRunHistory.items).toHaveLength(1);expect(newRunHistory.items[0]).toMatchObject({runId:'workday-next',workdayId:'workday-next',eventIndex:0,context:{nodeId:node.id,nodeRevision:3,status:'ready',previousStatus:null}});expect(await events.list('team','workday',{limit:100,afterEventIndex:-1})).toEqual(priorRunHistory);
  }finally{await f.close();}
  // Controlled graph inputs exercise the original owning producer and independent native public repository, not model/governance outcomes.
 });
