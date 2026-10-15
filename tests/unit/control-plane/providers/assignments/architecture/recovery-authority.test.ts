@@ -13,7 +13,7 @@ describe('recovery respects immutable executed-attempt and measurement authority
  it('requires exact scoped recovery observations and refuses missing or conflicting reports without changing supplied terminal authority',async()=>{
   for(const field of [undefined,null,'id','teamId','runId','projectId','workdayId','assignmentId','eventType','createdAt','context']as const){
    const original=assignment(true),held=structuredClone(original),now=new Date(Date.parse(original.leaseExpiresAt!)+90_001).toISOString();
-   const terminal={...original,status:'expired',leaseState:'expired',leaseToken:null,leaseExpiresAt:null,leaseRenewedAt:null,runnerId:null,stateVersion:original.stateVersion+1,updatedAt:now,lifecycleCode:'expired_lease_execution_usage_unknown',assignmentAttempt:assignmentRecords.advanceAssignmentAttemptLifecycle(original.assignmentAttempt!,'expired',now)};
+   const terminal:ReturnType<typeof assignment>={...original,status:'expired',leaseState:'expired',leaseToken:null,leaseExpiresAt:null,leaseRenewedAt:null,runnerId:null,stateVersion:original.stateVersion+1,updatedAt:now,lifecycleCode:'expired_lease_execution_usage_unknown',assignmentAttempt:assignmentRecords.advanceAssignmentAttemptLifecycle(original.assignmentAttempt!,'expired',now)};
    vi.spyOn(assignmentRecords,'serializeProviderAssignmentRow').mockReturnValue(original);
    vi.spyOn(assignmentRecords.ProviderAssignmentRepository.prototype,'get').mockResolvedValueOnce(original).mockResolvedValueOnce(terminal);
    vi.spyOn(transactions,'capacityTransaction').mockImplementation(async(store,apply)=>apply(store));
