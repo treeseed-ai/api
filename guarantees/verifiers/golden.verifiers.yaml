@@ -4558,5 +4558,5 @@ verifiers:
   api.golden.execution-session-authority-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
-    testFile: tests/unit/control-plane/capacity/execution/architecture/session-authority-unit.test.ts
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/session-authority-unit.test.ts
     testName: "denies missing foreign closed stale and malformed locked sessions before downstream writes while retaining exact replay authority"

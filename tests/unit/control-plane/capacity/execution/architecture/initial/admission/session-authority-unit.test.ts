@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { admitLivingExecutionAssignment } from '../../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts';
-import { replayAttempt, replayInput } from './admission-replay-fixture.ts';
+import { admitLivingExecutionAssignment } from '../../../../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts';
+import { replayAttempt, replayInput } from '../../admission-replay-fixture.ts';
 
 describe('locked availability authority at final admission', () => {
  it('denies missing foreign closed stale and malformed locked sessions before downstream writes while retaining exact replay authority', async () => {
