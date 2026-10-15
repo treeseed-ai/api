@@ -200,8 +200,16 @@ export class OperatorAssignmentService {
 			`SELECT active_seconds, elapsed_seconds, input_tokens, cached_input_tokens, reasoning_tokens, output_tokens, actual_usd FROM capacity_usage_actuals WHERE id = ? AND assignment_id = ? AND accounting_mode = 'aggregate' LIMIT 1`,
 			[`usage:${assignment.id}:${assignment.attemptCount}:aggregate`, assignment.id]);
 		terminalPerformance(assignment, { completion: { disposition: 'cancelled' } }, 'failed', now, record(settledUsage));
-		if (assignment.status !== 'cancelled' && !failedCleanup) {
-			const phaseCancelled = await planningBoundaryCancellation(this.database, assignment, { code: 'operator_cancelled' }, now);
+
+		if(assignment.status!=='cancelled'&&!failedCleanup)assignment=await capacityTransaction(this.database,async database=>{
+			await database.run('SELECT id FROM capacity_provider_assignments WHERE id=? AND team_id=? FOR UPDATE',[assignmentId,teamId]);
+			const repository=new ProviderAssignmentRepository(database);let assignment=await repository.getForCancellation(teamId,assignmentId);
+			if(!assignment)throw new CapacityGovernanceError('capacity_assignment_not_found','Assignment disappeared during cancellation.',500,{assignmentId});
+			if(assignment.status==='cancelled')return assignment;
+			if(!['pending','returned','expired'].includes(assignment.status)||!['unleased','released','expired'].includes(assignment.leaseState)||!assignment.workDayId)throw new CapacityGovernanceError(
+				'capacity_assignment_cancel_conflict','Exact released assignment and workday required for terminal cancellation.',409,{assignmentId});
+			const before=assignment;
+			const phaseCancelled = await planningBoundaryCancellation(database, assignment, { code: 'operator_cancelled' }, now);
 			const code = phaseCancelled ? 'planning_boundary_cancelled' : 'operator_cancelled';
 			const reason = phaseCancelled ? 'Unfinished planning turn cancelled at its authoritative phase boundary.'
 				: input.reason ?? 'Assignment cancelled by a team operator.';
@@ -213,14 +221,23 @@ export class OperatorAssignmentService {
 			// than manufacturing executable authority for cleanup.
 			const attempt = assignment.assignmentAttempt
 				? JSON.stringify(advanceAssignmentAttemptLifecycle(assignment.assignmentAttempt, 'cancelled', now)) : null;
-			const fenced = await this.database.first(
+			const fenced = await database.first(
 				`UPDATE capacity_provider_assignments SET status = 'cancelled', assignment_attempt_json = COALESCE(?, assignment_attempt_json), lease_state = 'released', lifecycle_code = ?, lifecycle_reason = ?, failed_at = COALESCE(failed_at, ?), lifecycle_output_json = ?, state_version = state_version + 1, updated_at = ? WHERE id = ? AND team_id = ? AND state_version = ? AND status IN ('pending','returned','expired') AND lease_state IN ('unleased','released','expired') RETURNING id`,
 				[attempt, code, reason, now, JSON.stringify(output), now, assignmentId, teamId, assignment.stateVersion],
 			);
 			if (!fenced) throw new CapacityGovernanceError('capacity_assignment_cancel_conflict', 'Assignment changed during cancellation.', 409, { assignmentId });
-			assignment = await this.assignments.getForCancellation(teamId, assignmentId);
+			assignment = await repository.getForCancellation(teamId, assignmentId);
 			if (!assignment) throw new CapacityGovernanceError('capacity_assignment_not_found', 'Assignment disappeared during cancellation.', 500, { assignmentId });
-		}
+			if(assignment.stateVersion!==before.stateVersion+1||assignment.status!=='cancelled'||assignment.updatedAt!==now)throw new CapacityGovernanceError(
+				'capacity_assignment_cancel_conflict','Cancellation did not commit its exact original terminal state.',409,{assignmentId});
+			const issued=before.assignmentAttempt,event:CapacityWorkdayEventWrite={id:'assignment-terminal:'+assignmentId+':'+assignment.stateVersion,
+				projectId:assignment.projectId,workdayId:before.workDayId,assignmentId,eventType:'assignment.cancelled',status:'recorded',title:'Assignment cancelled',message:null,parameters:{},metadata:{},refs:{},createdAt:now,
+				context:{nodeId:assignment.executionNodeId,nodeRevision:assignment.executionNodeRevision,graphRevision:assignment.graphRevision,status:'cancelled',leaseId:issued?.leaseId??null,reservationId:assignment.reservationId,runnerId:assignment.runnerId,resultId:assignment.assignmentResult?.id??null}};
+			const observed=await new CapacityWorkdayEventRepository(database).create(teamId,before.workDayId!,event);
+			if(!observed||observed.teamId!==teamId||observed.runId!==before.workDayId||Object.entries(event).some(([key,value])=>!isDeepStrictEqual(Reflect.get(observed,key),value)))throw new CapacityGovernanceError(
+				'capacity_assignment_cancel_conflict','Exact durable terminal cancellation observation required.',409,{assignmentId});
+			return assignment;
+		});
 		const terminalAuthority = terminalAssignmentAuthority(assignment, now);
 		await this.database.batch([
 			{ query: `UPDATE capacity_provider_assignments SET treedx_proxy_handle_json = ?, workspace_context_json = ?, updated_at = ? WHERE id = ? AND team_id = ? AND status IN ('cancelled','failed') AND (treedx_proxy_handle_json::jsonb IS DISTINCT FROM ?::jsonb OR workspace_context_json::jsonb IS DISTINCT FROM ?::jsonb)`, params: [JSON.stringify(terminalAuthority.proxyHandle), JSON.stringify(terminalAuthority.workspaceContext), now, assignmentId, teamId,JSON.stringify(terminalAuthority.proxyHandle),JSON.stringify(terminalAuthority.workspaceContext)] },
