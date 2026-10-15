@@ -1,3 +1,4 @@
+import{executionNodeObservationOperations}from'./execution-node-observations.ts';
 import { applyOperationalState, recoverIncompleteReviewCycles, reviewCycleLimitReached, recoverInterruptedGovernanceReviews,
 	recoverableGovernanceReviewAttemptHistory, stable, digest, record, text, type TeamGraph } from './execution-graph-state.ts';
 import { graphRevisionSchema, validateExecutionGraph, validateAgentDefinitionModel,
@@ -260,6 +261,9 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 		params: [edge.id,edge.teamId,edge.fromNodeId,edge.toNodeId,edge.provenance,
 			edge.sourceRef ? JSON.stringify(edge.sourceRef) : null,edge.graphRevisionCreated,null,now,
 			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt,revisionRecord.graphDigest],
+	});
+	for(const operation of executionNodeObservationOperations(store,current.nodes,graph.nodes,'graph:'+graph.teamId+':'+graph.revision,now))operations.push({
+		query:operation.query+' AND '+revisionGuard,params:[...operation.params,revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt,revisionRecord.graphDigest],
 	});
 	await store.batch(operations);
 	const committed = await store.first('SELECT revision,graph_digest FROM execution_graph_revisions WHERE team_id=? ORDER BY revision DESC LIMIT 1', [graph.teamId]);
