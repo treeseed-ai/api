@@ -270,12 +270,23 @@ export class OperatorAssignmentService {
 			'capacity_assignment_requeue_unsafe', 'Only a released returned, failed, expired, or cancelled assignment can be requeued.', 409,
 			{ assignmentId, status: assignment.status, leaseState: assignment.leaseState },
 		);
-		if (assignment.executionNodeId) {
+		if (assignment.executionNodeId) return capacityTransaction(this.database,async database=>{
+   await database.run('SELECT id FROM capacity_provider_assignments WHERE id=? AND team_id=? FOR UPDATE',[assignmentId,teamId]);
+   const repository=new ProviderAssignmentRepository(database),original=await repository.get(teamId,assignmentId);
+   if(!original||!original.workDayId||!original.executionNodeId||!['returned','failed','expired','cancelled'].includes(original.status)||original.leaseState==='leased')throw new CapacityGovernanceError('capacity_assignment_requeue_conflict','Exact released assignment and owning workday required for retry.',409,{assignmentId});
+   const assignment=original,writer=new CapacityWorkdayEventRepository(database),key=idempotencyKey(input.idempotencyKey);
+   const previous=record(assignment.metadata.operatorRetry),at=previous.requestedAt;
+   if(at!==undefined){
+    const retained=await writer.get(teamId,assignment.workDayId!,'assignment-retry:'+assignmentId+':'+assignment.stateVersion);
+    if(!retained||retained.eventType!=='assignment.retry-requested'||retained.createdAt!==at||retained.projectId!==assignment.projectId||retained.assignmentId!==assignmentId
+     ||retained.context.stateVersion!==assignment.stateVersion||retained.parameters.idempotencyKey!==key||retained.parameters.actorId!==(input.actorId??null)||retained.parameters.reason!==(input.reason??null))throw new CapacityGovernanceError('capacity_assignment_requeue_conflict','Retry replay requires its exact original owning observation.',409,{assignmentId});
+    return{assignment,demand:null,alreadyLeasable:false};
+   }
 			const now = new Date().toISOString();
 			const retryMetadata = { ...(assignment.metadata ?? {}), operatorRetry: {
 				requestedAt: now, requestedBy: input.actorId ?? null, reason: input.reason ?? null,
 			} };
-			const reopened = await this.database.first(`WITH target AS (
+			const reopened = await database.first(`WITH target AS (
 				SELECT team_id,id,project_id,work_item_id,pair_role,source_ref_json,authority_refs_json,node_revision,status
 				FROM execution_nodes WHERE team_id=? AND id=? AND node_revision>=? FOR UPDATE
 			), marked_assignment AS (
@@ -306,7 +317,7 @@ export class OperatorAssignmentService {
 				[teamId, assignment.executionNodeId, assignment.executionNodeRevision,
 					JSON.stringify(retryMetadata), now, assignment.id, teamId, assignment.stateVersion, now, now]);
 			if (!reopened) {
-				const current = await this.database.first('SELECT node_revision,status FROM execution_nodes WHERE team_id=? AND id=? LIMIT 1',
+				const current = await database.first('SELECT node_revision,status FROM execution_nodes WHERE team_id=? AND id=? LIMIT 1',
 					[teamId, assignment.executionNodeId]);
 				if (String(current?.status ?? '') !== 'ready') throw new CapacityGovernanceError(
 					'capacity_assignment_requeue_conflict',
@@ -315,8 +326,14 @@ export class OperatorAssignmentService {
 						nodeRevision: current?.node_revision ?? null, nodeStatus: current?.status ?? null },
 				);
 			}
-			return { assignment, demand: null, alreadyLeasable: false };
-		}
+   const written=await repository.get(teamId,assignmentId);
+   if(!reopened||!written||written.status!==assignment.status||written.stateVersion!==assignment.stateVersion+1||written.updatedAt!==now||!isDeepStrictEqual(written.assignmentAttempt,assignment.assignmentAttempt)||!isDeepStrictEqual(written.assignmentResult,assignment.assignmentResult)||!isDeepStrictEqual(written.metadata,retryMetadata))throw new CapacityGovernanceError('capacity_assignment_requeue_conflict','Retry did not retain exact original terminal authority.',409,{assignmentId});
+   const event:CapacityWorkdayEventWrite={id:'assignment-retry:'+assignmentId+':'+written.stateVersion,projectId:assignment.projectId,workdayId:assignment.workDayId,assignmentId,eventType:'assignment.retry-requested',status:'recorded',title:'Assignment retry requested',message:null,parameters:{idempotencyKey:key,actorId:input.actorId??null,reason:input.reason??null},metadata:{},refs:{},createdAt:now,
+    context:{nodeId:assignment.executionNodeId,nodeRevision:Number(reopened.node_revision),graphRevision:assignment.graphRevision,status:assignment.status,stateVersion:written.stateVersion,leaseId:assignment.assignmentAttempt?.leaseId??null,reservationId:assignment.reservationId,runnerId:assignment.runnerId}};
+   const observed=await writer.create(teamId,assignment.workDayId!,event);
+   if(!observed||observed.teamId!==teamId||observed.runId!==assignment.workDayId||Object.entries(event).some(([key,value])=>!isDeepStrictEqual(Reflect.get(observed,key),value)))throw new CapacityGovernanceError('capacity_assignment_requeue_conflict','Exact durable retry observation required.',409,{assignmentId});
+   return {assignment:written,demand:null,alreadyLeasable:false};
+		});
 		throw new CapacityGovernanceError('capacity_assignment_graph_provenance_required',
 			'Only a living-graph assignment can be requeued; this assignment has no execution node.', 409, { assignmentId });
 	}
