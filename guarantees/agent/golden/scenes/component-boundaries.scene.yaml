@@ -2638,3 +2638,15 @@ workflow:
   - id: cancellation-terminal-postgres-native
     action: { verifier: api.golden.cancellation-terminal-postgres-native }
     expect: { status: passed }
+
+  - id: retry-observation-unit
+    action: { verifier: api.golden.retry-observation-unit }
+    expect: { status: passed }
+
+  - id: retry-observation-native
+    action: { verifier: api.golden.retry-observation-native }
+    expect: { status: passed }
+
+  - id: retry-observation-postgres-native
+    action: { verifier: api.golden.retry-observation-postgres-native }
+    expect: { status: passed }

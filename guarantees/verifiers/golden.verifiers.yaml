@@ -4489,3 +4489,21 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-postgres.test.ts
     testName: "native PostgreSQL released cancellation serializes original terminal state and exact public history after missing and interrupted observations"
+
+  api.golden.retry-observation-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/operator-assignment-requeue.test.ts
+    testName: "reopens a returned graph node without requiring its reusable reservation to be settled"
+
+  api.golden.retry-observation-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/cancellation-persistence.test.ts
+    testName: "native retry publishes one original owning observation and unchanged replay retains terminal authority and first request clock"
+
+  api.golden.retry-observation-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-postgres.test.ts
+    testName: "native PostgreSQL public retry serializes original node reopening and exact public history after missing and interrupted observations"
