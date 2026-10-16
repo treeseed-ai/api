@@ -1,16 +1,18 @@
 import { assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 import { describe, expect, it } from 'vitest';
-import { closeoutDatabase } from '../graph/architecture/closeout-sql-fixture.ts';
+import { settlementDatabase } from '../../accounting/architecture/settlement-fixture.ts';
+import {recordCapacityAccountingObservation} from '../../../../../../src/api/capacity/services/capacity/accounting/accounting-observations.ts';
 import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import type { CapacityGovernanceDatabase } from '../../../../../../src/api/capacity/database.ts';
 import { admitLivingExecutionAssignment } from '../../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts';
 import { advanceAssignmentAttemptLifecycle } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
-import { replayAttempt, replayChanges, replayInput } from './admission-replay-fixture.ts';
+import { replayAttempt as originalReplayAttempt, replayChanges, replayInput } from './admission-replay-fixture.ts';
 
 // REAL original-DDL PGlite + owning repository + admission boundary. This tests
 // replay of persisted custody, not initial claim/server concurrency or live supply.
+function replayAttempt(){return {...originalReplayAttempt(),reservationId:'native-replay-reservation'};}
 async function nativeReplay() {
-	const fixture = await closeoutDatabase(), attempt = replayAttempt();
+	const fixture = await settlementDatabase(), attempt = replayAttempt();
 	try {
 		await fixture.query(`INSERT INTO capacity_provider_assignments (id,membership_id,team_id,project_id,capacity_provider_id,
 			project_agent_class_id,work_day_id,mode,status,lease_state,execution_node_id,execution_node_revision,graph_revision,
@@ -21,15 +23,20 @@ async function nativeReplay() {
 					reservedSeconds: attempt.limits.maximumSeconds, workDayId: attempt.workdayId, capacityProviderId: attempt.provider.providerId,
 					executionProviderId: attempt.provider.executionProviderId, reservationId: attempt.reservationId, projectAgentClassId: 'configured-builder' }),
 				attempt.createdAt, attempt.createdAt, attempt.provider.executionProviderId, attempt.reservationId, attempt.attempt]);
-		const repository = new ProviderAssignmentRepository(fixture.store as unknown as CapacityGovernanceDatabase);
+		const repository = new ProviderAssignmentRepository(fixture.owner as unknown as CapacityGovernanceDatabase);
+
+  await fixture.query(`INSERT INTO capacity_reservations
+   (id,idempotency_key,admission_token,membership_id,capacity_provider_id,execution_provider_id,project_agent_class_id,assignment_id,mode,team_id,project_id,work_day_id,requested_seconds,reserved_seconds,created_at,updated_at)
+   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[attempt.reservationId,attempt.idempotencyKey,'native-replay-admission','membership',attempt.provider.providerId,attempt.provider.executionProviderId,'configured-builder',attempt.id,'acting',attempt.teamId,attempt.projectId,attempt.workdayId,attempt.limits.maximumSeconds,attempt.limits.maximumSeconds,attempt.createdAt,attempt.createdAt]);
+  await recordCapacityAccountingObservation(fixture.owner,{teamId:attempt.teamId,reservationId:attempt.reservationId,transitionId:'admission:'+attempt.id,createdAt:attempt.createdAt});
 		// Establish valid stored custody before any denial assertion. A corrupt fixture
 		// must not masquerade as rejection of the tested replay authority change.
 		expect((await repository.get('team', attempt.id))?.assignmentAttempt).toEqual(attempt);
-		const store = { ...fixture.store, getProviderAssignment: (team: string, id: string) => repository.get(team, id) };
+		const store = { ...fixture.owner, getProviderAssignment: (team: string, id: string) => repository.get(team, id) };
 		const snapshot = async () => {
 			const result: Record<string, unknown> = {};
-			for (const table of ['capacity_provider_assignments', 'capacity_reservations', 'capacity_workday_runs', 'execution_nodes', 'execution_edges', 'audit_events']) {
-				result[table] = (await fixture.query(`SELECT * FROM ${table} ORDER BY id`)).rows;
+			for (const table of ['capacity_provider_assignments', 'capacity_reservations', 'capacity_workday_runs', 'execution_nodes', 'execution_edges', 'audit_events', 'capacity_workday_events', 'capacity_admission_counters', 'capacity_reservation_counter_claims']) {
+				result[table] = (await fixture.query(`SELECT * FROM ${table} ORDER BY 1,2`)).rows;
 			}
 			return result;
 		};
@@ -38,7 +45,7 @@ async function nativeReplay() {
 }
 
 describe('native immutable admission replay', () => {
-	it('replays exact persisted custody repeatedly and concurrently without changing six owning SQL tables', async () => {
+	it('replays exact persisted custody repeatedly and concurrently without changing six owning SQL tables or their required original accounting history', async () => {
 		const fixture = await nativeReplay();
 		try {
 			const input = replayInput(replayAttempt()), before = await fixture.snapshot(), original = structuredClone(input);

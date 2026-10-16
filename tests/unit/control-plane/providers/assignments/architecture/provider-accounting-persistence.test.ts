@@ -139,7 +139,7 @@ describe('provider incremental terminal and release accounting through original 
 		try {
 			await createProviderAssignmentService(owner as ProviderStore).reportUsage(auth, frozenAttempt.id, {
 				assignmentAttempt: 1, accountingMode: 'incremental', usageDimension: 'checkpoint', activeSeconds: 1, elapsedSeconds: 1,
-				usageActual: terminalUsage.usageActual }, 'checkpoint');
+				usageActual: { ...terminalUsage.usageActual, nativeUsage: { activeSeconds: 1, tokens: 7 } } }, 'checkpoint');
 			await expect(releaseCapacityReservationsExactlyOnce(owner, [zeroRelease])).rejects.toMatchObject({ code: 'capacity_usage_aggregate_underreported' });
 			expect((await query("SELECT COUNT(*) AS total FROM capacity_usage_actuals WHERE accounting_mode='aggregate'")).rows).toEqual([{ total: 0 }]);
 			expect((await query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows).toEqual([{ total: 0 }]);
@@ -162,7 +162,7 @@ describe('provider incremental terminal and release accounting through original 
 		try {
 			const service = createProviderAssignmentService(owner as ProviderStore);
 			const checkpoint = { assignmentAttempt: 1, accountingMode: 'incremental', usageDimension: 'checkpoint', activeSeconds: 1,
-				elapsedSeconds: 1, usageActual: terminalUsage.usageActual };
+				elapsedSeconds: 1, usageActual: { ...terminalUsage.usageActual, nativeUsage: { activeSeconds: 1, tokens: 7 } } };
 			await service.reportUsage(auth, frozenAttempt.id, checkpoint, 'checkpoint');
 			await service.settle(auth, frozenAttempt.id, { ...terminalUsage }, terminalUsage.settlementKey); const before = await snapshot();
 			expect((await service.reportUsage(auth, frozenAttempt.id, checkpoint, 'checkpoint')).replayed).toBe(true);

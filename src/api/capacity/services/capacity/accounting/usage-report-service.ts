@@ -1,3 +1,5 @@
+import { capacityTransaction } from '../../../transaction.ts';
+import { recordCapacityAccountingObservation } from './accounting-observations.ts';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
@@ -138,6 +140,13 @@ export function capacityUsageInsertOperation(input: CapacityUsageReportRequest, 
 }
 
 export async function reportCapacityUsage(database: CapacityGovernanceDatabase, input: CapacityUsageReportRequest) {
+ await database.ensureInitialized();
+ return capacityTransaction(database, async transaction => {
+  await transaction.run('SELECT id FROM capacity_provider_assignments WHERE id=? AND team_id=? FOR UPDATE', [input.assignmentId,input.teamId]);
+  return reportCapacityUsageOnTransaction(transaction,input);
+ });
+}
+async function reportCapacityUsageOnTransaction(database: CapacityGovernanceDatabase, input: CapacityUsageReportRequest) {
 	await database.ensureInitialized();
 	if (input.accountingMode === 'aggregate') throw new CapacityGovernanceError('capacity_usage_aggregate_terminal_only', 'Aggregate usage is accepted only by terminal settlement.', 400);
 	const reservation = await database.first(`SELECT reservation.*, assignment.attempt_count AS assignment_attempt, assignment.assignment_attempt_json, assignment.parent_workday_id, assignment.parent_assignment_id, assignment.handoff_root_id, assignment.handoff_parent_id, assignment.handoff_depth, assignment.source_message_refs_json FROM capacity_reservations reservation JOIN capacity_provider_assignments assignment ON assignment.id = reservation.assignment_id WHERE reservation.id = ? AND reservation.team_id = ? LIMIT 1`, [input.reservationId, input.teamId]);
@@ -148,6 +157,7 @@ export async function reportCapacityUsage(database: CapacityGovernanceDatabase, 
 	const existing = await database.first(`SELECT * FROM capacity_usage_actuals WHERE id = ? OR idempotency_key = ? LIMIT 1`, [identity.id, identity.idempotencyKey]);
 	if (existing) {
 		assertCapacityUsageMatches(existing, input, identity);
+  await recordCapacityAccountingObservation(database,{teamId:input.teamId,reservationId:input.reservationId,transitionId:identity.id,createdAt:String(existing.created_at),usageRow:existing,replayed:true});
 		return { replayed: true, usageActual: existing };
 	}
 	const token = randomUUID();
@@ -166,5 +176,6 @@ export async function reportCapacityUsage(database: CapacityGovernanceDatabase, 
 	assertCapacityUsageMatches(row, input, identity);
 	let storedToken = '';
 	try { storedToken = String(JSON.parse(String(row.metadata_json ?? '{}')).usageReportToken ?? ''); } catch { /* malformed stored metadata cannot claim this insertion */ }
+ await recordCapacityAccountingObservation(database,{teamId:input.teamId,reservationId:input.reservationId,transitionId:identity.id,createdAt:String(row.created_at),usageRow:row,replayed:storedToken!==token});
 	return { replayed: storedToken !== token, usageActual: row };
 }

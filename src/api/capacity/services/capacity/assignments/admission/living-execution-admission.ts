@@ -1,3 +1,4 @@
+import { recordCapacityAccountingObservation } from '../../accounting/accounting-observations.ts';
 import{readExecutionNodeStates,recordExecutionNodeObservations}from'../../../../../control-plane/repositories/capacity/execution/execution-node-observations.ts';
 import {capacityTransaction} from '../../../../transaction.ts';
 import {ProviderAssignmentRepository} from '../../../../repositories/capacity/assignments/assignment.ts';
@@ -100,9 +101,13 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		}
 		return stored;
 	};
+ const retainedReplay=async(database:CapacityGovernanceDatabase,stored:DurableProviderAssignment)=>{
+  const accepted=requireExactReplay(stored);
+  await recordCapacityAccountingObservation(database,{teamId:assignment.teamId,reservationId:assignment.reservationId,transitionId:'admission:'+assignment.id,createdAt:accepted.createdAt,replayed:true});return accepted;
+ };
 	const replay = await store.getProviderAssignment(assignment.teamId, assignment.id);
 	if (replay) {
-		return requireExactReplay(replay);
+  return capacityTransaction(store,database=>retainedReplay(database,replay));
 	}
 	if (!Number.isFinite(Date.parse(input.now)) || Date.parse(input.now) < Date.parse(assignment.createdAt)
 		|| Date.parse(input.now) >= Date.parse(assignment.deadline)) throw new CapacityGovernanceError(
@@ -151,7 +156,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		// Another admission may have committed after the first absence read and
 		// moved its node out of ready. That is replay, never new claim authority.
 		const committed = await store.getProviderAssignment(assignment.teamId, assignment.id);
-		if (committed) return requireExactReplay(committed);
+		if (committed) return capacityTransaction(store,database=>retainedReplay(database,committed));
 		throw new CapacityGovernanceError('execution_assignment_authority_mismatch',
 			'The ready node or its exact completed predecessor authority changed before admission.', 409);
 	}
@@ -171,14 +176,18 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 				{sessionId:input.providerSessionId});
 
 		await database.run("SELECT id FROM capacity_workday_runs WHERE team_id=? AND id=? AND status='running' FOR UPDATE",[assignment.teamId,assignment.workdayId]);
+  const original=await new ProviderAssignmentRepository(database).get(assignment.teamId,assignment.id);
+  if(original)return retainedReplay(database,original);
 		const beforeNodes=await readExecutionNodeStates(database,assignment.teamId,assignment.workdayId,[assignment.nodeId]);
+  await database.batch(initializeCapabilityCounters(assignment,claims,input.now));
+  const counterBasis=await database.all('SELECT id,hard_limit,committed_amount,state_version,scope,scope_id,period_key FROM capacity_admission_counters WHERE id IN ('+claims.map(()=>'?').join(',')+') ORDER BY id FOR UPDATE',claims.map(claim=>claim.id));
+  if(counterBasis.length!==claims.length||claims.some(claim=>{const counter=counterBasis.find(value=>value.id===claim.id);return!counter||counter.scope!==claim.scope||counter.scope_id!==claim.scopeId||counter.period_key!==claim.day||Number(counter.hard_limit)!==claim.hardLimit||!Number.isFinite(Number(counter.committed_amount));}))throw new CapacityGovernanceError('capacity_admission_counter_not_committed','Admission requires every original scoped counter.',409);
 		await database.batch([
 			// Serializes admissions for this workday before checking its per-kind
 			// concurrency. The count in the reservation INSERT is therefore atomic.
 
 			...(input.invocationId ? [{ query: `SELECT id FROM agent_invocation_requests WHERE id=? AND team_id=? FOR UPDATE`,
 				params: [input.invocationId, assignment.teamId] }] : []),
-			...initializeCapabilityCounters(assignment, claims, input.now),
 			{ query: `SELECT node.id FROM execution_nodes node
 				WHERE node.team_id=? AND node.id=? AND node.node_revision=? AND node.status='ready'
 				AND ${nodeAuthority}
@@ -342,6 +351,8 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 						hardLimit: Number(counter.hard_limit) })),
 					requestedSeconds: assignment.limits.maximumSeconds });
 		}
+  const reserved=await database.all('SELECT claim.counter_id,claim.reserved_amount,claim.released_amount,counter.committed_amount,counter.state_version,counter.hard_limit FROM capacity_reservation_counter_claims claim JOIN capacity_admission_counters counter ON counter.id=claim.counter_id WHERE claim.reservation_id=? ORDER BY claim.counter_id',[assignment.reservationId]);
+  if(reserved.length!==claims.length||claims.some(claim=>{const before=counterBasis.find(value=>value.id===claim.id),after=reserved.find(value=>value.counter_id===claim.id);return!before||!after||Number(after.reserved_amount)!==assignment.limits.maximumSeconds||Number(after.released_amount)!==0||Number(after.hard_limit)!==claim.hardLimit||Number(after.committed_amount)!==Number(before.committed_amount)+assignment.limits.maximumSeconds||Number(after.state_version)!==Number(before.state_version)+1;}))throw new CapacityGovernanceError('capacity_admission_counter_not_committed','Admission requires every exact reservation and scoped counter commit.',409);
 		const accepted=requireExactReplay(committed);
 		const event:CapacityWorkdayEventWrite={id:'assignment-created:'+assignment.id,projectId:assignment.projectId,
 			workdayId:assignment.workdayId,assignmentId:assignment.id,eventType:'assignment.created',status:'recorded',
@@ -357,6 +368,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 			&&(afterNodes.length!==1||afterNodes[0]!.status!=='assigned'||afterNodes[0]!.nodeRevision!==assignment.nodeRevision))
 			throw new Error('execution_node_observation_state_mismatch');
 		await recordExecutionNodeObservations(database,beforeNodes,afterNodes,event.id,accepted.createdAt);
+  await recordCapacityAccountingObservation(database,{teamId:assignment.teamId,reservationId:assignment.reservationId,transitionId:'admission:'+assignment.id,createdAt:accepted.createdAt});
 		return accepted;
 	});
 }

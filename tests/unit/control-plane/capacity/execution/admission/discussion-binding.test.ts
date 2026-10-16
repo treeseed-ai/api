@@ -21,7 +21,7 @@ async function admissionOperations(attemptId: string = assignment.id) {
 			executionProviderId: attempt.provider.executionProviderId, reservationId: attempt.reservationId, projectAgentClassId: 'class' },
 		created_at: attempt.createdAt, updated_at: attempt.createdAt });
 	const store = { ...admissionNodeObservationStore(attempt), getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed),
-		batch: async (batch: typeof operations) => { operations = batch; },
+		batch: vi.fn(async (batch: typeof operations) => { operations.push(...batch); }),
 		first: vi.fn(async () => ({ id: attempt.nodeId, status: 'running', assignment_id: attempt.id })) };
 	await admitLivingExecutionAssignment(store as never, {
 		principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,

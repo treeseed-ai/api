@@ -1,3 +1,5 @@
+import {admissionUnitCollaborators} from '../fixtures/admission-unit-collaborators.ts';
+admissionUnitCollaborators();
 import { describe, expect, it } from 'vitest';
 import { admitLivingExecutionAssignment } from '../../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts';
 import { advanceAssignmentAttemptLifecycle } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';

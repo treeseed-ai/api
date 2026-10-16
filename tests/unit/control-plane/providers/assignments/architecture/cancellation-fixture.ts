@@ -31,14 +31,11 @@ export async function cancellationDatabase(status = 'leased', started = false) {
 	try {
 		const original = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
 		for (const table of ['treedx_proxy_handles', 'teams', 'capacity_provider_availability_sessions',
-			'capacity_audit_events', 'capacity_workday_events', 'treedx_project_proxy_audit', 'agent_fallback_outputs', 'agent_invocation_requests']) {
+			'capacity_audit_events', 'treedx_project_proxy_audit', 'agent_fallback_outputs', 'agent_invocation_requests']) {
 			const ddl = original.filter(sql => sql.startsWith(`CREATE TABLE "${table}" (`));
 			if (ddl.length !== 1) throw new Error(`Missing original ${table} DDL`);
 			await fixture.db.exec(ddl[0]!);
 		}
-  const eventIndex=original.filter(sql=>sql.startsWith('CREATE UNIQUE INDEX "idx_capacity_workday_events_run_index"'));
-  if(eventIndex.length!==1)throw new Error('Missing original workday event index authority');
-  await fixture.db.exec(eventIndex[0]!);
 		const attempt = assignmentAttemptSchema.parse({ ...frozenAttempt, status: 'created' });
 		const budget = emptyCapacityBudget(attempt.deadline, attempt.limits.maximumSeconds);
 		const time = { ...budget.time, authorityDeadlineAt: attempt.deadline,

@@ -58,7 +58,7 @@ export async function initialAdmission(admissionNow: string | (() => string) = '
 			if (missing.length) await base.db.exec(`${missing.join(';\n')};`);
 			await base.db.exec(readFileSync('drizzle/control-plane/0008_capability_ontology.sql', 'utf8'));
 		}
-		for (const table of ['capacity_provider_availability_sessions', 'treedx_proxy_handles', 'capacity_workday_events']) {
+		for (const table of ['capacity_provider_availability_sessions', 'treedx_proxy_handles']) {
 			const ddl = initial.filter(sql => sql.startsWith(`CREATE TABLE "${table}" (`));
 			if (ddl.length !== 1) throw new Error(`Missing original ${table} DDL`);
 			if (!completeOriginalTables) await base.db.exec(ddl[0]!);
