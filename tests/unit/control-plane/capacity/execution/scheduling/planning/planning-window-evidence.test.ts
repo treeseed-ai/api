@@ -6,6 +6,15 @@ import {verifyPlanningWindow} from '../../../../../../acceptance/execution-plann
 const plan=()=>compileWorkday({id:'workday',teamId:'team',policyId:'default',policyRevision:1,executionMode:'simulation',startsAt:'2026-09-13T12:00:00.000Z',agentIds:[],policy:{...DEFAULT_WORKDAY_POLICY,durationSeconds:3600,planningPercent:100/3}});
 const attempt=(activity='acting',createdAt='2026-09-13T12:20:00.000Z')=>({...structuredClone(assignment),createdAt,effectiveProfile:{...assignment.effectiveProfile,activity}});
 describe('original initial planning authority',()=>{
+ it('denies missing malformed or contradictory original allocator phase rather than borrowing another activity pool',()=>{
+  for(const activity of ['acting','reviewing','planning','estimating','chat','reporting']){
+   const value=attempt(activity,activity==='chat'?'2026-09-13T12:19:00.000Z':'2026-09-13T12:20:00.000Z'),workday=plan();
+   for(const opportunity of [undefined,null,{},[],{phase:'ended'},{phase:activity==='acting'||activity==='reviewing'||activity==='reporting'?'planning':'acting'}]){
+    const held=structuredClone({value,workday,opportunity});expect(()=>verifyPlanningWindow(value,workday,opportunity)).toThrow('ACCEPTANCE_PLANNING_WINDOW');expect({value,workday,opportunity}).toEqual(held);
+   }
+  }
+ });
+
  it('accepts acting and independent review only at or after the exact original planning floor without changing authority',()=>{
   for(const activity of ['acting','reviewing'])for(const createdAt of ['2026-09-13T12:20:00.000Z','2026-09-13T12:59:59.999Z']){
    const value=attempt(activity,createdAt),workday=plan(),held=structuredClone({value,workday});expect(()=>verifyPlanningWindow(value,workday)).not.toThrow();expect({value,workday}).toEqual(held);
