@@ -23,6 +23,14 @@ export async function proveNativeReportGraphScope(owner:CapacityGovernanceDataba
   const [context]=await workdayReportContext(owner,reporter),value=context!.value as {nodes:Array<{id:string}>;edges:Array<{id:string}>};
   expect(value.nodes.map(node=>node.id)).toEqual([prefix+'actor',prefix+'reviewer']);expect(value.edges.map(edge=>edge.id)).toEqual([prefix+'pair']);
   expect(await workdayReportContext(owner,reporter)).toEqual([context]);expect(await snapshot()).toEqual(before);
+  for(const changed of [null,[],{...parameters,proposalIds:'foreign'},{...parameters,proposalIds:[12]},{...parameters,proposalIds:['']},{...parameters,proposalIds:[proposal,proposal]}]){
+   await observer.query('UPDATE capacity_workday_runs SET parameters_json=$1 WHERE team_id=$2 AND id=$3',[JSON.stringify(changed),'team',workdayId]);
+   await expect(workdayReportContext(owner,reporter)).rejects.toMatchObject({code:'reporter_workday_authority_required',status:409});expect(await snapshot()).toEqual(before);
+  }
+  await observer.query("UPDATE capacity_workday_runs SET parameters_json=$1,execution_kind='conversation' WHERE team_id=$2 AND id=$3",[JSON.stringify(parameters),'team',workdayId]);
+  try{await expect(workdayReportContext(owner,reporter)).rejects.toMatchObject({code:'reporter_workday_authority_required',status:409});expect(await snapshot()).toEqual(before);}
+  finally{await observer.query("UPDATE capacity_workday_runs SET execution_kind='workday' WHERE team_id=$1 AND id=$2",['team',workdayId]);}
+
  }finally{
   await observer.query('DELETE FROM execution_edges WHERE id=$1',[prefix+'pair']);
   for(const[id,team]of [['actor','team'],['reviewer','team'],['unrelated','team'],['foreign','foreign-team']])await observer.query('DELETE FROM execution_nodes WHERE id=$1 AND team_id=$2',[prefix+id,team]);
