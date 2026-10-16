@@ -1,6 +1,6 @@
 import {expectWorkdayLifecycleHistory} from '../scheduling/architecture/node-birth-history.ts';
 import {describe,expect,it} from 'vitest';
-import {appliedWorkdaySchema} from '@treeseed/sdk/agent-capacity';
+import {appliedWorkdaySchema,compileWorkday} from '@treeseed/sdk/agent-capacity';
 import {settlementDatabase} from '../../accounting/architecture/settlement-fixture.ts';
 import {CapacityWorkdayRunWriteRepository} from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run-write.ts';
 import {CapacityWorkdayEventRepository} from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
@@ -8,7 +8,7 @@ import {CapacityWorkdayEventRepository} from '../../../../../../src/api/capacity
 describe('original Workday lifecycle and public observation custody',()=>{
  it('retains initial native applied-plan creation as one null-to-active observation before every later transition and exact replay',async()=>{
   const f=await settlementDatabase();try{
-   const original=(await f.reads.get('team','workday'))!,plan={...appliedWorkdaySchema.parse(original.parameters.appliedPlan),state:'active' as const,activatedAt:original.startedAt!,planningRounds:[]};delete plan.closingAt;
+   const original=(await f.reads.get('team','workday'))!,parsed=appliedWorkdaySchema.parse(original.parameters.appliedPlan),plan={...compileWorkday({id:original.id,teamId:original.teamId,executionMode:original.executionMode,policyId:parsed.policyId,policyRevision:parsed.policyRevision,policy:parsed.policySnapshot,startsAt:parsed.startsAt,agentIds:['renamed-native-planner']}),state:'active' as const,activatedAt:parsed.startsAt};
    const parameters={...original.parameters};delete parameters.appliedPlan;await f.query('UPDATE capacity_workday_runs SET parameters_json=? WHERE id=?',[JSON.stringify(parameters),original.id]);
    const before=(await f.reads.get('team','workday'))!,candidate={...before,parameters:{...parameters,appliedPlan:plan}},writer=new CapacityWorkdayRunWriteRepository(f.owner);
    expect(await writer.update(candidate,before.status)).toEqual(candidate);
