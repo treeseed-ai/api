@@ -10,7 +10,7 @@ const rows = { nodes: [{ id: 'actor', status: 'completed' }], edges: [{ from_nod
 	reservations: [{ id: 'reservation', assignment_id: 'expired', state: 'expired', released_seconds: 10 }],
 	usage: [{ id: 'usage', assignment_id: 'revision', active_seconds: 12 }] };
 function storeWith(state = rows) {
-	return { all: vi.fn().mockResolvedValueOnce(state.nodes).mockResolvedValueOnce(state.edges)
+	return { first:vi.fn().mockResolvedValue({id:'workday',execution_kind:'workday',parameters_json:'{}'}),all: vi.fn().mockResolvedValueOnce(state.nodes).mockResolvedValueOnce(state.edges)
 		.mockResolvedValueOnce(state.attempts).mockResolvedValueOnce(state.reservations).mockResolvedValueOnce(state.usage)
 		.mockResolvedValueOnce([]) };
 }

@@ -1,3 +1,4 @@
+import {executionNodeWorkdayScope} from '../../../build/execution-node-scope.ts';
 import { createHash } from 'node:crypto';
 import { canonicalStandardsJson } from '@treeseed/sdk/standards';
 import { authorizedContextItemSchema, type AssignmentAttempt } from '@treeseed/sdk/agent-capacity';
@@ -12,13 +13,17 @@ export async function workdayReportContext(store: CapacityGovernanceDatabase, as
 	if (assignment.sourceRef.store !== 'postgresql' || assignment.sourceRef.model !== 'workday'
 		|| assignment.sourceRef.id !== assignment.workdayId) throw new CapacityGovernanceError(
 			'reporter_workday_authority_required', 'Reporter must reference its own workday.', 409);
-	const scope = [assignment.teamId, assignment.workdayId];
+	const run=await store.first('SELECT id,execution_kind,parameters_json FROM capacity_workday_runs WHERE team_id=? AND id=? LIMIT 1',[assignment.teamId,assignment.workdayId]);
+	if(!run)throw new CapacityGovernanceError('reporter_workday_authority_required','Reporter requires its original Workday.',409);
+	const parameters=typeof run.parameters_json==='string'?JSON.parse(run.parameters_json):run.parameters_json;
+	const graph=executionNodeWorkdayScope({id:assignment.workdayId,executionKind:run.execution_kind as 'workday'|'conversation',parameters:parameters as Record<string,unknown>});
+	const scope = [assignment.teamId, assignment.workdayId],graphParameters=[assignment.teamId,...graph.parameters];
 	const [nodes, edges, attempts, reservations, usage, ledger] = await Promise.all([
 		store.all(`SELECT id,kind,pair_role,status,node_revision,source_ref_json,authority_refs_json
-			FROM execution_nodes WHERE team_id=? AND workday_id=? ORDER BY id`, scope),
+			FROM execution_nodes node WHERE node.team_id=? AND ${graph.sql} ORDER BY node.id`, graphParameters),
 		store.all(`SELECT edge.id,edge.from_node_id,edge.to_node_id,edge.provenance
 			FROM execution_edges edge JOIN execution_nodes node ON node.team_id=edge.team_id AND node.id=edge.to_node_id
-			WHERE node.team_id=? AND node.workday_id=? AND edge.graph_revision_removed IS NULL ORDER BY edge.id`, scope),
+			WHERE node.team_id=? AND ${graph.sql} AND edge.graph_revision_removed IS NULL ORDER BY edge.id`, graphParameters),
 		store.all(`SELECT id,execution_node_id,execution_node_revision,status,reservation_id,execution_provider_id,
 			assignment_result_json,lifecycle_code,created_at,completed_at,failed_at,
 			lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}' AS review_disposition,
