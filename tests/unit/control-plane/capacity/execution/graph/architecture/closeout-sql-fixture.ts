@@ -39,7 +39,7 @@ export async function closeoutDatabase() {
 		const database: CapacityGovernanceDatabase = {
 			ensureInitialized: async () => undefined,
 			all: async <R extends Record<string, unknown>>(sql: string, parameters: unknown[] = []) => (await query<R>(sql, parameters)).rows,
-			first: async <R extends Record<string, unknown>>(sql: string, parameters: unknown[] = []) => (await query<R>(sql, parameters)).rows[0] ?? null,
+			first: async <R extends Record<string, unknown> = Record<string, unknown>>(sql: string, parameters: unknown[] = []): Promise<R | null> => (await query<R>(sql, parameters)).rows[0] ?? null,
 			run: query,
 			batch: (operations: Array<{ query: string; params?: unknown[] }>) => db.transaction(async transaction => {
 				const results = [];
