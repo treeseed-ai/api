@@ -85,7 +85,7 @@ describe('cancellation retains productive and financial authority through origin
    const result=await service.cancel('team',before.id,input);expect(failures).toHaveLength(2);
 			expect(result.assignmentAttempt).toEqual({ ...before.assignmentAttempt, status: 'cancelled', finishedAt: cancelNow });
 			expect(result.attemptCount).toBe(before.attemptCount);
-			const events=(await native.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[before.id])).rows;expect.soft(events,'terminal cancellation requires one original durable observation').toHaveLength(1);
+			const events=(await native.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[before.id])).rows;expect.soft(events,'cancellation retains both original terminal and accounting observations').toHaveLength(2);expect(events.map(event=>event.event_type).sort()).toEqual(['assignment.cancelled','capacity.accounting.updated']);
 			const terminal = await snapshot();
 			vi.setSystemTime(new Date(Date.parse(cancelNow)+1_000));
 			await service.cancel('team', before.id, input);

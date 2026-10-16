@@ -70,7 +70,7 @@ describe('workday terminalization retains actual assignment and settlement custo
 				expect(after?.status).toBe('failed');
 				expect(after?.assignmentAttempt).toEqual({ ...before.assignmentAttempt, status: 'failed', finishedAt: cancelNow });
 				expect(after?.attemptCount).toBe(before.attemptCount);
-    const events=(await native.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[before.id])).rows;expect.soft(events,'workday stop requires each original assignment terminal observation').toHaveLength(1);
+    const events=(await native.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[before.id])).rows;expect.soft(events,'workday stop retains each original terminal and accounting observation').toHaveLength(2);expect(events.map(event=>event.event_type).sort()).toEqual(['assignment.failed','capacity.accounting.updated']);
 				const terminal = await native.snapshot();
 				await terminalizeCapacityWorkdayAssignments(native.owner, 'team', 'workday', { now: '2026-10-02T21:00:05.000Z' });
 				expect(await native.snapshot()).toEqual(terminal);

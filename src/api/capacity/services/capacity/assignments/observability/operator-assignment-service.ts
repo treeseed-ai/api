@@ -1,3 +1,4 @@
+import { recordCapacityAccountingObservation } from '../../accounting/accounting-observations.ts';
 import{readExecutionNodeStates,readExecutionNodeNeighborhood,recordExecutionNodeObservations}from'../../../../../control-plane/repositories/capacity/execution/execution-node-observations.ts';
 import {isDeepStrictEqual} from 'node:util';
 import {CapacityWorkdayEventRepository,type CapacityWorkdayEventWrite} from '../../../../repositories/capacity/workdays/workday-event.ts';
@@ -77,6 +78,7 @@ export class OperatorAssignmentService {
 				if (audit.idempotency_key !== key || value.actorId !== actorId || value.reason !== reason
 					|| value.expectedStateVersion !== expectedStateVersion) throw new CapacityGovernanceError(
 					'capacity_recovery_idempotency_conflict', 'Original unresolved recovery evidence must be replayed unchanged.', 409);
+    await recordCapacityAccountingObservation(database,{teamId,reservationId:String(value.reservationId),transitionId:'operator-recovery:'+assignmentId,createdAt:String(value.recoveredAt),replayed:true});
 				return value;
 			}
 			const metadata = record(JSON.parse(String(row.metadata_json ?? '{}')));
@@ -140,6 +142,7 @@ export class OperatorAssignmentService {
 			await database.run(`INSERT INTO capacity_audit_events (id,team_id,capacity_provider_id,membership_id,actor_type,actor_id,action,resource_type,resource_id,idempotency_key,metadata_json,created_at)
 				VALUES (?,?,?,?,?,?,'assignment.usage.unresolved','capacity_provider_assignment',?,?,?,?)`,
 				[`operator-recovery:${teamId}:${assignmentId}`, teamId, row.capacity_provider_id, row.membership_id, 'user', actorId, assignmentId, key, JSON.stringify(result), now]);
+   await recordCapacityAccountingObservation(database,{teamId,reservationId:String(reservation.id),transitionId:'operator-recovery:'+assignmentId,createdAt:now});
 			return result;
 		});
 	}

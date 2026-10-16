@@ -28,7 +28,7 @@ describe('initial living assignment native admission', () => {
    const values=await Promise.all([f.admit(input),f.admit(structuredClone(input))]),admitted=values[0]!;expect(values[1]).toEqual(admitted);
 
    const raw=(await f.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[f.attempt.id])).rows;
-   expect(raw,'native successful assignment creation requires one durable observation').toHaveLength(1);
+   expect(raw,'assignment creation and reservation admission each require one durable observation').toHaveLength(2);expect(raw.map(event=>event.event_type)).toEqual(['assignment.created','capacity.accounting.updated']);
    const event=raw[0]!;expect(event).toMatchObject({team_id:f.attempt.teamId,run_id:f.attempt.workdayId,workday_id:f.attempt.workdayId,project_id:f.attempt.projectId,assignment_id:f.attempt.id,event_type:'assignment.created',status:'recorded',created_at:f.attempt.createdAt});
    expect(JSON.parse(String(event.context_json))).toMatchObject({nodeId:f.attempt.nodeId,nodeRevision:f.attempt.nodeRevision,graphRevision:f.attempt.graphRevision,status:'created',leaseId:f.attempt.leaseId,reservationId:f.attempt.reservationId});
    expect(await new CapacityWorkdayEventRepository(f.store).get(f.attempt.teamId,f.attempt.workdayId,String(event.id))).toMatchObject({eventType:'assignment.created',assignmentId:f.attempt.id,createdAt:f.attempt.createdAt});

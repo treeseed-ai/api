@@ -22,7 +22,7 @@ describe('provider terminal reporting through original transaction and resource 
    console.log(JSON.stringify({nativeTerminalZeroWrite:{status:(await native.repository.get('team',native.assignment.id))?.status,eventCount:observed.events.length}}));
    expect(failure).toMatchObject({message:'assignment_terminal_observation_state_mismatch'});expect(observed).toEqual(before);expect(input).toEqual(held);
    expect((await native.service.complete(principal,native.assignment.id,input))?.assignment.status).toBe('completed');
-   expect((await native.query('SELECT * FROM capacity_workday_events WHERE assignment_id=?',[native.assignment.id])).rows).toHaveLength(1);
+   expect((await native.query('SELECT * FROM capacity_workday_events WHERE assignment_id=?',[native.assignment.id])).rows.map(event=>event.event_type).sort()).toEqual(['assignment.completed','capacity.accounting.updated']);
   }finally{await native.close();}
  });
 
@@ -107,8 +107,9 @@ describe('provider terminal reporting through original transaction and resource 
 				expect(JSON.parse(String(raw?.assignment_attempt_json))).toEqual(expected);
 				expect(persisted?.attemptCount).toBe(before.attemptCount);
                 const observations=(await native.query('SELECT * FROM capacity_workday_events WHERE assignment_id=? ORDER BY event_index',[before.id])).rows;
-                expect(observations,'every original terminal transition requires exactly one durable scoped observation').toHaveLength(1);
-                const event=observations[0]!;expect(event).toMatchObject({team_id:before.teamId,run_id:before.workDayId,workday_id:before.workDayId,project_id:before.projectId,assignment_id:before.id,event_type:'assignment.'+status,status:'recorded',created_at:expected.finishedAt});
+                expect(observations,'accounting and terminal transitions each require one exact durable scoped observation').toHaveLength(2);
+                expect(observations.map(value=>value.event_type).sort()).toEqual(['assignment.'+status,'capacity.accounting.updated'].sort());
+                const event=observations.find(value=>value.event_type==='assignment.'+status)!;expect(event).toMatchObject({team_id:before.teamId,run_id:before.workDayId,workday_id:before.workDayId,project_id:before.projectId,assignment_id:before.id,event_type:'assignment.'+status,status:'recorded',created_at:expected.finishedAt});
                 expect(JSON.parse(String(event.context_json))).toMatchObject({nodeId:before.assignmentAttempt.nodeId,nodeRevision:before.assignmentAttempt.nodeRevision,graphRevision:before.assignmentAttempt.graphRevision,leaseId:before.assignmentAttempt.leaseId,reservationId:before.assignmentAttempt.reservationId,status});
                 expect(JSON.stringify(event)).not.toContain('lease-token');
                 const events=new CapacityWorkdayEventRepository(native.owner),visible=await events.list(before.teamId,before.workDayId!,{limit:100});

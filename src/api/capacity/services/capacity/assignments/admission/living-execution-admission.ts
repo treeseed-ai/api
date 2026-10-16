@@ -1,3 +1,4 @@
+import { recordCapacityAccountingObservation } from '../../accounting/accounting-observations.ts';
 import{readExecutionNodeStates,recordExecutionNodeObservations}from'../../../../../control-plane/repositories/capacity/execution/execution-node-observations.ts';
 import {capacityTransaction} from '../../../../transaction.ts';
 import {ProviderAssignmentRepository} from '../../../../repositories/capacity/assignments/assignment.ts';
@@ -102,7 +103,11 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 	};
 	const replay = await store.getProviderAssignment(assignment.teamId, assignment.id);
 	if (replay) {
-		return requireExactReplay(replay);
+  return capacityTransaction(store, async database => {
+   const accepted=requireExactReplay(replay);
+   await recordCapacityAccountingObservation(database,{teamId:assignment.teamId,reservationId:assignment.reservationId,transitionId:'admission:'+assignment.id,createdAt:accepted.createdAt,replayed:true});
+   return accepted;
+  });
 	}
 	if (!Number.isFinite(Date.parse(input.now)) || Date.parse(input.now) < Date.parse(assignment.createdAt)
 		|| Date.parse(input.now) >= Date.parse(assignment.deadline)) throw new CapacityGovernanceError(
@@ -357,6 +362,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 			&&(afterNodes.length!==1||afterNodes[0]!.status!=='assigned'||afterNodes[0]!.nodeRevision!==assignment.nodeRevision))
 			throw new Error('execution_node_observation_state_mismatch');
 		await recordExecutionNodeObservations(database,beforeNodes,afterNodes,event.id,accepted.createdAt);
+  await recordCapacityAccountingObservation(database,{teamId:assignment.teamId,reservationId:assignment.reservationId,transitionId:'admission:'+assignment.id,createdAt:accepted.createdAt});
 		return accepted;
 	});
 }

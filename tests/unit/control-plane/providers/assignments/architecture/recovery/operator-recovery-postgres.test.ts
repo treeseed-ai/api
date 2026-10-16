@@ -27,7 +27,7 @@ async function exercisePostgresRecovery(dispute: boolean) {
 					[JSON.stringify({ leaseRecovery: { disposition: 'operator-action' } }), supplied.assignment.id]);
 				if (dispute) await settleCapacityReservationExactlyOnce(supplied.owner, { ...terminalUsage,
 					activeSeconds: 0, elapsedSeconds: 0, source: 'capacity_workday_deadline_terminalization', usageActual: undefined });
-				await copyNativeAssignmentCustody(native.left,supplied,['capacity_workday_runs','execution_nodes','capacity_reservations','capacity_provider_assignments','capacity_admission_counters','capacity_reservation_counter_claims',...(dispute?['capacity_usage_actuals','capacity_ledger_entries']:[])]);
+				await copyNativeAssignmentCustody(native.left,supplied,['capacity_workday_runs','execution_nodes','capacity_reservations','capacity_provider_assignments','capacity_admission_counters','capacity_reservation_counter_claims','capacity_workday_events',...(dispute?['capacity_usage_actuals','capacity_ledger_entries']:[])]);
 			} finally { await supplied.db.close(); }
 			const audit = () => native.left.pool.query('SELECT * FROM capacity_audit_events ORDER BY id');
 			const assignments = () => native.left.pool.query('SELECT * FROM capacity_provider_assignments ORDER BY id');
@@ -110,7 +110,7 @@ async function exerciseNativeCancellation(status: 'leased' | 'returned' | 'retry
   try {
    if(status==='returned')await settleCapacityReservationExactlyOnce(supplied.owner,terminalUsage);
    if(status==='retry')await supplied.query("UPDATE execution_nodes SET status='failed' WHERE id=?",[attempt.nodeId]);
-   await copyNativeAssignmentCustody(native.left,supplied,['capacity_workday_runs','execution_nodes','capacity_reservations','capacity_provider_assignments','capacity_admission_counters','capacity_reservation_counter_claims','capacity_usage_actuals','capacity_ledger_entries']);
+   await copyNativeAssignmentCustody(native.left,supplied,['capacity_workday_runs','execution_nodes','capacity_reservations','capacity_provider_assignments','capacity_admission_counters','capacity_reservation_counter_claims','capacity_workday_events','capacity_usage_actuals','capacity_ledger_entries']);
   }finally{await supplied.db.close();}
   if(status==='retry'){
    await native.left.pool.query("INSERT INTO capacity_workday_runs(id,team_id,status,execution_mode,created_at,updated_at) VALUES('retained-workday','team','completed','simulation',$1,$1)",[attempt.createdAt]);
@@ -120,7 +120,7 @@ async function exerciseNativeCancellation(status: 'leased' | 'returned' | 'retry
   const owners=[native.left,native.right].map(db=>{const host=new ControlPlaneStore({TREESEED_ENVIRONMENT:'test'},db);host.initializationPromise=Promise.resolve();return createCapacityControlPlane(host);});
   const services=owners.map(owner=>createAssignmentService(owner)),body={reason:'Original independent native cancellation'},held=structuredClone(body);
   const calls=services.map(service=>async()=>status==='retry'?(await service.retry(native.principal,'team',attempt.id,body,'original-native-cancellation')).assignment:service.cancel(native.principal,'team',attempt.id,body,'original-native-cancellation'));
-  const snapshot=async()=>Object.fromEntries(await Promise.all(['capacity_provider_assignments','capacity_workday_runs','capacity_workday_events','execution_nodes','capacity_reservations','capacity_admission_counters','capacity_reservation_counter_claims','capacity_usage_actuals','capacity_ledger_entries'].map(async table=>[table,(await native.right.pool.query('SELECT * FROM '+table+' ORDER BY 1,2')).rows])));
+  const snapshot=async()=>Object.fromEntries(await Promise.all(['capacity_provider_assignments','capacity_workday_runs','capacity_workday_events','execution_nodes','capacity_reservations','capacity_admission_counters','capacity_reservation_counter_claims','capacity_workday_events','capacity_usage_actuals','capacity_ledger_entries'].map(async table=>[table,(await native.right.pool.query('SELECT * FROM '+table+' ORDER BY 1,2')).rows])));
   const before=await snapshot(),failures:unknown[]=[];
   await expect(services[0]![status==='retry'?'retry':'cancel'](undefined,'team',attempt.id,body,'denied')).rejects.toMatchObject({status:401});
   await expect(services[0]![status==='retry'?'retry':'cancel'](native.principal,'foreign-team',attempt.id,body,'denied')).rejects.toMatchObject({status:404});
@@ -156,7 +156,7 @@ async function exerciseNativeCancellation(status: 'leased' | 'returned' | 'retry
   if(status!=='leased'){const next=await createWorkdayService(owners[1]!).events(native.principal,'team',attempt.workdayId,{limit:1,cursor:publicEvents.page.nextCursor});expect(next.items).toHaveLength(1);expect(next.page.hasMore).toBe(false);expect(next.items[0]).toMatchObject({id:nodeEvents[0]!.id,eventType:'execution.node.state',assignmentId:null,context:{nodeId:attempt.nodeId,status:status==='retry'?'ready':'cancelled',previousStatus:status==='retry'?'failed':'running'}});}
   if(status==='retry'){const retained=(await native.right.pool.query("SELECT * FROM execution_nodes WHERE id='retained-predecessor'")).rows;expect(retained).toEqual((before.execution_nodes as Array<Record<string,unknown>>).filter(node=>node.id==='retained-predecessor'));expect((await native.right.pool.query("SELECT * FROM capacity_workday_events WHERE run_id='retained-workday'")).rows).toEqual([]);}
   expect(await services[1]!.show(native.principal,'team',attempt.id)).toMatchObject(first);
-  const after=await snapshot();for(const table of ['capacity_reservations','capacity_admission_counters','capacity_reservation_counter_claims','capacity_usage_actuals','capacity_ledger_entries'])expect(after[table]).toEqual(before[table]);
+  const after=await snapshot();for(const table of ['capacity_reservations','capacity_admission_counters','capacity_reservation_counter_claims','capacity_workday_events','capacity_usage_actuals','capacity_ledger_entries'])expect(after[table]).toEqual(before[table]);
   expect(await calls[1]!()).toEqual(first);expect(await snapshot()).toEqual(after);expect(body).toEqual(held);expect(failures).toHaveLength(2);
  }finally{await native.close();}
 }

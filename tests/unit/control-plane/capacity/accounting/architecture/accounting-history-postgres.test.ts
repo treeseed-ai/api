@@ -11,7 +11,7 @@ import { serializeTaskUsageActualRow } from '../../../../../../src/api/capacity/
 import { serializeCapacityLedgerEntryRow } from '../../../../../../src/api/capacity/repositories/capacity/accounting/ledger.ts';
 
 const auth = { principal: { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider', scopes: ['provider:usage:write', 'provider:assignments:write'] } };
-const tables = ['capacity_workday_runs', 'execution_nodes', 'capacity_reservations', 'capacity_provider_assignments', 'capacity_admission_counters', 'capacity_reservation_counter_claims'];
+const tables = ['capacity_workday_runs', 'execution_nodes', 'capacity_reservations', 'capacity_provider_assignments', 'capacity_admission_counters', 'capacity_reservation_counter_claims','capacity_workday_events'];
 
 it('native PostgreSQL accounting producers retain exact complete public observations across competing requests interruption missing writes denial and unchanged retry', async () => {
  const failures: Array<{ operation: string; mode: string; error: string; custodySha256: string }> = [];
@@ -32,7 +32,7 @@ it('native PostgreSQL accounting producers retain exact complete public observat
    const apply = (index: number, changes = {}, principal = auth) => operation === 'usage' ? services[index]!.reportUsage(principal, frozenAttempt.id, { ...body, ...changes }, key)
     : services[index]!.settle(principal, frozenAttempt.id, { ...body, ...changes }, key);
    const snapshot = async () => Object.fromEntries(await Promise.all([...tables, 'capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_workday_events'].map(async table =>
-    [table, (await native.right.pool.query('SELECT * FROM '+table+' ORDER BY '+(table === 'capacity_reservation_counter_claims' ? 'reservation_id,counter_id' : 'id'))).rows])));
+    [table, (await native.right.pool.query('SELECT * FROM '+table+' ORDER BY '+(table === 'capacity_reservation_counter_claims','capacity_workday_events' ? 'reservation_id,counter_id' : 'id'))).rows])));
    const events = () => new CapacityWorkdayEventRepository(stores[1]!).list('team', 'workday', { limit: 100 });
    const original = structuredClone({ body, auth, frozenAttempt }), before = await snapshot();
    for (const mode of ['missing', 'interrupted', 'altered']) {
