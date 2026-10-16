@@ -67,7 +67,7 @@ it('rolls back public accounting when a required observation is silently omitted
   const f = await fixture();
   try {
    const apply = () => operation === 'usage' ? f.service.reportUsage(auth, frozenAttempt.id, { assignmentAttempt: 1, usageDimension: 'checkpoint',
-    accountingMode: 'informational', activeSeconds: 1, elapsedSeconds: 1, usageActual: terminalUsage.usageActual }, 'checkpoint')
+    accountingMode: 'incremental', activeSeconds: 1, elapsedSeconds: 1, usageActual: terminalUsage.usageActual }, 'checkpoint')
     : f.service.settle(auth, frozenAttempt.id, { ...terminalUsage }, terminalUsage.settlementKey);
    for (const mode of ['missing', 'interrupted']) {
     const before = await f.snapshot();
