@@ -178,8 +178,9 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		await database.run("SELECT id FROM capacity_workday_runs WHERE team_id=? AND id=? AND status='running' FOR UPDATE",[assignment.teamId,assignment.workdayId]);
   const original=await new ProviderAssignmentRepository(database).get(assignment.teamId,assignment.id);
   if(original)return retainedReplay(database,original);
+  const owningRun=await database.first("SELECT parameters_json,execution_mode,execution_kind FROM capacity_workday_runs WHERE team_id=? AND id=? AND status='running' AND execution_kind=?",[assignment.teamId,assignment.workdayId,input.executionKind]);
+  if(!owningRun)throw new CapacityGovernanceError('workday_admission_closed','New admission requires its original owning execution kind and running Workday.',409);
   if(input.executionKind==='workday'){
-   const owningRun=await database.first("SELECT parameters_json,execution_mode,execution_kind FROM capacity_workday_runs WHERE team_id=? AND id=? AND status='running'",[assignment.teamId,assignment.workdayId]);
    let parameters:unknown=owningRun?.parameters_json;
    if(typeof parameters==='string')try{parameters=JSON.parse(parameters);}catch{parameters=null;}
    const parsed=appliedWorkdaySchema.safeParse((parameters&&typeof parameters==='object'&&!Array.isArray(parameters)?Reflect.get(parameters,'appliedPlan'):undefined));
