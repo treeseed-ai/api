@@ -35,7 +35,7 @@ describe('concurrent local execution in PostgreSQL', () => {
 			const now = new Date().toISOString();
 			await database.pool.query(`INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ('team','team','Team',$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO capacity_providers (id,fingerprint,public_jwk_json,display_name,created_at,updated_at) VALUES ('provider','test','{}','Provider',$1,$1)`, [now]);
-			const store = {
+			const store = { db:database,
 				ensureInitialized: () => database.migrate(),
 				run: (sql: string, values: unknown[]) => database.prepare(sql).bind(...values).run(),
 				first: (sql: string, values: unknown[] = []) => database.prepare(sql).bind(...values).first(),
