@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import type { CapacityGovernanceDatabase } from './database.ts';
 import { executePostgresBatch, translateControlPlaneSqlToPostgres } from '../support/control-plane-postgres.ts';
@@ -11,12 +12,23 @@ export async function capacityTransaction<T>(store: CapacityGovernanceDatabase,
 	if (!db?.transaction) throw new Error('Capacity accounting requires the configured PostgreSQL transaction authority.');
 	return db.transaction(async client => {
 		const query = (sql: string, params: unknown[] = []) => client.query(translateControlPlaneSqlToPostgres(sql), params);
-		return apply({
+		const transaction: CapacityGovernanceDatabase & { db: NonNullable<typeof db> } = {
+			db: { transaction: async run => {
+				const checkpoint = "capacity_" + randomUUID().replaceAll("-", "");
+				await client.query("SAVEPOINT " + checkpoint);
+				try { const result = await run(client); await client.query("RELEASE SAVEPOINT " + checkpoint); return result; }
+				catch (error) {
+					try { await client.query("ROLLBACK TO SAVEPOINT " + checkpoint); await client.query("RELEASE SAVEPOINT " + checkpoint); }
+					catch (rollback) { throw new AggregateError([error, rollback], "Nested capacity transaction and rollback failed."); }
+					throw error;
+				}
+			} },
 			ensureInitialized: async () => {},
 			run: async (sql, params) => { await query(sql, params); },
 			first: async <R extends Record<string, unknown>>(sql: string, params?: unknown[]): Promise<R | null> => (await query(sql, params)).rows[0] as R ?? null,
 			all: async <R extends Record<string, unknown>>(sql: string, params?: unknown[]) => (await query(sql, params)).rows as R[],
 			batch: operations => executePostgresBatch(client, operations),
-		});
+		};
+		return apply(transaction);
 	});
 }

@@ -1,3 +1,5 @@
+import { capacityTransaction } from '../../../transaction.ts';
+import { recordCapacityAccountingObservation } from './accounting-observations.ts';
 import { randomUUID } from 'node:crypto';
 import { assignmentAttemptSchema, usageSettlementSchema } from '@treeseed/sdk/agent-capacity';
 import { isUniqueConstraintViolation } from '../../../database-errors.ts';
@@ -137,6 +139,7 @@ interface PreparedCapacitySettlement {
 	reservedSeconds: number;
 	now: string;
 	operations: CapacityDatabaseOperation[];
+	counterSettlements: CounterSettlement[];
 }
 
 function incrementalUsageBounds(input: CapacitySettlementRequest, attempt: number) {
@@ -233,10 +236,18 @@ function prepareCapacitySettlement(
 		reservedSeconds,
 		now,
 		operations,
+		counterSettlements,
 	};
 }
 
 export async function settleCapacityReservationExactlyOnce(database: CapacityGovernanceDatabase, input: CapacitySettlementRequest) {
+ await database.ensureInitialized();
+ return capacityTransaction(database, async transaction => {
+  await transaction.run('SELECT id FROM capacity_provider_assignments WHERE id=? AND team_id=? FOR UPDATE',[input.assignmentId,input.teamId]);
+  return settleCapacityReservationOnTransaction(transaction,input);
+ });
+}
+async function settleCapacityReservationOnTransaction(database: CapacityGovernanceDatabase, input: CapacitySettlementRequest) {
 	await database.ensureInitialized();
 	if (!input.settlementKey.trim()) throw new CapacityGovernanceError('capacity_settlement_key_required', 'settlementKey is required.', 400);
 	const reservation = await database.first(`SELECT reservation.*, assignment.attempt_count AS assignment_attempt, assignment.assignment_attempt_json, assignment.parent_workday_id, assignment.parent_assignment_id, assignment.handoff_root_id, assignment.handoff_parent_id, assignment.handoff_depth, assignment.source_message_refs_json FROM capacity_reservations reservation JOIN capacity_provider_assignments assignment ON assignment.id = reservation.assignment_id WHERE reservation.id = ? AND reservation.team_id = ? LIMIT 1`, [input.reservationId, input.teamId]);
@@ -262,6 +273,9 @@ export async function settleCapacityReservationExactlyOnce(database: CapacityGov
 			if (!usageRow) throw new CapacityGovernanceError('capacity_usage_not_committed', 'Terminal usage report was not committed.', 500);
 			assertCapacityUsageMatches(usageRow, usageInput, usageIdentityValue);
 		}
+  const originalUsage=await database.first("SELECT * FROM capacity_usage_actuals WHERE assignment_id=? AND assignment_attempt=? AND accounting_mode='aggregate'",[input.assignmentId,usageIdentityValue.assignmentAttempt]);
+  if(!originalUsage)throw new CapacityGovernanceError('capacity_usage_not_committed','Terminal usage report was not committed.',500);
+  await recordCapacityAccountingObservation(database,{teamId:input.teamId,reservationId:input.reservationId,transitionId:String(existingByReservation.id),createdAt:String(existingByReservation.created_at),usageRow:originalUsage,ledgerRow:existingByReservation,replayed:true});
 		return { replayed: true, entry: existingByReservation, usageActualId: String(existingByReservation.assignment_id) === input.assignmentId
 			? `usage:${input.assignmentId}:${usageIdentityValue.assignmentAttempt}:aggregate`
 			: usageActualId };
@@ -269,7 +283,7 @@ export async function settleCapacityReservationExactlyOnce(database: CapacityGov
 	const incremental = incrementalUsageBounds(input, usageIdentityValue.assignmentAttempt);
 	if (incremental.exceeds(await database.first(incremental.query, incremental.params))) throw new CapacityGovernanceError(
 		'capacity_usage_aggregate_underreported', 'Terminal aggregate cannot discard accepted incremental time or token measurements.', 409, { assignmentId: input.assignmentId });
-	const claims = await database.all(`SELECT claim.*, counter.scope FROM capacity_reservation_counter_claims claim JOIN capacity_admission_counters counter ON counter.id = claim.counter_id WHERE claim.reservation_id = ? ORDER BY claim.counter_id ASC`, [input.reservationId]);
+	const claims = await database.all(`SELECT claim.*, counter.scope, counter.team_id AS counter_team_id, counter.committed_amount AS original_committed_amount, counter.state_version AS original_state_version FROM capacity_reservation_counter_claims claim JOIN capacity_admission_counters counter ON counter.id = claim.counter_id WHERE claim.reservation_id = ? ORDER BY claim.counter_id ASC FOR UPDATE OF claim,counter`, [input.reservationId]);
 	const prepared = prepareCapacitySettlement(input, reservation, claims);
 	const { activeSeconds, elapsedSeconds, reservedSeconds, now, entryId, operations } = prepared;
 	try {
@@ -301,7 +315,21 @@ export async function settleCapacityReservationExactlyOnce(database: CapacityGov
 	if (!usageRow) throw new CapacityGovernanceError('capacity_usage_not_committed', 'Terminal usage report was not committed.', 500);
 	assertSettlementMatches(entry, input);
 	assertCapacityUsageMatches(usageRow, usageInput, usageIdentityValue);
-	return { replayed: String(entry.id) !== entryId, entry, usageActualId };
+ const replayed=String(entry.id)!==entryId;
+ if(!replayed){
+  const current=await database.first('SELECT * FROM capacity_reservations WHERE id=? AND team_id=?',[input.reservationId,input.teamId]);
+  if(!current||current.state!=='consumed'||!durableRealEquals(current.active_seconds,activeSeconds)||!durableRealEquals(current.elapsed_seconds,elapsedSeconds)
+   ||!durableRealEquals(current.released_seconds,Math.max(0,reservedSeconds-activeSeconds))||!durableRealEquals(current.overrun_seconds,Math.max(0,activeSeconds-reservedSeconds))
+   ||!durableRealEquals(current.consumed_provider_units,input.providerUnits)||!durableRealEquals(current.consumed_usd,input.usd))throw new CapacityGovernanceError('capacity_settlement_state_not_committed','Terminal reservation state was not committed.',500);
+  for(const expected of prepared.counterSettlements){
+   const before=claims.find(claim=>claim.counter_id===expected.counterId),after=await database.first('SELECT counter.team_id,counter.committed_amount,counter.state_version,claim.released_amount FROM capacity_admission_counters counter JOIN capacity_reservation_counter_claims claim ON claim.counter_id=counter.id WHERE counter.id=? AND claim.reservation_id=?',[expected.counterId,input.reservationId]);
+   if(!before||!after||before.counter_team_id!==input.teamId||after.team_id!==input.teamId
+    ||!durableRealEquals(after.committed_amount,Number(before.original_committed_amount)+expected.adjustment)
+    ||Number(after.state_version)!==Number(before.original_state_version)+1||!durableRealEquals(after.released_amount,expected.releasedAmount))throw new CapacityGovernanceError('capacity_settlement_counter_not_committed','Terminal scoped counter state was not committed.',500);
+  }
+ }
+ await recordCapacityAccountingObservation(database,{teamId:input.teamId,reservationId:input.reservationId,transitionId:String(entry.id),createdAt:String(entry.created_at),usageRow,ledgerRow:entry,replayed});
+	return { replayed, entry, usageActualId };
 }
 
 export async function releaseCapacityReservationsExactlyOnce(
