@@ -22,12 +22,15 @@ export async function recordCapacityAccountingObservation(database: CapacityGove
   || ledgerEntry && (ledgerEntry.teamId !== reservation.teamId || ledgerEntry.reservationId !== reservation.id || ledgerEntry.assignmentId !== reservation.assignmentId || ledgerEntry.workDayId !== reservation.workDayId)) throw fail();
  const id = 'capacity-accounting:' + createHash('sha256').update(JSON.stringify([input.teamId, input.reservationId, input.transitionId])).digest('hex');
  const repository = new CapacityWorkdayEventRepository(database);
+ const envelope = { id, projectId: reservation.projectId, workdayId: reservation.workDayId, assignmentId: reservation.assignmentId,
+  eventType: 'capacity.accounting.updated', status: 'recorded' as const, title: 'Capacity accounting updated', message: null,
+  parameters: {}, metadata: {}, refs: {}, createdAt: input.createdAt };
  if (input.replayed) {
   const observed = await repository.get(input.teamId, reservation.workDayId, id);
   // Later accounting may legitimately advance the reservation and shared
   // counters. Never rewrite that earlier snapshot during a record replay.
-  if (!observed || observed.eventType !== 'capacity.accounting.updated' || observed.assignmentId !== reservation.assignmentId
-   || observed.projectId !== reservation.projectId || observed.workdayId !== reservation.workDayId || observed.createdAt !== input.createdAt
+  if (!observed || observed.teamId !== input.teamId || observed.runId !== reservation.workDayId
+   || Object.entries(envelope).some(([key, expected]) => !isDeepStrictEqual(Reflect.get(observed, key), expected))
    || !isDeepStrictEqual(observed.context.usageActual, usageActual) || !isDeepStrictEqual(observed.context.ledgerEntry, ledgerEntry)) throw fail();
   return observed;
  }
@@ -45,9 +48,7 @@ export async function recordCapacityAccountingObservation(database: CapacityGove
   if (!Number.isSafeInteger(numeric.stateVersion) || numeric.stateVersion! < 1 || numeric.releasedAmount! > numeric.reservedAmount!) throw fail();
   return { ...claim, ...numeric, remainingAmount: Math.max(0, numeric.hardLimit! - numeric.committedAmount!) };
  });
- const value = { id, projectId: reservation.projectId, workdayId: reservation.workDayId, assignmentId: reservation.assignmentId,
-  eventType: 'capacity.accounting.updated', status: 'recorded' as const, title: 'Capacity accounting updated', message: null,
-  parameters: {}, metadata: {}, refs: {}, createdAt: input.createdAt, context: { reservation, usageActual, ledgerEntry, remainingSupply } };
+ const value = { ...envelope, context: { reservation, usageActual, ledgerEntry, remainingSupply } };
  const observed = await repository.create(input.teamId, reservation.workDayId, value);
  if (!observed || observed.teamId !== input.teamId || observed.runId !== reservation.workDayId
   || Object.entries(value).some(([key, expected]) => !isDeepStrictEqual(Reflect.get(observed, key), expected))) throw fail();
