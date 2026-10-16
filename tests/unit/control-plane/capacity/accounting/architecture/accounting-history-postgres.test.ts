@@ -35,14 +35,15 @@ it('native PostgreSQL accounting producers retain exact complete public observat
     [table, (await native.right.pool.query('SELECT * FROM '+table+' ORDER BY '+(table === 'capacity_reservation_counter_claims','capacity_workday_events' ? 'reservation_id,counter_id' : 'id'))).rows])));
    const events = () => new CapacityWorkdayEventRepository(stores[1]!).list('team', 'workday', { limit: 100 });
    const original = structuredClone({ body, auth, frozenAttempt }), before = await snapshot();
-   for (const mode of ['missing', 'interrupted', 'altered']) {
-    await native.left.pool.query("CREATE FUNCTION retained_native_accounting_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type='capacity.accounting.updated' THEN " +
-     (mode === 'missing' ? 'RETURN NULL;' : mode === 'altered' ? "NEW.context_json='{}';" : "RAISE EXCEPTION 'retained native accounting interruption';") + ' END IF; RETURN NEW; END $$');
-    await native.left.pool.query('CREATE TRIGGER retained_native_accounting_fault BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION retained_native_accounting_fault()');
+   for (const mode of ['missing', 'interrupted', 'altered', 'usage-state-missing', ...(operation==='settlement'?['ledger-state-missing','reservation-state-missing','counter-state-missing','claim-state-missing']:[])]) {
+    const target=mode==='usage-state-missing'?'capacity_usage_actuals':mode==='ledger-state-missing'?'capacity_ledger_entries':mode==='reservation-state-missing'?'capacity_reservations':mode==='counter-state-missing'?'capacity_admission_counters':mode==='claim-state-missing'?'capacity_reservation_counter_claims':'capacity_workday_events';
+    const body=target==='capacity_workday_events'?"IF NEW.event_type='capacity.accounting.updated' THEN "+(mode==='missing'?'RETURN NULL;':mode==='altered'?"NEW.context_json='{}';":"RAISE EXCEPTION 'retained native accounting interruption';")+' END IF; RETURN NEW;':target==='capacity_reservations'?"IF NEW.state='consumed' THEN RETURN NULL; END IF; RETURN NEW;":'RETURN NULL;';
+    await native.left.pool.query('CREATE FUNCTION retained_native_accounting_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN '+body+' END $$');
+    await native.left.pool.query('CREATE TRIGGER retained_native_accounting_fault BEFORE '+(['capacity_reservations','capacity_admission_counters','capacity_reservation_counter_claims'].includes(target)?'UPDATE':'INSERT')+' ON '+target+' FOR EACH ROW EXECUTE FUNCTION retained_native_accounting_fault()');
     let error = ''; try { await apply(0); } catch (cause) { error = String(cause); }
     failures.push({ operation, mode, error, custodySha256: createHash('sha256').update(JSON.stringify(await snapshot())).digest('hex') });
     expect(error, operation + ':' + mode + ' must reject before commit').not.toBe(''); expect(await snapshot()).toEqual(before);
-    await native.left.pool.query('DROP TRIGGER retained_native_accounting_fault ON capacity_workday_events'); await native.left.pool.query('DROP FUNCTION retained_native_accounting_fault()');
+    await native.left.pool.query('DROP TRIGGER retained_native_accounting_fault ON '+target); await native.left.pool.query('DROP FUNCTION retained_native_accounting_fault()');
    }
    for (const change of [{ assignmentAttempt: 2 }, { activeSeconds: '1' }]) { await expect(apply(0, change)).rejects.toThrow(); expect(await snapshot()).toEqual(before); }
    await expect(apply(0, {}, { principal: { ...auth.principal, capacityProviderId: 'foreign-provider' } })).rejects.toThrow(); expect(await snapshot()).toEqual(before);
@@ -56,11 +57,15 @@ it('native PostgreSQL accounting producers retain exact complete public observat
     teamId: 'team', projectId: frozenAttempt.projectId, assignmentId: frozenAttempt.id, createdAt: ledger?.createdAt ?? usage!.createdAt,
     context: { reservation, usageActual: usage, ledgerEntry: ledger } });
    expect(JSON.parse(String(raw[0]!.context_json))).toEqual(history.items[0]!.context);
+   expect(history.items[0]!.context.remainingSupply).toEqual([
+ {id:'concurrency',teamId:'team',scope:'concurrency',scopeId:'provider',periodKey:'current',hardLimit:1,committedAmount:(operation==='settlement')?0:1,stateVersion:(operation==='settlement')?2:1,reservedAmount:1,releasedAmount:(operation==='settlement')?1:0,releasePolicy:'assignment-terminal',remainingAmount:(operation==='settlement')?1:0},
+ {id:'seconds',teamId:'team',scope:'model-active-seconds',scopeId:'provider',periodKey:'day',hardLimit:3,committedAmount:2,stateVersion:(operation==='settlement')?2:1,reservedAmount:2,releasedAmount:0,releasePolicy:'period',remainingAmount:1}
+]);
    const retained = await snapshot(); expect((await apply(1)).replayed).toBe(true); expect(await snapshot()).toEqual(retained); expect(await events()).toEqual(history);
    await expect(apply(0, { activeSeconds: 9 })).rejects.toThrow(); expect(await snapshot()).toEqual(retained); expect({ body, auth, frozenAttempt }).toEqual(original);
   } finally { await native.close(); }
  }
- expect(failures).toHaveLength(6); console.log(JSON.stringify({ retainedNativeAccountingFailures: failures }));
+ expect(failures).toHaveLength(12); console.log(JSON.stringify({ retainedNativeAccountingFailures: failures }));
  // Complete original migrations and independent native connections, supplied
  // measurements and principals; no provider-generated or managed pass claim.
 });

@@ -57,6 +57,10 @@ it('retains every accepted public usage and terminal accounting change with exac
   expect(checkpoint.items[0]).toMatchObject({ runId: 'workday', workdayId: 'workday', teamId: 'team', projectId: frozenAttempt.projectId,
    assignmentId: frozenAttempt.id, eventIndex: 0, status: 'recorded', createdAt: usage!.createdAt,
    context: { reservation, usageActual: usage, ledgerEntry: null } });
+  expect(checkpoint.items[0]!.context.remainingSupply).toEqual([
+ {id:'concurrency',teamId:'team',scope:'concurrency',scopeId:'provider',periodKey:'current',hardLimit:1,committedAmount:false?0:1,stateVersion:false?2:1,reservedAmount:1,releasedAmount:false?1:0,releasePolicy:'assignment-terminal',remainingAmount:false?1:0},
+ {id:'seconds',teamId:'team',scope:'model-active-seconds',scopeId:'provider',periodKey:'day',hardLimit:3,committedAmount:2,stateVersion:false?2:1,reservedAmount:2,releasedAmount:0,releasePolicy:'period',remainingAmount:1}
+]);
   const stable = await f.snapshot(); expect((await f.service.reportUsage(auth, frozenAttempt.id, body, 'checkpoint')).replayed).toBe(true);
   expect(await f.snapshot()).toEqual(stable);
   await f.service.settle(auth, frozenAttempt.id, { ...terminalUsage }, terminalUsage.settlementKey);
@@ -66,6 +70,10 @@ it('retains every accepted public usage and terminal accounting change with exac
   expect(settled.items[1]).toMatchObject({ runId: 'workday', workdayId: 'workday', teamId: 'team', projectId: frozenAttempt.projectId,
    assignmentId: frozenAttempt.id, eventIndex: 1, createdAt: ledger!.createdAt,
    context: { reservation: serializeCapacityReservationRow((await f.query('SELECT * FROM capacity_reservations')).rows[0]!), usageActual: aggregate, ledgerEntry: ledger } });
+  expect(settled.items[1]!.context.remainingSupply).toEqual([
+ {id:'concurrency',teamId:'team',scope:'concurrency',scopeId:'provider',periodKey:'current',hardLimit:1,committedAmount:true?0:1,stateVersion:true?2:1,reservedAmount:1,releasedAmount:true?1:0,releasePolicy:'assignment-terminal',remainingAmount:true?1:0},
+ {id:'seconds',teamId:'team',scope:'model-active-seconds',scopeId:'provider',periodKey:'day',hardLimit:3,committedAmount:2,stateVersion:true?2:1,reservedAmount:2,releasedAmount:0,releasePolicy:'period',remainingAmount:1}
+]);
   expect(settled.items[0]).toEqual(checkpoint.items[0]); expect(settled.page).toEqual({ limit: 100, hasMore: false, nextCursor: null });
   const final = await f.snapshot(); expect((await f.service.settle(auth, frozenAttempt.id, { ...terminalUsage }, terminalUsage.settlementKey)).replayed).toBe(true);
   expect(await f.snapshot()).toEqual(final); expect({ body, terminalUsage, auth }).toEqual(original);
