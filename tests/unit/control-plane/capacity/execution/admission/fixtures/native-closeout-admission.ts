@@ -10,7 +10,7 @@ export async function proveNativeCloseoutAdmission(database:ReturnType<typeof cr
  expect(original).toHaveLength(1);const parameters=JSON.parse(String(original[0]!.parameters_json)),held=structuredClone(attempt);
  const closing=JSON.stringify({...parameters,appliedPlan:{...parameters.appliedPlan,state:'closing',closingAt:attempt.createdAt}});
  const state=async()=>Object.fromEntries(await Promise.all(['capacity_provider_assignments','capacity_reservations','execution_nodes','treedx_proxy_handles','capacity_workday_events','capacity_admission_counters','capacity_reservation_counter_claims'].map(async table=>[table,(await peer.pool.query('SELECT * FROM '+table+' ORDER BY 1')).rows])));
- const before=await state(),lock=await peer.pool.connect();let pending:Promise<{value:DurableProviderAssignment}|{error:unknown}>|undefined;
+ const before=await state();expect(before.capacity_admission_counters).toEqual([]);expect(before.capacity_reservation_counter_claims).toEqual([]);const lock=await peer.pool.connect();let pending:Promise<{value:DurableProviderAssignment}|{error:unknown}>|undefined;
  try {
   await peer.pool.query('UPDATE capacity_workday_runs SET parameters_json=$1 WHERE id=$2',[closing,attempt.workdayId]);
   await expect(admit(attempt)).rejects.toMatchObject({code:'workday_admission_closed',status:409});

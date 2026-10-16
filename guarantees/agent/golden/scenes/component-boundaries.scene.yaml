@@ -2775,3 +2775,12 @@ workflow:
   - id: planning-window-7
     action: { verifier: api.golden.execution-planning-window-7 }
     expect: { status: passed }
+  - id: closeout-admission-1
+    action: { verifier: api.golden.execution-closeout-admission-1 }
+    expect: { status: passed }
+  - id: closeout-admission-2
+    action: { verifier: api.golden.execution-closeout-admission-2 }
+    expect: { status: passed }
+  - id: closeout-admission-3
+    action: { verifier: api.golden.execution-closeout-admission-3 }
+    expect: { status: passed }
