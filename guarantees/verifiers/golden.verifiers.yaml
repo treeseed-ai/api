@@ -4730,3 +4730,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/admission/closeout/closeout-admission.test.ts
     testName: "rejects a caller-supplied conversation kind for an owning closing Workday without granting another admission path"
+  api.golden.provider-configured-model-policy-readback:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-accounting-status.test.ts
+    testName: "retains original typed configured model policy without exposing private adapter observations or repairing invalid model authority"

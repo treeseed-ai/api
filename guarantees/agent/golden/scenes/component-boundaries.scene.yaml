@@ -2787,3 +2787,6 @@ workflow:
   - id: closeout-admission-4
     action: { verifier: api.golden.execution-closeout-admission-4 }
     expect: { status: passed }
+  - id: provider-configured-model-policy-readback
+    action: { verifier: api.golden.provider-configured-model-policy-readback }
+    expect: { status: passed }
