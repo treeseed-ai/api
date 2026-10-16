@@ -4705,3 +4705,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/scheduling/planning/planning-window-evidence.test.ts
     testName: "constructs the exact bounded native workday from its original policy before any database or resource operation"
+  api.golden.execution-planning-window-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/scheduling/planning/planning-window-evidence.test.ts
+    testName: "constructs every canonical native planning Actor and Reviewer graph row before database preparation"

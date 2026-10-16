@@ -2772,3 +2772,6 @@ workflow:
   - id: planning-window-6
     action: { verifier: api.golden.execution-planning-window-6 }
     expect: { status: passed }
+  - id: planning-window-7
+    action: { verifier: api.golden.execution-planning-window-7 }
+    expect: { status: passed }
