@@ -167,7 +167,7 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 					const visible = read(['assignments', 'show', value.id]);
 					assert.deepEqual(publicAssignments.find(record => record.id === value.id), visible);
 					const attempt = verifyNativeAssignmentReadback(value, visible, run, reservations, assignments);
-					verifyPlanningWindow(attempt,object(run.parameters).appliedPlan);
+					verifyPlanningWindow(attempt,object(run.parameters).appliedPlan,object(object(object(visible.explanation).metadata).allocation).opportunity);
 					if (value.execution_kind === 'workday') {
 						const allocation = object(object(object(visible.explanation).metadata).allocation), selection = object(allocation.selection), inputs = object(selection.input);
 						assert.equal(allocation.admitted, true, 'ACCEPTANCE_QUOTA_ADMISSION: Retained admission must be positive even when the later attempt failed');
