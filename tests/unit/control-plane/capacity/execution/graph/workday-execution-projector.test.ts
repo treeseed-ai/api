@@ -281,6 +281,7 @@ describe('workday living-graph projection', () => {
 			&& node.authorityRefs?.some((reference) => reference.model === 'workday'))).toBe(true);
 	});
 	it('allows an owner estimate after its own planning turn without waiting for unrelated agents', () => {
+		for (const proposalId of ['proposal', 'proposal:section']) {
 		const classes = ['architect', 'researcher', 'reviewer'];
 		const profiles = Object.fromEntries(classes.map(agentClass => {
 			const agent = definition(agentClass) as ReturnType<typeof definition> & { activityProfiles: Record<string, unknown> };
@@ -290,25 +291,27 @@ describe('workday living-graph projection', () => {
 		const appliedPlan = compileWorkday({ id: 'parallel-estimates', teamId: 'team', policyId: 'default', policyRevision: 1,
 			executionMode: 'simulation', policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 3600, maximumConcurrency: 5,
 				planningTurnMaximumSeconds: 180, communicationConcurrency: 5 },
-			agentIds: classes.flatMap(agentClass => [`sdk/sdk/${agentClass}:planning`, `sdk/sdk/${agentClass}:estimating:proposal`]),
+			agentIds: classes.flatMap(agentClass => [`sdk/sdk/${agentClass}:planning`, `sdk/sdk/${agentClass}:estimating:${proposalId}`]),
 			startsAt: '2026-09-28T10:00:00.000Z' });
 		const graph = projectActiveWorkdays({ teamId: 'team', revision: 1, profiles,
-			sources: [{ id: appliedPlan.id, teamId: 'team', proposalsByProjectId: { sdk: [{ id: 'proposal', executionPlan: { workItems: [
+			sources: [{ id: appliedPlan.id, teamId: 'team', proposalsByProjectId: { sdk: [{ id: proposalId, executionPlan: { workItems: [
 				{ id: 'architecture', agentClass: 'architect', review: 'required' },
 				{ id: 'research', agentClass: 'researcher', review: 'required' },
 			] } }] }, parameters: { appliedPlan, scheduledProjectIds: ['sdk'],
 				agentProfilesByProjectId: { sdk: { agents: Object.values(profiles).map(agent => ({ definition: agent,
 					activities: ['planning', 'estimating'] })) } } } }] });
-		const incoming = (agentClass: string) => graph.edges.filter(edge => edge.toNodeId.endsWith(`sdk/${agentClass}:estimating:proposal`))
+		expect(graph.nodes.filter(node => node.kind === 'estimating')).toHaveLength(3);
+		const incoming = (agentClass: string) => graph.edges.filter(edge => edge.toNodeId.endsWith(`sdk/${agentClass}:estimating:${proposalId}`))
 			.map(edge => edge.fromNodeId).sort();
 		expect(incoming('architect')).toEqual(['planning:parallel-estimates:1:sdk/sdk/architect:planning']);
 		expect(incoming('researcher')).toEqual(['planning:parallel-estimates:1:sdk/sdk/researcher:planning']);
 		expect(incoming('reviewer')).toEqual([
-			'planning:parallel-estimates:1:sdk/sdk/architect:estimating:proposal',
-			'planning:parallel-estimates:1:sdk/sdk/researcher:estimating:proposal',
+			`planning:parallel-estimates:1:sdk/sdk/architect:estimating:${proposalId}`,
+			`planning:parallel-estimates:1:sdk/sdk/researcher:estimating:${proposalId}`,
 			'planning:parallel-estimates:1:sdk/sdk/reviewer:planning',
 		]);
 		expect(validateExecutionGraph(graph.nodes, graph.edges)).toMatchObject({ ok: true });
+		}
 	});
 
 	it('does not manufacture subjectless planning rounds for a selected review activity', () => {
