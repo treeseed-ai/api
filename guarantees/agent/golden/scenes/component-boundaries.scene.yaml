@@ -2733,3 +2733,24 @@ workflow:
   - id: execution-node-history-admission-suppressed
     action: { verifier: api.golden.execution-node-history-admission-suppressed }
     expect: { status: passed }
+  - id: accounting-history-nested-unit
+    action: { verifier: api.golden.accounting-history-nested-unit }
+    expect: { status: passed }
+  - id: accounting-history-public-unit
+    action: { verifier: api.golden.accounting-history-public-unit }
+    expect: { status: passed }
+  - id: accounting-history-rollback-unit
+    action: { verifier: api.golden.accounting-history-rollback-unit }
+    expect: { status: passed }
+  - id: accounting-history-state-unit
+    action: { verifier: api.golden.accounting-history-state-unit }
+    expect: { status: passed }
+  - id: accounting-history-admission-unit
+    action: { verifier: api.golden.accounting-history-admission-unit }
+    expect: { status: passed }
+  - id: accounting-history-recovery-unit
+    action: { verifier: api.golden.accounting-history-recovery-unit }
+    expect: { status: passed }
+  - id: accounting-history-postgres-native
+    action: { verifier: api.golden.accounting-history-postgres-native }
+    expect: { status: passed }

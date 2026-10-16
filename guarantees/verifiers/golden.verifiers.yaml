@@ -4640,3 +4640,38 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/monitoring/node-assignment-history.test.ts
     testName: "original admission rolls back assignment reservation and event writes when the exact ready node claim is suppressed"
+  api.golden.accounting-history-nested-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/accounting-history.test.ts
+    testName: "retains the owning transaction connection and rolls back a caught nested accounting failure to its original savepoint"
+  api.golden.accounting-history-public-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/accounting-history.test.ts
+    testName: "retains every accepted public usage and terminal accounting change with exact canonical snapshots and unchanged replay"
+  api.golden.accounting-history-rollback-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/accounting-history.test.ts
+    testName: "rolls back public accounting when a required observation is silently omitted or interrupted before an unchanged retry"
+  api.golden.accounting-history-state-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/accounting-history.test.ts
+    testName: "rejects silently omitted terminal usage ledger reservation counter or claim writes without retaining partial accounting and permits exact retry"
+  api.golden.accounting-history-admission-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/accounting-boundaries.test.ts
+    testName: "records original reservation admission and remaining supply on the same transaction as assignment creation before exact replay"
+  api.golden.accounting-history-recovery-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/accounting-boundaries.test.ts
+    testName: "records actual unresolved operator release and retained remaining supply without inventing usage or settlement before exact replay"
+  api.golden.accounting-history-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/accounting-history-postgres.test.ts
+    testName: "native PostgreSQL accounting producers retain exact complete public observations across competing requests interruption missing writes denial and unchanged retry"
