@@ -24,4 +24,3 @@ export function expectWorkdayLifecycleHistory(snapshot:{workdays:Record<string,u
  }
  return found;
 }
-
