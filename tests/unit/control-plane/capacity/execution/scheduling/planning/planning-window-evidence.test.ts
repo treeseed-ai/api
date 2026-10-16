@@ -1,3 +1,4 @@
+import {planningWorkdayInputs} from './planning-window-fixture.ts';
 import {describe,expect,it} from 'vitest';
 import {compileWorkday,DEFAULT_WORKDAY_POLICY} from '@treeseed/sdk/agent-capacity';
 import {assignment} from '../../fixtures/assignment.ts';
@@ -7,6 +8,11 @@ const plan=()=>compileWorkday({id:'workday',teamId:'team',policyId:'default',pol
 const attempt=(activity='acting',createdAt='2026-09-13T12:20:00.000Z')=>({...structuredClone(assignment),createdAt,effectiveProfile:{...assignment.effectiveProfile,activity}});
 const phase=(value:{effectiveProfile:{activity:string}})=>({phase:['acting','reviewing','reporting'].includes(value.effectiveProfile.activity)?'acting':'planning'});
 describe('original initial planning authority',()=>{
+ it('constructs the exact bounded native workday from its original policy before any database or resource operation',()=>{
+  const {startsAt,plan,originalRun}=planningWorkdayInputs();expect(originalRun).toMatchObject({id:plan.id,teamId:plan.teamId,status:'running',executionMode:plan.executionMode,startedAt:startsAt,parameters:{durationSeconds:plan.policySnapshot.durationSeconds,deadlineAt:plan.endsAt,appliedPlan:plan}});
+  expect(originalRun.parameters.appliedPlan).toEqual(plan);expect(plan.policySnapshot.durationSeconds).toBe(3600);
+ });
+
  it('denies missing malformed or contradictory original allocator phase rather than borrowing another activity pool',()=>{
   for(const activity of ['acting','reviewing','planning','estimating','chat','reporting']){
    const value=attempt(activity,activity==='chat'?'2026-09-13T12:19:00.000Z':'2026-09-13T12:20:00.000Z'),workday=plan();

@@ -1,13 +1,13 @@
+import {planningWorkdayInputs} from './planning-window-fixture.ts';
 import {createCapacityControlPlane} from '../../../../../../../src/api/capacity/control-plane.ts';
 import {CapacityWorkdayRunWriteRepository} from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run-write.ts';
 import {livingAllocationInputs} from '../../../../../../../src/api/capacity/services/capacity/assignments/admission/living-allocation-inputs.ts';
 import {provider,executionCapability} from '../../fixtures/assignment-attempt-fixtures.ts';
 import {expect,it} from 'vitest';
-import {compileWorkday,DEFAULT_WORKDAY_POLICY,executionNodeSchema} from '@treeseed/sdk/agent-capacity';
+import {executionNodeSchema} from '@treeseed/sdk/agent-capacity';
 import {postgresGraph} from '../../graph/architecture/living/living-postgres-fixture.ts';
 import {runtimeWorkdayPhase} from '../../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import {advanceLivingWorkday} from '../../../../../../../src/api/capacity/services/capacity/workdays/lifecycle/living-workday-lifecycle.ts';
-import {compileCapacityWorkdayRunRecord} from '../../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 import {ControlPlaneStore} from '../../../../../../../src/api/persistence/store.ts';
 
 it('native PostgreSQL preserves the initial planning floor derives acting from only current ready work and resumes ordinary planning without extending authority',async()=>{
@@ -15,9 +15,7 @@ it('native PostgreSQL preserves the initial planning floor derives acting from o
  const snapshot=async()=>({...await f.snapshot(),workdays:(await f.right.pool.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows,events:(await f.right.pool.query('SELECT * FROM capacity_workday_events ORDER BY id')).rows,usage:(await f.right.pool.query('SELECT * FROM capacity_usage_actuals ORDER BY id')).rows,ledger:(await f.right.pool.query('SELECT * FROM capacity_ledger_entries ORDER BY id')).rows});
 
  try{
-  const startsAt='2026-10-03T12:00:00.000Z',floor='2026-10-03T12:20:00.000Z',after='2026-10-03T12:20:01.000Z';
-  const plan={...compileWorkday({id:'native-fluid-workday',teamId:'team',policyId:'default',policyRevision:1,executionMode:'simulation',startsAt,agentIds:['project/configured:planning'],policy:{...DEFAULT_WORKDAY_POLICY,durationSeconds:3600,planningPercent:100/3,maximumConcurrency:5,communicationConcurrency:5}}),state:'active' as const,activatedAt:startsAt};
-  const originalRun=compileCapacityWorkdayRunRecord('team',{id:plan.id,status:'running',executionMode:'simulation',startedAt:startsAt,parameters:{appliedPlan:plan,scheduledProjectIds:['project']}},{now:startsAt});
+  const {startsAt,floor,after,plan,originalRun}=planningWorkdayInputs();
   const hosts=[new ControlPlaneStore({},f.left),new ControlPlaneStore({},f.right)];for(const host of hosts)host.initializationPromise=Promise.resolve();const stores=hosts.map(host=>createCapacityControlPlane(host));
   const run=await new CapacityWorkdayRunWriteRepository(stores[0]!).create(originalRun);expect(run).toEqual(originalRun);
   for(const project of ['project','foreign-project'])await f.left.pool.query('INSERT INTO projects (id,team_id,slug,name,metadata_json,created_at,updated_at) VALUES ($1,$2,$1,$1,$3,$4,$4)',[project,'team','{}',startsAt]);
