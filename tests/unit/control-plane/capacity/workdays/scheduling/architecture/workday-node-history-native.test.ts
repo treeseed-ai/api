@@ -1,7 +1,7 @@
 import{expect,it}from'vitest';
 import{appliedWorkdaySchema}from'@treeseed/sdk/agent-capacity';
 import{workdayStartDatabase}from'./workday-start-fixture.ts';
-import{expectNodeBirthHistory}from'./node-birth-history.ts';
+import{expectNodeBirthHistory,expectWorkdayLifecycleHistory}from'./node-birth-history.ts';
 
 	it('native original planning ticks retain an interrupted generation and repeat beyond two rounds without duplicate nodes events or financial writes', async () => {
 		const f = await workdayStartDatabase(); try {
@@ -37,7 +37,7 @@ import{expectNodeBirthHistory}from'./node-birth-history.ts';
 					await expect(f.store.tickCapacityWorkdayRun('team', receipt.workdayId, now, key)).rejects.toMatchObject({ code: 'P0001' });
 					const interrupted = await f.snapshot(), interruptedPlan = await nativePlan();
 					expect(interruptedPlan.planningRounds).toHaveLength(ordinal);
-					expect(interrupted.events.slice(0,initialTruth.events.length)).toEqual(initialTruth.events); expect(interrupted.events.filter(event=>event.event_type!=='execution.node.state')).toEqual(initialTruth.events.filter(event=>event.event_type!=='execution.node.state')); expectNodeBirthHistory(interrupted);
+					expect(interrupted.events.slice(0,initialTruth.events.length)).toEqual(initialTruth.events); expect(interrupted.events.filter(event=>event.event_type!=='execution.node.state'&&event.event_type!=='workday.lifecycle.changed')).toEqual(initialTruth.events.filter(event=>event.event_type!=='execution.node.state'&&event.event_type!=='workday.lifecycle.changed'));expect(expectWorkdayLifecycleHistory(interrupted)).toHaveLength(ordinal);const observed=interrupted.events.filter(event=>event.event_type==='workday.lifecycle.changed').at(-1)!;expect(JSON.parse(String(observed.context_json))).toEqual({previousStatus:'running',status:'running',previousPlan:beforePlan,plan:interruptedPlan}); expectNodeBirthHistory(interrupted);
 					expect(interrupted.assignments).toEqual([]); expect(interrupted.reservations).toEqual([]);
 					expect(interrupted.usage).toEqual([]); expect(interrupted.ledger).toEqual([]);
 					await f.db.exec('DROP TRIGGER planning_tick_failure ON capacity_workday_events; DROP FUNCTION planning_tick_failure();');
@@ -61,7 +61,7 @@ import{expectNodeBirthHistory}from'./node-birth-history.ts';
 					expect(held.edges.filter(edge => edge.to_node_id === id).map(edge => edge.from_node_id).sort()).toEqual([...prior.assignmentIds].sort());
 				}
 				expect(held.events.filter(event => event.event_type === 'workday.tick')).toHaveLength(ordinal - 1);
-				expect(held.events.slice(0, initialTruth.events.length)).toEqual(initialTruth.events); expectNodeBirthHistory(held);
+				expect(held.events.slice(0, initialTruth.events.length)).toEqual(initialTruth.events); expectNodeBirthHistory(held);expect(expectWorkdayLifecycleHistory(held)).toHaveLength(ordinal);
 				expect(held.receipts).toEqual(initialTruth.receipts); expect(held.workdays).toHaveLength(1);
 				expect(held.assignments).toEqual([]); expect(held.reservations).toEqual([]); expect(held.usage).toEqual([]); expect(held.ledger).toEqual([]);
 				expect(await f.store.tickCapacityWorkdayRun('team', receipt.workdayId, now, key)).toEqual(tick);
