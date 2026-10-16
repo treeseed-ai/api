@@ -133,7 +133,7 @@ describe('workday living-graph projection', () => {
 		const appliedPlan = compileWorkday({ id: 'missing-estimates', teamId: 'team', policyId: 'default', policyRevision: 1,
 			executionMode: 'simulation', policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 1800, maximumConcurrency: 1,
 				planningTurnMaximumSeconds: 60, communicationConcurrency: 1, projectPercentages: {}, agentClassPercentages: {} },
-			agentIds: classes.map((agentClass) => `sdk/sdk/${agentClass}:estimating:proposal`), startsAt: '2026-09-14T12:00:00.000Z' });
+			agentIds: classes.map((agentClass) => `sdk/sdk/${agentClass}:estimating:${proposalId}`), startsAt: '2026-09-14T12:00:00.000Z' });
 		const estimate = { expectedSeconds: 120, maximumSeconds: 180, rationale: 'Existing exact estimate.' };
 		const graph = projectActiveWorkdays({ teamId: 'team', revision: 1, profiles, sources: [{ id: appliedPlan.id,
 			teamId: 'team', proposalsByProjectId: { sdk: [{ id: 'proposal', executionPlan: { workItems: [
