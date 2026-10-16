@@ -1,3 +1,4 @@
+import {proveNativeWorkdayLifecycleObservations} from './native-lifecycle-observation.ts';
 import { CapacityWorkdayRunWriteRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run-write.ts';
 import { verifyNativeResourceClosure } from '../../../../../acceptance/execution-resource-closure.ts';
 import { verifyNativeInventory } from '../../../../../acceptance/execution-inventory.ts';
@@ -16,6 +17,7 @@ import { reportRef, reportResult } from '../../execution/graph/architecture/clos
 
 /** Original complete native schema and independent connections; controlled SQL closeout inputs, never managed Reporter evidence. */
 export async function proveNativeSessionClosure(database: ReturnType<typeof createControlPlanePostgresDatabase>, observer: pg.Pool, deadline: number) {
+ await proveNativeWorkdayLifecycleObservations(database,observer,deadline);
  const store = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, database);
  store.initializationPromise = Promise.resolve();
  const runs = new CapacityWorkdayRunRepository(store), sessions = new AvailabilitySessionRepository(store);

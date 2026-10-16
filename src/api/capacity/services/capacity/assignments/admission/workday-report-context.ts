@@ -1,6 +1,9 @@
+import {isDeepStrictEqual} from 'node:util';
+import {serializeCapacityWorkdayEventRow} from '../../../../repositories/capacity/workdays/workday-event.ts';
+import {executionNodeWorkdayScope} from '../../../build/execution-node-scope.ts';
 import { createHash } from 'node:crypto';
 import { canonicalStandardsJson } from '@treeseed/sdk/standards';
-import { authorizedContextItemSchema, type AssignmentAttempt } from '@treeseed/sdk/agent-capacity';
+import { appliedWorkdaySchema, authorizedContextItemSchema, type AssignmentAttempt } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { redactSensitiveValue } from '../../../../../../security/redact-sensitive-value.ts';
@@ -12,13 +15,25 @@ export async function workdayReportContext(store: CapacityGovernanceDatabase, as
 	if (assignment.sourceRef.store !== 'postgresql' || assignment.sourceRef.model !== 'workday'
 		|| assignment.sourceRef.id !== assignment.workdayId) throw new CapacityGovernanceError(
 			'reporter_workday_authority_required', 'Reporter must reference its own workday.', 409);
-	const scope = [assignment.teamId, assignment.workdayId];
+	const run=await store.first('SELECT id,team_id,status,execution_mode,execution_kind,parameters_json FROM capacity_workday_runs WHERE team_id=? AND id=? LIMIT 1',[assignment.teamId,assignment.workdayId]);
+	if(!run||run.execution_kind!=='workday')throw new CapacityGovernanceError('reporter_workday_authority_required','Reporter requires its original Workday.',409);
+	let decoded:unknown;try{decoded=typeof run.parameters_json==='string'?JSON.parse(run.parameters_json):run.parameters_json;}catch{decoded=null;}
+	if(!decoded||typeof decoded!=='object'||Array.isArray(decoded))throw new CapacityGovernanceError('reporter_workday_authority_required','Reporter Workday selection is malformed.',409);
+	const parameters=decoded as Record<string,unknown>,ids=parameters.proposalIds;
+	if(Object.hasOwn(parameters,'proposalIds')&&(!Array.isArray(ids)||ids.some(id=>typeof id!=='string'||!id.trim()||id!==id.trim())||new Set(ids).size!==ids.length))
+		throw new CapacityGovernanceError('reporter_workday_authority_required','Reporter proposal selection is malformed.',409);
+	const parsed=appliedWorkdaySchema.safeParse(parameters.appliedPlan);
+	if(!parsed.success||!isDeepStrictEqual(parsed.data,parameters.appliedPlan)||parsed.data.state!=='closing'||parsed.data.id!==assignment.workdayId||parsed.data.teamId!==assignment.teamId||parsed.data.executionMode!==run.execution_mode||run.status!=='running'||parsed.data.planningRounds.some(round=>round.state!=='complete'))
+		throw new CapacityGovernanceError('reporter_workday_authority_required','Reporter requires its original closing Workday and ended planning rounds.',409);
+	const appliedPlan=parsed.data;
+	const graph=executionNodeWorkdayScope({id:assignment.workdayId,executionKind:run.execution_kind as 'workday'|'conversation',parameters:parameters as Record<string,unknown>});
+	const scope = [assignment.teamId, assignment.workdayId],graphParameters=[assignment.teamId,...graph.parameters];
 	const [nodes, edges, attempts, reservations, usage, ledger] = await Promise.all([
 		store.all(`SELECT id,kind,pair_role,status,node_revision,source_ref_json,authority_refs_json
-			FROM execution_nodes WHERE team_id=? AND workday_id=? ORDER BY id`, scope),
+			FROM execution_nodes node WHERE node.team_id=? AND ${graph.sql} ORDER BY node.id`, graphParameters),
 		store.all(`SELECT edge.id,edge.from_node_id,edge.to_node_id,edge.provenance
 			FROM execution_edges edge JOIN execution_nodes node ON node.team_id=edge.team_id AND node.id=edge.to_node_id
-			WHERE node.team_id=? AND node.workday_id=? AND edge.graph_revision_removed IS NULL ORDER BY edge.id`, scope),
+			WHERE node.team_id=? AND ${graph.sql} AND edge.graph_revision_removed IS NULL ORDER BY edge.id`, graphParameters),
 		store.all(`SELECT id,execution_node_id,execution_node_revision,status,reservation_id,execution_provider_id,
 			assignment_result_json,lifecycle_code,created_at,completed_at,failed_at,
 			lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}' AS review_disposition,
@@ -47,7 +62,17 @@ export async function workdayReportContext(store: CapacityGovernanceDatabase, as
 		settlement !== undefined && settlement.reservationId === reservation.id && settlement.assignmentId === reservation.assignment_id))) {
 		throw new CapacityGovernanceError('reporter_unsettled_workday', 'Consumed reservations require their original canonical settlements.', 409);
 	}
-	const value = { teamId: assignment.teamId, workdayId: assignment.workdayId, nodes, edges,
+	const closingRows=await store.all(`SELECT id,run_id,team_id,project_id,workday_id,assignment_id,event_index,event_type,status,title,message,parameters_json,context_json,refs_json,metadata_json,created_at
+		FROM capacity_workday_events WHERE team_id=? AND run_id=? AND event_type='workday.lifecycle.changed'
+		AND context_json::jsonb #>> '{plan,state}'='closing' AND context_json::jsonb #>> '{previousPlan,state}' IS DISTINCT FROM 'closing'
+		ORDER BY event_index LIMIT 2`,scope);
+	const closingEvent=closingRows.length===1?serializeCapacityWorkdayEventRow(closingRows[0]!):null;
+	const closingPlan=appliedWorkdaySchema.safeParse(closingEvent?.context.plan);
+	const authority=(plan:typeof appliedPlan)=>{const{admittedSecondsByProject:_projects,admittedSecondsByAgentClass:_agents,...original}=plan;return original;};
+	if(!closingEvent||!closingPlan.success||closingEvent.teamId!==assignment.teamId||closingEvent.runId!==assignment.workdayId||closingEvent.workdayId!==assignment.workdayId||closingEvent.status!=='recorded'||closingEvent.assignmentId!==null||closingEvent.projectId!==null||closingEvent.context.status!=='running'||!isDeepStrictEqual(authority(closingPlan.data),authority(appliedPlan))||closingEvent.createdAt!==appliedPlan.closingAt
+		||closingEvent.id!=='workday-lifecycle:'+assignment.workdayId+':'+createHash('sha256').update(canonicalStandardsJson(closingEvent.context)).digest('hex'))
+		throw new CapacityGovernanceError('reporter_workday_authority_required','Reporter requires the exact original public closing observation.',409);
+	const value = { teamId: assignment.teamId, workdayId: assignment.workdayId, appliedPlan,closingEvent,nodes, edges,
 		attempts: publicAttempts, reservations, usage, settlements };
 	return [authorizedContextItemSchema.parse({ ref: assignment.sourceRef, mediaType: 'application/json',
 		digest: `sha256:${createHash('sha256').update(canonicalStandardsJson(value)).digest('hex')}`, value })];

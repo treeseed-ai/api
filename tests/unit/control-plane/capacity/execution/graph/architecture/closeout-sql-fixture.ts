@@ -1,3 +1,5 @@
+import {appliedWorkdaySchema} from '@treeseed/sdk/agent-capacity';
+import {executePostgresBatch} from '../../../../../../../src/api/support/control-plane-postgres.ts';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { DEFAULT_WORKDAY_POLICY, compileWorkday } from '@treeseed/sdk/agent-capacity';
@@ -18,7 +20,7 @@ export const reportResult = { schemaVersion: 'treeseed.assignment-result/v1', id
 export async function closeoutDatabase() {
 	const db = new PGlite();
 	try {
-		const tables = ['capacity_workday_runs', 'capacity_provider_assignments', 'capacity_reservations', 'audit_events'];
+		const tables = ['capacity_workday_runs', 'capacity_provider_assignments', 'capacity_reservations', 'audit_events', 'capacity_workday_events'];
 		const initial = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
 		const bootstrap: string[] = [];
 		for (const table of tables) {
@@ -29,6 +31,7 @@ export async function closeoutDatabase() {
 		for (const migration of ['0023_living_execution_graph.sql', '0031_workday_execution_mode_authority.sql']) {
 			bootstrap.push(...splitPostgresSqlStatements(readFileSync(`drizzle/control-plane/${migration}`, 'utf8')));
 		}
+		const eventIndex=initial.filter(sql=>sql.startsWith('CREATE UNIQUE INDEX "idx_capacity_workday_events_run_index" '));if(eventIndex.length!==1)throw new Error('Missing original workday event index');bootstrap.push(eventIndex[0]!);
 		// Identical ordered original DDL in one native bootstrap call rather than
 		// separate calls for each statement on every fresh isolated database.
 		await db.exec(`${bootstrap.join(';\n')};`);
@@ -36,7 +39,8 @@ export async function closeoutDatabase() {
 			let index = 0;
 			return db.query<R>(sql.replace(/\?/gu, () => `$${++index}`), parameters);
 		};
-		const database: CapacityGovernanceDatabase = {
+		const database = {
+   db:{transaction:async<T>(apply:(client:Parameters<typeof executePostgresBatch>[0])=>Promise<T>)=>db.transaction(transaction=>apply(transaction as unknown as Parameters<typeof executePostgresBatch>[0]))},
 			ensureInitialized: async () => undefined,
 			all: async <R extends Record<string, unknown>>(sql: string, parameters: unknown[] = []) => (await query<R>(sql, parameters)).rows,
 			first: async <R extends Record<string, unknown> = Record<string, unknown>>(sql: string, parameters: unknown[] = []): Promise<R | null> => (await query<R>(sql, parameters)).rows[0] ?? null,
@@ -52,7 +56,7 @@ export async function closeoutDatabase() {
 				return results;
 			}),
 		};
-		const owner = database;
+		const owner:CapacityGovernanceDatabase = database;
 		const reads = new CapacityWorkdayRunRepository(owner), writes = new CapacityWorkdayRunWriteRepository(owner);
 		const plan = { ...compileWorkday({ id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
 			executionMode: 'simulation', startsAt: '2026-10-02T21:00:00.000Z', agentIds: [],
@@ -85,4 +89,11 @@ export async function closeoutDatabase() {
 			},
 		} };
 	} catch (error) { await db.close(); throw error; }
+}
+/** Controlled SQL setup for tests requiring a genuine owning closing observation; no executed planning turn or Reporter artifact is manufactured. */
+export async function observeControlledClosing(base:Awaited<ReturnType<typeof closeoutDatabase>>){
+ const run=(await base.reads.get('team','workday'))!,original=appliedWorkdaySchema.parse(run.parameters.appliedPlan),active={...original,state:'active' as const};delete active.closingAt;
+ await base.query('UPDATE capacity_workday_runs SET parameters_json=? WHERE id=?',[JSON.stringify({...run.parameters,appliedPlan:active}),run.id]);
+ const before=(await base.reads.get('team','workday'))!;
+ return new CapacityWorkdayRunWriteRepository(base.owner).update({...before,parameters:{...before.parameters,appliedPlan:{...before.parameters.appliedPlan as object,state:'closing',closingAt:original.closingAt}},updatedAt:original.closingAt!},before.status);
 }
