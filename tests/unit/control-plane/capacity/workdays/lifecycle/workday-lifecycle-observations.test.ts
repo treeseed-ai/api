@@ -8,7 +8,7 @@ import {CapacityWorkdayEventRepository} from '../../../../../../src/api/capacity
 describe('original Workday lifecycle and public observation custody',()=>{
  it('retains initial native applied-plan creation as one null-to-active observation before every later transition and exact replay',async()=>{
   const f=await settlementDatabase();try{
-   const original=(await f.reads.get('team','workday'))!,parsed=appliedWorkdaySchema.parse(original.parameters.appliedPlan),plan={...compileWorkday({id:original.id,teamId:original.teamId,executionMode:original.executionMode,policyId:parsed.policyId,policyRevision:parsed.policyRevision,policy:parsed.policySnapshot,startsAt:parsed.startsAt,agentIds:['renamed-native-planner']}),state:'active' as const,activatedAt:parsed.startsAt};
+   const original=(await f.reads.get('team','workday'))!,parsed=appliedWorkdaySchema.parse(original.parameters.appliedPlan),plan={...compileWorkday({id:original.id,teamId:original.teamId,executionMode:original.executionMode,policyId:parsed.policyId,policyRevision:parsed.policyRevision,policy:parsed.policySnapshot,startsAt:parsed.startsAt,agentIds:['renamed-native-planner']}),admittedSecondsByProject:parsed.admittedSecondsByProject,admittedSecondsByAgentClass:parsed.admittedSecondsByAgentClass,state:'active' as const,activatedAt:parsed.startsAt};
    const parameters={...original.parameters};delete parameters.appliedPlan;await f.query('UPDATE capacity_workday_runs SET parameters_json=? WHERE id=?',[JSON.stringify(parameters),original.id]);
    const before=(await f.reads.get('team','workday'))!,candidate={...before,parameters:{...parameters,appliedPlan:plan}},writer=new CapacityWorkdayRunWriteRepository(f.owner);
    expect(await writer.update(candidate,before.status)).toEqual(candidate);
