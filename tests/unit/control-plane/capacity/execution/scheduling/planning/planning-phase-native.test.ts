@@ -1,10 +1,9 @@
-import {planningWorkdayInputs} from './planning-window-fixture.ts';
+import {planningWorkdayInputs,planningNodeInput} from './planning-window-fixture.ts';
 import {createCapacityControlPlane} from '../../../../../../../src/api/capacity/control-plane.ts';
 import {CapacityWorkdayRunWriteRepository} from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run-write.ts';
 import {livingAllocationInputs} from '../../../../../../../src/api/capacity/services/capacity/assignments/admission/living-allocation-inputs.ts';
 import {provider,executionCapability} from '../../fixtures/assignment-attempt-fixtures.ts';
 import {expect,it} from 'vitest';
-import {executionNodeSchema} from '@treeseed/sdk/agent-capacity';
 import {postgresGraph} from '../../graph/architecture/living/living-postgres-fixture.ts';
 import {runtimeWorkdayPhase} from '../../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import {advanceLivingWorkday} from '../../../../../../../src/api/capacity/services/capacity/workdays/lifecycle/living-workday-lifecycle.ts';
@@ -21,7 +20,7 @@ it('native PostgreSQL preserves the initial planning floor derives acting from o
   for(const project of ['project','foreign-project'])await f.left.pool.query('INSERT INTO projects (id,team_id,slug,name,metadata_json,created_at,updated_at) VALUES ($1,$2,$1,$1,$3,$4,$4)',[project,'team','{}',startsAt]);
   await new CapacityWorkdayRunWriteRepository(stores[0]!).create({...run,id:'other-workday',parameters:{...run.parameters,appliedPlan:{...plan,id:'other-workday',planningRounds:[]}}});
   const node=async(id:string,kind:'planning'|'acting'|'reviewing',status:string,projectId='project',workdayId=run.id)=>{
-   const value=executionNodeSchema.parse({schemaVersion:'treeseed.execution-node/v1',id,teamId:'team',projectId,workdayId,kind,pairRole:kind==='acting'?'actor':kind==='reviewing'?'reviewer':null,sourceRef:{store:'postgresql',model:'workday',id:workdayId},authorityRefs:[],ruleRevision:1,nodeRevision:1,agentClass:'configured-arbitrary',status,estimate:{expectedSeconds:1,maximumSeconds:2},requiredCapabilities:[executionCapability],requestedPermissions:{content:{read:[],write:[]},tools:[]},workspace:'read-only',maximumReviewCycles:2,graphRevisionCreated:1,graphRevisionUpdated:1});
+   const value=planningNodeInput(id,kind,status,projectId,workdayId);
    await f.left.pool.query('INSERT INTO execution_nodes (id,team_id,project_id,workday_id,kind,pair_role,source_ref_json,authority_refs_json,rule_revision,node_revision,agent_class,status,estimate_json,required_capabilities_json,requested_permissions_json,workspace,maximum_review_cycles,graph_revision_created,graph_revision_updated,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$20)',[value.id,value.teamId,value.projectId,value.workdayId,value.kind,value.pairRole,JSON.stringify(value.sourceRef),JSON.stringify(value.authorityRefs),1,1,value.agentClass,value.status,JSON.stringify(value.estimate),JSON.stringify(value.requiredCapabilities),JSON.stringify(value.requestedPermissions),'read-only',2,1,1,startsAt]);
    return value;
   };
