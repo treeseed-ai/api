@@ -10,6 +10,8 @@ import {ControlPlaneStore} from '../../../../../../../src/api/persistence/store.
 
 it('native PostgreSQL preserves the initial planning floor derives acting from only current ready work and resumes ordinary planning without extending authority',async()=>{
  const f=await postgresGraph();
+ const snapshot=async()=>({...await f.snapshot(),workdays:(await f.right.pool.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows,events:(await f.right.pool.query('SELECT * FROM capacity_workday_events ORDER BY id')).rows,usage:(await f.right.pool.query('SELECT * FROM capacity_usage_actuals ORDER BY id')).rows,ledger:(await f.right.pool.query('SELECT * FROM capacity_ledger_entries ORDER BY id')).rows});
+
  try{
   const startsAt='2026-10-03T12:00:00.000Z',floor='2026-10-03T12:20:00.000Z',after='2026-10-03T12:20:01.000Z';
   const plan={...compileWorkday({id:'native-fluid-workday',teamId:'team',policyId:'default',policyRevision:1,executionMode:'simulation',startsAt,agentIds:['project/configured:planning'],policy:{...DEFAULT_WORKDAY_POLICY,durationSeconds:3600,planningPercent:100/3,maximumConcurrency:5,communicationConcurrency:5}}),state:'active' as const,activatedAt:startsAt};
@@ -32,26 +34,27 @@ it('native PostgreSQL preserves the initial planning floor derives acting from o
    const result=(await livingAllocationInputs(stores[index]!,input))[provider.id]!;expect(input).toEqual(heldInput);expect(result.measurements).toEqual([]);expect(result.constraints).toEqual([{id:'workday-phase-share',remainingSeconds:result.opportunity.availableSeconds}]);return result.opportunity;
   };
 
-  const before=await f.snapshot(),held=structuredClone({plan,run});
+  const before=await snapshot(),held=structuredClone({plan,run});
   expect(await Promise.all([phase(0,'2026-10-03T12:19:59.999Z'),phase(1,'2026-10-03T12:19:59.999Z')])).toEqual(['planning','planning']);
-  expect(await Promise.all([phase(0,floor),phase(1,floor)])).toEqual(['acting','acting']);expect(await f.snapshot()).toEqual(before);
+  expect(await Promise.all([phase(0,floor),phase(1,floor)])).toEqual(['acting','acting']);expect(await snapshot()).toEqual(before);
   const initialPool=await allocation(0,'2026-10-03T12:19:59.999Z','planning'),handedOff=await allocation(1,floor,'acting');
   expect(initialPool).toMatchObject({phase:'planning',availableSeconds:12000,shareSeconds:12000,committedSeconds:0,planningCommittedSeconds:0,remainingSupplySeconds:28800,weight:plan.policySnapshot.allocationWeight,totalEligibleWeight:plan.policySnapshot.allocationWeight});
-  expect(handedOff).toEqual({...initialPool,phase:'acting'});expect(await f.snapshot()).toEqual(before);
+  expect(handedOff).toEqual({...initialPool,phase:'acting'});expect(await snapshot()).toEqual(before);
 
-  for(const status of ['assigned','running']){await f.left.pool.query("UPDATE execution_nodes SET status=$1 WHERE id='current-actor'",[status]);const heldRows=await f.snapshot();expect(await Promise.all([phase(0,after),phase(1,after)])).toEqual(['acting','acting']);expect(await f.snapshot()).toEqual(heldRows);}
-  for(const status of ['blocked','completed','failed','cancelled','exhausted']){await f.left.pool.query("UPDATE execution_nodes SET status=$1 WHERE id='current-actor'",[status]);const heldRows=await f.snapshot();expect(await Promise.all([phase(0,after),phase(1,after)])).toEqual(['planning','planning']);expect(await f.snapshot()).toEqual(heldRows);}
+  for(const status of ['assigned','running']){await f.left.pool.query("UPDATE execution_nodes SET status=$1 WHERE id='current-actor'",[status]);const heldRows=await snapshot();expect(await Promise.all([phase(0,after),phase(1,after)])).toEqual(['acting','acting']);expect(await snapshot()).toEqual(heldRows);}
+  for(const status of ['blocked','completed','failed','cancelled','exhausted']){await f.left.pool.query("UPDATE execution_nodes SET status=$1 WHERE id='current-actor'",[status]);const heldRows=await snapshot();expect(await Promise.all([phase(0,after),phase(1,after)])).toEqual(['planning','planning']);expect(await snapshot()).toEqual(heldRows);}
   await f.left.pool.query("UPDATE execution_nodes SET status='completed' WHERE id='current-actor'");await node('current-review','reviewing','ready');expect(await Promise.all([phase(0,after),phase(1,after)])).toEqual(['acting','acting']);
   await f.left.pool.query("UPDATE execution_nodes SET status='completed' WHERE id='current-review'");
-  const terminal=await f.snapshot();expect(await phase(0,plan.endsAt)).toBe('ended');expect(await phase(1,plan.endsAt)).toBe('ended');expect(await f.snapshot()).toEqual(terminal);
+  const terminal=await snapshot();expect(await phase(0,plan.endsAt)).toBe('ended');expect(await phase(1,plan.endsAt)).toBe('ended');expect(await snapshot()).toEqual(terminal);
 
   expect(await allocation(1,after,'planning')).toMatchObject({phase:'planning',availableSeconds:11995,committedSeconds:0,planningCommittedSeconds:0});
   await f.left.pool.query("UPDATE execution_nodes SET status='completed' WHERE workday_id=$1 AND kind='planning'",[run.id]);
+  const beforeResume=await snapshot();
   const resumed=await advanceLivingWorkday(stores[0]!,run,after);expect(resumed.changed).toBe(true);expect(resumed.plan.planningRounds).toHaveLength(2);expect(resumed.plan.planningRounds[0]!.state).toBe('complete');expect(resumed.plan.planningRounds[1]).toMatchObject({round:2,state:'active',startedAt:after});
   expect(resumed.plan).toMatchObject({startsAt:plan.startsAt,endsAt:plan.endsAt,policySnapshot:plan.policySnapshot});
   const persisted=(await f.right.pool.query('SELECT * FROM capacity_workday_runs WHERE id=$1',[run.id])).rows[0]!;expect(JSON.parse(String(persisted.parameters_json)).appliedPlan).toEqual(resumed.plan);
-  const next={...run,parameters:{...run.parameters,appliedPlan:resumed.plan}},snapshot=await f.snapshot();expect(await advanceLivingWorkday(stores[1]!,next,after)).toMatchObject({changed:false,plan:resumed.plan});expect(await f.snapshot()).toEqual(snapshot);
-  for(const value of [snapshot.assignments,snapshot.reservations])expect(value).toEqual([]);expect({plan,run}).toEqual(held);
+  const next={...run,parameters:{...run.parameters,appliedPlan:resumed.plan}},heldSnapshot=await snapshot();for(const table of ['nodes','edges','revisions','assignments','reservations','events','usage','ledger']as const)expect(heldSnapshot[table]).toEqual(beforeResume[table]);expect(heldSnapshot.workdays.filter(value=>value.id!==run.id)).toEqual(beforeResume.workdays.filter(value=>value.id!==run.id));expect(await advanceLivingWorkday(stores[1]!,next,after)).toMatchObject({changed:false,plan:resumed.plan});expect(await snapshot()).toEqual(heldSnapshot);
+  for(const value of [heldSnapshot.assignments,heldSnapshot.reservations])expect(value).toEqual([]);expect({plan,run}).toEqual(held);
   // Original controlled canonical graph/run rows; actual independent PostgreSQL
   // phase queries and owning lifecycle persistence, not accepted governance,
   // model planning, admitted assignments, measured usage or managed outcomes.
