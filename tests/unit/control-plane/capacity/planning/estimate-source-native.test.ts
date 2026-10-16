@@ -1,3 +1,4 @@
+import {verifyAutomaticEstimatingGraph} from './automatic-estimating-native.ts';
 import {createHash,randomUUID} from 'node:crypto';
 import {stringify} from 'yaml';
 import {describe,expect,it} from 'vitest';
@@ -12,7 +13,7 @@ describe('native estimate fixed-source custody',()=>{
  it('native PostgreSQL and TreeDX exact proposal reads reject moved fixed authority before estimator replay and retain unchanged valid estimate-only replay',async()=>{
   const f=await relationAuthoringDatabase(true),open=new Set<string>();
   try{
-   const repository=f.sources[0]!.repository,projectId=f.sources[0]!.projectId,id='estimate-'+randomUUID(),path='proposals/'+id+'.mdx';
+   const repository=f.sources[0]!.repository,projectId=f.sources[0]!.projectId,id='estimate:'+randomUUID(),path='proposals/'+id+'.mdx';
    const initial=readyProposal(),definition={...initial,id,projectId,executionPlan:{workItems:initial.executionPlan.workItems.map(value=>{const{estimate:_estimate,reviewEstimate:_review,...item}=value;return{...item,agentClass:'engineer'};})}};
    const refs=object(await f.client.repositories.refs(repository));expect(Array.isArray(refs.refs)).toBe(true);const staging=(refs.refs as unknown[]).map(object).find(value=>value.name==='refs/heads/staging');expect(staging).toBeDefined();
    const base=String(staging!.target??staging!.sha??'');expect(base).toMatch(/^[a-f0-9]{40}$/u);
@@ -21,6 +22,7 @@ describe('native estimate fixed-source custody',()=>{
    const frozen=await publish(definition,base),proposal=await f.store.createGovernanceProposal(f.principal,{id,teamId:'team',projectId,title:definition.title,summary:definition.summary,request:definition.request,contentProvenance:{repositoryId:repository,contentPath:path,commitSha:frozen.commitSha,digest:frozen.digest}});expect(proposal).toBeDefined();
    // Supplied canonical source bytes are fixture input; the existing exact reader owns their hash, not a fabricated approval or managed execution.
    await f.query('UPDATE governance_proposals SET active_content_hash=? WHERE id=?',[frozen.digest,id]);await f.query('UPDATE governance_proposal_versions SET content_hash=? WHERE proposal_id=?',[frozen.digest,id]);
+   await verifyAutomaticEstimatingGraph(f,definition,{store:'treedx',model:'proposal',id,revision:1,digest:'sha256:'+frozen.digest,repository,commit:frozen.commitSha,path});
    const estimate={expectedSeconds:20,maximumSeconds:30,rationale:'Controlled native source input, not a measured model estimate.'},candidateDefinition={...definition,executionPlan:{workItems:definition.executionPlan.workItems.map(item=>({...item,estimate}))}},candidate=await publish(candidateDefinition,frozen.commitSha),now=new Date().toISOString(),deadline=new Date(Date.parse(now)+Date.parse(sourceAttempt.deadline)-Date.parse(sourceAttempt.createdAt)).toISOString();
    const {workItemId:_workItemId,...estimateSource}=sourceAttempt;const attempt=assignmentAttemptSchema.parse({...estimateSource,id:'assignment-'+id,idempotencyKey:'assignment-'+id,projectId,workdayId:'workday-'+id,status:'leased',createdAt:now,deadline,
     sourceRef:{store:'treedx',model:'proposal',id,revision:1,digest:'sha256:'+frozen.digest,repository,commit:frozen.commitSha,path},
