@@ -37,10 +37,16 @@ export class CapacityWorkdayRunWriteRepository {
    if(!before||before.status!==expectedStatus)return null;
    const previous=before.parameters.appliedPlan===undefined?null:appliedWorkdaySchema.parse(before.parameters.appliedPlan);
    const proposed=value.parameters.appliedPlan===undefined?null:appliedWorkdaySchema.parse(value.parameters.appliedPlan);
+   if(value.executionMode!==before.executionMode||(proposed&&(proposed.id!==value.id||proposed.teamId!==value.teamId||proposed.executionMode!==value.executionMode)))throw new CapacityGovernanceError('workday_transition_stale','Workday transition requires its original sole mode and exact owning identity.',409);
    if(previous){
     const states=['planned','active','closing','ended'];
     if(!proposed||states.indexOf(proposed.state)<states.indexOf(previous.state)
      ||['id','teamId','executionMode','startsAt','endsAt','policyId','policyRevision','policySnapshot'].some(field=>!isDeepStrictEqual(Reflect.get(previous,field),Reflect.get(proposed,field)))
+     ||previous.planningRounds.some((round,index)=>{
+      const next=proposed.planningRounds[index];return !next||round.round!==next.round||!isDeepStrictEqual(round.assignmentIds,next.assignmentIds)
+       ||['planned','active','complete'].indexOf(next.state)<['planned','active','complete'].indexOf(round.state)
+       ||['startedAt','completedAt'].some(field=>Reflect.get(round,field)!==undefined&&Reflect.get(round,field)!==Reflect.get(next,field));
+     })
      ||['activatedAt','closingAt','endedAt','reportRef'].some(field=>Reflect.get(previous,field)!==undefined&&!isDeepStrictEqual(Reflect.get(previous,field),Reflect.get(proposed,field))))throw new CapacityGovernanceError('workday_transition_stale','Workday transition cannot replace original authority or regress its lifecycle.',409);
    }
    const results=await database.batch([{ query: `UPDATE capacity_workday_runs SET capacity_provider_id = ?, scenario_id = ?, status = ?, environment = ?, execution_mode = ?, execution_kind = ?, trigger_kind = ?, hidden = ?,
