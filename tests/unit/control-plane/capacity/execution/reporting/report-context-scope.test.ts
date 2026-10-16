@@ -24,4 +24,18 @@ describe('original Reporter complete graph scope',()=>{
    expect({nodes:(await f.query('SELECT * FROM execution_nodes ORDER BY team_id,id')).rows,edges:(await f.query('SELECT * FROM execution_edges ORDER BY id')).rows,financial:await f.snapshot()}).toEqual(before);
   }finally{await f.db.close();}
  });
+
+ it('rejects malformed original selection authority rather than widening a Reporter snapshot to unrelated graph nodes',async()=>{
+  const f=await settlementDatabase();try{
+   const original=(await f.reads.get('team','workday'))!;await f.query("UPDATE capacity_reservations SET state='expired' WHERE id='reservation'");
+   const reporter={...frozenAttempt,effectiveProfile:{...frozenAttempt.effectiveProfile,activity:'reporting' as const},sourceRef:{store:'postgresql' as const,model:'workday',id:'workday',revision:1,digest:'sha256:'+'a'.repeat(64)}};
+   const held=await f.snapshot();
+   for(const parameters of [null,[],{...original.parameters,proposalIds:'foreign'},{...original.parameters,proposalIds:[12]},{...original.parameters,proposalIds:['']},{...original.parameters,proposalIds:['selected','selected']}]){
+    await f.query('UPDATE capacity_workday_runs SET parameters_json=? WHERE id=?',[JSON.stringify(parameters),original.id]);
+    await expect(workdayReportContext(f.owner,reporter)).rejects.toMatchObject({code:'reporter_workday_authority_required',status:409});expect(await f.snapshot()).toEqual(held);
+   }
+   await f.query("UPDATE capacity_workday_runs SET parameters_json=?,execution_kind='conversation' WHERE id=?",[JSON.stringify(original.parameters),original.id]);
+   await expect(workdayReportContext(f.owner,reporter)).rejects.toMatchObject({code:'reporter_workday_authority_required',status:409});expect(await f.snapshot()).toEqual(held);
+  }finally{await f.db.close();}
+ });
 });
