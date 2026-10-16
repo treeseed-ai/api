@@ -22,7 +22,6 @@ export async function proveNativeWorkdayLifecycleObservations(database:ReturnTyp
  const financial=await finances(),lock=await observer.connect();let pending:Promise<unknown>|undefined;
  try{
   expect(await writes.create(run)).toEqual(run);
-  await proveNativeReportGraphScope(owner,observer,id);
   const closingAt=new Date().toISOString(),closing={...run,parameters:{...run.parameters,appliedPlan:{...plan,state:'closing' as const,closingAt}},updatedAt:closingAt};
   const held=structuredClone(closing);
   await lock.query('BEGIN');await lock.query('SELECT id FROM capacity_workday_runs WHERE id=$1 AND team_id=$2 FOR UPDATE',[id,'team']);
@@ -32,6 +31,7 @@ export async function proveNativeWorkdayLifecycleObservations(database:ReturnTyp
   expect(new Set(waiting.map(value=>value.pid)).size).toBeGreaterThanOrEqual(2);
   await lock.query('COMMIT');expect(await pending).toEqual([closing,closing]);pending=undefined;
   expect(closing).toEqual(held);expect(await reads.get('team',id)).toEqual(closing);
+  await proveNativeReportGraphScope(owner,observer,id);
   const first=await events.list('team',id,{limit:50});expect(first.items).toHaveLength(1);
   expect(first.items[0]).toMatchObject({eventType:'workday.lifecycle.changed',workdayId:id,runId:id,teamId:'team',context:{previousStatus:'running',status:'running',previousPlan:plan,plan:closing.parameters.appliedPlan}});
   const snapshot=async()=>({run:(await observer.query('SELECT * FROM capacity_workday_runs WHERE id=$1',[id])).rows,events:(await observer.query('SELECT * FROM capacity_workday_events WHERE run_id=$1 ORDER BY event_index',[id])).rows});
