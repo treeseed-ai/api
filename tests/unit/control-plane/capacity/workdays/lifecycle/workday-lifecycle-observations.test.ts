@@ -55,14 +55,14 @@ describe('original Workday lifecycle and public observation custody',()=>{
     const changed=structuredClone(candidate),round=changed.parameters.appliedPlan.planningRounds[0]!;
     if(mode==='missing')changed.parameters.appliedPlan.planningRounds=[];if(mode==='assignments')round.assignmentIds=['foreign'];
     if(mode==='state')Reflect.set(round,'state','active');if(mode==='started')round.startedAt='2026-10-02T21:00:01.000Z';if(mode==='completed')round.completedAt='2026-10-02T21:01:01.000Z';
-    const input=structuredClone(changed);await expect(writes.update(changed,before.status)).rejects.toThrow('workday_transition_stale');expect(changed).toEqual(input);expect(await snapshot()).toEqual(held);
+    const input=structuredClone(changed);await expect(writes.update(changed,before.status)).rejects.toMatchObject({code:'workday_transition_stale',status:409});expect(changed).toEqual(input);expect(await snapshot()).toEqual(held);
    }
   }finally{await f.db.close();}
  });
  it('rejects a substituted sole Workday mode without persisting a contradiction or creating a lifecycle observation',async()=>{
   const f=await settlementDatabase();try{
    const before=(await f.reads.get('team','workday'))!,candidate={...before,executionMode:'production' as const},held=(await f.query('SELECT * FROM capacity_workday_runs')).rows;
-   await expect(new CapacityWorkdayRunWriteRepository(f.owner).update(candidate,before.status)).rejects.toThrow('workday_transition_stale');
+   await expect(new CapacityWorkdayRunWriteRepository(f.owner).update(candidate,before.status)).rejects.toMatchObject({code:'workday_transition_stale',status:409});
    expect((await f.query('SELECT * FROM capacity_workday_runs')).rows).toEqual(held);expect((await f.query('SELECT * FROM capacity_workday_events')).rows).toEqual([]);
   }finally{await f.db.close();}
  });

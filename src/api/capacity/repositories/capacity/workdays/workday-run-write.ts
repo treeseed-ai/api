@@ -44,7 +44,7 @@ export class CapacityWorkdayRunWriteRepository {
      ||['id','teamId','executionMode','startsAt','endsAt','policyId','policyRevision','policySnapshot'].some(field=>!isDeepStrictEqual(Reflect.get(previous,field),Reflect.get(proposed,field)))
      ||previous.planningRounds.some((round,index)=>{
       const next=proposed.planningRounds[index];return !next||round.round!==next.round||!isDeepStrictEqual(round.assignmentIds,next.assignmentIds)
-       ||['planned','active','complete'].indexOf(next.state)<['planned','active','complete'].indexOf(round.state)
+       ||['pending','active','complete'].indexOf(next.state)<['pending','active','complete'].indexOf(round.state)
        ||['startedAt','completedAt'].some(field=>Reflect.get(round,field)!==undefined&&Reflect.get(round,field)!==Reflect.get(next,field));
      })
      ||['activatedAt','closingAt','endedAt','reportRef'].some(field=>Reflect.get(previous,field)!==undefined&&!isDeepStrictEqual(Reflect.get(previous,field),Reflect.get(proposed,field))))throw new CapacityGovernanceError('workday_transition_stale','Workday transition cannot replace original authority or regress its lifecycle.',409);

@@ -15,7 +15,7 @@ export async function proveNativeWorkdayLifecycleObservations(database:ReturnTyp
  const original=(await reads.get('team','sdk'))!,id='native-lifecycle-observation',now=new Date().toISOString();
  const plan={...compileWorkday({id,teamId:'team',policyId:'default',policyRevision:1,executionMode:'simulation',startsAt:now,agentIds:[],policy:DEFAULT_WORKDAY_POLICY}),state:'active' as const,activatedAt:now,planningRounds:[{round:1,state:'complete' as const,assignmentIds:['controlled-original-turn'],startedAt:now,completedAt:now}]};
  const run={...original,id,status:'running' as const,startedAt:now,completedAt:null,createdAt:now,updatedAt:now,
-  parameters:{...original.parameters,deadlineAt:plan.endsAt,appliedPlan:plan},summary:{},error:{},reportRefs:{}};
+  parameters:{...original.parameters,...plan.policySnapshot,deadlineAt:plan.endsAt,appliedPlan:plan},summary:{},error:{},reportRefs:{}};
  const unrelated=(await observer.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows;
  const finances=async()=>Object.fromEntries(await Promise.all(['capacity_provider_assignments','capacity_reservations','capacity_usage_actuals','capacity_ledger_entries'].map(async table=>[table,(await observer.query('SELECT * FROM '+table+' ORDER BY id')).rows])));
  const financial=await finances(),lock=await observer.connect();let pending:Promise<unknown>|undefined;
@@ -34,8 +34,8 @@ export async function proveNativeWorkdayLifecycleObservations(database:ReturnTyp
   expect(first.items[0]).toMatchObject({eventType:'workday.lifecycle.changed',workdayId:id,runId:id,teamId:'team',context:{previousStatus:'running',status:'running',previousPlan:plan,plan:closing.parameters.appliedPlan}});
   const snapshot=async()=>({run:(await observer.query('SELECT * FROM capacity_workday_runs WHERE id=$1',[id])).rows,events:(await observer.query('SELECT * FROM capacity_workday_events WHERE run_id=$1 ORDER BY event_index',[id])).rows});
   const heldHistory=await snapshot();
-  await expect(writes.update({...closing,parameters:{...closing.parameters,appliedPlan:{...closing.parameters.appliedPlan,planningRounds:[]}}},'running')).rejects.toThrow('workday_transition_stale');expect(await snapshot()).toEqual(heldHistory);
-  await expect(writes.update({...closing,executionMode:'production'},'running')).rejects.toThrow('workday_transition_stale');expect(await snapshot()).toEqual(heldHistory);
+  await expect(writes.update({...closing,parameters:{...closing.parameters,appliedPlan:{...closing.parameters.appliedPlan,planningRounds:[]}}},'running')).rejects.toMatchObject({code:'workday_transition_stale',status:409});expect(await snapshot()).toEqual(heldHistory);
+  await expect(writes.update({...closing,executionMode:'production'},'running')).rejects.toMatchObject({code:'workday_transition_stale',status:409});expect(await snapshot()).toEqual(heldHistory);
   const before=await snapshot(),reference={kind:'treedx' as const,projectId:'project',repository:'controlled-library',commit:'a'.repeat(40),path:'notes/controlled-report.mdx'};
   for(const mode of ['missing','interrupted','altered']){
    const body=mode==='missing'?'RETURN NULL;':mode==='interrupted'?"RAISE EXCEPTION 'retained native lifecycle interruption';":"NEW.context_json='{}'; RETURN NEW;";
@@ -45,7 +45,7 @@ export async function proveNativeWorkdayLifecycleObservations(database:ReturnTyp
    try{await expect(writes.update(terminal,'running')).rejects.toThrow(mode==='missing'?'workday_transition_observation_missing':mode==='interrupted'?'retained native lifecycle interruption':'workday_transition_observation_conflict');expect(await snapshot()).toEqual(before);}
    finally{await database.pool.query('DROP TRIGGER native_lifecycle_observation_failure ON capacity_workday_events');await database.pool.query('DROP FUNCTION native_lifecycle_observation_failure()');}
   }
-  await expect(writes.update({...run,updatedAt:new Date().toISOString()},'running')).rejects.toThrow('workday_transition_stale');expect(await snapshot()).toEqual(before);
+  await expect(writes.update({...run,updatedAt:new Date().toISOString()},'running')).rejects.toMatchObject({code:'workday_transition_stale',status:409});expect(await snapshot()).toEqual(before);
   const endedAt=new Date().toISOString(),terminal={...closing,status:'completed' as const,completedAt:endedAt,updatedAt:endedAt,parameters:{...closing.parameters,appliedPlan:{...closing.parameters.appliedPlan,state:'ended' as const,endedAt,reportRef:reference}}};
   expect(await writes.update(terminal,'running')).toEqual(terminal);
   const raw=(await observer.query('SELECT * FROM capacity_workday_events WHERE run_id=$1 ORDER BY event_index',[id])).rows;expect(raw).toHaveLength(2);
