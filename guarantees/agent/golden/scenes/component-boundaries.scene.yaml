@@ -2784,3 +2784,6 @@ workflow:
   - id: closeout-admission-3
     action: { verifier: api.golden.execution-closeout-admission-3 }
     expect: { status: passed }
+  - id: closeout-admission-4
+    action: { verifier: api.golden.execution-closeout-admission-4 }
+    expect: { status: passed }

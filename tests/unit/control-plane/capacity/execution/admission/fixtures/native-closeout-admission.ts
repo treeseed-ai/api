@@ -15,6 +15,10 @@ export async function proveNativeCloseoutAdmission(database:ReturnType<typeof cr
   await peer.pool.query('UPDATE capacity_workday_runs SET parameters_json=$1 WHERE id=$2',[closing,attempt.workdayId]);
   await expect(admit(attempt)).rejects.toMatchObject({code:'workday_admission_closed',status:409});
   expect(await state()).toEqual(before);expect(attempt).toEqual(held);
+  await peer.pool.query("UPDATE capacity_workday_runs SET execution_kind='conversation' WHERE id=$1",[attempt.workdayId]);
+  await expect(admit(attempt)).rejects.toMatchObject({code:'workday_admission_closed',status:409});expect(await state()).toEqual(before);
+  await peer.pool.query("UPDATE capacity_workday_runs SET execution_kind='workday' WHERE id=$1",[attempt.workdayId]);
+
   await peer.pool.query('UPDATE capacity_workday_runs SET parameters_json=$1 WHERE id=$2',[original[0]!.parameters_json,attempt.workdayId]);
   await lock.query('BEGIN');await lock.query('SELECT id FROM capacity_workday_runs WHERE team_id=$1 AND id=$2 FOR UPDATE',[attempt.teamId,attempt.workdayId]);
   pending=admit(attempt).then(value=>({value}),error=>({error}));
@@ -44,7 +48,7 @@ export async function proveNativeCloseoutAdmission(database:ReturnType<typeof cr
   await database.pool.query("DELETE FROM capacity_reservations WHERE id='closing-reporter-reservation'");
   await database.pool.query("DELETE FROM execution_nodes WHERE id='closing-reporter-node'");
   await database.pool.query('DELETE FROM capacity_admission_counters');
-  await database.pool.query('UPDATE capacity_workday_runs SET parameters_json=$1 WHERE id=$2',[original[0]!.parameters_json,attempt.workdayId]);
+  await database.pool.query('UPDATE capacity_workday_runs SET parameters_json=$1,execution_kind=$3 WHERE id=$2',[original[0]!.parameters_json,attempt.workdayId,original[0]!.execution_kind]);
  }
  expect(await state()).toEqual(before);expect(attempt).toEqual(held);
 }

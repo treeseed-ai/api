@@ -4725,3 +4725,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/admission/closeout/closeout-admission.test.ts
     testName: "admits the exact Reporter only in closing and replays its original reservation without another charge"
+  api.golden.execution-closeout-admission-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/closeout/closeout-admission.test.ts
+    testName: "rejects a caller-supplied conversation kind for an owning closing Workday without granting another admission path"
