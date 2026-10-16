@@ -27,7 +27,9 @@ async function fixture() {
 		if (ddl.length !== 1) throw new Error('Original projects DDL required'); await f.db.exec(ddl[0]!);
 		await f.query('INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES (?,?,?,?,?,?)', ['project', 'team', 'project', 'Isolated public accounting project', frozenAttempt.createdAt, frozenAttempt.createdAt]);
 		await f.query('UPDATE capacity_provider_assignments SET reservation_id=? WHERE id=?', [frozenAttempt.reservationId, frozenAttempt.id]);
-		const service = createProviderAssignmentService(f.owner as Parameters<typeof createProviderAssignmentService>[0]);
+		const unselected=async():Promise<never>=>{throw new Error('Unexpected unrelated provider lifecycle method in original SQL accounting fixture');};
+  const serviceStore:Parameters<typeof createProviderAssignmentService>[0]={...f.owner,leaseNextProviderAssignment:unselected,getProviderAssignment:unselected,renewProviderAssignmentLease:unselected,returnProviderAssignment:unselected,completeProviderAssignment:unselected,failProviderAssignment:unselected,createCapacityWorkdayRun:unselected,tickCapacityWorkdayRun:unselected};
+  const service = createProviderAssignmentService(serviceStore);
 		const registry = new OperationRegistry(createCapacityQueryOperations({ capacityQueries: createCapacityQueryService(f.owner) }));
 		const read = (operation: 'capacity.ledger' | 'capacity.usage', query: Record<string, unknown> = {}, principal: typeof operator | null = operator) =>
 			registry.require(operation).handler({ path: { teamId: 'team' }, query: { projectId: 'project', workDayId: 'workday', limit: 100, ...query }, body: undefined },
