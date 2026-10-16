@@ -2787,3 +2787,9 @@ workflow:
   - id: workday-lifecycle-observation-4
     action: { verifier: api.golden.execution-workday-lifecycle-observation-4 }
     expect: { status: passed }
+  - id: reporter-graph-scope-1
+    action: { verifier: api.golden.execution-reporter-graph-scope-1 }
+    expect: { status: passed }
+  - id: reporter-graph-scope-2
+    action: { verifier: api.golden.execution-reporter-graph-scope-2 }
+    expect: { status: passed }

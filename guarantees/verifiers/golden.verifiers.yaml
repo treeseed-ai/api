@@ -4730,3 +4730,13 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-lifecycle-observations.test.ts
     testName: "rejects a substituted sole Workday mode without persisting a contradiction or creating a lifecycle observation"
+  api.golden.execution-reporter-graph-scope-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/report-context-scope.test.ts
+    testName: "retains selected proposal Actor and Reviewer nodes whose shared graph authority has no Workday owner while excluding unrelated proposals and teams"
+  api.golden.execution-reporter-graph-scope-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/report-context-scope.test.ts
+    testName: "rejects malformed original selection authority rather than widening a Reporter snapshot to unrelated graph nodes"
