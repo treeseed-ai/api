@@ -323,7 +323,7 @@ async function settleCapacityReservationOnTransaction(database: CapacityGovernan
    ||!durableRealEquals(current.consumed_provider_units,input.providerUnits)||!durableRealEquals(current.consumed_usd,input.usd))throw new CapacityGovernanceError('capacity_settlement_state_not_committed','Terminal reservation state was not committed.',500);
   for(const expected of prepared.counterSettlements){
    const before=claims.find(claim=>claim.counter_id===expected.counterId),after=await database.first('SELECT counter.team_id,counter.committed_amount,counter.state_version,claim.released_amount FROM capacity_admission_counters counter JOIN capacity_reservation_counter_claims claim ON claim.counter_id=counter.id WHERE counter.id=? AND claim.reservation_id=?',[expected.counterId,input.reservationId]);
-   if(!before||!after||before.counter_team_id!==input.teamId||after.team_id!==input.teamId
+   if(!before||!after||typeof before.counter_team_id!=='string'||after.team_id!==before.counter_team_id
     ||!durableRealEquals(after.committed_amount,Number(before.original_committed_amount)+expected.adjustment)
     ||Number(after.state_version)!==Number(before.original_state_version)+1||!durableRealEquals(after.released_amount,expected.releasedAmount))throw new CapacityGovernanceError('capacity_settlement_counter_not_committed','Terminal scoped counter state was not committed.',500);
   }

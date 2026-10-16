@@ -37,7 +37,7 @@ export async function recordCapacityAccountingObservation(database: CapacityGove
   FROM capacity_reservation_counter_claims claim LEFT JOIN capacity_admission_counters counter ON counter.id=claim.counter_id
   WHERE claim.reservation_id=? ORDER BY claim.counter_id`, [reservation.id]);
  const remainingSupply = claims.map(claim => {
-  if (claim.teamId !== input.teamId || typeof claim.id !== 'string' || typeof claim.scope !== 'string' || typeof claim.scopeId !== 'string'
+  if (typeof claim.teamId !== 'string' || !claim.teamId || typeof claim.id !== 'string' || typeof claim.scope !== 'string' || typeof claim.scopeId !== 'string'
    || typeof claim.periodKey !== 'string' || typeof claim.releasePolicy !== 'string') throw fail();
   const numeric = Object.fromEntries(['hardLimit', 'committedAmount', 'reservedAmount', 'releasedAmount', 'stateVersion'].map(field => {
    const value = Number(claim[field]); if (claim[field] == null || !Number.isFinite(value) || value < 0) throw fail(); return [field, value];

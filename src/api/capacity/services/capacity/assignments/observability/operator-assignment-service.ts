@@ -113,6 +113,7 @@ export class OperatorAssignmentService {
 			if (retainedClaims.length !== claims.length) throw new CapacityGovernanceError(
 				'capacity_recovery_counter_conflict', 'Every original reservation claim must retain its owning counter.', 409);
 			const now = new Date().toISOString();
+   const expected=new Map(claims.map(claim=>[String(claim.counter_id),{committed:Number(claim.committed_amount),released:Number(claim.released_amount)}]));
 			for (const claim of claims) {
 				if (claim.team_id !== teamId) throw new CapacityGovernanceError('capacity_recovery_counter_conflict', 'Counter authority differs from the reservation.', 409);
 				if (disputed && claim.release_policy !== 'assignment-terminal') {
@@ -120,6 +121,7 @@ export class OperatorAssignmentService {
 					if (!['period', 'actual-settlement'].includes(String(claim.release_policy)) || !Number.isFinite(amount) || amount < 0
 						|| claim.released_amount !== amount || !Number.isFinite(Number(claim.committed_amount)) || Number(claim.committed_amount) < 0)
 						throw new CapacityGovernanceError('capacity_recovery_counter_conflict', 'Only original fully released period holds can be restored.', 409);
+     expected.set(String(claim.counter_id),{committed:Number(claim.committed_amount)+amount,released:0});
 					await database.run('UPDATE capacity_admission_counters SET committed_amount=committed_amount+?,state_version=state_version+1,updated_at=? WHERE id=? AND team_id=?', [amount, now, claim.counter_id, teamId]);
 					await database.run('UPDATE capacity_reservation_counter_claims SET released_amount=0,updated_at=? WHERE reservation_id=? AND counter_id=?', [now, reservation.id, claim.counter_id]);
 					continue;
@@ -129,10 +131,14 @@ export class OperatorAssignmentService {
 				if (!Number.isFinite(amount) || amount < 0 || Number(claim.committed_amount) < amount) throw new CapacityGovernanceError(
 					'capacity_recovery_counter_conflict', 'Terminal counter release is inconsistent.', 409);
 				if (amount === 0) continue;
+    expected.set(String(claim.counter_id),{committed:Number(claim.committed_amount)-amount,released:Number(claim.reserved_amount)});
 				await database.run(`UPDATE capacity_admission_counters SET committed_amount=committed_amount-?,state_version=state_version+1,updated_at=? WHERE id=? AND team_id=?`, [amount, now, claim.counter_id, teamId]);
 				await database.run('UPDATE capacity_reservation_counter_claims SET released_amount=reserved_amount,updated_at=? WHERE reservation_id=? AND counter_id=?', [now, reservation.id, claim.counter_id]);
 			}
 			if (!disputed) await database.run("UPDATE capacity_reservations SET state='released',updated_at=? WHERE id=? AND team_id=?", [now, reservation.id, teamId]);
+   const actualReservation=await database.first('SELECT state FROM capacity_reservations WHERE id=? AND team_id=?',[reservation.id,teamId]);
+   const actualClaims=await database.all('SELECT claim.counter_id,claim.released_amount,counter.committed_amount FROM capacity_reservation_counter_claims claim JOIN capacity_admission_counters counter ON counter.id=claim.counter_id WHERE claim.reservation_id=?',[reservation.id]);
+   if(actualReservation?.state!==(disputed?reservation.state:'released')||actualClaims.length!==expected.size||actualClaims.some(claim=>{const value=expected.get(String(claim.counter_id));return!value||Number(claim.committed_amount)!==value.committed||Number(claim.released_amount)!==value.released;}))throw new CapacityGovernanceError('capacity_recovery_counter_conflict','Every intended unresolved release must be committed before observation.',409);
 			if (disputed) await database.run(`INSERT INTO capacity_audit_events (id,team_id,capacity_provider_id,membership_id,actor_type,actor_id,action,resource_type,resource_id,idempotency_key,metadata_json,created_at)
 				VALUES (?,?,?,?,?,?,'assignment.settlement.disputed','capacity_provider_assignment',?,?,?,?)`,
 				[`operator-dispute:${teamId}:${assignmentId}`, teamId, row.capacity_provider_id, row.membership_id, 'user', actorId, assignmentId, key,
