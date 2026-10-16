@@ -64,9 +64,9 @@ it('native PostgreSQL accounting producers retain exact complete public observat
    const retained = await snapshot(); expect((await apply(1)).replayed).toBe(true); expect(await snapshot()).toEqual(retained); expect(await events()).toEqual(history);
    await expect(apply(0, { activeSeconds: 9 })).rejects.toThrow(); expect(await snapshot()).toEqual(retained); expect({ body, auth, frozenAttempt }).toEqual(original);
    await native.left.pool.query("UPDATE capacity_workday_events SET status='failed' WHERE id=$1",[history.items[0]!.id]);
-   const damaged=await snapshot();let replayError='';try{await apply(0);}catch(cause){replayError=String(cause);}
+   const damaged=await snapshot();let replayError='',replayCode='';try{await apply(0);}catch(cause){replayError=String(cause);if(cause&&typeof cause==='object')replayCode=String(Reflect.get(cause,'code'));}
    failures.push({operation,mode:'altered-original-envelope-replay',error:replayError,custodySha256:createHash('sha256').update(JSON.stringify(damaged)).digest('hex')});
-   expect(replayError).toContain('capacity_accounting_observation_conflict');expect(await snapshot()).toEqual(damaged);
+   expect(replayError).not.toBe('');expect(replayCode).toBe('capacity_accounting_observation_conflict');expect(await snapshot()).toEqual(damaged);
    expect((await events()).items[0]!.status).toBe('failed');
 
   } finally { await native.close(); }

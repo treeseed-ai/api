@@ -84,8 +84,8 @@ it('retains every accepted public usage and terminal accounting change with exac
     await damaged.service.reportUsage(auth,frozenAttempt.id,body,'checkpoint');
     const observed=(await damaged.events()).items[0]!;
     await damaged.query('UPDATE capacity_workday_events SET '+column+'=? WHERE id=?',[value,observed.id]);
-    const failed=await damaged.snapshot();let error='';try{await damaged.service.reportUsage(auth,frozenAttempt.id,body,'checkpoint');}catch(cause){error=String(cause);}
-    expect.soft(error,column+' altered original envelope must deny replay').toContain('capacity_accounting_observation_conflict');expect.soft(await damaged.snapshot()).toEqual(failed);
+    const failed=await damaged.snapshot();let error='',errorCode='';try{await damaged.service.reportUsage(auth,frozenAttempt.id,body,'checkpoint');}catch(cause){error=String(cause);if(cause&&typeof cause==='object')errorCode=String(Reflect.get(cause,'code'));}
+    expect.soft(error,column+' altered original envelope must deny replay').not.toBe('');expect.soft(errorCode).toBe('capacity_accounting_observation_conflict');expect.soft(await damaged.snapshot()).toEqual(failed);
    }finally{await damaged.db.close();}
   }
 
