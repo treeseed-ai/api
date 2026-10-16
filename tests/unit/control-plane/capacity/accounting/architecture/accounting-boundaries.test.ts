@@ -24,12 +24,14 @@ async function prove(make: () => Promise<Boundary>, state: string) {
   const snapshot = async () => ({ financial: await f.snapshot(), events: (await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows,
    workdays: (await f.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows });
   const before = await snapshot();
-  for (const mode of ['missing', 'interrupted', 'altered']) {
-   await f.db.exec("CREATE FUNCTION retained_boundary_accounting_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type='capacity.accounting.updated' THEN " +
-    (mode === 'missing' ? 'RETURN NULL;' : mode === 'altered' ? "NEW.context_json='{}';" : "RAISE EXCEPTION 'retained boundary accounting interruption';") + ' END IF; RETURN NEW; END $$; CREATE TRIGGER retained_boundary_accounting_fault BEFORE INSERT ON capacity_workday_events FOR EACH ROW EXECUTE FUNCTION retained_boundary_accounting_fault();');
+  for (const mode of ['missing', 'interrupted', 'altered', 'counter-state-missing', ...(state === 'released' ? ['reservation-state-missing'] : [])]) {
+   const target = mode === 'counter-state-missing' ? 'capacity_admission_counters' : mode === 'reservation-state-missing' ? 'capacity_reservations' : 'capacity_workday_events';
+   const body = target === 'capacity_workday_events' ? "IF NEW.event_type='capacity.accounting.updated' THEN " +
+    (mode === 'missing' ? 'RETURN NULL;' : mode === 'altered' ? "NEW.context_json='{}';" : "RAISE EXCEPTION 'retained boundary accounting interruption';") + ' END IF; RETURN NEW;' : 'RETURN NULL;';
+   await f.db.exec('CREATE FUNCTION retained_boundary_accounting_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN '+body+' END $$; CREATE TRIGGER retained_boundary_accounting_fault BEFORE '+(target === 'capacity_workday_events' ? 'INSERT' : 'UPDATE')+' ON '+target+' FOR EACH ROW EXECUTE FUNCTION retained_boundary_accounting_fault();');
    let error = ''; try { await f.call(); } catch (cause) { error = String(cause); }
    expect(error, mode + ' accounting history required at the original boundary').not.toBe(''); expect(await snapshot()).toEqual(before);
-   await f.db.exec('DROP TRIGGER retained_boundary_accounting_fault ON capacity_workday_events; DROP FUNCTION retained_boundary_accounting_fault();');
+   await f.db.exec('DROP TRIGGER retained_boundary_accounting_fault ON '+target+'; DROP FUNCTION retained_boundary_accounting_fault();');
   }
   await f.call();
   const rows = (await f.query("SELECT * FROM capacity_workday_events WHERE event_type='capacity.accounting.updated' ORDER BY event_index")).rows;
