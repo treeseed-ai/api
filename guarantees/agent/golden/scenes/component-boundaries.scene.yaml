@@ -2811,3 +2811,6 @@ workflow:
   - id: reporter-lifecycle-2
     action: { verifier: api.golden.execution-reporter-lifecycle-2 }
     expect: { status: passed }
+  - id: reporter-observation-clock
+    action: { verifier: api.golden.execution-reporter-observation-clock }
+    expect: { status: passed }

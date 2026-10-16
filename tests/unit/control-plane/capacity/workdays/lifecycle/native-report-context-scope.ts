@@ -24,7 +24,7 @@ export async function proveNativeReportGraphScope(owner:CapacityGovernanceDataba
   expect(value.nodes.map(node=>node.id)).toEqual([prefix+'actor',prefix+'reviewer']);expect(value.edges.map(edge=>edge.id)).toEqual([prefix+'pair']);
   expect(await workdayReportContext(owner,reporter)).toEqual([context]);expect(await snapshot()).toEqual(before);
   const originalEvents=(await observer.query("SELECT * FROM capacity_workday_events WHERE team_id=$1 AND run_id=$2 ORDER BY event_index",['team',workdayId])).rows;expect(originalEvents).toHaveLength(1);const closingRow=originalEvents[0]!;
-  expect(context!.value).toMatchObject({appliedPlan:parameters.appliedPlan,closingEvent:{id:closingRow.id,eventIndex:closingRow.event_index,eventType:'workday.lifecycle.changed'}});
+  expect(context!.value).toMatchObject({closingEvent:{id:closingRow.id,eventIndex:closingRow.event_index,eventType:'workday.lifecycle.changed',context:{plan:parameters.appliedPlan}}});
   for(const failure of ['missing','altered']){
    await observer.query('UPDATE capacity_workday_events SET event_type=$1,context_json=$2 WHERE id=$3',[failure==='missing'?'controlled-excluded':closingRow.event_type,failure==='altered'?'{}':closingRow.context_json,closingRow.id]);
    try{await expect(workdayReportContext(owner,reporter)).rejects.toMatchObject({code:'reporter_workday_authority_required',status:409});}

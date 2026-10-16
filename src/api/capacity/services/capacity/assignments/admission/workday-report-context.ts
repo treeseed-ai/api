@@ -69,10 +69,10 @@ export async function workdayReportContext(store: CapacityGovernanceDatabase, as
 	const closingEvent=closingRows.length===1?serializeCapacityWorkdayEventRow(closingRows[0]!):null;
 	const closingPlan=appliedWorkdaySchema.safeParse(closingEvent?.context.plan);
 	const authority=(plan:typeof appliedPlan)=>{const{admittedSecondsByProject:_projects,admittedSecondsByAgentClass:_agents,...original}=plan;return original;};
-	if(!closingEvent||!closingPlan.success||closingEvent.teamId!==assignment.teamId||closingEvent.runId!==assignment.workdayId||closingEvent.workdayId!==assignment.workdayId||closingEvent.status!=='recorded'||closingEvent.assignmentId!==null||closingEvent.projectId!==null||closingEvent.context.status!=='running'||!isDeepStrictEqual(authority(closingPlan.data),authority(appliedPlan))||closingEvent.createdAt!==appliedPlan.closingAt
+	if(!closingEvent||!closingPlan.success||closingEvent.teamId!==assignment.teamId||closingEvent.runId!==assignment.workdayId||closingEvent.workdayId!==assignment.workdayId||closingEvent.status!=='recorded'||closingEvent.assignmentId!==null||closingEvent.projectId!==null||closingEvent.context.status!=='running'||!isDeepStrictEqual(authority(closingPlan.data),authority(appliedPlan))||!Number.isFinite(Date.parse(closingEvent.createdAt))
 		||closingEvent.id!=='workday-lifecycle:'+assignment.workdayId+':'+createHash('sha256').update(canonicalStandardsJson(closingEvent.context)).digest('hex'))
 		throw new CapacityGovernanceError('reporter_workday_authority_required','Reporter requires the exact original public closing observation.',409);
-	const value = { teamId: assignment.teamId, workdayId: assignment.workdayId, appliedPlan,closingEvent,nodes, edges,
+	const value = { teamId: assignment.teamId, workdayId: assignment.workdayId,closingEvent,nodes, edges,
 		attempts: publicAttempts, reservations, usage, settlements };
 	return [authorizedContextItemSchema.parse({ ref: assignment.sourceRef, mediaType: 'application/json',
 		digest: `sha256:${createHash('sha256').update(canonicalStandardsJson(value)).digest('hex')}`, value })];

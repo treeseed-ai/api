@@ -52,7 +52,7 @@ describe('workday Reporter context', () => {
 		const store = storeWith();
 		const [item] = await workdayReportContext(store as never, assignment as never);
 		expect(item.ref).toEqual(assignment.sourceRef);
-		expect(item.value).toEqual({ teamId: 'team', workdayId: 'workday',appliedPlan,closingEvent, ...rows, settlements: [] });
+		expect(item.value).toEqual({ teamId: 'team', workdayId: 'workday',closingEvent, ...rows, settlements: [] });
 		expect(item.digest).toBe(`sha256:${createHash('sha256').update(canonicalStandardsJson(item.value)).digest('hex')}`);
 		for (const [sql, parameters] of store.all.mock.calls) {
 			expect(parameters).toEqual(['team', 'workday']);

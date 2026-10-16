@@ -4770,3 +4770,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/reporting/report-context-lifecycle.test.ts
     testName: "freezes the exact original closing event and completed planning rounds and denies lost malformed or unfinished lifecycle authority without repairing financial history"
+  api.golden.execution-reporter-observation-clock:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/report-context-lifecycle.test.ts
+    testName: "retains the original phase clock and later actual persistence observation without equating or rewriting either clock"
