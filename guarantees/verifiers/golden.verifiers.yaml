@@ -4675,3 +4675,28 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/accounting/architecture/accounting-history-postgres.test.ts
     testName: "native PostgreSQL accounting producers retain exact complete public observations across competing requests interruption missing writes denial and unchanged retry"
+  api.golden.execution-planning-window-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/scheduling/planning/planning-window-evidence.test.ts
+    testName: "denies missing malformed or contradictory original allocator phase rather than borrowing another activity pool"
+  api.golden.execution-planning-window-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/scheduling/planning/planning-window-evidence.test.ts
+    testName: "accepts acting and independent review only at or after the exact original planning floor without changing authority"
+  api.golden.execution-planning-window-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/scheduling/planning/planning-window-evidence.test.ts
+    testName: "denies early acting and review missing or foreign workday authority and malformed original clocks without repairing failed evidence"
+  api.golden.execution-planning-window-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/scheduling/planning/planning-window-evidence.test.ts
+    testName: "retains ordinary planning estimating chat and deterministic reporting without treating the initial percentage as a second activity deadline"
+  api.golden.execution-planning-window-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/scheduling/planning/planning-phase-native.test.ts
+    testName: "native PostgreSQL preserves the initial planning floor derives acting from only current ready work and resumes ordinary planning without extending authority"
