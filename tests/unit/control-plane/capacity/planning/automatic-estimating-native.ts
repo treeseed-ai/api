@@ -27,7 +27,8 @@ export async function verifyAutomaticEstimatingGraph(f:Awaited<ReturnType<typeof
   await f.query('INSERT INTO capacity_workday_runs (id,team_id,execution_kind,execution_mode,status,parameters_json,started_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',[id,'team','workday','simulation','running',JSON.stringify(parameters),now,now,now]);runs.push({id,selected});
  }
  const service=createExecutionGraphService(f.store),reconciled=await service.reconcile(f.principal,'team',{}),graph=await service.show(f.principal,'team',{});
- expect(reconciled).toEqual(graph);
+ expect(reconciled).toMatchObject({teamId:graph.teamId,revision:graph.revision,graphDigest:graph.digest});
+ const history=await service.watch(f.principal,'team',{cursor:'0'});expect(history.items).toEqual([reconciled]);
  for(const run of runs){
   const nodes=graph.nodes.filter(node=>node.workdayId===run.id),planning=nodes.filter(node=>node.kind==='planning'),estimating=nodes.filter(node=>node.kind==='estimating');
   expect(planning.map(node=>node.agentClass).sort()).toEqual(['engineer','reporter','reviewer']);
@@ -45,5 +46,5 @@ export async function verifyAutomaticEstimatingGraph(f:Awaited<ReturnType<typeof
  const held=await snapshot();expect(held.edges.filter(edge=>edge.graph_revision_removed===null)).toHaveLength(graph.edges.length);
  for(const rows of [held.attempts,held.reservations,held.usage,held.ledger])expect(rows).toEqual([]);
  expect(f.peerStore).toBeDefined();if(!f.peerStore)throw new Error('Independent native PostgreSQL connection required');
- const peer=createExecutionGraphService(f.peerStore);await Promise.all([service.reconcile(f.principal,'team',{}),peer.reconcile(f.principal,'team',{})]);expect(await snapshot()).toEqual(held);expect(await peer.show(f.principal,'team',{})).toEqual(graph);
+ const peer=createExecutionGraphService(f.peerStore),replays=await Promise.all([service.reconcile(f.principal,'team',{}),peer.reconcile(f.principal,'team',{})]);expect(replays).toEqual([reconciled,reconciled]);expect(await snapshot()).toEqual(held);expect(await peer.show(f.principal,'team',{})).toEqual(graph);
 }
