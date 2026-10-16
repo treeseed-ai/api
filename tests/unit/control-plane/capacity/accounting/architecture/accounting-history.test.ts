@@ -6,11 +6,28 @@ import { serializeCapacityReservationRow } from '../../../../../../src/api/capac
 import { serializeCapacityLedgerEntryRow } from '../../../../../../src/api/capacity/repositories/capacity/accounting/ledger.ts';
 import { serializeTaskUsageActualRow } from '../../../../../../src/api/capacity/repositories/capacity/accounting/task-usage.ts';
 import { executePostgresBatch } from '../../../../../../src/api/support/control-plane-postgres.ts';
+import { capacityTransaction } from '../../../../../../src/api/capacity/transaction.ts';
 import { splitPostgresSqlStatements } from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
 import { frozenAttempt, settlementDatabase, terminalUsage } from './settlement-fixture.ts';
 
 const auth = { principal: { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider',
  scopes: ['provider:usage:write', 'provider:assignments:write'] } };
+
+it('retains the owning transaction connection and rolls back a caught nested accounting failure to its original savepoint', async () => {
+ const f = await fixture();
+ try {
+  await capacityTransaction(f.owner, async outer => {
+   await outer.run('UPDATE capacity_reservations SET active_seconds=2 WHERE id=?', ['reservation']);
+   let error = ''; try { await capacityTransaction(outer, async inner => {
+    expect((await inner.first('SELECT active_seconds FROM capacity_reservations WHERE id=?', ['reservation']))?.active_seconds).toBe(2);
+    await inner.run('UPDATE capacity_reservations SET active_seconds=9 WHERE id=?', ['reservation']); throw new Error('retained nested accounting failure');
+   }); } catch (cause) { error = String(cause); }
+   expect(error).toContain('retained nested accounting failure');
+   expect((await outer.first('SELECT active_seconds FROM capacity_reservations WHERE id=?', ['reservation']))?.active_seconds).toBe(2);
+  });
+  expect((await f.query('SELECT active_seconds FROM capacity_reservations WHERE id=?', ['reservation'])).rows).toEqual([{ active_seconds: 2 }]);
+ } finally { await f.db.close(); }
+});
 
 /** Actual public service, original SQL and event serializer with controlled
  * measurements. Independent PostgreSQL concurrency is separately required. */
