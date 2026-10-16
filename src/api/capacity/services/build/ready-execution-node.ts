@@ -1,3 +1,5 @@
+import {executionNodeRunScope} from './execution-node-scope.ts';
+export {executionNodeRunScope} from './execution-node-scope.ts';
 import {
 	assignmentResultSchema,
 	assignmentAttemptSchema,
@@ -108,27 +110,6 @@ export function linearPredecessorSourceCommit(entries: Array<{ resultId: string;
 	return terminal.length === 1 ? terminal[0]!.commit : undefined;
 }
 
-export function executionNodeRunScope(run: Pick<DurableCapacityWorkdayRun, 'id' | 'executionKind' | 'parameters'>) {
-	if (run.executionKind === 'conversation') {
-		return { sql: `node.kind='communication' AND node.workday_id=?`, parameters: [run.id] };
-	}
-	const proposalIds = Array.isArray(run.parameters.proposalIds) ? run.parameters.proposalIds.map(text).filter(Boolean) : [];
-	if (record(run.parameters.appliedPlan).state === 'closing') {
-		return { sql: `node.kind='reporting' AND node.workday_id=?`, parameters: [run.id] };
-	}
-	if (run.parameters.planningOnly === true) {
-		return {
-			sql: `node.workday_id=? AND node.kind IN ('planning','estimating','communication','reporting')`,
-			parameters: [run.id],
-		};
-	}
-	if (proposalIds.length) return {
-		sql: `(node.workday_id=? OR (node.workday_id IS NULL
-			AND node.source_ref_json::jsonb->>'model'='proposal' AND node.source_ref_json::jsonb->>'id' IN (${proposalIds.map(() => '?').join(',')})))`,
-		parameters: [run.id, ...proposalIds],
-	};
-	return { sql: `(node.workday_id=? OR (node.workday_id IS NULL AND node.kind<>'communication'))`, parameters: [run.id] };
-}
 
 /** The phase is derived from current approved graph work, never persisted as a second scheduler state. */
 export async function runtimeWorkdayPhase(store: any, run: DurableCapacityWorkdayRun, now: string) {

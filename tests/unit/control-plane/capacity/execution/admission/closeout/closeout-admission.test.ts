@@ -1,3 +1,4 @@
+import {observeControlledClosing} from '../../graph/architecture/closeout-sql-fixture.ts';
 import { describe, expect, it } from 'vitest';
 import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import { initialAdmission } from '../../architecture/initial/initial-admission-fixture.ts';
@@ -39,7 +40,7 @@ describe('original workday closeout admission authority', () => {
    await f.query("UPDATE execution_nodes SET kind='reporting',source_ref_json=? WHERE id=?",[JSON.stringify(reporter.sourceRef),reporter.nodeId]);
    const input=f.input(reporter),original=structuredClone(input),before=await f.snapshot();
    await expect(f.admit(input)).rejects.toMatchObject({code:'workday_admission_closed',status:409});expect(await f.snapshot()).toEqual(before);
-   await f.query('UPDATE capacity_workday_runs SET parameters_json=? WHERE id=?',[JSON.stringify({appliedPlan:{...f.plan,state:'closing',closingAt:input.now}}),f.plan.id]);
+   await observeControlledClosing(f,input.now);
    const observed=await f.admit(input);expect(observed.assignmentAttempt).toEqual(reporter);
    const held=await f.snapshot();expect(await f.admit(input)).toEqual(observed);expect(await f.snapshot()).toEqual(held);expect(input).toEqual(original);
    const reservations=(await f.query('SELECT id,assignment_id,reserved_seconds FROM capacity_reservations')).rows;

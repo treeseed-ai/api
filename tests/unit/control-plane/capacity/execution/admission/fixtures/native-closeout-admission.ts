@@ -1,3 +1,7 @@
+import {ControlPlaneStore} from '../../../../../../../src/api/persistence/store.ts';
+import {CapacityWorkdayRunRepository} from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
+import {CapacityWorkdayRunWriteRepository} from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run-write.ts';
+import {CapacityWorkdayEventRepository} from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import {expect} from 'vitest';
 import {assignmentAttemptSchema, type AssignmentAttempt} from '@treeseed/sdk/agent-capacity';
 import type {createControlPlanePostgresDatabase} from '../../../../../../../src/api/support/control-plane-postgres.ts';
@@ -10,7 +14,7 @@ export async function proveNativeCloseoutAdmission(database:ReturnType<typeof cr
  expect(original).toHaveLength(1);const parameters=JSON.parse(String(original[0]!.parameters_json)),held=structuredClone(attempt);
  const closing=JSON.stringify({...parameters,appliedPlan:{...parameters.appliedPlan,state:'closing',closingAt:attempt.createdAt}});
  const state=async()=>Object.fromEntries(await Promise.all(['capacity_provider_assignments','capacity_reservations','execution_nodes','treedx_proxy_handles','capacity_workday_events','capacity_admission_counters','capacity_reservation_counter_claims'].map(async table=>[table,(await peer.pool.query('SELECT * FROM '+table+' ORDER BY 1')).rows])));
- const before=await state();expect(before.capacity_admission_counters).toEqual([]);expect(before.capacity_reservation_counter_claims).toEqual([]);const lock=await peer.pool.connect();let pending:Promise<{value:DurableProviderAssignment}|{error:unknown}>|undefined;
+ const before=await state();expect(before.capacity_admission_counters).toEqual([]);expect(before.capacity_reservation_counter_claims).toEqual([]);const lock=await peer.pool.connect();let closingEventId:string|undefined;let pending:Promise<{value:DurableProviderAssignment}|{error:unknown}>|undefined;
  try {
   await peer.pool.query('UPDATE capacity_workday_runs SET parameters_json=$1 WHERE id=$2',[closing,attempt.workdayId]);
   await expect(admit(attempt)).rejects.toMatchObject({code:'workday_admission_closed',status:409});
@@ -26,6 +30,12 @@ export async function proveNativeCloseoutAdmission(database:ReturnType<typeof cr
   await lock.query('UPDATE capacity_workday_runs SET parameters_json=$1 WHERE id=$2',[closing,attempt.workdayId]);await lock.query('COMMIT');
   expect(await pending).toMatchObject({error:{code:'workday_admission_closed',status:409}});pending=undefined;
   expect(await state()).toEqual(before);expect(attempt).toEqual(held);
+  // Establish closing through its actual owner before asking for immutable Reporter input.
+  const owner=new ControlPlaneStore({TREESEED_ENVIRONMENT:'test'},database);owner.initializationPromise=Promise.resolve();
+  await peer.pool.query('UPDATE capacity_workday_runs SET parameters_json=$1 WHERE id=$2',[original[0]!.parameters_json,attempt.workdayId]);
+  const prior=(await new CapacityWorkdayRunRepository(owner).get(attempt.teamId,attempt.workdayId))!;
+  await new CapacityWorkdayRunWriteRepository(owner).update({...prior,parameters:JSON.parse(closing),updatedAt:attempt.createdAt},prior.status);
+  const originalClosing=(await new CapacityWorkdayEventRepository(owner).list(attempt.teamId,attempt.workdayId,{limit:50})).items.filter(event=>event.eventType==='workday.lifecycle.changed');expect(originalClosing).toHaveLength(1);closingEventId=originalClosing[0]!.id;
   // The same canonical provider supply is still available for the chosen closing Reporter.
   const reporter=assignmentAttemptSchema.parse({...attempt,id:'closing-reporter',idempotencyKey:'closing-reporter',nodeId:'closing-reporter-node',leaseId:'closing-reporter-lease',reservationId:'closing-reporter-reservation',
    sourceRef:{store:'postgresql',model:'workday',id:attempt.workdayId,revision:1,digest:'sha256:'+'a'.repeat(64)},predecessorResultIds:[],
@@ -41,6 +51,7 @@ export async function proveNativeCloseoutAdmission(database:ReturnType<typeof cr
  } finally {
   await lock.query('ROLLBACK');lock.release();if(pending)await pending;
   // Remove only this helper's disposable test rows, retaining the original test's complete admission/settlement coverage.
+  if(closingEventId)await database.pool.query('DELETE FROM capacity_workday_events WHERE id=$1 AND team_id=$2 AND run_id=$3',[closingEventId,attempt.teamId,attempt.workdayId]);
   await database.pool.query("DELETE FROM capacity_workday_events WHERE assignment_id='closing-reporter' OR context_json::jsonb->>'nodeId'='closing-reporter-node'");
   await database.pool.query("DELETE FROM capacity_reservation_counter_claims WHERE reservation_id='closing-reporter-reservation'");
   await database.pool.query("DELETE FROM treedx_proxy_handles WHERE assignment_id='closing-reporter'");
@@ -48,7 +59,7 @@ export async function proveNativeCloseoutAdmission(database:ReturnType<typeof cr
   await database.pool.query("DELETE FROM capacity_reservations WHERE id='closing-reporter-reservation'");
   await database.pool.query("DELETE FROM execution_nodes WHERE id='closing-reporter-node'");
   await database.pool.query('DELETE FROM capacity_admission_counters');
-  await database.pool.query('UPDATE capacity_workday_runs SET parameters_json=$1,execution_kind=$3 WHERE id=$2',[original[0]!.parameters_json,attempt.workdayId,original[0]!.execution_kind]);
+  await database.pool.query('UPDATE capacity_workday_runs SET parameters_json=$1,execution_kind=$3,next_event_index=$4 WHERE id=$2',[original[0]!.parameters_json,attempt.workdayId,original[0]!.execution_kind,original[0]!.next_event_index]);
  }
  expect(await state()).toEqual(before);expect(attempt).toEqual(held);
 }

@@ -4730,3 +4730,52 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/admission/closeout/closeout-admission.test.ts
     testName: "rejects a caller-supplied conversation kind for an owning closing Workday without granting another admission path"
+  api.golden.execution-workday-lifecycle-observation-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-lifecycle-observations.test.ts
+    testName: "commits each original plan transition with its exact public lifecycle observation and makes an unchanged replay a noop"
+  api.golden.execution-workday-lifecycle-observation-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-lifecycle-observations.test.ts
+    testName: "rolls back plan changes and original event-index custody when the required public observation is missing or interrupted"
+  api.golden.execution-workday-lifecycle-observation-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-lifecycle-observations.test.ts
+    testName: "retains every completed original planning round when an active-plan update carries stale history"
+  api.golden.execution-workday-lifecycle-observation-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-lifecycle-observations.test.ts
+    testName: "rejects a substituted sole Workday mode without persisting a contradiction or creating a lifecycle observation"
+  api.golden.execution-reporter-graph-scope-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/report-context-scope.test.ts
+    testName: "retains selected proposal Actor and Reviewer nodes whose shared graph authority has no Workday owner while excluding unrelated proposals and teams"
+  api.golden.execution-reporter-graph-scope-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/report-context-scope.test.ts
+    testName: "rejects malformed original selection authority rather than widening a Reporter snapshot to unrelated graph nodes"
+  api.golden.execution-reporter-lifecycle-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/report-context-lifecycle.test.ts
+    testName: "requires the original closing observation instead of accepting a supplied closing status with no owning event"
+  api.golden.execution-reporter-lifecycle-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/report-context-lifecycle.test.ts
+    testName: "freezes the exact original closing event and completed planning rounds and denies lost malformed or unfinished lifecycle authority without repairing financial history"
+  api.golden.execution-reporter-observation-clock:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/report-context-lifecycle.test.ts
+    testName: "retains the original phase clock and later actual persistence observation without equating or rewriting either clock"
+  api.golden.component.workday-initial-plan-observation:
+    kind: vitestCase
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-lifecycle-observations.test.ts
+    testName: retains initial native applied-plan creation as one null-to-active observation before every later transition and exact replay

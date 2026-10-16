@@ -30,13 +30,13 @@ export async function settlementDatabase() {
 	try {
 		const initial = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
 		const bootstrap: string[] = [];
-		for (const table of ['capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_admission_counters', 'capacity_reservation_counter_claims', 'capacity_workday_events']) {
+		for (const table of ['capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_admission_counters', 'capacity_reservation_counter_claims']) {
 			const ddl = initial.filter(sql => sql.startsWith(`CREATE TABLE "${table}" (`));
 			if (ddl.length !== 1) throw new Error(`Missing original ${table} DDL`);
 			bootstrap.push(ddl[0]!);
 		}
 		for (const name of ['idx_capacity_ledger_settlement_key', 'idx_capacity_ledger_reservation_phase',
-			'idx_capacity_usage_actuals_idempotency', 'idx_capacity_usage_actuals_attempt_dimension', 'idx_capacity_reservation_counter_claim', 'idx_capacity_workday_events_run_index']) {
+			'idx_capacity_usage_actuals_idempotency', 'idx_capacity_usage_actuals_attempt_dimension', 'idx_capacity_reservation_counter_claim']) {
 			const ddl = initial.filter(sql => sql.startsWith(`CREATE UNIQUE INDEX "${name}" `));
 			if (ddl.length !== 1) throw new Error(`Missing original ${name} index`);
 			bootstrap.push(ddl[0]!);

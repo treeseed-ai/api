@@ -1,4 +1,4 @@
-import{expectNodeBirthHistory}from'./node-birth-history.ts';
+import{expectNodeBirthHistory,expectWorkdayLifecycleHistory}from'./node-birth-history.ts';
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { appliedWorkdaySchema, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
@@ -255,7 +255,7 @@ describe('first manual and recurring admission through the same public owning pa
 			const started = await f.start(planned, 'exact-selection-retry'), after = await f.snapshot();
 			expect(started).toMatchObject({ preflightId: planned.id, preflightDigest, acceptedExecutionNodeIds: [], assignmentIds: [], reservationIds: [] });
 			expect(after.receipts.find(entry => entry.id === row.id)).toEqual(row);
-			expectNodeBirthHistory(after); expect(after.workdays).toHaveLength(1); expect(after.events.filter(event=>event.event_type!=='execution.node.state').map(entry => entry.event_type)).toEqual(['workday.started', 'assignment.polling_ready']);
+			expectNodeBirthHistory(after);expect(expectWorkdayLifecycleHistory(after)).toHaveLength(1); expect(after.workdays).toHaveLength(1); expect(after.events.filter(event=>event.event_type!=='execution.node.state').map(entry => entry.event_type)).toEqual(['workday.started', 'workday.lifecycle.changed', 'assignment.polling_ready']);
 			expect(after.assignments).toEqual([]); expect(after.reservations).toEqual([]); expect(after.usage).toEqual([]); expect(after.ledger).toEqual([]);
 			expect(await f.start(planned, 'exact-selection-retry')).toEqual(started); expect(await f.snapshot()).toEqual(after);
 			expect(f.calls).toHaveLength(1); expect(f.intent).toEqual(original);
@@ -282,9 +282,9 @@ describe('first manual and recurring admission through the same public owning pa
 			expect(run.executionMode).toBe(input.executionMode); expect(run.parameters.deadlineAt).toBe(planned.endsAt);
 			expect(run.parameters.agentProfilesByProjectId).toMatchObject({ project: { agents: [{ definition: f.definition }] } });
 			expect(run.parameters.workdayContextByProjectId).toMatchObject({ project: { repository: 'planning-library', commit: 'a'.repeat(40), path: 'README.md' } });
-			expectNodeBirthHistory(truth); expect(truth.workdays).toHaveLength(1); expect(truth.nodes.length).toBeGreaterThan(0);
+			expectNodeBirthHistory(truth);expect(expectWorkdayLifecycleHistory(truth)).toHaveLength(1); expect(truth.workdays).toHaveLength(1); expect(truth.nodes.length).toBeGreaterThan(0);
 			for (const node of truth.nodes) expect(node).toMatchObject({ team_id: 'team', project_id: 'project', workday_id: receipt.workdayId, kind: 'planning', agent_class: f.definition.agentClass });
-			expect(truth.events.filter(event=>event.event_type!=='execution.node.state').map(event => event.event_type)).toEqual(['workday.started', 'assignment.polling_ready']);
+			expect(truth.events.filter(event=>event.event_type!=='execution.node.state').map(event => event.event_type)).toEqual(['workday.started', 'workday.lifecycle.changed', 'assignment.polling_ready']);
 			expect(truth.assignments).toEqual([]); expect(truth.reservations).toEqual([]); expect(truth.usage).toEqual([]); expect(truth.ledger).toEqual([]);
 			expect(f.calls).toEqual([{ method: 'POST', path: '/api/v1/repos/planning-library/paths/list',
 				input: { ref: 'a'.repeat(40), paths: ['**'], kinds: ['blob'], limit: 1, allowProtected: true } }]);
@@ -349,7 +349,7 @@ describe('first manual and recurring admission through the same public owning pa
 				IF NEW.operation='workday.start' THEN RAISE EXCEPTION 'isolated start receipt interruption'; END IF; RETURN NEW; END $$;
 				CREATE TRIGGER isolated_start_receipt_stop BEFORE INSERT ON capacity_operation_receipts FOR EACH ROW EXECUTE FUNCTION isolated_start_receipt_stop();`);
 			await expect(f.start(planned)).rejects.toThrow('isolated start receipt interruption');
-			const interrupted = await f.snapshot(); expect(interrupted.workdays).toHaveLength(1); expect(interrupted.events.filter(event=>event.event_type!=='execution.node.state')).toHaveLength(2); expectNodeBirthHistory(interrupted);
+			const interrupted = await f.snapshot(); expect(interrupted.workdays).toHaveLength(1); expect(interrupted.events.filter(event=>event.event_type!=='execution.node.state')).toHaveLength(3); expectNodeBirthHistory(interrupted);expect(expectWorkdayLifecycleHistory(interrupted)).toHaveLength(1);
 			expect(interrupted.receipts.filter(row => row.operation === 'workday.start')).toEqual([]);
 			await f.db.exec('DROP TRIGGER isolated_start_receipt_stop ON capacity_operation_receipts; DROP FUNCTION isolated_start_receipt_stop();');
 			const receipt = await f.start(planned), recovered = await f.snapshot(); expect(receipt.workdayId).toBe(interrupted.workdays[0]?.id);
@@ -384,7 +384,7 @@ describe('first manual and recurring admission through the same public owning pa
 				endsAt: new Date(Date.parse(original.startsAt) + original.durationSeconds * 1000).toISOString() });
 			expect(first.schedule?.intent).toEqual(original); expect(first.schedule?.lastRunId).toBe(first.run.id);
 			expect(truth.workdays).toHaveLength(1); expect(truth.receipts.map(row => row.operation).sort()).toEqual(['workday.preflight', 'workday.start']);
-			expectNodeBirthHistory(truth); expect(truth.nodes.length).toBeGreaterThan(0); expect(truth.events.filter(event=>event.event_type!=='execution.node.state').map(row => row.event_type)).toEqual(['workday.started', 'assignment.polling_ready']);
+			expectNodeBirthHistory(truth);expect(expectWorkdayLifecycleHistory(truth)).toHaveLength(1); expect(truth.nodes.length).toBeGreaterThan(0); expect(truth.events.filter(event=>event.event_type!=='execution.node.state').map(row => row.event_type)).toEqual(['workday.started', 'workday.lifecycle.changed', 'assignment.polling_ready']);
 			expect(truth.assignments).toEqual([]); expect(truth.ledger).toEqual([]);
 			expect((await f.store.tickCapacityWorkdaySchedule('team', 'schedule', f.intent.startsAt))?.action).toBe('active_run');
 			expect(await f.snapshot()).toEqual(truth); expect(f.calls).toHaveLength(1); expect(f.intent).toEqual(original);
@@ -396,7 +396,7 @@ describe('first manual and recurring admission through the same public owning pa
 			const outcomes = await Promise.allSettled([f.store.tickCapacityWorkdaySchedule('team', 'schedule', f.intent.startsAt), f.store.tickCapacityWorkdaySchedule('team', 'schedule', f.intent.startsAt)]);
 			const truth = await f.snapshot(); expect(truth.workdays).toHaveLength(1);
 			expect(truth.receipts.filter(row => row.operation === 'workday.start')).toHaveLength(1);
-			expectNodeBirthHistory(truth); expect(truth.events.filter(event=>event.event_type!=='execution.node.state').map(row => row.event_type)).toEqual(['workday.started', 'assignment.polling_ready']);
+			expectNodeBirthHistory(truth);expect(expectWorkdayLifecycleHistory(truth)).toHaveLength(1); expect(truth.events.filter(event=>event.event_type!=='execution.node.state').map(row => row.event_type)).toEqual(['workday.started', 'workday.lifecycle.changed', 'assignment.polling_ready']);
 			expect(outcomes.filter(outcome => outcome.status === 'fulfilled' && outcome.value?.action === 'created')).toHaveLength(1);
 			expect(truth.assignments).toEqual([]); expect(truth.reservations).toEqual([]); expect(truth.ledger).toEqual([]);
 			const replay = await f.store.tickCapacityWorkdaySchedule('team', 'schedule', f.intent.startsAt); expect(replay?.run?.id).toBe(truth.workdays[0]?.id);

@@ -1,3 +1,4 @@
+import {compileWorkday,DEFAULT_WORKDAY_POLICY} from '@treeseed/sdk/agent-capacity';
 import { createHash } from 'node:crypto';
 import { canonicalStandardsJson } from '@treeseed/sdk/standards';
 import { describe, expect, it, vi } from 'vitest';
@@ -9,10 +10,14 @@ const rows = { nodes: [{ id: 'actor', status: 'completed' }], edges: [{ from_nod
 	attempts: [{ id: 'expired', status: 'expired' }, { id: 'revision', status: 'completed', teardown_status: 'verified' }],
 	reservations: [{ id: 'reservation', assignment_id: 'expired', state: 'expired', released_seconds: 10 }],
 	usage: [{ id: 'usage', assignment_id: 'revision', active_seconds: 12 }] };
+const originalPlan=compileWorkday({id:'workday',teamId:'team',policyId:'default',policyRevision:1,executionMode:'simulation',startsAt:'2026-10-16T12:00:00.000Z',agentIds:[],policy:DEFAULT_WORKDAY_POLICY}),appliedPlan={...originalPlan,state:'closing',closingAt:'2026-10-16T12:01:00.000Z'};
+const closingContext={previousStatus:'running',status:'running',previousPlan:{...originalPlan,state:'active'},plan:appliedPlan};
+const closingEvent={id:'workday-lifecycle:workday:'+createHash('sha256').update(canonicalStandardsJson(closingContext)).digest('hex'),runId:'workday',teamId:'team',projectId:null,workdayId:'workday',assignmentId:null,eventIndex:0,eventType:'workday.lifecycle.changed',status:'recorded',title:null,message:null,parameters:{},context:closingContext,refs:{},metadata:{},createdAt:appliedPlan.closingAt};
+const closingRow={id:closingEvent.id,run_id:'workday',team_id:'team',project_id:null,workday_id:'workday',assignment_id:null,event_index:0,event_type:closingEvent.eventType,status:'recorded',title:null,message:null,parameters_json:'{}',context_json:JSON.stringify(closingContext),refs_json:'{}',metadata_json:'{}',created_at:closingEvent.createdAt};
 function storeWith(state = rows) {
-	return { all: vi.fn().mockResolvedValueOnce(state.nodes).mockResolvedValueOnce(state.edges)
+	return { first:vi.fn().mockResolvedValue({id:'workday',team_id:'team',status:'running',execution_mode:'simulation',execution_kind:'workday',parameters_json:JSON.stringify({appliedPlan})}),all: vi.fn().mockResolvedValueOnce(state.nodes).mockResolvedValueOnce(state.edges)
 		.mockResolvedValueOnce(state.attempts).mockResolvedValueOnce(state.reservations).mockResolvedValueOnce(state.usage)
-		.mockResolvedValueOnce([]) };
+		.mockResolvedValueOnce([]).mockResolvedValueOnce([closingRow]) };
 }
 
 describe('workday Reporter context', () => {
@@ -47,7 +52,7 @@ describe('workday Reporter context', () => {
 		const store = storeWith();
 		const [item] = await workdayReportContext(store as never, assignment as never);
 		expect(item.ref).toEqual(assignment.sourceRef);
-		expect(item.value).toEqual({ teamId: 'team', workdayId: 'workday', ...rows, settlements: [] });
+		expect(item.value).toEqual({ teamId: 'team', workdayId: 'workday',closingEvent, ...rows, settlements: [] });
 		expect(item.digest).toBe(`sha256:${createHash('sha256').update(canonicalStandardsJson(item.value)).digest('hex')}`);
 		for (const [sql, parameters] of store.all.mock.calls) {
 			expect(parameters).toEqual(['team', 'workday']);
