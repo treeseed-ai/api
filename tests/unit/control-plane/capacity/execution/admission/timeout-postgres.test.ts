@@ -1,3 +1,6 @@
+import {serializeCapacityReservationRow} from '../../../../../../src/api/capacity/repositories/capacity/accounting/reservation.ts';
+import {serializeTaskUsageActualRow} from '../../../../../../src/api/capacity/repositories/capacity/accounting/task-usage.ts';
+import {serializeCapacityLedgerEntryRow} from '../../../../../../src/api/capacity/repositories/capacity/accounting/ledger.ts';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { describe, expect, it } from 'vitest';
@@ -136,11 +139,15 @@ describe('terminal timeout PostgreSQL custody', () => {
 			expect(await store.all("SELECT id FROM capacity_ledger_entries WHERE phase='overrun_hold'")).toHaveLength(0);
 			if (!returned) {
 				const observations = await store.all("SELECT * FROM capacity_workday_events WHERE assignment_id='assignment'");
-				expect(observations).toHaveLength(1);
-				expect(observations[0]).toMatchObject({ team_id: issued.teamId, project_id: issued.projectId,
+				expect(observations).toHaveLength(2);
+    expect(observations.map(value=>value.event_type).sort()).toEqual(['capacity.accounting.updated',phase?'assignment.cancelled':'assignment.failed'].sort());
+    const terminalObservations=observations.filter(value=>value.event_type!=='capacity.accounting.updated');expect(terminalObservations).toHaveLength(1);
+				expect(terminalObservations[0]).toMatchObject({ team_id: issued.teamId, project_id: issued.projectId,
 					run_id: issued.workdayId, workday_id: issued.workdayId, event_type: phase ? 'assignment.cancelled' : 'assignment.failed' });
 				const terminal = await repository.get('team', 'assignment');
-				expect(observations[0]!.created_at).toBe(terminal!.updatedAt);
+				expect(terminalObservations[0]!.created_at).toBe(terminal!.updatedAt);
+    const accounting=observations.find(value=>value.event_type==='capacity.accounting.updated')!;expect(accounting).toMatchObject({team_id:issued.teamId,project_id:issued.projectId,run_id:issued.workdayId,workday_id:issued.workdayId,assignment_id:issued.id,status:'recorded'});
+    expect(JSON.parse(String(accounting.context_json))).toMatchObject({reservation:serializeCapacityReservationRow(await store.first('SELECT * FROM capacity_reservations WHERE id=?',['reservation'])),usageActual:serializeTaskUsageActualRow(await store.first('SELECT * FROM capacity_usage_actuals WHERE assignment_id=?',['assignment'])),ledgerEntry:serializeCapacityLedgerEntryRow(await store.first("SELECT * FROM capacity_ledger_entries WHERE assignment_id=? AND phase='task_completed_actual_settlement'",['assignment']))});
 			}
 		} finally {
 			await db.close(); await admin.query(`DROP DATABASE "${name}"`); await admin.end();

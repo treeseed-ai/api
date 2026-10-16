@@ -2880,7 +2880,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-native.test.ts
-    testName: "replays exact persisted custody repeatedly and concurrently without changing six owning SQL tables"
+    testName: "replays exact persisted custody repeatedly and concurrently without changing six owning SQL tables or their required original accounting history"
   api.golden.architecture-admission-replay-native-2:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
