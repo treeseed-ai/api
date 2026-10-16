@@ -1,0 +1,17 @@
+import {executionNodeSchema} from '@treeseed/sdk/agent-capacity';
+import {executionCapability} from '../../fixtures/assignment-attempt-fixtures.ts';
+import {compileWorkday,DEFAULT_WORKDAY_POLICY} from '@treeseed/sdk/agent-capacity';
+import {compileCapacityWorkdayRunRecord} from '../../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
+
+/** Controlled original authority shared by cheap constructor and native SQL proof. */
+export function planningWorkdayInputs(){
+  const startsAt='2026-10-03T12:00:00.000Z',floor='2026-10-03T12:20:00.000Z',after='2026-10-03T12:20:01.000Z';
+  const plan={...compileWorkday({id:'native-fluid-workday',teamId:'team',policyId:'default',policyRevision:1,executionMode:'simulation',startsAt,agentIds:['project/configured:planning'],policy:{...DEFAULT_WORKDAY_POLICY,durationSeconds:3600,planningPercent:100/3,maximumConcurrency:5,communicationConcurrency:5}}),state:'active' as const,activatedAt:startsAt};
+  const originalRun=compileCapacityWorkdayRunRecord('team',{id:plan.id,status:'running',executionMode:'simulation',startedAt:startsAt,parameters:{appliedPlan:plan,scheduledProjectIds:['project'],durationSeconds:plan.policySnapshot.durationSeconds}},{now:startsAt});
+ return {startsAt,floor,after,plan,originalRun};
+}
+
+/** Controlled graph input validated before native SQL preparation. */
+export function planningNodeInput(id:string,kind:'planning'|'acting'|'reviewing',status:string,projectId='project',workdayId='native-fluid-workday'){
+ return executionNodeSchema.parse({schemaVersion:'treeseed.execution-node/v1',id,teamId:'team',projectId,workdayId,kind,...(kind==='acting'||kind==='reviewing'?{workItemId:'controlled-product'}:{}),pairRole:kind==='acting'?'actor':kind==='reviewing'?'reviewer':null,sourceRef:{store:'postgresql',model:'workday',id:workdayId},authorityRefs:[],ruleRevision:1,nodeRevision:1,agentClass:'configured-arbitrary',status,estimate:{expectedSeconds:1,maximumSeconds:2},requiredCapabilities:[executionCapability],requestedPermissions:{content:{read:[],write:[]},tools:[]},workspace:'read-only',maximumReviewCycles:2,graphRevisionCreated:1,graphRevisionUpdated:1});
+}
