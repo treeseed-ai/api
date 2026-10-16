@@ -32,14 +32,14 @@ export async function closeoutDatabase() {
 		// Identical ordered original DDL in one native bootstrap call rather than
 		// separate calls for each statement on every fresh isolated database.
 		await db.exec(`${bootstrap.join(';\n')};`);
-		const query = async (sql: string, parameters: unknown[] = []) => {
+		const query = async <R extends Record<string, unknown> = Record<string, unknown>>(sql: string, parameters: unknown[] = []) => {
 			let index = 0;
-			return db.query<Record<string, unknown>>(sql.replace(/\?/gu, () => `$${++index}`), parameters);
+			return db.query<R>(sql.replace(/\?/gu, () => `$${++index}`), parameters);
 		};
 		const database = {
 			ensureInitialized: async () => undefined,
-			all: async (sql: string, parameters: unknown[] = []) => (await query(sql, parameters)).rows,
-			first: async (sql: string, parameters: unknown[] = []) => (await query(sql, parameters)).rows[0] ?? null,
+			all: async <R extends Record<string, unknown>>(sql: string, parameters: unknown[] = []) => (await query<R>(sql, parameters)).rows,
+			first: async <R extends Record<string, unknown>>(sql: string, parameters: unknown[] = []) => (await query<R>(sql, parameters)).rows[0] ?? null,
 			run: query,
 			batch: (operations: Array<{ query: string; params?: unknown[] }>) => db.transaction(async transaction => {
 				const results = [];

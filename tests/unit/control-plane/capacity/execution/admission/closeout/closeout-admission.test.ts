@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
-import { initialAdmission } from '../architecture/initial/initial-admission-fixture.ts';
+import { initialAdmission } from '../../architecture/initial/initial-admission-fixture.ts';
 
 describe('original workday closeout admission authority', () => {
  it('denies a previously prepared productive assignment after its owning plan closes, without creating financial or graph history', async () => {

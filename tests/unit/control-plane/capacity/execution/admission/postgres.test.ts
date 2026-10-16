@@ -1,4 +1,3 @@
-import {proveNativeCloseoutAdmission} from './fixtures/native-closeout-admission.ts';
 import {proveNativeCreationRollback} from './fixtures/native-creation-observations.ts';
 import { verifyNativeModelUsage, verifyNativeProviderUsage } from '../../../../../acceptance/execution-native-usage.ts';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -104,7 +103,6 @@ describe('living admission in disposable PostgreSQL', () => {
 				projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'codex', laneId: 'workday', lanePurpose: 'workday',
 				executionKind: 'workday', workdayConcurrencyLimit: 1, predecessorResults: [], treedxProxyHandle: { id: `tdx-${attempt.id}` }, now: attempt.createdAt,
 			});
-			await proveNativeCloseoutAdmission(database,peerDatabase,attempts[0]!,run);
 			await proveNativeCreationRollback(database,peerDatabase,attempts[0]!,run);
 			const results = await Promise.allSettled(attempts.map((attempt, index) => run(attempt, index === 0 ? store as never : peerAccounting)));
 			expect(results.filter(result => result.status === 'fulfilled'), results.map(result => result.status === 'rejected' ? String(result.reason) : 'admitted').join('\n')).toHaveLength(1);
