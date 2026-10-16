@@ -4710,3 +4710,23 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/scheduling/planning/planning-window-evidence.test.ts
     testName: "constructs every canonical native planning Actor and Reviewer graph row before database preparation"
+  api.golden.execution-closeout-admission-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/closeout/closeout-admission.test.ts
+    testName: "denies a previously prepared productive assignment after its owning plan closes, without creating financial or graph history"
+  api.golden.execution-closeout-admission-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/closeout/closeout-admission.test.ts
+    testName: "rejects missing malformed foreign ended and contradictory original workday authority without changing it"
+  api.golden.execution-closeout-admission-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/closeout/closeout-admission.test.ts
+    testName: "admits the exact Reporter only in closing and replays its original reservation without another charge"
+  api.golden.execution-closeout-admission-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/closeout/closeout-admission.test.ts
+    testName: "rejects a caller-supplied conversation kind for an owning closing Workday without granting another admission path"

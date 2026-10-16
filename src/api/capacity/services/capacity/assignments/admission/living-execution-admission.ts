@@ -4,7 +4,7 @@ import {capacityTransaction} from '../../../../transaction.ts';
 import {ProviderAssignmentRepository} from '../../../../repositories/capacity/assignments/assignment.ts';
 import {CapacityWorkdayEventRepository,type CapacityWorkdayEventWrite} from '../../../../repositories/capacity/workdays/workday-event.ts';
 import type { AssignmentAttempt, CapabilityAccountingLimits, calculateAssignmentAllocation, allocateWorkdayCapacity, selectFairReadyNode } from '@treeseed/sdk/agent-capacity';
-import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
+import { appliedWorkdaySchema, assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { capabilityCounterClaims, initializeCapabilityCounters, commitCapabilityCounters } from './capability-counter-claims.ts';
@@ -178,6 +178,19 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		await database.run("SELECT id FROM capacity_workday_runs WHERE team_id=? AND id=? AND status='running' FOR UPDATE",[assignment.teamId,assignment.workdayId]);
   const original=await new ProviderAssignmentRepository(database).get(assignment.teamId,assignment.id);
   if(original)return retainedReplay(database,original);
+  const owningRun=await database.first("SELECT parameters_json,execution_mode,execution_kind FROM capacity_workday_runs WHERE team_id=? AND id=? AND status='running' AND execution_kind=?",[assignment.teamId,assignment.workdayId,input.executionKind]);
+  if(!owningRun)throw new CapacityGovernanceError('workday_admission_closed','New admission requires its original owning execution kind and running Workday.',409);
+  if(input.executionKind==='workday'){
+   let parameters:unknown=owningRun?.parameters_json;
+   if(typeof parameters==='string')try{parameters=JSON.parse(parameters);}catch{parameters=null;}
+   const parsed=appliedWorkdaySchema.safeParse((parameters&&typeof parameters==='object'&&!Array.isArray(parameters)?Reflect.get(parameters,'appliedPlan'):undefined));
+   if(!parsed.success||owningRun?.execution_kind!=='workday'||parsed.data.id!==assignment.workdayId
+    ||parsed.data.teamId!==assignment.teamId||parsed.data.executionMode!==owningRun.execution_mode
+    ||(reporting?parsed.data.state!=='closing':!['planned','active'].includes(parsed.data.state)
+     ||Date.parse(input.now)>=Date.parse(parsed.data.endsAt)))throw new CapacityGovernanceError(
+      'workday_admission_closed','New admission requires its original current workday phase; closing permits only its Reporter.',409);
+  }
+
 		const beforeNodes=await readExecutionNodeStates(database,assignment.teamId,assignment.workdayId,[assignment.nodeId]);
   await database.batch(initializeCapabilityCounters(assignment,claims,input.now));
   const counterBasis=await database.all('SELECT id,hard_limit,committed_amount,state_version,scope,scope_id,period_key FROM capacity_admission_counters WHERE id IN ('+claims.map(()=>'?').join(',')+') ORDER BY id FOR UPDATE',claims.map(claim=>claim.id));
