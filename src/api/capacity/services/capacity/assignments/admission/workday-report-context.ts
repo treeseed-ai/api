@@ -14,8 +14,12 @@ export async function workdayReportContext(store: CapacityGovernanceDatabase, as
 		|| assignment.sourceRef.id !== assignment.workdayId) throw new CapacityGovernanceError(
 			'reporter_workday_authority_required', 'Reporter must reference its own workday.', 409);
 	const run=await store.first('SELECT id,execution_kind,parameters_json FROM capacity_workday_runs WHERE team_id=? AND id=? LIMIT 1',[assignment.teamId,assignment.workdayId]);
-	if(!run)throw new CapacityGovernanceError('reporter_workday_authority_required','Reporter requires its original Workday.',409);
-	const parameters=typeof run.parameters_json==='string'?JSON.parse(run.parameters_json):run.parameters_json;
+	if(!run||run.execution_kind!=='workday')throw new CapacityGovernanceError('reporter_workday_authority_required','Reporter requires its original Workday.',409);
+	let decoded:unknown;try{decoded=typeof run.parameters_json==='string'?JSON.parse(run.parameters_json):run.parameters_json;}catch{decoded=null;}
+	if(!decoded||typeof decoded!=='object'||Array.isArray(decoded))throw new CapacityGovernanceError('reporter_workday_authority_required','Reporter Workday selection is malformed.',409);
+	const parameters=decoded as Record<string,unknown>,ids=parameters.proposalIds;
+	if(Object.hasOwn(parameters,'proposalIds')&&(!Array.isArray(ids)||ids.some(id=>typeof id!=='string'||!id.trim()||id!==id.trim())||new Set(ids).size!==ids.length))
+		throw new CapacityGovernanceError('reporter_workday_authority_required','Reporter proposal selection is malformed.',409);
 	const graph=executionNodeWorkdayScope({id:assignment.workdayId,executionKind:run.execution_kind as 'workday'|'conversation',parameters:parameters as Record<string,unknown>});
 	const scope = [assignment.teamId, assignment.workdayId],graphParameters=[assignment.teamId,...graph.parameters];
 	const [nodes, edges, attempts, reservations, usage, ledger] = await Promise.all([
