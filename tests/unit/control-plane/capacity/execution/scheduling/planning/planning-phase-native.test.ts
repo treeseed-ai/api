@@ -1,3 +1,5 @@
+import {createCapacityControlPlane} from '../../../../../../../src/api/capacity/control-plane.ts';
+import {CapacityWorkdayRunWriteRepository} from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run-write.ts';
 import {livingAllocationInputs} from '../../../../../../../src/api/capacity/services/capacity/assignments/admission/living-allocation-inputs.ts';
 import {provider,executionCapability} from '../../fixtures/assignment-attempt-fixtures.ts';
 import {expect,it} from 'vitest';
@@ -15,10 +17,11 @@ it('native PostgreSQL preserves the initial planning floor derives acting from o
  try{
   const startsAt='2026-10-03T12:00:00.000Z',floor='2026-10-03T12:20:00.000Z',after='2026-10-03T12:20:01.000Z';
   const plan={...compileWorkday({id:'native-fluid-workday',teamId:'team',policyId:'default',policyRevision:1,executionMode:'simulation',startsAt,agentIds:['project/configured:planning'],policy:{...DEFAULT_WORKDAY_POLICY,durationSeconds:3600,planningPercent:100/3,maximumConcurrency:5,communicationConcurrency:5}}),state:'active' as const,activatedAt:startsAt};
-  const run=compileCapacityWorkdayRunRecord('team',{id:plan.id,status:'running',executionMode:'simulation',startedAt:startsAt,parameters:{appliedPlan:plan,scheduledProjectIds:['project']}},{now:startsAt});
-  const stores=[new ControlPlaneStore({},f.left),new ControlPlaneStore({},f.right)];for(const store of stores)store.initializationPromise=Promise.resolve();
+  const originalRun=compileCapacityWorkdayRunRecord('team',{id:plan.id,status:'running',executionMode:'simulation',startedAt:startsAt,parameters:{appliedPlan:plan,scheduledProjectIds:['project']}},{now:startsAt});
+  const hosts=[new ControlPlaneStore({},f.left),new ControlPlaneStore({},f.right)];for(const host of hosts)host.initializationPromise=Promise.resolve();const stores=hosts.map(host=>createCapacityControlPlane(host));
+  const run=await new CapacityWorkdayRunWriteRepository(stores[0]!).create(originalRun);expect(run).toEqual(originalRun);
   for(const project of ['project','foreign-project'])await f.left.pool.query('INSERT INTO projects (id,team_id,slug,name,metadata_json,created_at,updated_at) VALUES ($1,$2,$1,$1,$3,$4,$4)',[project,'team','{}',startsAt]);
-  for(const id of [run.id,'other-workday'])await f.left.pool.query('INSERT INTO capacity_workday_runs (id,team_id,execution_kind,execution_mode,status,parameters_json,started_at,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$7)',[id,'team','workday','simulation','running',JSON.stringify(id===run.id?run.parameters:{...run.parameters,appliedPlan:{...plan,id,planningRounds:[]}}),startsAt]);
+  await new CapacityWorkdayRunWriteRepository(stores[0]!).create({...run,id:'other-workday',parameters:{...run.parameters,appliedPlan:{...plan,id:'other-workday',planningRounds:[]}}});
   const node=async(id:string,kind:'planning'|'acting'|'reviewing',status:string,projectId='project',workdayId=run.id)=>{
    const value=executionNodeSchema.parse({schemaVersion:'treeseed.execution-node/v1',id,teamId:'team',projectId,workdayId,kind,pairRole:kind==='acting'?'actor':kind==='reviewing'?'reviewer':null,sourceRef:{store:'postgresql',model:'workday',id:workdayId},authorityRefs:[],ruleRevision:1,nodeRevision:1,agentClass:'configured-arbitrary',status,estimate:{expectedSeconds:1,maximumSeconds:2},requiredCapabilities:[executionCapability],requestedPermissions:{content:{read:[],write:[]},tools:[]},workspace:'read-only',maximumReviewCycles:2,graphRevisionCreated:1,graphRevisionUpdated:1});
    await f.left.pool.query('INSERT INTO execution_nodes (id,team_id,project_id,workday_id,kind,pair_role,source_ref_json,authority_refs_json,rule_revision,node_revision,agent_class,status,estimate_json,required_capabilities_json,requested_permissions_json,workspace,maximum_review_cycles,graph_revision_created,graph_revision_updated,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$20)',[value.id,value.teamId,value.projectId,value.workdayId,value.kind,value.pairRole,JSON.stringify(value.sourceRef),JSON.stringify(value.authorityRefs),1,1,value.agentClass,value.status,JSON.stringify(value.estimate),JSON.stringify(value.requiredCapabilities),JSON.stringify(value.requestedPermissions),'read-only',2,1,1,startsAt]);
@@ -29,7 +32,7 @@ it('native PostgreSQL preserves the initial planning floor derives acting from o
   const phase=(index:number,now:string,value=run)=>runtimeWorkdayPhase(stores[index]!,value,now);
   const allocation=async(index:number,now:string,activity:string)=>{
    const observation={day:now.slice(0,10),observedAt:now,healthy:true,activeSeconds:0,reservedSeconds:0};
-   const providers:Parameters<typeof livingAllocationInputs>[1]['providers']=[{...structuredClone(provider),maxConcurrentRunners:5,accountingObservation:{modelUsage:observation,capabilityUsage:{[executionCapability]:observation}}}];
+   const providers:Parameters<typeof livingAllocationInputs>[1]['providers']=[{...structuredClone(provider),maxConcurrentRunners:5,lanes:provider.lanes.map(lane=>({...lane,purpose:'workday' as const,maxConcurrentRunners:5})),accountingObservation:{modelUsage:observation,capabilityUsage:{[executionCapability]:observation}}}];
    const input={run,runs:[run],providers,capacityProviderId:'provider',capabilityId:executionCapability,agentClass:'configured-arbitrary',activity,now},heldInput=structuredClone(input);
    const result=(await livingAllocationInputs(stores[index]!,input))[provider.id]!;expect(input).toEqual(heldInput);expect(result.measurements).toEqual([]);expect(result.constraints).toEqual([{id:'workday-phase-share',remainingSeconds:result.opportunity.availableSeconds}]);return result.opportunity;
   };
