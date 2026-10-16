@@ -160,7 +160,6 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		throw new CapacityGovernanceError('execution_assignment_authority_mismatch',
 			'The ready node or its exact completed predecessor authority changed before admission.', 409);
 	}
-	const authorizedContext = await workdayReportContext(store, assignment);
 	const claims = capabilityCounterClaims(assignment, input.accountingLimits, input.now);
 	const admissionToken = randomUUID();
 	return capacityTransaction(store,async database=>{
@@ -191,6 +190,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
       'workday_admission_closed','New admission requires its original current workday phase; closing permits only its Reporter.',409);
   }
 
+		const authorizedContext = await workdayReportContext(database, assignment);
 		const beforeNodes=await readExecutionNodeStates(database,assignment.teamId,assignment.workdayId,[assignment.nodeId]);
   await database.batch(initializeCapabilityCounters(assignment,claims,input.now));
   const counterBasis=await database.all('SELECT id,hard_limit,committed_amount,state_version,scope,scope_id,period_key FROM capacity_admission_counters WHERE id IN ('+claims.map(()=>'?').join(',')+') ORDER BY id FOR UPDATE',claims.map(claim=>claim.id));
