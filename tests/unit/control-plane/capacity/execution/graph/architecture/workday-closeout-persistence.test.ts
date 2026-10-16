@@ -1,3 +1,4 @@
+import {observeControlledClosing} from './closeout-sql-fixture.ts';
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -104,7 +105,7 @@ describe('canonical single report at the real lifecycle and SQL boundary', () =>
 		} finally { await f.db.close(); }
 	});
 	it('native Reporter snapshot retains the exact original teardown result rather than an absent status scalar without repairing evidence or changing SQL history', async () => {
-		const f = await settlementDatabase(); try {
+		const f = await settlementDatabase(); try {await observeControlledClosing(f);
 			await settleCapacityReservationExactlyOnce(f.owner, { ...terminalUsage });
 			const teardown = { verified: true, completedAt: now, resources: [{ id: 'owned-workspace', state: 'closed' }] };
 			const lifecycle = { teardown, activityCompletion: { reviewDisposition: 'request-changes' } };

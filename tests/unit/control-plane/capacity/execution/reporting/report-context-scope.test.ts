@@ -1,3 +1,4 @@
+import {observeControlledClosing} from '../graph/architecture/closeout-sql-fixture.ts';
 import {describe,expect,it} from 'vitest';
 import {settlementDatabase} from '../../accounting/architecture/settlement-fixture.ts';
 import {workdayReportContext} from '../../../../../../src/api/capacity/services/capacity/assignments/admission/workday-report-context.ts';
@@ -5,7 +6,7 @@ import {frozenAttempt} from '../../accounting/architecture/settlement-fixture.ts
 
 describe('original Reporter complete graph scope',()=>{
  it('retains selected proposal Actor and Reviewer nodes whose shared graph authority has no Workday owner while excluding unrelated proposals and teams',async()=>{
-  const f=await settlementDatabase();try{
+  const f=await settlementDatabase();try{await observeControlledClosing(f);
    const run=(await f.reads.get('team','workday'))!;
    await f.query('UPDATE capacity_workday_runs SET parameters_json=? WHERE id=?',[JSON.stringify({...run.parameters,proposalIds:['selected-proposal']}),run.id]);
    await f.query("UPDATE capacity_reservations SET state='expired' WHERE id='reservation'");

@@ -14,7 +14,7 @@ describe('original Reporter lifecycle input custody',()=>{
  it('freezes the exact original closing event and completed planning rounds and denies lost malformed or unfinished lifecycle authority without repairing financial history',async()=>{
   const f=await settlementDatabase();try{
    await f.query("UPDATE capacity_reservations SET state='expired' WHERE id='reservation'");
-   const original=(await f.reads.get('team','workday'))!,plan=original.parameters.appliedPlan as Record<string,unknown>,active={...plan,state:'active',planningRounds:[{round:1,state:'complete',assignmentIds:['controlled-original-turn'],startedAt:plan.startsAt,completedAt:'2026-10-02T21:00:30.000Z'}]};delete active.closingAt;
+   const original=(await f.reads.get('team','workday'))!,plan=original.parameters.appliedPlan as Record<string,unknown>,active={...plan,state:'active',planningRounds:[{round:1,state:'complete',assignmentIds:['controlled-original-turn'],startedAt:plan.startsAt,completedAt:'2026-10-02T21:00:30.000Z'}]};Reflect.deleteProperty(active,'closingAt');
    await f.query('UPDATE capacity_workday_runs SET parameters_json=? WHERE id=?',[JSON.stringify({...original.parameters,appliedPlan:active}),original.id]);
    const before=(await f.reads.get('team','workday'))!,closing={...before,parameters:{...before.parameters,appliedPlan:{...before.parameters.appliedPlan as object,state:'closing',closingAt:'2026-10-02T21:01:00.000Z'}},updatedAt:'2026-10-02T21:01:00.000Z'};
    await new CapacityWorkdayRunWriteRepository(f.owner).update(closing,'running');const event=(await new CapacityWorkdayEventRepository(f.owner).list('team','workday',{limit:50})).items[0]!;

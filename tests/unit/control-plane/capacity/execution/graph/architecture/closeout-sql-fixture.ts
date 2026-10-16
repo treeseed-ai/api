@@ -1,3 +1,4 @@
+import {appliedWorkdaySchema} from '@treeseed/sdk/agent-capacity';
 import {executePostgresBatch} from '../../../../../../../src/api/support/control-plane-postgres.ts';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
@@ -89,3 +90,11 @@ export async function closeoutDatabase() {
 		} };
 	} catch (error) { await db.close(); throw error; }
 }
+/** Controlled SQL setup for tests requiring a genuine owning closing observation; no executed planning turn or Reporter artifact is manufactured. */
+export async function observeControlledClosing(base:Awaited<ReturnType<typeof closeoutDatabase>>){
+ const run=(await base.reads.get('team','workday'))!,original=appliedWorkdaySchema.parse(run.parameters.appliedPlan),active={...original,state:'active' as const};delete active.closingAt;
+ await base.query('UPDATE capacity_workday_runs SET parameters_json=? WHERE id=?',[JSON.stringify({...run.parameters,appliedPlan:active}),run.id]);
+ const before=(await base.reads.get('team','workday'))!;
+ return new CapacityWorkdayRunWriteRepository(base.owner).update({...before,parameters:{...before.parameters,appliedPlan:{...before.parameters.appliedPlan as object,state:'closing',closingAt:original.closingAt}},updatedAt:original.closingAt!},before.status);
+}
+

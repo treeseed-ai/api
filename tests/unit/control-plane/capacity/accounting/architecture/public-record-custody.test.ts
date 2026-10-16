@@ -1,3 +1,4 @@
+import {observeControlledClosing} from '../../execution/graph/architecture/closeout-sql-fixture.ts';
 import { readFileSync } from 'node:fs';
 import { createHash, generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
@@ -20,7 +21,7 @@ const reporter = assignmentAttemptSchema.parse({ ...frozenAttempt,
 	sourceRef: { store: 'postgresql', model: 'workday', id: frozenAttempt.workdayId, revision: 1, digest: `sha256:${'a'.repeat(64)}` },
 	effectiveProfile: { ...frozenAttempt.effectiveProfile, activity: 'reporting' } });
 async function fixture() {
-	const f = await settlementDatabase();
+	const f = await settlementDatabase();await observeControlledClosing(f);
 	try {
 		const ddl = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8')).filter(sql => sql.startsWith('CREATE TABLE "projects" ('));
 		if (ddl.length !== 1) throw new Error('Original projects DDL required'); await f.db.exec(ddl[0]!);
