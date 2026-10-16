@@ -850,7 +850,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/living-execution-admission.test.ts
-    testName: "claims the node, reservation, and immutable attempt in one batch without legacy demand/allocation authority"
+    testName: "claims the node, reservation, and immutable attempt in one transaction without legacy demand/allocation authority"
   api.golden.execution-poll-token-custody-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

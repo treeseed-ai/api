@@ -38,7 +38,7 @@ describe('living execution admission', () => {
 			code: 'assignment_allocation_phase_invalid' });
 		expect(store.batch).not.toHaveBeenCalled();
 	});
-	it('claims the node, reservation, and immutable attempt in one batch without legacy demand/allocation authority', async () => {
+	it('claims the node, reservation, and immutable attempt in one transaction without legacy demand/allocation authority', async () => {
         const observation=vi.spyOn(CapacityWorkdayEventRepository.prototype,'create').mockImplementation(async(teamId,runId,value)=>({...value,teamId,runId,eventIndex:0}));
 		const committed = committedAssignment();
 		const store = { ...admissionNodeObservationStore(), getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed), batch: batch(), first: readyNode() };
@@ -49,7 +49,7 @@ describe('living execution admission', () => {
 		expect(observation.mock.calls.filter(([, , value])=>value.eventType==='assignment.created'),'every successful admission must publish one owning creation observation').toHaveLength(1);
         expect(observation.mock.calls.filter(([, , value])=>value.eventType==='execution.node.state')).toHaveLength(1);
         expect(observation.mock.calls[1]![2].context).toEqual({nodeId:assignment.nodeId,nodeRevision:assignment.nodeRevision,graphRevision:assignment.graphRevision,status:'assigned',previousStatus:'ready'});observation.mockRestore();
-		const sql = store.batch.mock.calls[0]![0].map((operation: { query: string }) => operation.query).join('\n');
+		const sql = store.batch.mock.calls.flatMap(([operations])=>operations).map((operation: { query: string }) => operation.query).join('\n');
 		expect(sql).toMatch(/FOR UPDATE/u);
 		expect(store.run).toHaveBeenCalledExactlyOnceWith("SELECT id FROM capacity_workday_runs WHERE team_id=? AND id=? AND status='running' FOR UPDATE",[assignment.teamId,assignment.workdayId]);
         expect(store.run.mock.invocationCallOrder[0]).toBeLessThan(store.batch.mock.invocationCallOrder[0]!);
@@ -62,17 +62,17 @@ describe('living execution admission', () => {
 		expect(sql).toMatch(/committed_amount\+\?<=LEAST\(hard_limit,\?\)/u);
 		expect(sql).toMatch(/ON CONFLICT \(id\) DO UPDATE\s+SET hard_limit=EXCLUDED.hard_limit/u);
 		expect(sql).toMatch(/INSERT INTO capacity_reservation_counter_claims/u);
-		for (const operation of store.batch.mock.calls[0]![0]) {
+		for (const operation of store.batch.mock.calls.flatMap(([operations])=>operations)) {
 			expect((operation.query.match(/\?/gu) ?? []).length).toBe(operation.params.length);
 		}
 		expect(sql).toMatch(/assignment_attempt_json/u);
-		const explanation = store.batch.mock.calls[0]![0].find((operation: { query: string }) => operation.query.includes('SET explanation_json'))!;
+		const explanation = store.batch.mock.calls.flatMap(([operations])=>operations).find((operation: { query: string }) => operation.query.includes('SET explanation_json'))!;
 		expect(JSON.parse(String(explanation.params[0]))).toMatchObject({ metadata: { allocation: { allocatedSeconds: 3, limitingConstraint: 'task-duration' } } });
 		expect(JSON.parse(String(explanation.params[0]))).toMatchObject({ teamId: 'team', assignmentId: assignment.id,
 			source: 'living_execution_admission', sourceId: assignment.nodeId, eligible: true, reasons: [], gates: {},
 			metadata: { recordedAt: assignment.createdAt, history: [] }, createdAt: assignment.createdAt });
 		expect(sql).toMatch(/INSERT INTO treedx_proxy_handles/u);
-		const assignmentInsert = store.batch.mock.calls[0]![0].find((operation: { query: string }) => operation.query.includes('INSERT INTO capacity_provider_assignments'))!;
+		const assignmentInsert = store.batch.mock.calls.flatMap(([operations])=>operations).find((operation: { query: string }) => operation.query.includes('INSERT INTO capacity_provider_assignments'))!;
 		expect(assignmentInsert.query).toMatch(/SELECT (?:\?,){14}\?,'pending'/u);
 		expect(assignmentInsert.params[14]).toBeNull();
 		expect(JSON.parse(String(assignmentInsert.params[17]))).toMatchObject({ teamId: 'team', projectId: 'project', mode: 'acting',
@@ -82,8 +82,8 @@ describe('living execution admission', () => {
 			predecessorResults: [] });
 		expect(assignmentInsert.params[19]).toBe(assignment.attempt);
 		expect(assignmentInsert.query).not.toContain('decision_input_json');
-		expect(store.batch.mock.calls[0]![0].some((operation: { params: unknown[] }) => operation.params.includes('workday'))).toBe(true);
-		expect(store.batch.mock.calls[0]![0].some((operation: { params: unknown[] }) => operation.params.includes('operation'))).toBe(false);
+		expect(store.batch.mock.calls.flatMap(([operations])=>operations).some((operation: { params: unknown[] }) => operation.params.includes('workday'))).toBe(true);
+		expect(store.batch.mock.calls.flatMap(([operations])=>operations).some((operation: { params: unknown[] }) => operation.params.includes('operation'))).toBe(false);
 		expect(sql).not.toMatch(/'workday',\?,\?,\?,\?,'pending'/u);
 		expect(sql).not.toMatch(/capacity_workday_demands|capacity_allocation_sets|agent_capacity_plans/u);
 	});
@@ -117,7 +117,7 @@ describe('living execution admission', () => {
 			accountingLimits, assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'codex', laneId: 'lane',
 			lanePurpose: 'workday', executionKind: 'workday', workdayConcurrencyLimit: 1, predecessorResults: [], treedxProxyHandle: { id: 'tdx_assignment', status: 'issued',
 				allowedPaths: [], allowedReadPaths: [], allowedWritePaths: [], scopes: [], allowedOperations: [] }, now: assignment.createdAt });
-		const operations = store.batch.mock.calls[0]![0] as Array<{ query: string; params: unknown[] }>;
+		const operations = store.batch.mock.calls.flatMap(([operations])=>operations) as Array<{ query: string; params: unknown[] }>;
 		const reservation = operations.find((operation) => operation.query.includes('INSERT INTO capacity_reservations'))!;
 		expect(reservation.params.slice(-8)).toEqual(['team', 'workday', 'workday', 1, 'team', 'provider', 'lane', 1]);
 		const insertedAssignment = operations.find((operation) => operation.query.includes('INSERT INTO capacity_provider_assignments'))!;
@@ -137,7 +137,7 @@ describe('living execution admission', () => {
 			accountingLimits, assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'codex', laneId: 'communication',
 			lanePurpose: 'communication', executionKind: 'conversation', workdayConcurrencyLimit: 2, invocationId: 'invocation-1', predecessorResults: [], treedxProxyHandle: { id: 'tdx_assignment', status: 'issued',
 				allowedPaths: [], allowedReadPaths: [], allowedWritePaths: [], scopes: [], allowedOperations: [] }, now: assignment.createdAt });
-		const binding = store.batch.mock.calls[0]![0].find((operation: { query: string }) => operation.query.includes('UPDATE agent_invocation_requests'))!;
+		const binding = store.batch.mock.calls.flatMap(([operations])=>operations).find((operation: { query: string }) => operation.query.includes('UPDATE agent_invocation_requests'))!;
 		expect(binding.params).toEqual(['assignment', assignment.createdAt, 'invocation-1', 'team', 'assignment',
 			'assignment', 'team', 'reservation', 'invocation-1']);
 		expect(binding.query).toContain('prior.team_id=agent_invocation_requests.team_id');
@@ -145,11 +145,11 @@ describe('living execution admission', () => {
 		expect(binding.query).toContain("prior.status IN ('returned','failed','cancelled')");
 		expect(binding.query).toContain('admitted.reservation_id=?');
 		expect(binding.query).toContain("admitted.invocation_id=? AND admitted.status='pending'");
-		const reservation = store.batch.mock.calls[0]![0].find((operation: { query: string }) => operation.query.includes('INSERT INTO capacity_reservations'))!;
+		const reservation = store.batch.mock.calls.flatMap(([operations])=>operations).find((operation: { query: string }) => operation.query.includes('INSERT INTO capacity_reservations'))!;
 		expect(reservation.params.slice(-8)).toEqual(['team', 'workday', 'conversation', 2, 'team', 'provider', 'communication', 1]);
 		expect(reservation.query).toContain("invocation.status IN ('admitted','running')");
 		expect(reservation.query).toContain("prior.status IN ('returned','failed','cancelled')");
-		const operations = store.batch.mock.calls[0]![0] as Array<{ query: string; params: unknown[] }>;
+		const operations = store.batch.mock.calls.flatMap(([operations])=>operations) as Array<{ query: string; params: unknown[] }>;
 		expect(operations.findIndex((operation) => operation.query.includes('agent_invocation_requests WHERE id=? AND team_id=? FOR UPDATE')))
 			.toBeLessThan(operations.findIndex((operation) => operation.query.includes('INSERT INTO capacity_reservations')));
 		for (const operation of operations) expect((operation.query.match(/\?/gu) ?? []).length).toBe(operation.params.length);
