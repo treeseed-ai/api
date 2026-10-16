@@ -1,3 +1,4 @@
+import {expectWorkdayLifecycleHistory} from '../scheduling/architecture/node-birth-history.ts';
 import {describe,expect,it} from 'vitest';
 import {appliedWorkdaySchema} from '@treeseed/sdk/agent-capacity';
 import {settlementDatabase} from '../../accounting/architecture/settlement-fixture.ts';
@@ -5,6 +6,18 @@ import {CapacityWorkdayRunWriteRepository} from '../../../../../../src/api/capac
 import {CapacityWorkdayEventRepository} from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 
 describe('original Workday lifecycle and public observation custody',()=>{
+ it('retains initial native applied-plan creation as one null-to-active observation before every later transition and exact replay',async()=>{
+  const f=await settlementDatabase();try{
+   const original=(await f.reads.get('team','workday'))!,plan={...appliedWorkdaySchema.parse(original.parameters.appliedPlan),state:'active' as const,activatedAt:original.startedAt!,planningRounds:[]};delete plan.closingAt;
+   const parameters={...original.parameters};delete parameters.appliedPlan;await f.query('UPDATE capacity_workday_runs SET parameters_json=? WHERE id=?',[JSON.stringify(parameters),original.id]);
+   const before=(await f.reads.get('team','workday'))!,candidate={...before,parameters:{...parameters,appliedPlan:plan}},writer=new CapacityWorkdayRunWriteRepository(f.owner);
+   expect(await writer.update(candidate,before.status)).toEqual(candidate);
+   const snapshot={workdays:(await f.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows,events:(await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows};
+   expect(expectWorkdayLifecycleHistory(snapshot)).toHaveLength(1);expect(JSON.parse(String(snapshot.events[0]!.context_json))).toEqual({previousStatus:before.status,status:candidate.status,previousPlan:null,plan});
+   expect(await writer.update(candidate,candidate.status)).toEqual(candidate);expect((await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows).toEqual(snapshot.events);
+  }finally{await f.db.close();}
+ });
+
  it('commits each original plan transition with its exact public lifecycle observation and makes an unchanged replay a noop',async()=>{
   const f=await settlementDatabase();
   try{
