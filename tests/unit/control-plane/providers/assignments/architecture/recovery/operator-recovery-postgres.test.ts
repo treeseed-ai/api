@@ -30,7 +30,7 @@ async function exercisePostgresRecovery(dispute: boolean) {
 					[JSON.stringify({ leaseRecovery: { disposition: 'operator-action' } }), supplied.assignment.id]);
 				if (dispute) await settleCapacityReservationExactlyOnce(supplied.owner, { ...terminalUsage,
 					activeSeconds: 0, elapsedSeconds: 0, source: 'capacity_workday_deadline_terminalization', usageActual: undefined });
-				await copyNativeAssignmentCustody(native.left,supplied,['capacity_workday_runs','execution_nodes','capacity_reservations','capacity_provider_assignments','capacity_admission_counters','capacity_reservation_counter_claims','capacity_workday_events',...(dispute?['capacity_usage_actuals','capacity_ledger_entries']:[])]);
+				await copyNativeAssignmentCustody(native.left,supplied,['capacity_workday_runs','execution_nodes','capacity_reservations','capacity_provider_assignments','capacity_admission_counters','capacity_reservation_counter_claims',...(dispute?['capacity_usage_actuals','capacity_ledger_entries']:[]),'capacity_workday_events']);
 			} finally { await supplied.db.close(); }
 			const audit = () => native.left.pool.query('SELECT * FROM capacity_audit_events ORDER BY id');
 			const assignments = () => native.left.pool.query('SELECT * FROM capacity_provider_assignments ORDER BY id');
@@ -132,7 +132,7 @@ async function exerciseNativeCancellation(status: 'leased' | 'returned' | 'retry
   try {
    if(status==='returned')await settleCapacityReservationExactlyOnce(supplied.owner,terminalUsage);
    if(status==='retry')await supplied.query("UPDATE execution_nodes SET status='failed' WHERE id=?",[attempt.nodeId]);
-   await copyNativeAssignmentCustody(native.left,supplied,['capacity_workday_runs','execution_nodes','capacity_reservations','capacity_provider_assignments','capacity_admission_counters','capacity_reservation_counter_claims','capacity_workday_events','capacity_usage_actuals','capacity_ledger_entries']);
+   await copyNativeAssignmentCustody(native.left,supplied,['capacity_workday_runs','execution_nodes','capacity_reservations','capacity_provider_assignments','capacity_admission_counters','capacity_reservation_counter_claims','capacity_usage_actuals','capacity_ledger_entries','capacity_workday_events']);
   }finally{await supplied.db.close();}
   if(status==='retry'){
    await native.left.pool.query("INSERT INTO capacity_workday_runs(id,team_id,status,execution_mode,created_at,updated_at) VALUES('retained-workday','team','completed','simulation',$1,$1)",[attempt.createdAt]);
@@ -142,7 +142,7 @@ async function exerciseNativeCancellation(status: 'leased' | 'returned' | 'retry
   const owners=[native.left,native.right].map(db=>{const host=new ControlPlaneStore({TREESEED_ENVIRONMENT:'test'},db);host.initializationPromise=Promise.resolve();return createCapacityControlPlane(host);});
   const services=owners.map(owner=>createAssignmentService(owner)),body={reason:'Original independent native cancellation'},held=structuredClone(body);
   const calls=services.map(service=>async()=>status==='retry'?(await service.retry(native.principal,'team',attempt.id,body,'original-native-cancellation')).assignment:service.cancel(native.principal,'team',attempt.id,body,'original-native-cancellation'));
-  const snapshot=async()=>Object.fromEntries(await Promise.all(['capacity_provider_assignments','capacity_workday_runs','capacity_workday_events','execution_nodes','capacity_reservations','capacity_admission_counters','capacity_reservation_counter_claims','capacity_workday_events','capacity_usage_actuals','capacity_ledger_entries'].map(async table=>[table,(await native.right.pool.query('SELECT * FROM '+table+' ORDER BY 1,2')).rows])));
+  const snapshot=async()=>Object.fromEntries(await Promise.all(['capacity_provider_assignments','capacity_workday_runs','capacity_workday_events','execution_nodes','capacity_reservations','capacity_admission_counters','capacity_reservation_counter_claims','capacity_usage_actuals','capacity_ledger_entries'].map(async table=>[table,(await native.right.pool.query('SELECT * FROM '+table+' ORDER BY 1,2')).rows])));
   const before=await snapshot(),failures:unknown[]=[];
   await expect(services[0]![status==='retry'?'retry':'cancel'](undefined,'team',attempt.id,body,'denied')).rejects.toMatchObject({status:401});
   await expect(services[0]![status==='retry'?'retry':'cancel'](native.principal,'foreign-team',attempt.id,body,'denied')).rejects.toMatchObject({status:404});
@@ -166,19 +166,22 @@ async function exerciseNativeCancellation(status: 'leased' | 'returned' | 'retry
   expect(outcomes[0]).toEqual(outcomes[1]);
   const first=outcomes[0]!;expect(first).toMatchObject({status:status==='leased'?'leased':status==='returned'?'cancelled':'returned',stateVersion:2});
   expect(first.assignmentAttempt).toEqual(status!=='returned'?{...attempt}:{...attempt,status:'cancelled',finishedAt:first.assignmentAttempt!.finishedAt});
-  const raw=(await native.right.pool.query('SELECT * FROM capacity_workday_events WHERE assignment_id=$1 ORDER BY event_index',[attempt.id])).rows;
-  expect(raw).toHaveLength(1);const row=raw[0]!,type=status==='leased'?'assignment.cancellation-requested':status==='returned'?'assignment.cancelled':'assignment.retry-requested';
-  expect(row).toMatchObject({event_type:type,team_id:attempt.teamId,project_id:attempt.projectId,run_id:attempt.workdayId,workday_id:attempt.workdayId});
-  const retry=first.metadata.operatorRetry;const observedAt=status==='retry'&&retry&&typeof retry==='object'&&!Array.isArray(retry)?Reflect.get(retry,'requestedAt'):status==='leased'?first.metadata.cancellationRequestedAt:first.assignmentAttempt!.finishedAt;expect(row.created_at).toBe(observedAt);
-  if(status==='retry'){const node=(await native.right.pool.query('SELECT status,node_revision FROM execution_nodes WHERE id=$1',[attempt.nodeId])).rows;expect(node).toEqual([{status:'ready',node_revision:2}]);expect(JSON.parse(String(row.context_json))).toMatchObject({nodeId:attempt.nodeId,nodeRevision:2,stateVersion:2});}
-  expect(JSON.stringify(row)).not.toContain('lease-token');
-  const publicEvents=await createWorkdayService(owners[1]!).events(native.principal,'team',attempt.workdayId,{limit:1});
-  expect(publicEvents.items).toHaveLength(1);expect(publicEvents.page.hasMore).toBe(status!=='leased');expect(publicEvents.items[0]).toMatchObject({id:row.id,eventType:type,createdAt:observedAt});
-  const nodeEvents=(await native.right.pool.query("SELECT * FROM capacity_workday_events WHERE run_id=$1 AND event_type='execution.node.state' ORDER BY event_index",[attempt.workdayId])).rows;expect(nodeEvents).toHaveLength(status==='leased'?0:1);
-  if(status!=='leased'){const next=await createWorkdayService(owners[1]!).events(native.principal,'team',attempt.workdayId,{limit:1,cursor:publicEvents.page.nextCursor});expect(next.items).toHaveLength(1);expect(next.page.hasMore).toBe(false);expect(next.items[0]).toMatchObject({id:nodeEvents[0]!.id,eventType:'execution.node.state',assignmentId:null,context:{nodeId:attempt.nodeId,status:status==='retry'?'ready':'cancelled',previousStatus:status==='retry'?'failed':'running'}});}
+  const raw=(await native.right.pool.query('SELECT * FROM capacity_workday_events WHERE assignment_id=$1 ORDER BY event_index',[attempt.id])).rows,type=status==='leased'?'assignment.cancellation-requested':status==='returned'?'assignment.cancelled':'assignment.retry-requested';
+  expect(raw).toHaveLength(status==='returned'?2:1);expect(raw.map(value=>value.event_type).sort()).toEqual([type,...(status==='returned'?['capacity.accounting.updated']:[])].sort());const row=raw.find(value=>value.event_type===type)!;
+  expect(row).toMatchObject({team_id:attempt.teamId,project_id:attempt.projectId,run_id:attempt.workdayId,workday_id:attempt.workdayId});
+  const retry=first.metadata.operatorRetry,observedAt=status==='retry'&&retry&&typeof retry==='object'&&!Array.isArray(retry)?Reflect.get(retry,'requestedAt'):status==='leased'?first.metadata.cancellationRequestedAt:first.assignmentAttempt!.finishedAt;expect(row.created_at).toBe(observedAt);
+  if(status==='retry'){const node=(await native.right.pool.query('SELECT status,node_revision FROM execution_nodes WHERE id=$1',[attempt.nodeId])).rows;expect(node).toEqual([{status:'ready',node_revision:2}]);expect(JSON.parse(String(row.context_json))).toMatchObject({nodeId:attempt.nodeId,nodeRevision:2,stateVersion:2});}expect(JSON.stringify(row)).not.toContain('lease-token');
+  const nativeEvents=(await native.right.pool.query('SELECT * FROM capacity_workday_events WHERE run_id=$1 ORDER BY created_at,id',[attempt.workdayId])).rows;expect(nativeEvents).toHaveLength(status==='leased'?1:status==='returned'?3:2);
+  expect(nativeEvents.map(value=>value.event_type).sort()).toEqual([type,...(status!=='leased'?['execution.node.state']:[]),...(status==='returned'?['capacity.accounting.updated']:[])].sort());
+  const visible=[];let cursor:string|undefined;
+  for(let index=0;index<nativeEvents.length;index++){const page=await createWorkdayService(owners[1]!).events(native.principal,'team',attempt.workdayId,{limit:1,...(cursor?{cursor}:{})});expect(page.items).toHaveLength(1);expect(page.page.hasMore).toBe(index<nativeEvents.length-1);visible.push(...page.items);cursor=page.page.nextCursor??undefined;}
+  expect(cursor).toBeUndefined();expect(visible.map(value=>value.id)).toEqual(nativeEvents.map(value=>value.id));expect(visible.find(value=>value.id===row.id)).toMatchObject({eventType:type,createdAt:observedAt});
+  const nodeEvents=visible.filter(value=>value.eventType==='execution.node.state');expect(nodeEvents).toHaveLength(status==='leased'?0:1);
+  if(status!=='leased')expect(nodeEvents[0]).toMatchObject({assignmentId:null,context:{nodeId:attempt.nodeId,status:status==='retry'?'ready':'cancelled',previousStatus:status==='retry'?'failed':'running'}});
+  for(const previous of before.capacity_workday_events as Array<Record<string,unknown>>)expect(nativeEvents.find(value=>value.id===previous.id)).toEqual(previous);
   if(status==='retry'){const retained=(await native.right.pool.query("SELECT * FROM execution_nodes WHERE id='retained-predecessor'")).rows;expect(retained).toEqual((before.execution_nodes as Array<Record<string,unknown>>).filter(node=>node.id==='retained-predecessor'));expect((await native.right.pool.query("SELECT * FROM capacity_workday_events WHERE run_id='retained-workday'")).rows).toEqual([]);}
   expect(await services[1]!.show(native.principal,'team',attempt.id)).toMatchObject(first);
-  const after=await snapshot();for(const table of ['capacity_reservations','capacity_admission_counters','capacity_reservation_counter_claims','capacity_workday_events','capacity_usage_actuals','capacity_ledger_entries'])expect(after[table]).toEqual(before[table]);
+  const after=await snapshot();for(const table of ['capacity_reservations','capacity_admission_counters','capacity_reservation_counter_claims','capacity_usage_actuals','capacity_ledger_entries'])expect(after[table]).toEqual(before[table]);
   expect(await calls[1]!()).toEqual(first);expect(await snapshot()).toEqual(after);expect(body).toEqual(held);expect(failures).toHaveLength(2);
  }finally{await native.close();}
 }

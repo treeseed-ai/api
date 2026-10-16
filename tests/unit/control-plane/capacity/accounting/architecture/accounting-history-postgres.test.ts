@@ -31,8 +31,8 @@ it('native PostgreSQL accounting producers retain exact complete public observat
    const key = operation === 'usage' ? 'native-accounting-checkpoint' : terminalUsage.settlementKey;
    const apply = (index: number, changes = {}, principal = auth) => operation === 'usage' ? services[index]!.reportUsage(principal, frozenAttempt.id, { ...body, ...changes }, key)
     : services[index]!.settle(principal, frozenAttempt.id, { ...body, ...changes }, key);
-   const snapshot = async () => Object.fromEntries(await Promise.all([...tables, 'capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_workday_events'].map(async table =>
-    [table, (await native.right.pool.query('SELECT * FROM '+table+' ORDER BY '+(table === 'capacity_reservation_counter_claims','capacity_workday_events' ? 'reservation_id,counter_id' : 'id'))).rows])));
+   const snapshot = async () => Object.fromEntries(await Promise.all([...tables, 'capacity_usage_actuals', 'capacity_ledger_entries'].map(async table =>
+    [table, (await native.right.pool.query('SELECT * FROM '+table+' ORDER BY '+(table === 'capacity_reservation_counter_claims' ? 'reservation_id,counter_id' : 'id'))).rows])));
    const events = () => new CapacityWorkdayEventRepository(stores[1]!).list('team', 'workday', { limit: 100 });
    const original = structuredClone({ body, auth, frozenAttempt }), before = await snapshot();
    for (const mode of ['missing', 'interrupted', 'altered', 'usage-state-missing', ...(operation==='settlement'?['ledger-state-missing','reservation-state-missing','counter-state-missing','claim-state-missing']:[])]) {
