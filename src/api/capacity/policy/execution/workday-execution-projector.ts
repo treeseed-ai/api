@@ -126,7 +126,10 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 			for (const estimator of current.filter(node => node.kind === 'estimating')) {
 				// Estimate after this agent's own contribution. Other agents' planning
 				// turns are independent; their explicit profile dependencies still apply.
-				const ownContribution = current.find(node => node.id === estimator.id.replace(/:estimating:[^:]+$/u, ':planning'));
+				const participant = participants.find(value => value.activity === 'estimating'
+					&& estimator.id === `planning:${workday.id}:${round}:${value.id}`);
+				const ownContribution = participant && current.find(node =>
+					node.id === `planning:${workday.id}:${round}:${participant.projectId}/${participant.definition.id}:planning`);
 				if (ownContribution) edges.push(edge(input.teamId, ownContribution.id, estimator.id, 'work-item', reference, input.revision));
 				if (estimator.agentClass === 'reviewer') for (const owner of current.filter(node => node.kind === 'estimating'
 					&& node.projectId === estimator.projectId && node.sourceRef.id === estimator.sourceRef.id
