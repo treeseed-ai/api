@@ -12,12 +12,11 @@ async function fixture() {
 	const base = await closeoutDatabase();
 	try {
 		const ddl = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
-		for (const table of ['capacity_workday_events', 'workday_planning_sessions', 'workday_planning_waves']) {
+		for (const table of ['workday_planning_sessions', 'workday_planning_waves']) {
 			const statements = ddl.filter(sql => sql.startsWith(`CREATE TABLE "${table}" (`));
 			if (statements.length !== 1) throw new Error(`Missing original DDL ${table}`);
 			await base.db.exec(statements[0]!);
 		}
-		await base.db.exec(ddl.find(sql => sql.startsWith('CREATE UNIQUE INDEX "idx_capacity_workday_events_run_index"'))!);
 		const events = new CapacityWorkdayEventRepository(base.store as unknown as CapacityGovernanceDatabase);
 		const service = createWorkdayService({ ...base.store,
 			getCapacityWorkdayRun: (team: string, run: string) => base.reads.get(team, run),
