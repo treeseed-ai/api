@@ -1,3 +1,4 @@
+vi.mock('../../../../../../src/api/capacity/transaction.ts',()=>({capacityTransaction:async(store:unknown,apply:(store:unknown)=>Promise<unknown>)=>apply(store)}));
 import { describe, expect, it, vi } from 'vitest';
 const fixture = vi.hoisted(() => ({ run: {} as Record<string, unknown>, cancel: vi.fn(), advance: vi.fn() }));
 vi.mock('../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts', () => ({
@@ -24,7 +25,7 @@ describe('planning phase boundary', () => {
 				allocationWeight: 1, planningTurnMaximumSeconds: 180, projectPercentages: { project: 100 }, agentClassPercentages: { project: { engineer: 100 } } },
 			planningRounds: [], admittedSecondsByProject: {}, admittedSecondsByAgentClass: {},
 		} } };
-		const store = { all: vi.fn(async (sql: string) => sql.includes('capacity_provider_team_memberships') ? [{ id: 'membership' }] : [{ id: 'turn' }]),
+		const store = { all: vi.fn(async (sql: string) => sql.includes('capacity_provider_team_memberships') ? [{ id: 'membership' }] : sql.startsWith('SELECT id FROM execution_nodes')?[]:[{ id: 'turn' }]),
 			first: vi.fn(async () => null), run: vi.fn() };
 		await tickCapacityWorkdayRun(store as never, 'team', 'workday', now);
 		if (state === 'active') { expect(fixture.cancel).not.toHaveBeenCalled(); expect(store.run).not.toHaveBeenCalled(); }

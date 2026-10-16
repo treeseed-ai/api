@@ -10,10 +10,9 @@ describe('complete governed living graph contract authoring', () => {
     const projection = graphProjection(), graph = graphState(projection), current = emptyLivingGraph();
     const receipt = { ...projection.revision, graphDigest: graph.digest };
     const before = structuredClone({ graph, current, receipt });
-    let operations: Array<{ query: string; params: unknown[] }> = [];
+    let reads=0; let operations: Array<{ query: string; params: unknown[] }> = [];
     await persistExecutionGraph({
-      batch: async (values: typeof operations) => { operations = structuredClone(values); },
-      first: async () => ({ revision: graph.revision, graph_digest: graph.digest }),
+      db:{transaction:async(apply:(client:unknown)=>Promise<unknown>)=>apply({query:async(sql:string,params:unknown[])=>{if(sql.startsWith('SELECT revision,graph_digest'))return{rows:[{revision:++reads===1?current.revision:graph.revision,graph_digest:graph.digest}]};if(sql.startsWith('SELECT id,team_id,project_id,workday_id,status'))return{rows:graph.nodes.map(value=>({id:value.id,team_id:value.teamId,project_id:value.projectId,workday_id:value.workdayId??null,status:value.status,node_revision:value.nodeRevision,graph_revision_updated:value.graphRevisionUpdated}))};operations.push({query:sql.replace(/\$\d+/gu,'?'),params});return{rows:[]};}})},
     }, graph, current, receipt);
     expect(operations[0]).toEqual({ query: 'SELECT id FROM teams WHERE id=? FOR NO KEY UPDATE', params: [graph.teamId] });
     expect(operations[1]).toEqual({ query: 'SELECT id FROM execution_nodes WHERE team_id=? ORDER BY id FOR UPDATE', params: [graph.teamId] });
@@ -63,10 +62,9 @@ describe('complete governed living graph contract authoring', () => {
 			const graph = current.revision === 0 ? original : { ...original, revision: 2, digest: 'different-desired-digest', edges: [] };
 			const receipt = { ...projection.revision, revision: graph.revision, graphDigest: graph.digest };
 			const before = structuredClone({ graph, current, receipt });
-			let operations: Array<{ query: string; params: unknown[] }> = [];
+			let reads=0; let operations: Array<{ query: string; params: unknown[] }> = [];
 			const store = {
-				batch: async (values: typeof operations) => { operations = structuredClone(values); },
-				first: async () => ({ revision: graph.revision, graph_digest: 'retained-competing-digest' }),
+				db:{transaction:async(apply:(client:unknown)=>Promise<unknown>)=>apply({query:async(sql:string,params:unknown[])=>{if(sql.startsWith('SELECT revision,graph_digest'))return{rows:[{revision:++reads===1?current.revision:graph.revision,graph_digest:'retained-competing-digest'}]};operations.push({query:sql.replace(/\$\d+/gu,'?'),params});return{rows:[]};}})},
 			};
 			await expect(persistExecutionGraph(store, graph, current, receipt)).rejects.toMatchObject({ status: 409, code: 'execution_graph_revision_conflict' });
 			const mutations = operations.filter(value => /^(INSERT INTO execution_nodes|INSERT INTO execution_edges|UPDATE execution_edges)/.test(value.query));

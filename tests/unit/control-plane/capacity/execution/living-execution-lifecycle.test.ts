@@ -1,3 +1,5 @@
+import{decodeExecutionNode,decodeExecutionEdge}from'../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-storage.ts';
+import{digest as nativeGraphDigest}from'../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
 import {concurrentTerminalNodes,concurrentTerminalAttempt} from './fixtures/concurrent-terminal.ts';
 import {CapacityWorkdayEventRepository} from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { describe, expect, it, vi } from 'vitest';
@@ -185,6 +187,9 @@ describe('living execution result projection', () => {
 		expect(sql).not.toContain("target SET status='ready'");
 		const revision = operations.find((operation) => operation.query.includes('INSERT INTO execution_graph_revisions'))!;
 		expect(JSON.parse(String(revision.params?.[5]))).toMatchObject({ blocked: ['reviewer', 'actor'] });
+		const expectedNodes=[{...decodeExecutionNode(row('actor','completed','actor','work',8)),status:'blocked',nodeRevision:9,graphRevisionUpdated:5},{...decodeExecutionNode(row('reviewer','running','reviewer','work',4)),status:'failed',nodeRevision:5,graphRevisionUpdated:5}];
+		const expectedEdges=[decodeExecutionEdge({id:'pair',team_id:'team',from_node_id:'actor',to_node_id:'reviewer',provenance:'review-pair',graph_revision_created:1,graph_revision_removed:null})];
+		expect(revision.params?.[4]).toBe(nativeGraphDigest({teamId:'team',nodes:expectedNodes,edges:expectedEdges}));
 	});
 	it('counts only the current simulation workday when enforcing review cycles', async () => {
 		const store = { first: vi.fn(async (query: string) => query.includes('COUNT(*)') ? ({ count: 0 }) : ({ revision: 4 })),

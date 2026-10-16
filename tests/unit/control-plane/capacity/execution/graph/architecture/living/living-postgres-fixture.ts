@@ -25,6 +25,7 @@ export async function postgresGraph() {
 		const right = createControlPlanePostgresDatabase(connection.href); databases.push(right);
 		await left.pool.query("INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ('team','graph-team','Graph team',$1,$1)", ['2026-10-03T00:00:00.000Z']);
 		const store = (database: typeof left) => ({
+			db:database,
 			all: async (sql: string, params: unknown[] = []) => (await database.prepare(sql).bind(...params).all()).results,
 			first: (sql: string, params: unknown[] = []) => database.prepare(sql).bind(...params).first(),
 			batch: (operations: Array<{ query: string; params: unknown[] }>) => database.batch(operations),

@@ -1,3 +1,4 @@
+import{readExecutionNodeStates,recordExecutionNodeObservations}from'../../../../../control-plane/repositories/capacity/execution/execution-node-observations.ts';
 import {isDeepStrictEqual} from 'node:util';
 import {capacityTransaction} from '../../../../transaction.ts';
 import {CapacityWorkdayEventRepository,type CapacityWorkdayEventWrite} from '../../../../repositories/capacity/workdays/workday-event.ts';
@@ -232,6 +233,7 @@ export async function terminalizeCapacityWorkdayAssignments(
 		if (assignments.length === 0) return 0;
 
 		const admittedAssignments = await settleTerminalAssignments(database, assignments, teamId, runId, now, input);
+		const nodeIds=[...admittedAssignments.values()].flatMap(assignment=>assignment.executionNodeId?[assignment.executionNodeId]:[]),beforeNodes=await readExecutionNodeStates(database,teamId,runId,nodeIds);
 		const assignmentsByVersion = new Map<number, TerminalAssignmentRow[]>();
 		for (const assignment of assignments) {
 			const version = number(assignment.state_version);
@@ -307,11 +309,14 @@ export async function terminalizeCapacityWorkdayAssignments(
    const observed=await writer.create(teamId,runId,event);
    if(!observed||observed.teamId!==teamId||observed.runId!==runId||Object.entries(event).some(([key,value])=>!isDeepStrictEqual(Reflect.get(observed,key),value)))throw new Error('workday_assignment_observation_conflict');
   }
+  await recordExecutionNodeObservations(database,beforeNodes,await readExecutionNodeStates(database,teamId,runId,nodeIds),'workday-terminal:'+runId+':'+assignments.map(assignment=>assignment.id+':'+assignment.state_version).sort().join(','),now);
   return assignments.length;
   });
   if(processed<MAX_CAPACITY_PAGE_LIMIT)break;
 	}
-	await database.run(
+	await capacityTransaction(database,async transaction=>{
+		const ids=(await transaction.all<{id:string}>("SELECT id FROM execution_nodes WHERE team_id=? AND workday_id=? AND status IN ('proposed','blocked','ready') ORDER BY id FOR UPDATE",[teamId,runId])).map(node=>node.id),beforeNodes=await readExecutionNodeStates(transaction,teamId,runId,ids);
+	await transaction.run(
 		`UPDATE execution_nodes SET status='cancelled',updated_at=?
 		 WHERE team_id=? AND workday_id=? AND status IN ('proposed','blocked','ready')
 		   AND NOT (kind='reporting' AND EXISTS (SELECT 1 FROM capacity_workday_runs run
@@ -319,6 +324,8 @@ export async function terminalizeCapacityWorkdayAssignments(
 		     AND run.parameters_json::jsonb#>>'{appliedPlan,state}'='closing'))`,
 		[now, teamId, runId],
 	);
+		await recordExecutionNodeObservations(transaction,beforeNodes,await readExecutionNodeStates(transaction,teamId,runId,ids),'workday-unclaimed:'+runId+':'+now,now);
+	});
 	await releaseUnsettledTerminalAssignments(database, teamId, runId, now, input);
 	await cleanupTerminalAssignmentWorkspaces(database, teamId, runId, now);
 	const finalTotals = await database.first<AssignmentTotalsRow>(
