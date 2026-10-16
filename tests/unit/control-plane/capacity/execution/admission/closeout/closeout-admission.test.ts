@@ -46,4 +46,14 @@ describe('original workday closeout admission authority', () => {
    expect(reservations).toEqual([{id:reporter.reservationId,assignment_id:reporter.id,reserved_seconds:reporter.limits.maximumSeconds}]);
   }finally{await f.db.close();}
  });
+
+ it('rejects a caller-supplied conversation kind for an owning closing Workday without granting another admission path',async()=>{
+  const f=await initialAdmission();try{
+   const input=f.input();input.executionKind='conversation';input.lanePurpose='communication';
+   await f.query('UPDATE capacity_workday_runs SET parameters_json=? WHERE id=?',[JSON.stringify({appliedPlan:{...f.plan,state:'closing',closingAt:input.now}}),f.plan.id]);
+   const before=await f.snapshot(),held=structuredClone(input);
+   await expect(f.admit(input)).rejects.toMatchObject({code:'workday_admission_closed',status:409});
+   expect(await f.snapshot()).toEqual(before);expect(input).toEqual(held);
+  }finally{await f.db.close();}
+ });
 });
