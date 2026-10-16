@@ -2775,3 +2775,15 @@ workflow:
   - id: planning-window-7
     action: { verifier: api.golden.execution-planning-window-7 }
     expect: { status: passed }
+  - id: workday-lifecycle-observation-1
+    action: { verifier: api.golden.execution-workday-lifecycle-observation-1 }
+    expect: { status: passed }
+  - id: workday-lifecycle-observation-2
+    action: { verifier: api.golden.execution-workday-lifecycle-observation-2 }
+    expect: { status: passed }
+  - id: workday-lifecycle-observation-3
+    action: { verifier: api.golden.execution-workday-lifecycle-observation-3 }
+    expect: { status: passed }
+  - id: workday-lifecycle-observation-4
+    action: { verifier: api.golden.execution-workday-lifecycle-observation-4 }
+    expect: { status: passed }
