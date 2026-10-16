@@ -63,9 +63,15 @@ it('native PostgreSQL accounting producers retain exact complete public observat
 ]);
    const retained = await snapshot(); expect((await apply(1)).replayed).toBe(true); expect(await snapshot()).toEqual(retained); expect(await events()).toEqual(history);
    await expect(apply(0, { activeSeconds: 9 })).rejects.toThrow(); expect(await snapshot()).toEqual(retained); expect({ body, auth, frozenAttempt }).toEqual(original);
+   await native.left.pool.query("UPDATE capacity_workday_events SET status='failed' WHERE id=$1",[history.items[0]!.id]);
+   const damaged=await snapshot();let replayError='';try{await apply(0);}catch(cause){replayError=String(cause);}
+   failures.push({operation,mode:'altered-original-envelope-replay',error:replayError,custodySha256:createHash('sha256').update(JSON.stringify(damaged)).digest('hex')});
+   expect(replayError).toContain('capacity_accounting_observation_conflict');expect(await snapshot()).toEqual(damaged);
+   expect((await events()).items[0]!.status).toBe('failed');
+
   } finally { await native.close(); }
  }
- expect(failures).toHaveLength(12); console.log(JSON.stringify({ retainedNativeAccountingFailures: failures }));
+ expect(failures).toHaveLength(14); console.log(JSON.stringify({ retainedNativeAccountingFailures: failures }));
  // Complete original migrations and independent native connections, supplied
  // measurements and principals; no provider-generated or managed pass claim.
 });
