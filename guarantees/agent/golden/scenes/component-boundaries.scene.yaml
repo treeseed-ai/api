@@ -2814,3 +2814,8 @@ workflow:
   - id: reporter-observation-clock
     action: { verifier: api.golden.execution-reporter-observation-clock }
     expect: { status: passed }
+  - id: workday-initial-plan-observation
+    action:
+      verifier: api.golden.component.workday-initial-plan-observation
+    expect:
+      status: passed

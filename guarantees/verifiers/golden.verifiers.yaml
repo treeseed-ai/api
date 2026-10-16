@@ -4775,3 +4775,7 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/reporting/report-context-lifecycle.test.ts
     testName: "retains the original phase clock and later actual persistence observation without equating or rewriting either clock"
+  api.golden.component.workday-initial-plan-observation:
+    kind: vitestCase
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-lifecycle-observations.test.ts
+    testName: retains initial native applied-plan creation as one null-to-active observation before every later transition and exact replay
