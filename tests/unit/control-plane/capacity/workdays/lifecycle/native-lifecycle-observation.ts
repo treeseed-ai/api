@@ -13,7 +13,7 @@ export async function proveNativeWorkdayLifecycleObservations(database:ReturnTyp
  const owner=new ControlPlaneStore({TREESEED_ENVIRONMENT:'test'},database);owner.initializationPromise=Promise.resolve();
  const reads=new CapacityWorkdayRunRepository(owner),writes=new CapacityWorkdayRunWriteRepository(owner),events=new CapacityWorkdayEventRepository(owner);
  const original=(await reads.get('team','sdk'))!,id='native-lifecycle-observation',now=new Date().toISOString();
- const plan={...compileWorkday({id,teamId:'team',policyId:'default',policyRevision:1,executionMode:'simulation',startsAt:now,agentIds:[],policy:DEFAULT_WORKDAY_POLICY}),state:'active' as const,activatedAt:now};
+ const plan={...compileWorkday({id,teamId:'team',policyId:'default',policyRevision:1,executionMode:'simulation',startsAt:now,agentIds:[],policy:DEFAULT_WORKDAY_POLICY}),state:'active' as const,activatedAt:now,planningRounds:[{round:1,state:'complete' as const,assignmentIds:['controlled-original-turn'],startedAt:now,completedAt:now}]};
  const run={...original,id,status:'running' as const,startedAt:now,completedAt:null,createdAt:now,updatedAt:now,
   parameters:{...original.parameters,deadlineAt:plan.endsAt,appliedPlan:plan},summary:{},error:{},reportRefs:{}};
  const unrelated=(await observer.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows;
@@ -33,6 +33,9 @@ export async function proveNativeWorkdayLifecycleObservations(database:ReturnTyp
   const first=await events.list('team',id,{limit:50});expect(first.items).toHaveLength(1);
   expect(first.items[0]).toMatchObject({eventType:'workday.lifecycle.changed',workdayId:id,runId:id,teamId:'team',context:{previousStatus:'running',status:'running',previousPlan:plan,plan:closing.parameters.appliedPlan}});
   const snapshot=async()=>({run:(await observer.query('SELECT * FROM capacity_workday_runs WHERE id=$1',[id])).rows,events:(await observer.query('SELECT * FROM capacity_workday_events WHERE run_id=$1 ORDER BY event_index',[id])).rows});
+  const heldHistory=await snapshot();
+  await expect(writes.update({...closing,parameters:{...closing.parameters,appliedPlan:{...closing.parameters.appliedPlan,planningRounds:[]}}},'running')).rejects.toThrow('workday_transition_stale');expect(await snapshot()).toEqual(heldHistory);
+  await expect(writes.update({...closing,executionMode:'production'},'running')).rejects.toThrow('workday_transition_stale');expect(await snapshot()).toEqual(heldHistory);
   const before=await snapshot(),reference={kind:'treedx' as const,projectId:'project',repository:'controlled-library',commit:'a'.repeat(40),path:'notes/controlled-report.mdx'};
   for(const mode of ['missing','interrupted','altered']){
    const body=mode==='missing'?'RETURN NULL;':mode==='interrupted'?"RAISE EXCEPTION 'retained native lifecycle interruption';":"NEW.context_json='{}'; RETURN NEW;";
