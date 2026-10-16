@@ -27,4 +27,16 @@ describe('original Reporter lifecycle input custody',()=>{
    expect(await workdayReportContext(f.owner,reporter)).toEqual([context]);expect((await f.query('SELECT * FROM capacity_workday_events WHERE id=?',[event.id])).rows[0]).toEqual(observed);
   }finally{await f.db.close();}
  });
+
+ it('retains the original phase clock and later actual persistence observation without equating or rewriting either clock',async()=>{
+  const f=await settlementDatabase();try{
+   await f.query("UPDATE capacity_reservations SET state='expired' WHERE id='reservation'");const original=(await f.reads.get('team','workday'))!,active={...appliedWorkdaySchema.parse(original.parameters.appliedPlan),state:'active' as const};delete active.closingAt;
+   await f.query('UPDATE capacity_workday_runs SET parameters_json=? WHERE id=?',[JSON.stringify({...original.parameters,appliedPlan:active}),original.id]);
+   const before=(await f.reads.get('team','workday'))!,closingAt='2026-10-02T21:01:00.000Z',observedAt='2026-10-02T21:01:00.001Z';
+   await new CapacityWorkdayRunWriteRepository(f.owner).update({...before,updatedAt:observedAt,parameters:{...before.parameters,appliedPlan:{...active,state:'closing',closingAt}}},before.status);
+   const held=(await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows;
+   const [context]=await workdayReportContext(f.owner,reporter);expect(context!.value).toMatchObject({closingEvent:{createdAt:observedAt,context:{plan:{closingAt}}}});
+   expect((await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows).toEqual(held);
+  }finally{await f.db.close();}
+ });
 });

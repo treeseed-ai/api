@@ -22,7 +22,7 @@ export async function proveNativeWorkdayLifecycleObservations(database:ReturnTyp
  const financial=await finances(),lock=await observer.connect();let pending:Promise<unknown>|undefined;
  try{
   expect(await writes.create(run)).toEqual(run);
-  const closingAt=new Date().toISOString(),closing={...run,parameters:{...run.parameters,appliedPlan:{...plan,state:'closing' as const,closingAt}},updatedAt:closingAt};
+  const closingAt=new Date().toISOString();await new Promise(resolve=>setTimeout(resolve,2));const observedAt=new Date().toISOString();expect(Date.parse(observedAt)).toBeGreaterThan(Date.parse(closingAt));const closing={...run,parameters:{...run.parameters,appliedPlan:{...plan,state:'closing' as const,closingAt}},updatedAt:observedAt};
   const held=structuredClone(closing);
   await lock.query('BEGIN');await lock.query('SELECT id FROM capacity_workday_runs WHERE id=$1 AND team_id=$2 FOR UPDATE',[id,'team']);
   pending=Promise.all([writes.update(closing,'running'),writes.update(structuredClone(closing),'running')]);
