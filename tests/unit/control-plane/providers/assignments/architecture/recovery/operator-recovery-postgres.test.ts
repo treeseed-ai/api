@@ -1,3 +1,6 @@
+import {createHash} from 'node:crypto';
+import {CapacityWorkdayEventRepository} from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
+import {serializeCapacityReservationRow} from '../../../../../../../src/api/capacity/repositories/capacity/accounting/reservation.ts';
 import * as transactions from '../../../../../../../src/api/capacity/transaction.ts';
 import {eventObserved} from '../../../../realtime/architecture/session-postgres-fixture.ts';
 import {ControlPlaneStore} from '../../../../../../../src/api/persistence/store.ts';
@@ -72,6 +75,18 @@ async function exercisePostgresRecovery(dispute: boolean) {
 			expect((await native.left.pool.query('SELECT id,committed_amount FROM capacity_admission_counters ORDER BY id')).rows)
 				.toEqual([{ id: 'concurrency', committed_amount: dispute ? 0 : 1 }, { id: 'seconds', committed_amount: dispute ? 0 : 2 }]);
 			await native.left.pool.query('DROP TRIGGER interrupt_operator_recovery ON capacity_audit_events');
+   const history=()=>native.right.pool.query('SELECT * FROM capacity_workday_events ORDER BY event_index');
+   const observedBefore=(await history()).rows,fullSnapshot=async()=>({accounting:await accounting(),assignments:(await assignments()).rows,audit:(await audit()).rows,events:(await history()).rows,workdays:(await native.right.pool.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows}),beforeObservations=await fullSnapshot(),observationFailures:unknown[]=[];
+   for(const mode of['missing','interrupted','altered','counter-state-missing',...(!dispute?['reservation-state-missing']:[])]){
+    const target=mode==='counter-state-missing'?'capacity_admission_counters':mode==='reservation-state-missing'?'capacity_reservations':'capacity_workday_events';
+    const body=target==='capacity_workday_events'?"IF NEW.event_type='capacity.accounting.updated' THEN "+(mode==='missing'?'RETURN NULL;':mode==='altered'?"NEW.context_json='{}';":"RAISE EXCEPTION 'retained native recovery accounting interruption';")+' END IF; RETURN NEW;':'RETURN NULL;';
+    await native.left.pool.query('CREATE FUNCTION native_recovery_accounting_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN '+body+' END $$');
+    await native.left.pool.query('CREATE TRIGGER native_recovery_accounting_fault BEFORE '+(target==='capacity_workday_events'?'INSERT':'UPDATE')+' ON '+target+' FOR EACH ROW EXECUTE FUNCTION native_recovery_accounting_fault()');
+    let error='';try{await calls[0]!();}catch(cause){error=String(cause);}
+    const failed=await fullSnapshot();observationFailures.push({mode,error,custodySha256:createHash('sha256').update(JSON.stringify(failed)).digest('hex')});expect(error,mode+' requires complete native recovery accounting observation').not.toBe('');expect(failed).toEqual(beforeObservations);
+    await native.left.pool.query('DROP TRIGGER native_recovery_accounting_fault ON '+target);await native.left.pool.query('DROP FUNCTION native_recovery_accounting_fault()');
+   }
+   console.log(JSON.stringify({nativeRecoveryAccountingFailures:observationFailures,dispute}));
 			const results = await Promise.all(calls.map(call => call())); expect(results[0]).toEqual(results[1]);
 			expect(results[0]).toMatchObject({ usageStatus: 'unresolved', settled: false }); expect((await audit()).rows).toHaveLength(dispute ? 2 : 1);
 			expect((await assignments()).rows).toEqual(held);
@@ -87,10 +102,17 @@ async function exercisePostgresRecovery(dispute: boolean) {
 					.toEqual([{ counter: 'concurrency', released: 1 }, { counter: 'seconds', released: 0 }]);
 				expect(after.counters.find(value => value.id === 'concurrency')).toEqual(original.counters.find(value => value.id === 'concurrency'));
 			}
+   const visible=(await history()).rows,newEvents=visible.filter(value=>!observedBefore.some(original=>original.id===value.id));expect(newEvents).toHaveLength(1);expect(visible).toHaveLength(observedBefore.length+1);
+   const event=newEvents[0]!,context=JSON.parse(String(event.context_json)),currentReservation=(await native.right.pool.query('SELECT * FROM capacity_reservations')).rows;expect(currentReservation).toHaveLength(1);
+   expect(event).toMatchObject({event_type:'capacity.accounting.updated',team_id:'team',run_id:'workday',workday_id:'workday',assignment_id:'assignment-report',created_at:(results[0]as{recoveredAt:string}).recoveredAt});
+   expect(context.reservation).toEqual(serializeCapacityReservationRow(currentReservation[0]!));expect(context.reservation.state).toBe(dispute?'consumed':'released');expect(context.usageActual).toBeNull();expect(context.ledgerEntry).toBeNull();
+   const claims=(await native.right.pool.query('SELECT * FROM capacity_reservation_counter_claims ORDER BY counter_id')).rows,counters=(await native.right.pool.query('SELECT * FROM capacity_admission_counters ORDER BY id')).rows;
+   expect(context.remainingSupply).toEqual(claims.map(claim=>{const counter=counters.find(value=>value.id===claim.counter_id);expect(counter).toBeDefined();return{id:counter!.id,teamId:counter!.team_id,scope:counter!.scope,scopeId:counter!.scope_id,periodKey:counter!.period_key,hardLimit:Number(counter!.hard_limit),committedAmount:Number(counter!.committed_amount),stateVersion:Number(counter!.state_version),reservedAmount:Number(claim.reserved_amount),releasedAmount:Number(claim.released_amount),releasePolicy:claim.release_policy,remainingAmount:Math.max(0,Number(counter!.hard_limit)-Number(counter!.committed_amount))};}));
+   const reader=new ControlPlaneStore({TREESEED_ENVIRONMENT:'test'},native.right);reader.initializationPromise=Promise.resolve();expect(await new CapacityWorkdayEventRepository(reader).get('team','workday',String(event.id))).toMatchObject({eventType:'capacity.accounting.updated',context});
 			const final = await accounting(), finalAudit = (await audit()).rows;
 			await Promise.all(reads.map(read => read(results[0])));
 			expect(await calls[0]!()).toEqual(results[0]);
-			expect(await accounting()).toEqual(final); expect((await audit()).rows).toEqual(finalAudit);
+			expect(await accounting()).toEqual(final); expect((await audit()).rows).toEqual(finalAudit);expect((await history()).rows).toEqual(visible);
 		} finally { await native.close(); }
 }
 
