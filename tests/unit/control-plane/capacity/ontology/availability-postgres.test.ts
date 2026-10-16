@@ -1,3 +1,4 @@
+import {providerAccountingStatus} from '../../../../../src/api/control-plane/repositories/providers/provider-runtime-service.ts';
 import { randomUUID, generateKeyPairSync, createHash } from 'node:crypto';
 import pg from 'pg';
 import { describe, expect, it, vi } from 'vitest';
@@ -32,9 +33,11 @@ describe('provider accounting in disposable PostgreSQL', () => {
         all: async <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => (await f.left.prepare(sql).bind(...params).all<T>()).results,
         batch: (operations: Array<{ query: string; params?: unknown[] }>) => f.left.batch(operations) };
       const principal = { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider' };
+      const modelPolicy={provider:'openai',model:'configured-luna',reasoningEffort:'low',capabilities:adapter.capabilities};
       const input = { adapters: [{ id: adapter.id, runtimeBuild: adapter.runtimeBuild, offers: adapter.offers,
         capabilities: adapter.capabilities, status: 'available', maxConcurrentWorkers: 1, activeWorkers: 0,
         laneIds: ['communication', 'platform', 'workday'], nativeLimits: adapter.accountingLimits,
+        observations:{modelPolicy,credential:'opaque-controlled-private-adapter-field'},
         accountingObservation: adapter.accountingObservation }],
         lanes: ['communication', 'platform', 'workday'].map(purpose => ({ id: purpose, purpose, maxConcurrentWorkers: 1,
           priority: 1, capabilities: adapter.capabilities })) };
@@ -116,6 +119,8 @@ describe('provider accounting in disposable PostgreSQL', () => {
       const suppliedRow = await f.right.pool.query<{ execution_providers_json: string }>(
         'SELECT execution_providers_json FROM capacity_provider_availability_sessions WHERE id=$1', [opened.id]);
       expect(suppliedRow.rows).toHaveLength(1); const raw = suppliedRow.rows[0]!.execution_providers_json;
+      const projected=providerAccountingStatus(raw);expect(Reflect.get(Object(projected[0]),'modelPolicy')).toEqual(modelPolicy);expect(JSON.stringify(projected)).not.toContain('opaque-controlled-private-adapter-field');
+      expect(await snapshot(f.right)).toEqual(baseline);expect(input).toEqual(inputBefore);
       const compile = async () => {
         const context = await resolveProviderSynthesisContext(store, principal, { sessionId: opened.id, now: compileNow });
         expect(context.executionProviders).toHaveLength(1);
