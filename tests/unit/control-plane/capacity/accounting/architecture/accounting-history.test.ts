@@ -100,3 +100,23 @@ it('rolls back public accounting when a required observation is silently omitted
  }
  expect(failures).toHaveLength(4); expect(failures.every(value => value.error.length > 0)).toBe(true);
 });
+
+it('rejects silently omitted terminal usage ledger reservation counter or claim writes without retaining partial accounting and permits exact retry', async () => {
+ for (const table of ['capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_reservations', 'capacity_admission_counters', 'capacity_reservation_counter_claims']) {
+  const f = await fixture();
+  try {
+   const before = await f.snapshot(), update = !['capacity_usage_actuals', 'capacity_ledger_entries'].includes(table);
+   await f.db.exec('CREATE FUNCTION retained_accounting_state_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN ' +
+    (table === 'capacity_reservations' ? "IF NEW.state='consumed' THEN RETURN NULL; END IF; RETURN NEW;" : 'RETURN NULL;') +
+    ' END $$; CREATE TRIGGER retained_accounting_state_fault BEFORE ' + (update ? 'UPDATE' : 'INSERT') + ' ON ' + table + ' FOR EACH ROW EXECUTE FUNCTION retained_accounting_state_fault();');
+   let error = ''; try { await f.service.settle(auth, frozenAttempt.id, { ...terminalUsage }, terminalUsage.settlementKey); } catch (cause) { error = String(cause); }
+   expect.soft(error, table + ' requires complete owning state').not.toBe(''); expect.soft(await f.snapshot(), table + ' must roll back every attempted write').toEqual(before);
+   await f.db.exec('DROP TRIGGER retained_accounting_state_fault ON ' + table + '; DROP FUNCTION retained_accounting_state_fault();');
+   // If the broken candidate committed anything, retain that original failure;
+   // never delete or repair fixture rows to manufacture a clean retry.
+   if (JSON.stringify(await f.snapshot()) === JSON.stringify(before)) {
+    expect((await f.service.settle(auth, frozenAttempt.id, { ...terminalUsage }, terminalUsage.settlementKey)).replayed).toBe(false);
+   }
+  } finally { await f.db.close(); }
+ }
+});
