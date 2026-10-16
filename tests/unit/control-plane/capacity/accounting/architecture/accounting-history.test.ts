@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { createProviderAssignmentService } from '../../../../../../src/api/control-plane/repositories/providers/provider-assignment-service.ts';
 import { CapacityWorkdayEventRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
@@ -7,7 +6,6 @@ import { serializeCapacityLedgerEntryRow } from '../../../../../../src/api/capac
 import { serializeTaskUsageActualRow } from '../../../../../../src/api/capacity/repositories/capacity/accounting/task-usage.ts';
 import { executePostgresBatch } from '../../../../../../src/api/support/control-plane-postgres.ts';
 import { capacityTransaction } from '../../../../../../src/api/capacity/transaction.ts';
-import { splitPostgresSqlStatements } from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
 import { frozenAttempt, settlementDatabase, terminalUsage } from './settlement-fixture.ts';
 
 const auth = { principal: { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider',
@@ -34,10 +32,6 @@ it('retains the owning transaction connection and rolls back a caught nested acc
 async function fixture() {
  const f = await settlementDatabase();
  try {
-  const ddl = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
-  for (const prefix of ['CREATE TABLE "capacity_workday_events" (', 'CREATE UNIQUE INDEX "idx_capacity_workday_events_run_index" ']) {
-   const statements = ddl.filter(sql => sql.startsWith(prefix)); expect(statements).toHaveLength(1); await f.db.exec(statements[0]!);
-  }
   await f.query('UPDATE capacity_provider_assignments SET reservation_id=? WHERE id=?', ['reservation', frozenAttempt.id]);
   const owner = { ...f.owner, db: { transaction: <T>(apply: (client: Parameters<typeof executePostgresBatch>[0]) => Promise<T>) =>
    f.db.transaction(transaction => apply(transaction as unknown as Parameters<typeof executePostgresBatch>[0])) } };
@@ -84,7 +78,7 @@ it('rolls back public accounting when a required observation is silently omitted
   const f = await fixture();
   try {
    const apply = () => operation === 'usage' ? f.service.reportUsage(auth, frozenAttempt.id, { assignmentAttempt: 1, usageDimension: 'checkpoint',
-    accountingMode: 'incremental', activeSeconds: 1, elapsedSeconds: 1, usageActual: terminalUsage.usageActual }, 'checkpoint')
+    accountingMode: 'incremental', activeSeconds: 1, elapsedSeconds: 1, usageActual: { ...terminalUsage.usageActual, nativeUsage: { activeSeconds: 1, tokens: 7 } } }, 'checkpoint')
     : f.service.settle(auth, frozenAttempt.id, { ...terminalUsage }, terminalUsage.settlementKey);
    for (const mode of ['missing', 'interrupted']) {
     const before = await f.snapshot();

@@ -1,3 +1,4 @@
+import { executePostgresBatch } from '../../../../../../src/api/support/control-plane-postgres.ts';
 import { readFileSync } from 'node:fs';
 import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 import { assignment } from '../../execution/fixtures/assignment.ts';
@@ -29,13 +30,13 @@ export async function settlementDatabase() {
 	try {
 		const initial = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
 		const bootstrap: string[] = [];
-		for (const table of ['capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_admission_counters', 'capacity_reservation_counter_claims']) {
+		for (const table of ['capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_admission_counters', 'capacity_reservation_counter_claims', 'capacity_workday_events']) {
 			const ddl = initial.filter(sql => sql.startsWith(`CREATE TABLE "${table}" (`));
 			if (ddl.length !== 1) throw new Error(`Missing original ${table} DDL`);
 			bootstrap.push(ddl[0]!);
 		}
 		for (const name of ['idx_capacity_ledger_settlement_key', 'idx_capacity_ledger_reservation_phase',
-			'idx_capacity_usage_actuals_idempotency', 'idx_capacity_usage_actuals_attempt_dimension', 'idx_capacity_reservation_counter_claim']) {
+			'idx_capacity_usage_actuals_idempotency', 'idx_capacity_usage_actuals_attempt_dimension', 'idx_capacity_reservation_counter_claim', 'idx_capacity_workday_events_run_index']) {
 			const ddl = initial.filter(sql => sql.startsWith(`CREATE UNIQUE INDEX "${name}" `));
 			if (ddl.length !== 1) throw new Error(`Missing original ${name} index`);
 			bootstrap.push(ddl[0]!);
@@ -71,6 +72,8 @@ export async function settlementDatabase() {
 			}
 			return result;
 		};
-		return { ...base, owner: base.store as unknown as CapacityGovernanceDatabase, snapshot };
+		const owner = { ...base.store, db: { transaction: <T>(apply: (client: Parameters<typeof executePostgresBatch>[0]) => Promise<T>) =>
+   base.db.transaction(transaction => apply(transaction as unknown as Parameters<typeof executePostgresBatch>[0])) } };
+  return { ...base, owner, snapshot };
 	} catch (error) { await base.db.close(); throw error; }
 }
