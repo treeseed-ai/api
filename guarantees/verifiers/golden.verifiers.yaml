@@ -4700,3 +4700,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/scheduling/planning/planning-phase-native.test.ts
     testName: "native PostgreSQL preserves the initial planning floor derives acting from only current ready work and resumes ordinary planning without extending authority"
+  api.golden.execution-planning-window-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/scheduling/planning/planning-window-evidence.test.ts
+    testName: "constructs the exact bounded native workday from its original policy before any database or resource operation"
