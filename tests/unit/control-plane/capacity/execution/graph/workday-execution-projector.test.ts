@@ -133,7 +133,7 @@ describe('workday living-graph projection', () => {
 		const appliedPlan = compileWorkday({ id: 'missing-estimates', teamId: 'team', policyId: 'default', policyRevision: 1,
 			executionMode: 'simulation', policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 1800, maximumConcurrency: 1,
 				planningTurnMaximumSeconds: 60, communicationConcurrency: 1, projectPercentages: {}, agentClassPercentages: {} },
-			agentIds: classes.map((agentClass) => `sdk/sdk/${agentClass}:estimating:${proposalId}`), startsAt: '2026-09-14T12:00:00.000Z' });
+			agentIds: classes.map((agentClass) => `sdk/sdk/${agentClass}:estimating:proposal`), startsAt: '2026-09-14T12:00:00.000Z' });
 		const estimate = { expectedSeconds: 120, maximumSeconds: 180, rationale: 'Existing exact estimate.' };
 		const graph = projectActiveWorkdays({ teamId: 'team', revision: 1, profiles, sources: [{ id: appliedPlan.id,
 			teamId: 'team', proposalsByProjectId: { sdk: [{ id: 'proposal', executionPlan: { workItems: [
@@ -300,7 +300,7 @@ describe('workday living-graph projection', () => {
 			] } }] }, parameters: { appliedPlan, scheduledProjectIds: ['sdk'],
 				agentProfilesByProjectId: { sdk: { agents: Object.values(profiles).map(agent => ({ definition: agent,
 					activities: ['planning', 'estimating'] })) } } } }] });
-		const incoming = (agentClass: string) => graph.edges.filter(edge => edge.toNodeId.endsWith(`sdk/${agentClass}:estimating:proposal`))
+		const incoming = (agentClass: string) => graph.edges.filter(edge => edge.toNodeId.endsWith(`sdk/${agentClass}:estimating:${proposalId}`))
 			.map(edge => edge.fromNodeId).sort();
 		expect(incoming('architect')).toEqual(['planning:parallel-estimates:1:sdk/sdk/architect:planning']);
 		expect(incoming('researcher')).toEqual(['planning:parallel-estimates:1:sdk/sdk/researcher:planning']);
