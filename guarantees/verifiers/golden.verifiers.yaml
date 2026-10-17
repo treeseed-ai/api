@@ -4804,3 +4804,23 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
     testName: "requires native absence of every retired table including source candidates without accepting ambiguous catalog or resolution results"
+  api.golden.reporting-selection-plan:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "retains one explicitly selected configured Reporter in the canonical applied Workday before activation without a second authority"
+  api.golden.reporting-selection-projection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "projects only the selected configured closeout Reporter while preserving every participating project planning contributor"
+  api.golden.reporting-selection-denials:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "denies omitted ambiguous foreign duplicate and moved reporting authority without replacing the captured selection"
+  api.golden.reporting-selection-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/reporting-selection-native.test.ts
+    testName: "native public preflight and start retain one configured joint Reporter before activation and preserve exact selection through denial and replay"
