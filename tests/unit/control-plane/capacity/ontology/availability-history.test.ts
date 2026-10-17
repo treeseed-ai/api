@@ -1,3 +1,4 @@
+import {maintainCapacityRuntimeRetention} from '../../../../../src/api/capacity/services/runtime/runtime-retention-service.ts';
 import {PGlite} from '@electric-sql/pglite';
 import {availabilityObservationFaultSql} from './fixtures/availability-observation.ts';
 import {observeAvailabilitySession} from '../../../../../src/api/capacity/repositories/accounts/availability-observation.ts';
@@ -7,7 +8,9 @@ import {AvailabilitySessionRepository,type AvailabilitySessionWrite} from '../..
 import type {CapacityGovernanceDatabase,CapacityDatabaseOperation} from '../../../../../src/api/capacity/database.ts';
 import {canonicalOfferBuildInput} from '../execution/fixtures/assignment-attempt-fixtures.ts';
 
-it('publishes the committed provider availability transition into existing scoped capacity audit history without private adapter observations',async()=>{
+vi.mock('../../../../../src/api/capacity/transaction.ts',()=>({capacityTransaction:async<T>(database:CapacityGovernanceDatabase,apply:(value:CapacityGovernanceDatabase)=>Promise<T>)=>apply(database)}));
+
+function availabilityHistoryInput(){
  const at='2026-10-17T00:00:00.000Z',provider=canonicalOfferBuildInput(at).providers[0]!;
  const input:AvailabilitySessionWrite={id:'session',membershipId:'membership',teamId:'team',providerId:'provider',environment:'local',sequence:1,
   openedAt:at,refreshedAt:at,expiresAt:'2026-10-17T00:01:00.000Z',availableFrom:at,availableUntil:null,
@@ -15,9 +18,14 @@ it('publishes the committed provider availability transition into existing scope
    observations:{credential:'PRIVATE_ADAPTER_OBSERVATION'},accountingObservation:{modelUsage:{day:'2026-10-17',observedAt:at,healthy:true,activeSeconds:0,reservedSeconds:0},capabilityUsage:{}}}],
   capabilities:provider.capabilities,nativeLimits:{},runnerPressure:{},constraints:{},metadata:{}};
  const row={id:input.id,membership_id:input.membershipId,team_id:input.teamId,capacity_provider_id:input.providerId,status:'open',sequence:1,
-  opened_at:at,refreshed_at:at,expires_at:input.expiresAt,available_from:at,available_until:null,closed_at:null,
+  opened_at:at,refreshed_at:at,expires_at:input.expiresAt,available_from:at,available_until:null,closed_at:null as string|null,
   execution_providers_json:JSON.stringify(input.executionProviders),capabilities_json:JSON.stringify(input.capabilities),
   native_limits_json:'{}',runner_pressure_json:'{}',constraints_json:'{}',metadata_json:'{}'};
+ return {at,input,row};
+}
+
+it('publishes the committed provider availability transition into existing scoped capacity audit history without private adapter observations',async()=>{
+ const {at,input,row}=availabilityHistoryInput();
  const operations:CapacityDatabaseOperation[]=[],before=structuredClone(input);
  const all=vi.fn<CapacityGovernanceDatabase['all']>().mockResolvedValue([]);
  const database:CapacityGovernanceDatabase={ensureInitialized:vi.fn(async()=>{}),run:vi.fn(async(query:string,params:unknown[]=[])=>{operations.push({query,params});if(query.includes('INSERT INTO capacity_audit_events')){const [id,team_id,capacity_provider_id,membership_id,actor_type,actor_id,action,resource_type,resource_id,request_id,idempotency_key,metadata_json,created_at]=params;all.mockResolvedValue([{id,team_id,capacity_provider_id,membership_id,actor_type,actor_id,action,resource_type,resource_id,request_id,idempotency_key,metadata_json,created_at}]);}}),
@@ -63,4 +71,19 @@ it('executes the exact owning native availability fault SQL with missing interru
  }finally{await database.close();}
  // Controlled PostgreSQL grammar in WASM is a focused check, never native
  // concurrency, complete prerequisite or managed evidence.
+});
+
+it('retains each actual runtime expiry in the original availability audit clock and reports only newly expired sessions through unchanged replay',async()=>{
+ const {at,row:original}=availabilityHistoryInput(),now='2026-10-17T00:02:00.000Z',session={...original},audits:Array<Record<string,unknown>>=[];
+ const expire=()=>{if(!['open','draining'].includes(session.status)||session.expires_at>now)return[];session.status='expired';session.closed_at=now;return[{id:session.id,team_id:session.team_id}];};
+ const database:CapacityGovernanceDatabase={ensureInitialized:async()=>{},
+  first:async<T extends Record<string,unknown>>(query:string):Promise<T|null>=>{const value=query.includes('COUNT(*)')?{total:query.includes('capacity_provider_availability_sessions')&&['open','draining'].includes(session.status)?1:0}:structuredClone(session);return value as T;},
+  all:async<T extends Record<string,unknown>>(query:string):Promise<T[]>=>{const values=query.startsWith('UPDATE capacity_provider_availability_sessions')?expire():query.includes('capacity_audit_events')?structuredClone(audits):[];return values as T[];},
+  run:async(query,params=[])=>{if(query.includes('INSERT INTO capacity_audit_events')){const[id,team_id,capacity_provider_id,membership_id,actor_type,actor_id,action,resource_type,resource_id,request_id,idempotency_key,metadata_json,created_at]=params;audits.push({id,team_id,capacity_provider_id,membership_id,actor_type,actor_id,action,resource_type,resource_id,request_id,idempotency_key,metadata_json,created_at});}},
+  batch:async operations=>{if(operations.some(value=>value.query.includes("SET status = 'expired'")&&value.query.includes('capacity_provider_availability_sessions')))expire();return operations.map(()=>({results:[]}));}};
+ const result=await maintainCapacityRuntimeRetention(database,now);expect(result.expiredAvailabilitySessions).toBe(1);expect(audits).toHaveLength(1);
+ expect(audits[0]).toMatchObject({created_at:now,resource_id:session.id,idempotency_key:'1:expired'});expect(JSON.parse(String(audits[0]!.metadata_json))).toMatchObject({status:'expired',closedAt:now,refreshedAt:at});
+ const held=structuredClone({session,audits});expect((await maintainCapacityRuntimeRetention(database,now)).expiredAvailabilitySessions).toBe(0);expect({session,audits}).toEqual(held);
+ // Transaction mechanics and independent native concurrency are covered by
+ // the owning PostgreSQL case; this unit controls only the database protocol.
 });
