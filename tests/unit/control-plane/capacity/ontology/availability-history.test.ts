@@ -19,8 +19,8 @@ it('publishes the committed provider availability transition into existing scope
  const operations:CapacityDatabaseOperation[]=[],before=structuredClone(input);
  const all=vi.fn<CapacityGovernanceDatabase['all']>().mockResolvedValue([]);
  const database:CapacityGovernanceDatabase={ensureInitialized:vi.fn(async()=>{}),run:vi.fn(async(query:string,params:unknown[]=[])=>{operations.push({query,params});if(query.includes('INSERT INTO capacity_audit_events')){const [id,team_id,capacity_provider_id,membership_id,actor_type,actor_id,action,resource_type,resource_id,request_id,idempotency_key,metadata_json,created_at]=params;all.mockResolvedValue([{id,team_id,capacity_provider_id,membership_id,actor_type,actor_id,action,resource_type,resource_id,request_id,idempotency_key,metadata_json,created_at}]);}}),
-  first:async<T extends Record<string,unknown>>()=>structuredClone(row) as T,
-  all:async<T extends Record<string,unknown>>(query:string,params?:unknown[])=>await all(query,params) as T[],
+  first:async<T extends Record<string,unknown>>(query:string,params?:unknown[]):Promise<T|null>=>{void query;void params;const result:Record<string,unknown>=structuredClone(row);return result as T;},
+  all:async<T extends Record<string,unknown>>(query:string,params?:unknown[]):Promise<T[]>=>await all(query,params) as T[],
   batch:vi.fn(async batch=>{operations.push(...structuredClone(batch));return batch.map(()=>({results:[]}));})};
  const result=await new AvailabilitySessionRepository(database).open(input,[]);
  expect(result).toMatchObject({id:'session',sequence:1,status:'open'});

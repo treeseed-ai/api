@@ -73,7 +73,7 @@ export interface AvailabilitySessionWrite {
 export class AvailabilitySessionRepository {
 	constructor(private readonly database: CapacityGovernanceDatabase) {}
 
-	async open(input: AvailabilitySessionWrite, providerOperations: CapacityDatabaseOperation[]) {
+	async open(input: AvailabilitySessionWrite, providerOperations: CapacityDatabaseOperation[]):Promise<ProviderAvailabilitySession|null> {
 		await this.database.ensureInitialized();
 		const previous=await this.database.all("SELECT id FROM capacity_provider_availability_sessions WHERE membership_id=? AND status IN ('open','draining') ORDER BY id",[input.membershipId]);
 		// These rows serialize publication without changing their referenced keys.
