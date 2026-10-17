@@ -1,3 +1,4 @@
+import {createCapacityControlPlane} from '../../../../../../src/api/capacity/control-plane.ts';
 import {proveNativeCreationRollback} from './fixtures/native-creation-observations.ts';
 import {proveNativeRetiredParticipation} from './fixtures/native-retired-participation.ts';
 import { verifyNativeModelUsage, verifyNativeProviderUsage } from '../../../../../acceptance/execution-native-usage.ts';
@@ -25,7 +26,6 @@ import { createWorkdayProfileService } from '../../../../../../src/api/control-p
 import { CapacityWorkdayEventRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { createDiagnosticEnvelopeService } from '../../../../../../src/security/diagnostic-envelope.ts';
 import { CapacityWorkdayRunRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
-
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 describe('living admission in disposable PostgreSQL', () => {
 	it('serializes competing claims and rolls back without orphan reservations or duplicate charges', async () => {
@@ -105,7 +105,7 @@ describe('living admission in disposable PostgreSQL', () => {
 				executionKind: 'workday', workdayConcurrencyLimit: 1, predecessorResults: [], treedxProxyHandle: { id: `tdx-${attempt.id}` }, now: attempt.createdAt,
 			});
 			await proveNativeCreationRollback(database,peerDatabase,attempts[0]!,run);
-			const results = await Promise.allSettled(attempts.map((attempt, index) => run(attempt, index === 0 ? store as never : peerAccounting)));
+			const results = await Promise.allSettled(attempts.map((attempt, index) => run(attempt, index === 0 ? store as never : createCapacityControlPlane(peerAccounting))));
 			expect(results.filter(result => result.status === 'fulfilled'), results.map(result => result.status === 'rejected' ? String(result.reason) : 'admitted').join('\n')).toHaveLength(1);
 			const counters = await database.pool.query('SELECT committed_amount FROM capacity_admission_counters');
 			expect(counters.rows).toEqual([{ committed_amount: 4 }, { committed_amount: 4 }]);
