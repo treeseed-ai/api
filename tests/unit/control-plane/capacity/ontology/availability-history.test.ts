@@ -1,3 +1,4 @@
+import {observeAvailabilitySession} from '../../../../../src/api/capacity/repositories/accounts/availability-observation.ts';
 import {createCapacityQueryService} from '../../../../../src/api/control-plane/repositories/capacity/capacity-query-service.ts';
 import {expect,it,vi} from 'vitest';
 import {AvailabilitySessionRepository,type AvailabilitySessionWrite} from '../../../../../src/api/capacity/repositories/accounts/availability-session.ts';
@@ -29,6 +30,9 @@ it('publishes the committed provider availability transition into existing scope
  expect(JSON.stringify(observations)).toContain('session');
  expect(JSON.stringify(observations)).not.toContain('PRIVATE_ADAPTER_OBSERVATION');
  expect(input).toEqual(before);
+ if(!result)throw new Error('Original successful session required');
+ for(const field of ['expiresAt','openedAt']as const){const bad=structuredClone(result);Reflect.set(bad,field,'not-a-clock');const count=operations.length;await expect(observeAvailabilitySession(database,bad)).rejects.toMatchObject({code:'provider_availability_observation_invalid'});expect(operations).toHaveLength(count);}
+ const unmeasured=structuredClone(result);unmeasured.snapshot.availableWorkers=NaN;const count=operations.length;await expect(observeAvailabilitySession(database,unmeasured)).rejects.toMatchObject({code:'provider_availability_observation_invalid'});expect(operations).toHaveLength(count);
 });
 
 it('public capacity audit preserves raw records and complete cursor pagination including equal-clock identities',async()=>{
