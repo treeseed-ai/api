@@ -23,8 +23,8 @@ it('native public preflight and start retain one configured joint Reporter befor
   expect(after.nodes.filter(row=>row.kind==='planning').map(row=>row.project_id).sort()).toEqual(['other','project']);
   expect(await f.start(planned)).toEqual(started);expect(await f.snapshot()).toEqual(after);
   expect(after.assignments).toEqual([]);expect(after.reservations).toEqual([]);expect(after.usage).toEqual([]);expect(after.ledger).toEqual([]);expect(input).toEqual(held);
-  for(const reportingAgentId of [undefined,'foreign/renamed-planner','missing']){
-   const supplied={...input};delete supplied.reportingAgentId;Object.assign(supplied,reportingAgentId===undefined?{}:{reportingAgentId});
+  for(const reportingAgentId of [undefined,'foreign/renamed-planner','missing',null,'',' ',false,1,[],{},'é','id?','x'.repeat(201)]){
+   const supplied:Record<string,unknown>={...input};delete supplied.reportingAgentId;Object.assign(supplied,reportingAgentId===undefined?{}:{reportingAgentId});
    const before=await f.snapshot();await expect(f.publicService.preflight(f.principal,'team',supplied)).rejects.toThrow();expect(await f.snapshot()).toEqual(before);
   }
  }finally{await f.close();}
