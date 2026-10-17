@@ -2848,3 +2848,8 @@ workflow:
       verifier: api.golden.provider-availability-expiry-unit
     expect:
       status: passed
+  - id: provider-availability-offer-guard-unit
+    action:
+      verifier: api.golden.provider-availability-offer-guard-unit
+    expect:
+      status: passed

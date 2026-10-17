@@ -4824,3 +4824,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
     testName: "retains each actual runtime expiry in the original availability audit clock and reports only newly expired sessions through unchanged replay"
+  api.golden.provider-availability-offer-guard-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
+    testName: "retains exact capability offer bytes on stale foreign or terminal availability publication before original guarded retry"
