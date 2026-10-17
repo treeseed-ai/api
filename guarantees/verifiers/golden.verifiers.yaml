@@ -4794,3 +4794,13 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/architecture/components/component-content-postgres.test.ts
     testName: "native content-component publication retains unrelated SQL bytes original history and public views through interruption and unchanged concurrent replay"
+  api.golden.execution-retired-participation-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
+    testName: "denies retired content authority even when original native and public assignment records agree without changing valid capacity provenance"
+  api.golden.execution-retired-participation-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
+    testName: "requires native absence of every retired table including source candidates without accepting ambiguous catalog or resolution results"
