@@ -1,4 +1,4 @@
-import {CapacityWorkdayEventRepository} from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
+import {createCapacityQueryService} from '../../../../../src/api/control-plane/repositories/capacity/capacity-query-service.ts';
 import {providerAccountingStatus} from '../../../../../src/api/control-plane/repositories/providers/provider-runtime-service.ts';
 import { randomUUID, generateKeyPairSync, createHash } from 'node:crypto';
 import pg from 'pg';
@@ -37,19 +37,26 @@ describe('provider accounting in disposable PostgreSQL', () => {
       await f.left.pool.query("INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ('availability-other-team','availability-other-team','Unrelated observation input',$1,$1)",[original.now]);
       for(const[id,team,status]of[['availability-live','team','running'],['availability-ended','team','completed'],['availability-foreign','availability-other-team','running']]as const)
         await f.left.pool.query("INSERT INTO capacity_workday_runs (id,team_id,status,execution_mode,execution_kind,started_at,created_at,updated_at) VALUES ($1,$2,$3,'simulation','workday',$4,$4,$4)",[id,team,status,original.now]);
+      for(const id of ['audit-pagination-a','audit-pagination-b','audit-pagination-c'])
+        await f.left.pool.query("INSERT INTO capacity_audit_events (id,team_id,actor_type,action,resource_type,metadata_json,created_at) VALUES ($1,'team','controlled-input','controlled.pagination.input','controlled-input','{}',$2)",[id,original.now]);
       const observeAvailability=async(expected:Array<{sequence:number;status:string;at:string}>)=>{
-        const raw=(await f.right.pool.query("SELECT * FROM capacity_workday_events WHERE event_type='provider.availability.updated' ORDER BY run_id,event_index")).rows;
-        expect(raw).toHaveLength(expected.length);expect(raw.map(value=>value.run_id)).toEqual(expected.map(()=>'availability-live'));
-        const page=await new CapacityWorkdayEventRepository(store).list('team','availability-live',{limit:200});
-        expect(page.page.hasMore).toBe(false);expect(page.items).toHaveLength(expected.length);
+        const raw=(await f.right.pool.query("SELECT * FROM capacity_audit_events WHERE team_id='team' AND action='provider.availability.updated' ORDER BY created_at,id")).rows;
+        expect(raw).toHaveLength(expected.length);
+        const query=createCapacityQueryService(store),publicRows:typeof raw=[],seen=new Set<string>();let cursor:string|undefined;
+        do{const page=await query.audit(f.principal,'team',{limit:1,cursor});publicRows.push(...page.items);
+          if(!page.page.hasMore){expect(page.page.nextCursor).toBeNull();break;}
+          expect(page.page.nextCursor).toBeTruthy();if(!page.page.nextCursor||seen.has(page.page.nextCursor)||seen.size>10)throw new Error('Complete original audit pagination required');
+          seen.add(page.page.nextCursor);cursor=page.page.nextCursor;
+        }while(cursor);
+        const complete=(await f.right.pool.query("SELECT * FROM capacity_audit_events WHERE team_id='team' ORDER BY created_at DESC,id DESC")).rows;
+        expect(publicRows).toEqual(complete);
         for(const[index,value]of raw.entries()){
-          expect(value.event_index).toBe(index);expect(value.created_at).toBe(expected[index]!.at);
-          const context=JSON.parse(String(value.context_json));expect(context).toMatchObject({providerId:'provider',membershipId:'membership',availabilitySessionId:opened.id,sequence:expected[index]!.sequence,status:expected[index]!.status});
-          expect(page.items[index]!.id).toBe(value.id);expect(page.items[index]!.context).toEqual(context);
+          expect(value.created_at).toBe(expected[index]!.at);
+          const context=JSON.parse(String(value.metadata_json));expect(context).toMatchObject({providerId:'provider',membershipId:'membership',availabilitySessionId:opened.id,sequence:expected[index]!.sequence,status:expected[index]!.status});
           expect(JSON.stringify(value)).not.toContain('opaque-controlled-private-adapter-field');
         }
-        const unrelated=(await f.right.pool.query("SELECT id,next_event_index FROM capacity_workday_runs WHERE id IN ('availability-ended','availability-foreign') ORDER BY id")).rows;
-        expect(unrelated).toEqual([{id:'availability-ended',next_event_index:0},{id:'availability-foreign',next_event_index:0}]);
+        const unrelated=(await f.right.pool.query("SELECT id,next_event_index FROM capacity_workday_runs WHERE id IN ('availability-live','availability-ended','availability-foreign') ORDER BY id")).rows;
+        expect(unrelated).toEqual([{id:'availability-ended',next_event_index:0},{id:'availability-foreign',next_event_index:0},{id:'availability-live',next_event_index:0}]);
       };
       const modelPolicy={provider:'openai',model:'configured-luna',reasoningEffort:'low',capabilities:adapter.capabilities};
       const input = { adapters: [{ id: adapter.id, runtimeBuild: adapter.runtimeBuild, offers: adapter.offers,
@@ -64,7 +71,7 @@ describe('provider accounting in disposable PostgreSQL', () => {
       await observeAvailability([{sequence:opened.sequence,status:'open',at:opened.refreshedAt}]);
       const compileNow = new Date().toISOString();
       const buildSource = { ...original, run: canonicalOfferBuildInput(compileNow).run, now: compileNow };
-      const tables = ['capacity_workday_runs','capacity_workday_events','capacity_providers', 'capacity_provider_team_memberships', 'capacity_provider_availability_sessions',
+      const tables = ['capacity_audit_events','capacity_workday_runs','capacity_workday_events','capacity_providers', 'capacity_provider_team_memberships', 'capacity_provider_availability_sessions',
         'capacity_execution_providers', 'capacity_provider_lanes', 'execution_capability_offers', 'capacity_provider_assignments',
         'capacity_reservations', 'capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_operation_receipts'];
       const snapshot = async (database: typeof f.left) => {
