@@ -38,3 +38,12 @@ describe('Team Library managed credential custody', () => {
 		expect(mocks.provider).not.toHaveBeenCalled(); expect(mocks.binding).not.toHaveBeenCalled();
 	});
 });
+
+it('retains canonical public adopt authority without creating or seeding a replacement repository',async()=>{
+ const input=store(),policy={visibility:'public',lifecycle:'adopt'};
+ input.ensureManagedTeamLibraryProject.mockResolvedValue({id:'project-1',metadata:{library:Object.assign({repositoryName:managedTeamLibraryRepositoryName('team-1')},{repositoryPolicy:policy})}});
+ const before=structuredClone(policy);
+ const result=await reconcileManagedTeamLibrary(input,'team-1',{});
+ expect(mocks.provider).toHaveBeenCalledWith(expect.objectContaining({visibility:'public',lifecycle:'adopt',seedFiles:undefined,repositoryAuthority:authority}));
+ expect(result.state).toBe('replicating');expect(policy).toEqual(before);
+});
