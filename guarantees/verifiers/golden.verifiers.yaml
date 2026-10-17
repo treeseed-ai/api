@@ -4784,3 +4784,13 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workdays/provider-accounting-status.test.ts
     testName: "retains original typed configured model policy without exposing private adapter observations or repairing invalid model authority"
+  api.golden.connected-content-component-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/components/component-content-change.test.ts
+    testName: "reconciles content and accepted authority changes only within their original connected component while preserving an unrelated proposal using the same configured agents"
+  api.golden.connected-content-component-postgres:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/components/component-content-postgres.test.ts
+    testName: "native content-component publication retains unrelated SQL bytes original history and public views through interruption and unchanged concurrent replay"
