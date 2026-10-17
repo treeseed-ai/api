@@ -10,7 +10,8 @@ it('native content-component publication retains unrelated SQL bytes original hi
   const initialReceipt={...f.originalProjection.revision,graphDigest:f.before.digest};
   await persistExecutionGraph(database.stores[0],f.before,emptyLivingGraph(),initialReceipt);
   const before=await database.snapshot(),prior=new Map(f.before.nodes.map(node=>[node.id,node])),priorEdges=new Set(f.before.edges.map(edge=>edge.id)),nextEdges=new Set(f.after.edges.map(edge=>edge.id));
-  const receipt={...f.nextProjection.revision,graphDigest:f.after.digest,changes:{
+  const publishedAt=new Date().toISOString();expect(Date.parse(publishedAt)).toBeGreaterThan(Date.parse(initialReceipt.createdAt));
+  const receipt={...f.nextProjection.revision,createdAt:publishedAt,graphDigest:f.after.digest,changes:{
    added:f.after.nodes.filter(node=>!prior.has(node.id)).map(node=>node.id),
    changed:f.after.nodes.filter(node=>prior.has(node.id)&&!f.outsideIds.has(node.id)).map(node=>node.id),
    completed:f.after.nodes.filter(node=>node.status==='completed'&&prior.get(node.id)?.status!=='completed').map(node=>node.id),
@@ -27,7 +28,7 @@ it('native content-component publication retains unrelated SQL bytes original hi
   await database.left.pool.query('DROP TRIGGER reject_component_change ON execution_nodes; DROP FUNCTION reject_component_change();');
   await persistExecutionGraph(database.stores[1],f.after,f.before,receipt);
   const after=await database.snapshot();expect(outsideNodes(after.nodes)).toEqual(outsideNodes(before.nodes));expect(outsideEdges(after.edges)).toEqual(outsideEdges(before.edges));
-  expect(after.revisions.slice(0,before.revisions.length)).toEqual(before.revisions);expect(after.revisions).toHaveLength(2);expect(after.assignments).toEqual(before.assignments);expect(after.reservations).toEqual(before.reservations);
+  expect(after.revisions.slice(0,before.revisions.length)).toEqual(before.revisions);expect(after.revisions).toHaveLength(2);expect(after.revisions[1]?.created_at).toBe(publishedAt);expect(after.assignments).toEqual(before.assignments);expect(after.reservations).toEqual(before.reservations);
   for(const store of database.stores){const service=createExecutionGraphService(store);expect(await service.show(database.principal,'team',{})).toEqual(f.after);const page=await service.watch(database.principal,'team',{cursor:'0'});expect(page.items).toHaveLength(2);expect(await service.watch(database.principal,'team',{cursor:page.nextCursor})).toEqual({items:[],nextCursor:'2'});}
   await Promise.all(database.stores.map(store=>persistExecutionGraph(store,f.after,f.after,receipt)));expect(await database.snapshot()).toEqual(after);expect(f).toEqual(held);
   // Original projector/state/writer and independent PostgreSQL pools/public
