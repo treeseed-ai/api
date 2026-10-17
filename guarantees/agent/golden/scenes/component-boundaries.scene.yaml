@@ -2819,3 +2819,9 @@ workflow:
       verifier: api.golden.component.workday-initial-plan-observation
     expect:
       status: passed
+  - id: connected-content-component-unit
+    action: { verifier: api.golden.connected-content-component-unit }
+    expect: { status: passed }
+  - id: connected-content-component-postgres
+    action: { verifier: api.golden.connected-content-component-postgres }
+    expect: { status: passed }

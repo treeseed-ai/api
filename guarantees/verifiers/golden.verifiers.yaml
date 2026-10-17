@@ -4779,3 +4779,13 @@ verifiers:
     kind: vitestCase
     testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-lifecycle-observations.test.ts
     testName: retains initial native applied-plan creation as one null-to-active observation before every later transition and exact replay
+  api.golden.connected-content-component-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/components/component-content-change.test.ts
+    testName: "reconciles content and accepted authority changes only within their original connected component while preserving an unrelated proposal using the same configured agents"
+  api.golden.connected-content-component-postgres:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/components/component-content-postgres.test.ts
+    testName: "native content-component publication retains unrelated SQL bytes original history and public views through interruption and unchanged concurrent replay"
