@@ -40,6 +40,7 @@ describe('provider accounting in disposable PostgreSQL', () => {
       for(const id of ['audit-pagination-a','audit-pagination-b','audit-pagination-c'])
         await f.left.pool.query("INSERT INTO capacity_audit_events (id,team_id,actor_type,action,resource_type,metadata_json,created_at) VALUES ($1,'team','controlled-input','controlled.pagination.input','controlled-input','{}',$2)",[id,original.now]);
       const observeAvailability=async(expected:Array<{sequence:number;status:string;at:string}>)=>{
+        if(!opened)throw new Error('Original published session identity required before public history readback');
         const raw=(await f.right.pool.query("SELECT * FROM capacity_audit_events WHERE team_id='team' AND action='provider.availability.updated' ORDER BY created_at,id")).rows;
         expect(raw).toHaveLength(expected.length);
         const query=createCapacityQueryService(store),publicRows:typeof raw=[],seen=new Set<string>();let cursor:string|undefined;
@@ -198,6 +199,12 @@ describe('provider accounting in disposable PostgreSQL', () => {
         expect(cause).toBeInstanceOf(Error);if(mode!=='interrupted')expect(cause).toMatchObject({code:'provider_availability_observation_conflict'});
         const unchanged=JSON.stringify(await snapshot(f.right))===JSON.stringify(baseline);expect(unchanged).toBe(true);expect(await snapshot(f.left)).toEqual(baseline);expect(refreshInput).toEqual(refreshBefore);failedAvailability.push({mode,cause,unchanged});
       }
+      await f.left.pool.query("UPDATE capacity_provider_availability_sessions SET opened_at='not-a-clock' WHERE id=$1",[opened.id]);
+      const malformedClock=await snapshot(f.right);let clockFailure:unknown;
+      try{await service.refresh(principal,opened.id,refreshInput);}catch(error){clockFailure=error;}
+      expect(clockFailure).toMatchObject({code:'provider_availability_observation_invalid'});expect(await snapshot(f.left)).toEqual(malformedClock);expect(await snapshot(f.right)).toEqual(malformedClock);
+      // Restore only the deliberately corrupted owning input; failed observations remain.
+      await f.left.pool.query('UPDATE capacity_provider_availability_sessions SET opened_at=$1 WHERE id=$2',[opened.openedAt,opened.id]);expect(await snapshot(f.right)).toEqual(baseline);
       const peer={db:f.right,ensureInitialized:()=>f.right.migrate(),run:async(sql:string,params:unknown[]=[])=>{await f.right.prepare(sql).bind(...params).run();},
         first:<T extends Record<string,unknown>>(sql:string,params:unknown[]=[])=>f.right.prepare(sql).bind(...params).first<T>(),
         all:async<T extends Record<string,unknown>>(sql:string,params:unknown[]=[]) =>(await f.right.prepare(sql).bind(...params).all<T>()).results,
