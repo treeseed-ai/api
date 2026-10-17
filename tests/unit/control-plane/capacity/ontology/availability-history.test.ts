@@ -1,3 +1,5 @@
+import {PGlite} from '@electric-sql/pglite';
+import {availabilityObservationFaultSql} from './fixtures/availability-observation.ts';
 import {observeAvailabilitySession} from '../../../../../src/api/capacity/repositories/accounts/availability-observation.ts';
 import {createCapacityQueryService} from '../../../../../src/api/control-plane/repositories/capacity/capacity-query-service.ts';
 import {expect,it,vi} from 'vitest';
@@ -45,4 +47,20 @@ it('public capacity audit preserves raw records and complete cursor pagination i
  const first=await query.audit(principal,'team',{limit:1});expect(first.items).toEqual([rows[0]]);expect(first.page.hasMore).toBe(true);expect(first.page.nextCursor).toBeTruthy();
  const second=await query.audit(principal,'team',{limit:1,cursor:first.page.nextCursor});expect(second.items).toEqual([rows[1]]);expect(second.page.hasMore).toBe(false);expect(second.page.nextCursor).toBeNull();
  expect(all.mock.calls[1]![0]).toContain('id < ?');expect(all.mock.calls[1]![1]).toContain('audit-b');
+});
+
+it('executes the exact owning native availability fault SQL with missing interrupted and altered audit writes before original source retry',async()=>{
+ const database=new PGlite();try{
+  await database.exec('CREATE TABLE capacity_audit_events (action TEXT NOT NULL, metadata_json TEXT NOT NULL)');
+  for(const mode of ['missing','interrupted','altered']as const){
+   await database.exec(availabilityObservationFaultSql(mode));
+   await database.exec('CREATE TRIGGER retained_availability_observation_fault BEFORE INSERT ON capacity_audit_events FOR EACH ROW EXECUTE FUNCTION retained_availability_observation_fault()');
+   const insert=()=>database.query('INSERT INTO capacity_audit_events (action,metadata_json) VALUES ($1,$2)',['provider.availability.updated','{"original":true}']);
+   try{if(mode==='interrupted')await expect(insert()).rejects.toThrow('retained native availability observation interruption');else await insert();expect((await database.query('SELECT * FROM capacity_audit_events')).rows).toEqual(mode==='altered'?[{action:'provider.availability.updated',metadata_json:'{}'}]:[]);}
+   finally{await database.exec('DROP TRIGGER retained_availability_observation_fault ON capacity_audit_events; DROP FUNCTION retained_availability_observation_fault(); DELETE FROM capacity_audit_events');}
+  }
+  await database.query('INSERT INTO capacity_audit_events (action,metadata_json) VALUES ($1,$2)',['provider.availability.updated','{"original":true}']);expect((await database.query('SELECT * FROM capacity_audit_events')).rows).toEqual([{action:'provider.availability.updated',metadata_json:'{"original":true}'}]);
+ }finally{await database.close();}
+ // Controlled PostgreSQL grammar in WASM is a focused check, never native
+ // concurrency, complete prerequisite or managed evidence.
 });

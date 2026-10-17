@@ -1,3 +1,4 @@
+import {availabilityObservationFaultSql} from './fixtures/availability-observation.ts';
 import {createCapacityQueryService} from '../../../../../src/api/control-plane/repositories/capacity/capacity-query-service.ts';
 import {providerAccountingStatus} from '../../../../../src/api/control-plane/repositories/providers/provider-runtime-service.ts';
 import { randomUUID, generateKeyPairSync, createHash } from 'node:crypto';
@@ -191,7 +192,7 @@ describe('provider accounting in disposable PostgreSQL', () => {
       Object.assign(originalHealth.modelUsage,{healthy:false});
       const refreshBefore=structuredClone(refreshInput),failedAvailability:Array<{mode:string;cause:unknown;unchanged:boolean}>=[];
       for(const mode of ['missing','interrupted','altered']){
-        await f.left.pool.query("CREATE OR REPLACE FUNCTION retained_availability_observation_fault() RETURNS trigger LANGUAGE plpgsql AS $ BEGIN IF NEW.action='provider.availability.updated' THEN "+(mode==='missing'?"RETURN NULL;":mode==='altered'?"NEW.metadata_json = '{}'; RETURN NEW;":"RAISE EXCEPTION 'retained native availability observation interruption';")+" END IF; RETURN NEW; END $");
+        await f.left.pool.query(availabilityObservationFaultSql(mode));
         await f.left.pool.query('CREATE TRIGGER retained_availability_observation_fault BEFORE INSERT ON capacity_audit_events FOR EACH ROW EXECUTE FUNCTION retained_availability_observation_fault()');
         let cause:unknown;
         try{await service.refresh(principal,opened.id,refreshInput);}catch(error){cause=error;}
