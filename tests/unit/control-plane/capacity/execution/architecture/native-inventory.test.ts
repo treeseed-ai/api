@@ -1,3 +1,4 @@
+import {verifyRetiredExecutionTables} from '../../../../../acceptance/execution-retired-authority.ts';
 import { verifyNativeModelUsage, verifyNativeProviderUsage } from '../../../../../acceptance/execution-native-usage.ts';
 import { serializeProviderAssignmentRow } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { describe, expect, it } from 'vitest';
@@ -490,4 +491,9 @@ it('denies retired content authority even when original native and public assign
   expect.soft(()=>verifyNativeAssignmentReadback(raw,visible,scope,[nativeReservation],[raw]),model+'/'+location).toThrow('ACCEPTANCE_RETIRED_PARTICIPATION');expect({raw,visible}).toEqual(held);
  }
  expect(verifyNativeAssignmentReadback(nativeAssignment,publicAssignment,scope,[nativeReservation],[nativeAssignment])).toEqual(assignment);
+});
+it('requires native absence of every retired table including source candidates without accepting ambiguous catalog or resolution results',async()=>{
+ const catalog=[{table_name:'execution_nodes',column_name:'id'}],resolve=async()=>[{name:null}];await verifyRetiredExecutionTables(catalog,resolve);
+ for(const table of ['agent_capacity_plans','capacity_workday_demands','capacity_workday_participation_cycles','capacity_workday_participation_entries','agent_mode_runs','workday_capacity_envelopes','decision_assignment_graphs','capacity_allocation_sets','provider_source_candidates'])await expect(verifyRetiredExecutionTables([...catalog,{table_name:table,column_name:'id'}],resolve)).rejects.toThrow('ACCEPTANCE_SCHEMA_RETIRED_TABLE');
+ for(const rows of [[],[...catalog,...catalog],[{table_name:'',column_name:'id'}]])await expect(verifyRetiredExecutionTables(rows,resolve)).rejects.toThrow('ACCEPTANCE_SCHEMA_RETIRED_TABLE');for(const result of [[],[{name:'provider_source_candidates'}],[{name:null},{name:null}]])await expect(verifyRetiredExecutionTables(catalog,async()=>result)).rejects.toThrow('ACCEPTANCE_SCHEMA_RETIRED_TABLE');
 });
