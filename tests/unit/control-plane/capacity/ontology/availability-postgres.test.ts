@@ -35,6 +35,8 @@ describe('provider accounting in disposable PostgreSQL', () => {
         first: <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => f.left.prepare(sql).bind(...params).first<T>(),
         all: async <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => (await f.left.prepare(sql).bind(...params).all<T>()).results,
         batch: (operations: Array<{ query: string; params?: unknown[] }>) => f.left.batch(operations) };
+      await f.left.pool.query("INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('availability-seed-project','team','availability-seed-project','Controlled seed grant input',$1,$1)",[original.now]);
+      await f.left.pool.query("INSERT INTO capacity_grants (id,membership_id,capacity_provider_id,team_id,project_id,environment,status,metadata_json,created_at,updated_at) VALUES ('availability-seed-grant','membership','provider','team','availability-seed-project','local','active','{\"seedName\":\"controlled-native-publication\"}',$1,$1)",[original.now]);
       const principal = { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider' };
       await f.left.pool.query("INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ('availability-other-team','availability-other-team','Unrelated observation input',$1,$1)",[original.now]);
       for(const[id,team,status]of[['availability-live','team','running'],['availability-ended','team','completed'],['availability-foreign','availability-other-team','running']]as const)
@@ -74,7 +76,7 @@ describe('provider accounting in disposable PostgreSQL', () => {
       await observeAvailability([{sequence:opened.sequence,status:'open',at:opened.refreshedAt}]);
       const compileNow = new Date().toISOString();
       const buildSource = { ...original, run: canonicalOfferBuildInput(compileNow).run, now: compileNow };
-      const tables = ['capacity_audit_events','capacity_workday_runs','capacity_workday_events','capacity_providers', 'capacity_provider_team_memberships', 'capacity_provider_availability_sessions',
+      const tables = ['capacity_audit_events','capacity_grants','capacity_workday_runs','capacity_workday_events','capacity_providers', 'capacity_provider_team_memberships', 'capacity_provider_availability_sessions',
         'capacity_execution_providers', 'capacity_provider_lanes', 'execution_capability_offers', 'capacity_provider_assignments',
         'capacity_reservations', 'capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_operation_receipts'];
       const snapshot = async (database: typeof f.left) => {

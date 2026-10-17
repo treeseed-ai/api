@@ -105,3 +105,9 @@ it('retains exact capability offer bytes on stale foreign or terminal availabili
  // Real generated SQL grammar and owning guards, with controlled local data;
  // independent PostgreSQL contention remains the original native case.
 });
+
+it('denies a missing current availability claim before every offer lane or seed grant mutation without changing original requests',async()=>{
+ const {input}=availabilityHistoryInput(),before=structuredClone(input),first=vi.fn<CapacityGovernanceDatabase['first']>().mockResolvedValue(null),batch=vi.fn<CapacityGovernanceDatabase['batch']>().mockResolvedValue([{results:[{id:input.id,sequence:2}]}]);
+ const database:CapacityGovernanceDatabase={ensureInitialized:async()=>{},first,batch,run:vi.fn(async()=>{}),all:vi.fn(async()=>[])},operations=[{query:'UPDATE capacity_grants SET updated_at=? WHERE id=?',params:[input.refreshedAt,'controlled-original-seed-grant']}],held=structuredClone(operations);
+ await expect(new AvailabilitySessionRepository(database).refresh(input,1,operations)).resolves.toBeNull();expect(batch).not.toHaveBeenCalled();expect(database.run).not.toHaveBeenCalled();expect(database.all).not.toHaveBeenCalled();expect(first).toHaveBeenCalledTimes(1);expect(first.mock.calls[0]![1]).toEqual([input.id,input.membershipId,input.teamId,input.providerId,1]);expect(first.mock.calls[0]![0]).toContain("status = 'open'");expect(first.mock.calls[0]![0]).toContain('FOR NO KEY UPDATE');expect(input).toEqual(before);expect(operations).toEqual(held);
+});
