@@ -32,7 +32,7 @@ it('publishes the committed provider availability transition into existing scope
 
 it('public capacity audit preserves raw records and complete cursor pagination including equal-clock identities',async()=>{
  const at='2026-10-17T00:00:00.000Z',rows=[{id:'audit-b',created_at:at,metadata_json:'{}'},{id:'audit-a',created_at:at,metadata_json:'{}'}];
- const all=vi.fn().mockResolvedValueOnce(rows).mockResolvedValueOnce([rows[1]]),query=createCapacityQueryService({ensureInitialized:async()=>{},all});
+ const all=vi.fn(async(sql:string,parameters:unknown[])=>rows.filter(row=>parameters.length<3||row.id<String(parameters[3])).slice(0,Number(parameters.at(-1)))),query=createCapacityQueryService({ensureInitialized:async()=>{},all});
  const principal={id:'operator',roles:['admin']};
  const first=await query.audit(principal,'team',{limit:1});expect(first.items).toEqual([rows[0]]);expect(first.page.hasMore).toBe(true);expect(first.page.nextCursor).toBeTruthy();
  const second=await query.audit(principal,'team',{limit:1,cursor:first.page.nextCursor});expect(second.items).toEqual([rows[1]]);expect(second.page.hasMore).toBe(false);expect(second.page.nextCursor).toBeNull();
