@@ -199,12 +199,14 @@ describe('provider accounting in disposable PostgreSQL', () => {
         expect(cause).toBeInstanceOf(Error);if(mode!=='interrupted')expect(cause).toMatchObject({code:'provider_availability_observation_conflict'});
         const unchanged=JSON.stringify(await snapshot(f.right))===JSON.stringify(baseline);expect(unchanged).toBe(true);expect(await snapshot(f.left)).toEqual(baseline);expect(refreshInput).toEqual(refreshBefore);failedAvailability.push({mode,cause,unchanged});
       }
-      await f.left.pool.query("UPDATE capacity_provider_availability_sessions SET opened_at='not-a-clock' WHERE id=$1",[opened.id]);
-      const malformedClock=await snapshot(f.right);let clockFailure:unknown;
-      try{await service.refresh(principal,opened.id,refreshInput);}catch(error){clockFailure=error;}
-      expect(clockFailure).toMatchObject({code:'provider_availability_observation_invalid'});expect(await snapshot(f.left)).toEqual(malformedClock);expect(await snapshot(f.right)).toEqual(malformedClock);
-      // Restore only the deliberately corrupted owning input; failed observations remain.
-      await f.left.pool.query('UPDATE capacity_provider_availability_sessions SET opened_at=$1 WHERE id=$2',[opened.openedAt,opened.id]);expect(await snapshot(f.right)).toEqual(baseline);
+      for(const corruptedAt of ['not-a-clock','2026-02-30T00:00:00.000Z']){
+        await f.left.pool.query('UPDATE capacity_provider_availability_sessions SET opened_at=$1 WHERE id=$2',[corruptedAt,opened.id]);
+        const malformedClock=await snapshot(f.right);let clockFailure:unknown;
+        try{await service.refresh(principal,opened.id,refreshInput);}catch(error){clockFailure=error;}
+        expect(clockFailure).toMatchObject({code:'provider_availability_observation_invalid'});expect(await snapshot(f.left)).toEqual(malformedClock);const unchanged=JSON.stringify(await snapshot(f.right))===JSON.stringify(malformedClock);expect(unchanged).toBe(true);failedAvailability.push({mode:'clock:'+corruptedAt,cause:clockFailure,unchanged});
+        // Restore only the deliberately corrupted owning input; failed observations remain.
+        await f.left.pool.query('UPDATE capacity_provider_availability_sessions SET opened_at=$1 WHERE id=$2',[opened.openedAt,opened.id]);expect(await snapshot(f.right)).toEqual(baseline);
+      }
       const peer={db:f.right,ensureInitialized:()=>f.right.migrate(),run:async(sql:string,params:unknown[]=[])=>{await f.right.prepare(sql).bind(...params).run();},
         first:<T extends Record<string,unknown>>(sql:string,params:unknown[]=[])=>f.right.prepare(sql).bind(...params).first<T>(),
         all:async<T extends Record<string,unknown>>(sql:string,params:unknown[]=[]) =>(await f.right.prepare(sql).bind(...params).all<T>()).results,
@@ -213,7 +215,7 @@ describe('provider accounting in disposable PostgreSQL', () => {
       const refreshed=winners[0]!;expect(refreshed.sequence).toBe(opened.sequence+1);
       await observeAvailability([{sequence:opened.sequence,status:'open',at:opened.refreshedAt},{sequence:refreshed.sequence,status:'open',at:refreshed.refreshedAt}]);
       const observedHealth=(await f.right.pool.query("SELECT metadata_json FROM capacity_audit_events WHERE resource_id=$1 AND idempotency_key=$2",[opened.id,refreshed.sequence+':open'])).rows;expect(observedHealth).toHaveLength(1);expect(JSON.parse(observedHealth[0].metadata_json).adapters[0].modelHealthy).toBe(false);
-      const refreshedBytes=await snapshot(f.right);expect(await service.refresh(principal,opened.id,refreshInput)).toBeNull();expect(await snapshot(f.left)).toEqual(refreshedBytes);expect(refreshInput).toEqual(refreshBefore);expect(failedAvailability).toHaveLength(3);
+      const refreshedBytes=await snapshot(f.right);expect(await service.refresh(principal,opened.id,refreshInput)).toBeNull();expect(await snapshot(f.left)).toEqual(refreshedBytes);expect(refreshInput).toEqual(refreshBefore);expect(failedAvailability).toHaveLength(5);
       console.log(JSON.stringify({retainedAvailabilityFailures:failedAvailability.map(value=>({mode:value.mode,unchanged:value.unchanged,message:String(value.cause)}))}));
       const terminalAvailability=await service.close(principal, opened.id);if(!terminalAvailability?.closedAt)throw new Error('Original terminal availability required');
       await observeAvailability([{sequence:opened.sequence,status:'open',at:opened.refreshedAt},{sequence:refreshed.sequence,status:'open',at:refreshed.refreshedAt},{sequence:terminalAvailability.sequence,status:'closed',at:terminalAvailability.closedAt}]);
