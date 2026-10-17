@@ -3,11 +3,11 @@ import{canonicalStandardsJson}from'@treeseed/sdk/standards';
 import{appliedWorkdaySchema,compileWorkday}from'@treeseed/sdk/agent-capacity';
 import{expect}from'vitest';
 
-/** These controlled native fixtures create ready planning and blocked closeout nodes; direct SQL completion inputs do not manufacture history. */
+/** Birth is immutable revision one with ready planning or blocked closeout state. Later revisions/statuses are independently asserted by the owning transition cases; direct SQL inputs never rewrite original birth evidence. */
 export function expectNodeBirthHistory(snapshot:{nodes:Record<string,unknown>[];events:Record<string,unknown>[]}){
  const births=snapshot.events.filter(event=>event.event_type==='execution.node.state'&&JSON.parse(String(event.context_json)).previousStatus===null);
  expect(births).toHaveLength(snapshot.nodes.length);expect(new Set(births.map(event=>JSON.parse(String(event.context_json)).nodeId)).size).toBe(snapshot.nodes.length);
- for(const node of snapshot.nodes){const expectedStatus=node.kind==='condition'||node.kind==='reporting'?'blocked':'ready';expect(node.status).toBe(expectedStatus);const events=births.filter(event=>JSON.parse(String(event.context_json)).nodeId===node.id);expect(events).toHaveLength(1);const event=events[0]!;expect(event).toMatchObject({team_id:node.team_id,project_id:node.project_id,run_id:node.workday_id,workday_id:node.workday_id,assignment_id:null,status:'recorded'});expect(JSON.parse(String(event.context_json))).toEqual({nodeId:node.id,nodeRevision:node.node_revision,graphRevision:node.graph_revision_created,status:expectedStatus,previousStatus:null});}
+ for(const node of snapshot.nodes){const expectedStatus=node.kind==='condition'||node.kind==='reporting'?'blocked':'ready';expect(['planning','condition','reporting']).toContain(node.kind);expect(Number.isSafeInteger(node.node_revision)&&Number(node.node_revision)>=1).toBe(true);const events=births.filter(event=>JSON.parse(String(event.context_json)).nodeId===node.id);expect(events).toHaveLength(1);const event=events[0]!;expect(event).toMatchObject({team_id:node.team_id,project_id:node.project_id,run_id:node.workday_id,workday_id:node.workday_id,assignment_id:null,status:'recorded'});expect(JSON.parse(String(event.context_json))).toEqual({nodeId:node.id,nodeRevision:1,graphRevision:node.graph_revision_created,status:expectedStatus,previousStatus:null});}
 }
 /** Independent native rows must retain the exact old/new canonical plan; no status or exit code substitutes for an observation. */
 export function expectWorkdayLifecycleHistory(snapshot:{workdays:Record<string,unknown>[];events:Record<string,unknown>[]}){
