@@ -4814,3 +4814,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
     testName: "public capacity audit preserves raw records and complete cursor pagination including equal-clock identities"
+  api.golden.provider-availability-fault-sql-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
+    testName: "executes the exact owning native availability fault SQL with missing interrupted and altered audit writes before original source retry"

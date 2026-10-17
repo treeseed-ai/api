@@ -2840,3 +2840,6 @@ workflow:
   - id: capacity-audit-pagination-unit
     action: { verifier: api.golden.capacity-audit-pagination-unit }
     expect: { status: passed }
+  - id: provider-availability-fault-sql-unit
+    action: { verifier: api.golden.provider-availability-fault-sql-unit }
+    expect: { status: passed }
