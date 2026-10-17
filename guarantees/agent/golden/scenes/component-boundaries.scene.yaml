@@ -2843,3 +2843,8 @@ workflow:
   - id: provider-availability-fault-sql-unit
     action: { verifier: api.golden.provider-availability-fault-sql-unit }
     expect: { status: passed }
+  - id: provider-availability-expiry-unit
+    action:
+      verifier: api.golden.provider-availability-expiry-unit
+    expect:
+      status: passed

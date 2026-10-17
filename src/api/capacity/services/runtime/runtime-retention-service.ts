@@ -61,7 +61,6 @@ export async function maintainCapacityRuntimeRetention(
 	return {
 		expiredAccessTokens,
 		expiredAvailabilitySessions,
-		expiredAvailabilitySessions,
 		expiredRegistrationRequests,
 		deletedProofNonces,
 		deletedRateLimitBuckets,

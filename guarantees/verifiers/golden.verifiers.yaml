@@ -4819,3 +4819,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
     testName: "executes the exact owning native availability fault SQL with missing interrupted and altered audit writes before original source retry"
+  api.golden.provider-availability-expiry-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
+    testName: "retains each actual runtime expiry in the original availability audit clock and reports only newly expired sessions through unchanged replay"
