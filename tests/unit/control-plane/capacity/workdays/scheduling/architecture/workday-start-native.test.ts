@@ -283,7 +283,10 @@ describe('first manual and recurring admission through the same public owning pa
 			expect(run.parameters.agentProfilesByProjectId).toMatchObject({ project: { agents: [{ definition: f.definition }] } });
 			expect(run.parameters.workdayContextByProjectId).toMatchObject({ project: { repository: 'planning-library', commit: 'a'.repeat(40), path: 'README.md' } });
 			expectNodeBirthHistory(truth);expect(expectWorkdayLifecycleHistory(truth)).toHaveLength(1); expect(truth.workdays).toHaveLength(1); expect(truth.nodes.length).toBeGreaterThan(0);
-			for (const node of truth.nodes) expect(node).toMatchObject({ team_id: 'team', project_id: 'project', workday_id: receipt.workdayId, kind: 'planning', agent_class: f.definition.agentClass });
+			expect(truth.nodes.map(node=>node.kind).sort()).toEqual(['condition','planning','reporting']);
+			for (const node of truth.nodes) expect(node).toMatchObject({ team_id: 'team', project_id: 'project', workday_id: receipt.workdayId });
+			for (const node of truth.nodes.filter(node=>node.kind!=='condition')) expect(node.agent_class).toBe(f.definition.agentClass);
+			expect(truth.nodes.filter(node=>node.kind==='reporting'||node.kind==='condition').every(node=>node.status==='blocked')).toBe(true);
 			expect(truth.events.filter(event=>event.event_type!=='execution.node.state').map(event => event.event_type)).toEqual(['workday.started', 'workday.lifecycle.changed', 'assignment.polling_ready']);
 			expect(truth.assignments).toEqual([]); expect(truth.reservations).toEqual([]); expect(truth.usage).toEqual([]); expect(truth.ledger).toEqual([]);
 			expect(f.calls).toEqual([{ method: 'POST', path: '/api/v1/repos/planning-library/paths/list',

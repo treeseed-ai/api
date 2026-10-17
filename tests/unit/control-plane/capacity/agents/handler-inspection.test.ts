@@ -91,7 +91,7 @@ describe('public configured handler inspection', () => {
 			await expect(show.handler({ ...input, path: { ...input.path, agentSlug: 'retired-reader' } }, context))
 				.rejects.toMatchObject({ status: 404, code: 'project_agent_not_found' });
 			const expected = { projectId: 'project', handlers: [
-				{ id: 'writer', origin: 'agent-package' }, { id: 'configured/paused-reader', origin: 'project-runtime' },
+				{ id: 'writer', origin: 'agent-package' }, { id: 'reporter', origin: 'agent-package' }, { id: 'configured/paused-reader', origin: 'project-runtime' },
 			] };
 			expect(await handlers.handler(input, context)).toEqual(expected);
 			expect(await Promise.all([show.handler(input, context), show.handler(input, context)])).toEqual([result, result]);
@@ -186,7 +186,7 @@ describe('public configured handler inspection', () => {
 			const state = async () => ({ execution: await f.snapshot(), classes: await f.all('SELECT * FROM project_agent_classes ORDER BY id'),
 				projects: await f.all('SELECT * FROM projects ORDER BY id') });
 			const before = await state(), input = { path: { projectId: 'project' }, query: {}, body: undefined }, frozen = structuredClone(input);
-			const expected = { projectId: 'project', handlers: [{ id: 'writer', origin: 'agent-package' }, { id: 'configured/reader', origin: 'project-runtime' }] };
+			const expected = { projectId: 'project', handlers: [{ id: 'writer', origin: 'agent-package' }, { id: 'reporter', origin: 'agent-package' }, { id: 'configured/reader', origin: 'project-runtime' }] };
 			const list = registry.require('agents.handlers.list'), show = registry.require('agents.handlers.show');
 			expect(await list.handler(input, context)).toEqual(expected);
 			for (const handler of expected.handlers) expect(await show.handler({ ...input, path: { projectId: 'project', handlerId: handler.id } }, context))
@@ -214,9 +214,9 @@ describe('public configured handler inspection', () => {
 			}
 			const before = { execution: await f.snapshot(), classes: await f.all('SELECT * FROM project_agent_classes ORDER BY id') };
 			const service = createAgentQueryService(f.store), expected = { projectId: 'project', handlers: [
-				{ id: 'writer', origin: 'agent-package' }, { id: 'configured/tail-reader', origin: 'project-runtime' }] };
+				{ id: 'writer', origin: 'agent-package' }, { id: 'reporter', origin: 'agent-package' }, { id: 'configured/tail-reader', origin: 'project-runtime' }] };
 			expect(await service.handlers(f.principal, 'project')).toEqual(expected);
-			expect(await service.handler(f.principal, 'project', 'configured/tail-reader')).toEqual({ projectId: 'project', handler: expected.handlers[1] });
+			expect(await service.handler(f.principal, 'project', 'configured/tail-reader')).toEqual({ projectId: 'project', handler: expected.handlers[2] });
 			expect({ execution: await f.snapshot(), classes: await f.all('SELECT * FROM project_agent_classes ORDER BY id') }).toEqual(before);
 			expect(f.calls).toEqual([]);
 		} finally { await f.close(); }

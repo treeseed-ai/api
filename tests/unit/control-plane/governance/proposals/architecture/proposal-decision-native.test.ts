@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { validateDecisionAuthority, validateExecutionAuthorityReceipt } from '../../../../../../src/api/governance/decision-authority.ts';
-import { readyProposal } from './ready-proposal-fixture.ts';
+import { readyProposal, nativeProposalProfileInputs } from './ready-proposal-fixture.ts';
 import { verifyNativeProposalReconciliation } from './proposal-reconciliation-fixture.ts';
 import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { stringify } from 'yaml';
@@ -51,17 +51,7 @@ describe('native proposal Decision authority', () => {
 			}
 			const originalInputs = structuredClone({ declaration, principal: f.principal, sources: f.sources });
 			const path = `proposals/${declaration.id}.mdx`, raw = `---\n${stringify(declaration)}---\n`;
-			const profiles = Object.values(f.profiles).filter(value => f.profiles[`${projectId}:${value.agentClass}`] === value)
-				.map(value => {
-					const definition = structuredClone(value);
-					if (canonicalSupply) {
-						definition.capabilities = ['treeseed.research.verification'];
-						for (const profile of Object.values(definition.activityProfiles)) if (profile) profile.permissions.content.read.push('decision');
-					}
-					return definition;
-				});
-			const profileInputs = profiles.map(definition => ({ definition, path: `agents/${definition.agentClass}.md`,
-				raw: `---\n${stringify(definition)}---\n` }));
+			const { profileInputs, closeout } = nativeProposalProfileInputs(f.profiles, projectId, canonicalSupply);
 			const profileInputsBefore = structuredClone(profileInputs);
 			const refsBefore = object(await f.client.repositories.refs(repository));
 			assert.ok(Array.isArray(refsBefore.refs));
@@ -391,6 +381,9 @@ describe('native proposal Decision authority', () => {
 			const storedRows = await f.store.all('SELECT * FROM capacity_operation_receipts WHERE resource_type=? AND resource_id=?', ['workday_preflight', receipt.id]);
 			expect(storedRows).toHaveLength(1); const persisted = object(JSON.parse(String(storedRows[0]!.response_json))); expect(persisted.receipt).toEqual(receipt); expect(persisted.intent).toEqual(intent);
 			expect(object(object(persisted.runInput).parameters).decisionIds).toEqual([decisionId]);
+			expect(object(object(persisted.runInput).parameters).reportingAgentId).toBe(closeout.id);
+			const preflightProjection=await capacity.preflightCapacityWorkdayRunRequest('team',object(persisted.runInput));
+			expect(object(preflightProjection.appliedPlan).reportingAgentId).toBe(closeout.id);
 			const hash = (value: unknown) => `sha256:${createHash('sha256').update(canonicalJson(value)).digest('base64url')}`;
 			expect(receipt.intentDigest).toBe(hash(intent)); expect(storedRows[0]!.request_digest).toBe(receipt.intentDigest); expect(receipt.demandSetDigest).toBe(hash({ selectedDemands: receipt.selectedDemands, objectives: [], proposalIds: [], decisionIds: [decisionId] }));
 			const { preflightDigest, ...payload } = receipt; expect(preflightDigest).toBe(hash(payload));

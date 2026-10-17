@@ -2858,3 +2858,27 @@ workflow:
       verifier: api.golden.provider-availability-current-claim-unit
     expect:
       status: passed
+  - id: reporting-selection-plan
+    action: { verifier: api.golden.reporting-selection-plan }
+    expect: { status: passed }
+  - id: reporting-selection-projection
+    action: { verifier: api.golden.reporting-selection-projection }
+    expect: { status: passed }
+  - id: reporting-selection-denials
+    action: { verifier: api.golden.reporting-selection-denials }
+    expect: { status: passed }
+  - id: reporting-selection-native
+    action: { verifier: api.golden.reporting-selection-native }
+    expect: { status: passed }
+  - id: reporting-selection-admission-seal-native
+    action: { verifier: api.golden.reporting-selection-admission-seal-native }
+    expect: { status: passed }
+  - id: reporting-eligibility-required-native
+    action: { verifier: api.golden.reporting-eligibility-required-native }
+    expect: { status: passed }
+  - id: reporting-selection-cooperative-native
+    action: { verifier: api.golden.reporting-selection-cooperative-native }
+    expect: { status: passed }
+  - id: reporting-selection-cooperative-unit
+    action: { verifier: api.golden.reporting-selection-cooperative-unit }
+    expect: { status: passed }

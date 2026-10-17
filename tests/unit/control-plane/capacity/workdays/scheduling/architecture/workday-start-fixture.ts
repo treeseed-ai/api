@@ -65,6 +65,11 @@ activityProfiles:
     handler: writer
     prompt: { system: Plan only the exact authorized subject. }
     permissions: { content: { read: [knowledge, proposal], write: [proposal] }, tools: [] }
+  reporting:
+    handler: reporter
+    prompt: { system: Commit the deterministic canonical Workday closeout. }
+    permissions: { content: { read: [knowledge, proposal], write: [note] }, tools: [] }
+    dependsOn: { events: [workday-closing] }
 `));
 		if (!parsed.ok || !parsed.data) throw new Error(JSON.stringify(parsed.diagnostics));
 		const definition = parsed.data;

@@ -64,6 +64,14 @@ export function compileWorkdayAgentProfileSnapshot(agentClasses: unknown[], sele
 		'Workday selectors must identify eligible activity profiles exactly.', 409, { unknown });
 	if (!agents.length) throw new CapacityGovernanceError('capacity_workday_agent_selection_empty',
 		'Workday selection resolved no eligible activity profiles.', 409);
+	// Cooperative selectors cannot remove the standing closeout activity.
+	// Preserve the original empty/unknown selection denials before reserving it.
+	for (const entry of available) if (entry.definition.activityProfiles.reporting) {
+		const selected = agents.find(candidate => candidate.definition === entry.definition);
+		if (selected) { if (!selected.activities.includes('reporting')) selected.activities.push('reporting'); }
+		else agents.push({ ...entry, activities: ['reporting'] });
+	}
+	agents.sort((left, right) => left.definition.id.localeCompare(right.definition.id));
 	const revision = createHash('sha256').update(stable(agents)).digest('hex');
 	return { revision, agents };
 }
