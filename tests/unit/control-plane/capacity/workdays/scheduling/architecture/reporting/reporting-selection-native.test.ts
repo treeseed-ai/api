@@ -14,6 +14,9 @@ it('native public preflight and start retain one configured joint Reporter befor
   const input={...f.intent,projects:['project','other'],reportingAgentId:selected.id},held=structuredClone(input);
   const planned=await f.publicService.preflight(f.principal,'team',input);
   const receiptBefore=await f.snapshot();
+  expect(receiptBefore.workdays).toEqual([]);
+  const retained=JSON.parse(String(receiptBefore.receipts.find(row=>row.operation==='workday.preflight')!.response_json));
+  expect(retained).toMatchObject({intent:{reportingAgentId:selected.id},runInput:{parameters:{reportingAgentId:selected.id}}});
   await f.query('UPDATE project_agent_classes SET handler_refs_json=? WHERE id=?',[JSON.stringify({agents:[{...selected,purpose:'Changed after original preflight.'}]}),'class']);
   await expect(f.start(planned)).rejects.toThrow();expect(await f.snapshot()).toEqual(receiptBefore);
   await f.query('UPDATE project_agent_classes SET handler_refs_json=? WHERE id=?',[selectedBytes,'class']);
@@ -37,12 +40,15 @@ it('native public start refuses a different automatic Reporter introduced after 
   const selected=configuredCloseout(f.definition),replacement={...selected,id:'configured/replacement-closeout'};
   await f.query('UPDATE project_agent_classes SET handler_refs_json=? WHERE id=?',[JSON.stringify({agents:[selected]}),'class']);
   const planned=await f.preflight(),original=f.store.createCapacityWorkdayRun.bind(f.store);let calls=0;
+  const before=await f.snapshot(),retained=JSON.parse(String(before.receipts.find(row=>row.operation==='workday.preflight')!.response_json));
+  expect(before.workdays).toEqual([]);expect(retained.runInput.parameters.reportingAgentId).toBe(selected.id);expect(Object.hasOwn(retained.intent,'reportingAgentId')).toBe(false);
   f.store.createCapacityWorkdayRun=async(teamId,input)=>{
    calls++;await f.query('UPDATE project_agent_classes SET handler_refs_json=? WHERE id=?',[JSON.stringify({agents:[replacement]}),'class']);
    return original(teamId,input);
   };
   await expect(f.start(planned)).rejects.toThrow();expect(calls).toBe(1);
   const after=await f.snapshot();expect(after.workdays.filter(row=>row.status==='running')).toEqual([]);
+  expect(after.receipts.filter(row=>row.operation==='workday.preflight')).toEqual(before.receipts);expect(after.receipts.filter(row=>row.operation==='workday.start')).toEqual([]);
   expect(after.nodes.filter(row=>row.kind==='reporting')).toEqual([]);expect(after.assignments).toEqual([]);expect(after.reservations).toEqual([]);expect(after.usage).toEqual([]);expect(after.ledger).toEqual([]);
  }finally{await f.close();}
 },30_000);
