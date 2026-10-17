@@ -37,8 +37,10 @@ it('publishes the committed provider availability transition into existing scope
 
 it('public capacity audit preserves raw records and complete cursor pagination including equal-clock identities',async()=>{
  const at='2026-10-17T00:00:00.000Z',rows=[{id:'audit-b',created_at:at,metadata_json:'{}'},{id:'audit-a',created_at:at,metadata_json:'{}'}];
- const all=vi.fn(async(sql:string,parameters:unknown[])=>rows.filter(row=>parameters.length<3||row.id<String(parameters[3])).slice(0,Number(parameters.at(-1)))),query=createCapacityQueryService({ensureInitialized:async()=>{},all});
+ const all=vi.fn(async(sql:string,parameters:unknown[])=>rows.filter(row=>parameters.length<3||row.id<String(parameters[3])).slice(0,Number(parameters.at(-1)))),query=createCapacityQueryService({ensureInitialized:async()=>{},all,principalCanAccessTeam:async()=>false});
  const principal={id:'operator',roles:['admin']};
+ await expect(query.audit(undefined,'team',{limit:1})).rejects.toMatchObject({status:401,code:'authentication_required'});await expect(query.audit({id:'denied',roles:[]},'team',{limit:1})).rejects.toMatchObject({status:403,code:'team_access_denied'});expect(all).not.toHaveBeenCalled();
+ await expect(query.audit(principal,'team',{limit:1,cursor:'not-a-valid-cursor'})).rejects.toMatchObject({status:400,code:'capacity_page_invalid'});expect(all).not.toHaveBeenCalled();
  const first=await query.audit(principal,'team',{limit:1});expect(first.items).toEqual([rows[0]]);expect(first.page.hasMore).toBe(true);expect(first.page.nextCursor).toBeTruthy();
  const second=await query.audit(principal,'team',{limit:1,cursor:first.page.nextCursor});expect(second.items).toEqual([rows[1]]);expect(second.page.hasMore).toBe(false);expect(second.page.nextCursor).toBeNull();
  expect(all.mock.calls[1]![0]).toContain('id < ?');expect(all.mock.calls[1]![1]).toContain('audit-b');
