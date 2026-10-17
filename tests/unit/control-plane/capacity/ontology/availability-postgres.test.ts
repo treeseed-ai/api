@@ -1,3 +1,4 @@
+import {maintainCapacityRuntimeRetention} from '../../../../../src/api/capacity/services/runtime/runtime-retention-service.ts';
 import {availabilityObservationFaultSql} from './fixtures/availability-observation.ts';
 import {createCapacityQueryService} from '../../../../../src/api/control-plane/repositories/capacity/capacity-query-service.ts';
 import {providerAccountingStatus} from '../../../../../src/api/control-plane/repositories/providers/provider-runtime-service.ts';
@@ -224,6 +225,24 @@ describe('provider accounting in disposable PostgreSQL', () => {
       const closed = await snapshot(f.right);
       await expect(compile()).rejects.toMatchObject({ status: 409, code: 'provider_synthesis_session_not_open' });
       expect(await snapshot(f.left)).toEqual(closed); expect(input).toEqual(inputBefore); expect(original).toEqual(before);
+      const due=await service.open(principal,{...structuredClone(input),ttlSeconds:30});const unrelated=await service.open(qualificationPrincipal,{...structuredClone(qualifiedInput),ttlSeconds:300});if(!due||!unrelated)throw new Error('Original due and unrelated live sessions required');
+      const expiryAt=new Date(Date.parse(due.expiresAt)+1).toISOString(),beforeExpiry=await snapshot(f.right);expect(Date.parse(expiryAt)).toBeLessThan(Date.parse(unrelated.expiresAt));
+      const retainedExpiryFailures:Array<{mode:string;message:string}>=[];
+      for(const mode of ['missing','interrupted','altered']as const){
+        await f.left.pool.query(availabilityObservationFaultSql(mode));await f.left.pool.query('CREATE TRIGGER retained_availability_observation_fault BEFORE INSERT ON capacity_audit_events FOR EACH ROW EXECUTE FUNCTION retained_availability_observation_fault()');let failure:unknown;
+        try{await maintainCapacityRuntimeRetention(store,expiryAt);}catch(error){failure=error;}
+        finally{await f.left.pool.query('DROP TRIGGER retained_availability_observation_fault ON capacity_audit_events');await f.left.pool.query('DROP FUNCTION retained_availability_observation_fault()');}
+        expect(failure).toBeInstanceOf(Error);if(mode!=='interrupted')expect(failure).toMatchObject({code:'provider_availability_observation_conflict'});expect(await snapshot(f.left)).toEqual(beforeExpiry);expect(await snapshot(f.right)).toEqual(beforeExpiry);retainedExpiryFailures.push({mode,message:String(failure)});
+      }
+      const expired=await Promise.all([maintainCapacityRuntimeRetention(store,expiryAt),maintainCapacityRuntimeRetention(peer,expiryAt)]);expect(expired.map(value=>value.expiredAvailabilitySessions).sort()).toEqual([0,1]);
+      const retainedExpiry=(await f.right.pool.query("SELECT * FROM capacity_audit_events WHERE action='provider.availability.updated' AND resource_id=$1 ORDER BY created_at,id",[due.id])).rows;expect(retainedExpiry).toHaveLength(2);
+      const expiry=retainedExpiry.filter(value=>value.idempotency_key===due.sequence+':expired');expect(expiry).toHaveLength(1);expect(expiry[0].created_at).toBe(expiryAt);expect(JSON.parse(String(expiry[0].metadata_json))).toMatchObject({availabilitySessionId:due.id,status:'expired',sequence:due.sequence,closedAt:expiryAt,refreshedAt:due.refreshedAt});
+      const expiredSession=await service.get(principal.teamId,due.id);expect(expiredSession).toMatchObject({status:'expired',sequence:due.sequence,closedAt:expiryAt});expect(await service.get(qualificationPrincipal.teamId,unrelated.id)).toEqual(unrelated);
+      const query=createCapacityQueryService(store),publicHistory:Array<Record<string,unknown>>=[];let auditCursor:string|undefined;
+      for(let pageNumber=0;pageNumber<40;pageNumber++){const page=await query.audit(f.principal,'team',{limit:2,cursor:auditCursor});publicHistory.push(...page.items);if(!page.page.hasMore){expect(page.page.nextCursor).toBeNull();break;}if(!page.page.nextCursor)throw new Error('Original expiry audit continuation missing');auditCursor=page.page.nextCursor;}
+      expect(publicHistory).toEqual((await f.right.pool.query("SELECT * FROM capacity_audit_events WHERE team_id='team' ORDER BY created_at DESC,id DESC")).rows);
+      const afterExpiry=await snapshot(f.right);expect(await snapshot(f.left)).toEqual(afterExpiry);expect((await maintainCapacityRuntimeRetention(store,expiryAt)).expiredAvailabilitySessions).toBe(0);expect(await service.close(principal,due.id)).toEqual(expiredSession);expect(await snapshot(f.right)).toEqual(afterExpiry);expect(await snapshot(f.left)).toEqual(afterExpiry);
+      console.log(JSON.stringify({retainedExpiryFailures,expiredAvailabilitySessions:expired.map(value=>value.expiredAvailabilitySessions),unrelatedRetained:true,unchangedExpiryReplay:true}));
       // Original services, full migrations, two PostgreSQL pools and exact
       // persisted bytes. Supplied identity/conformance are not bearer auth,
       // native qualification, live model work or atomic assignment admission.
