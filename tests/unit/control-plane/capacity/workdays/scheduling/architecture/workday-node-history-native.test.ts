@@ -16,6 +16,7 @@ import{expectNodeBirthHistory,expectWorkdayLifecycleHistory}from'./node-birth-hi
 			const initial = await f.store.getCapacityWorkdayRun('team', receipt.workdayId);
 			if (!initial) throw new Error('Original native started run required');
 			const originalPlan = appliedWorkdaySchema.parse(initial.parameters.appliedPlan), initialTruth = await f.snapshot();
+			const standingIds=initialTruth.nodes.filter(node=>node.kind!=='planning').map(node=>node.id);expect(initialTruth.nodes.map(node=>node.kind).sort()).toEqual(['condition','planning','reporting']);expect(standingIds).toHaveLength(2);expect(originalPlan.reportingAgentId).toBe(f.definition.id);
 			expect(originalPlan.policySnapshot).toEqual(policy); expect(originalPlan.planningRounds).toHaveLength(1);
 			const nativePlan = async () => {
 				const run = await f.store.getCapacityWorkdayRun('team', receipt.workdayId);
@@ -53,7 +54,7 @@ import{expectNodeBirthHistory,expectWorkdayLifecycleHistory}from'./node-birth-hi
 				expect(next.startsAt).toBe(originalPlan.startsAt); expect(next.endsAt).toBe(originalPlan.endsAt);
 				expect(next.policyRevision).toBe(originalPlan.policyRevision); expect(next.policySnapshot).toEqual(originalPlan.policySnapshot);
 				const ids = next.planningRounds.flatMap(round => round.assignmentIds);
-				expect(new Set(ids).size).toBe(ids.length); expect(held.nodes.map(node => node.id).sort()).toEqual([...ids].sort());
+				expect(new Set(ids).size).toBe(ids.length); expect(held.nodes.map(node => node.id).sort()).toEqual([...ids,...standingIds].sort());
 				const newest = next.planningRounds.at(-1)!;
 				for (const id of newest.assignmentIds) {
 					expect(held.nodes.find(node => node.id === id)).toMatchObject({ status: 'ready', kind: 'planning', workday_id: receipt.workdayId,
@@ -77,18 +78,19 @@ import{expectNodeBirthHistory,expectWorkdayLifecycleHistory}from'./node-birth-hi
 			await f.store.tickCapacityWorkdayRun('team', receipt.workdayId, originalPlan.endsAt, 'native-planning-expiry');
 			expect(await nativePlan()).toMatchObject({ state: 'closing', endsAt: originalPlan.endsAt, planningRounds: expect.arrayContaining([expect.objectContaining({ round: 4 })]) });
 			expect((await nativePlan()).planningRounds).toHaveLength(4); expect(f.intent).toEqual(input);
-			const final = await f.snapshot(); expect(final.usage).toEqual([]); expect(final.ledger).toEqual([]);
+			const final = await f.snapshot(); expect(final.usage).toEqual([]); expect(final.ledger).toEqual([]);expect(final.nodes.filter(node=>node.kind==='condition').map(node=>node.status)).toEqual(['completed']);expect(final.nodes.filter(node=>node.kind==='reporting').map(node=>node.status)).toEqual(['ready']);expect((await nativePlan()).reportingAgentId).toBe(originalPlan.reportingAgentId);
 		} finally { await f.close(); }
 	});
 
 it('original native planning closeout observes every unclaimed cancellation before exact tick replay without changing the original deadline or financial authority',async()=>{
  const f=await workdayStartDatabase();try{
   const planned=await f.preflight(),started=await f.start(planned),run=await f.store.getCapacityWorkdayRun('team',started.workdayId);if(!run)throw new Error('Original native workday required');
-  const plan=appliedWorkdaySchema.parse(run.parameters.appliedPlan),before=await f.snapshot();expectNodeBirthHistory(before);expect(before.nodes.length).toBeGreaterThan(0);expect(before.nodes.every(node=>node.status==='ready'&&node.kind==='planning')).toBe(true);
+  const plan=appliedWorkdaySchema.parse(run.parameters.appliedPlan),before=await f.snapshot();expectNodeBirthHistory(before);expect(before.nodes.length).toBeGreaterThan(0);expect(before.nodes.map(node=>node.kind).sort()).toEqual(['condition','planning','reporting']);expect(before.nodes.every(node=>node.status===(node.kind==='planning'?'ready':'blocked'))).toBe(true);const planning=before.nodes.filter(node=>node.kind==='planning');expect(planning).toHaveLength(1);expect(plan.reportingAgentId).toBe(f.definition.id);
   const tick=await f.store.tickCapacityWorkdayRun('team',started.workdayId,plan.endsAt,'native-node-closeout'),after=await f.snapshot();
-  expect(after.nodes.map(node=>node.id).sort()).toEqual(before.nodes.map(node=>node.id).sort());expect(after.nodes.every(node=>node.status==='cancelled')).toBe(true);expectNodeBirthHistory(after);
-  const cancelled=after.events.filter(event=>event.event_type==='execution.node.state'&&JSON.parse(String(event.context_json)).status==='cancelled');expect(cancelled).toHaveLength(before.nodes.length);
-  for(const node of before.nodes){const observations=cancelled.filter(event=>JSON.parse(String(event.context_json)).nodeId===node.id);expect(observations).toHaveLength(1);expect(JSON.parse(String(observations[0]!.context_json))).toMatchObject({nodeId:node.id,nodeRevision:node.node_revision,status:'cancelled',previousStatus:node.status});}
+  expect(after.nodes.map(node=>node.id).sort()).toEqual(before.nodes.map(node=>node.id).sort());expect(after.nodes.every(node=>node.status===(node.kind==='planning'?'cancelled':node.kind==='condition'?'completed':'ready'))).toBe(true);expectNodeBirthHistory(after);
+  const cancelled=after.events.filter(event=>event.event_type==='execution.node.state'&&JSON.parse(String(event.context_json)).status==='cancelled');expect(cancelled).toHaveLength(planning.length);
+  for(const node of planning){const observations=cancelled.filter(event=>JSON.parse(String(event.context_json)).nodeId===node.id);expect(observations).toHaveLength(1);expect(JSON.parse(String(observations[0]!.context_json))).toMatchObject({nodeId:node.id,nodeRevision:node.node_revision,status:'cancelled',previousStatus:node.status});}
+  for(const node of before.nodes.filter(value=>value.kind!=='planning')){const status=node.kind==='condition'?'completed':'ready',observations=after.events.filter(event=>event.event_type==='execution.node.state'&&JSON.parse(String(event.context_json)).nodeId===node.id&&JSON.parse(String(event.context_json)).status===status);expect(observations).toHaveLength(1);const context=JSON.parse(String(observations[0]!.context_json)),current=after.nodes.find(value=>value.id===node.id)!;expect(context).toMatchObject({nodeId:node.id,status,previousStatus:'blocked'});expect(Number.isSafeInteger(context.nodeRevision)&&context.nodeRevision>=1&&context.nodeRevision<=Number(current.node_revision)).toBe(true);}
   const retained=await f.store.getCapacityWorkdayRun('team',started.workdayId);expect(appliedWorkdaySchema.parse(retained!.parameters.appliedPlan).endsAt).toBe(plan.endsAt);expect(after.assignments).toEqual(before.assignments);expect(after.reservations).toEqual(before.reservations);expect(after.usage).toEqual(before.usage);expect(after.ledger).toEqual(before.ledger);
   expect(await f.store.tickCapacityWorkdayRun('team',started.workdayId,plan.endsAt,'native-node-closeout')).toEqual(tick);expect(await f.snapshot()).toEqual(after);
  }finally{await f.close();}
