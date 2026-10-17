@@ -483,9 +483,10 @@ describe('independent native producer inventory reconciliation', () => {
 
 it('denies retired content authority even when original native and public assignment records agree without changing valid capacity provenance',()=>{
  for(const model of ['assignment_plan','assignment_status','assignment_summary','signal_graph','capacity_plan','demand','execution_input','source_candidate'])for(const location of ['source','context','read','write','profile']){
-  const current=assignmentAttemptSchema.parse(structuredClone(assignment)),reference={store:'treedx' as const,model,id:'retired-authority'};
+  const current=assignmentAttemptSchema.parse(structuredClone(assignment)),reference={store:'treedx' as const,model,id:'retired-authority',revision:1,digest:'sha256:'+'a'.repeat(64),repository:'native-library',commit:'d'.repeat(40),path:'knowledge/retired.md'};
+  if(location==='write'){current.grant.sourceWrite=[];current.workspace={mode:'treedx',repository:reference.repository,baseCommit:reference.commit,workspaceId:'native-content-workspace',writablePaths:['knowledge/retired.md']};}
   if(location==='source')current.sourceRef=reference;if(location==='context')current.contextRefs.push(reference);if(location==='read')current.grant.contentRead.push(reference);if(location==='write')current.grant.contentWrite.push(reference);if(location==='profile')current.effectiveProfile.profileRef=reference;
-  const raw={...nativeAssignment,assignment_attempt_json:JSON.stringify(current)},visible={...publicAssignment,assignmentAttempt:current},held=structuredClone({raw,visible});
+  expect(assignmentAttemptSchema.safeParse(current).success,model+'/'+location).toBe(true);const raw={...nativeAssignment,assignment_attempt_json:JSON.stringify(current)},visible={...publicAssignment,assignmentAttempt:current},held=structuredClone({raw,visible});
   expect.soft(()=>verifyNativeAssignmentReadback(raw,visible,scope,[nativeReservation],[raw]),model+'/'+location).toThrow('ACCEPTANCE_RETIRED_PARTICIPATION');expect({raw,visible}).toEqual(held);
  }
  expect(verifyNativeAssignmentReadback(nativeAssignment,publicAssignment,scope,[nativeReservation],[nativeAssignment])).toEqual(assignment);
