@@ -1,3 +1,4 @@
+import {CapacityWorkdayEventRepository} from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import {providerAccountingStatus} from '../../../../../src/api/control-plane/repositories/providers/provider-runtime-service.ts';
 import { randomUUID, generateKeyPairSync, createHash } from 'node:crypto';
 import pg from 'pg';
@@ -33,6 +34,23 @@ describe('provider accounting in disposable PostgreSQL', () => {
         all: async <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => (await f.left.prepare(sql).bind(...params).all<T>()).results,
         batch: (operations: Array<{ query: string; params?: unknown[] }>) => f.left.batch(operations) };
       const principal = { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider' };
+      await f.left.pool.query("INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ('availability-other-team','availability-other-team','Unrelated observation input',$1,$1)",[original.now]);
+      for(const[id,team,status]of[['availability-live','team','running'],['availability-ended','team','completed'],['availability-foreign','availability-other-team','running']]as const)
+        await f.left.pool.query("INSERT INTO capacity_workday_runs (id,team_id,status,execution_mode,execution_kind,started_at,created_at,updated_at) VALUES ($1,$2,$3,'simulation','workday',$4,$4,$4)",[id,team,status,original.now]);
+      const observeAvailability=async(expected:Array<{sequence:number;status:string;at:string}>)=>{
+        const raw=(await f.right.pool.query("SELECT * FROM capacity_workday_events WHERE event_type='provider.availability.updated' ORDER BY run_id,event_index")).rows;
+        expect(raw).toHaveLength(expected.length);expect(raw.map(value=>value.run_id)).toEqual(expected.map(()=>'availability-live'));
+        const page=await new CapacityWorkdayEventRepository(store).list('team','availability-live',{limit:200});
+        expect(page.page.hasMore).toBe(false);expect(page.items).toHaveLength(expected.length);
+        for(const[index,value]of raw.entries()){
+          expect(value.event_index).toBe(index);expect(value.created_at).toBe(expected[index]!.at);
+          const context=JSON.parse(String(value.context_json));expect(context).toMatchObject({providerId:'provider',membershipId:'membership',availabilitySessionId:opened.id,sequence:expected[index]!.sequence,status:expected[index]!.status});
+          expect(page.items[index]!.id).toBe(value.id);expect(page.items[index]!.context).toEqual(context);
+          expect(JSON.stringify(value)).not.toContain('opaque-controlled-private-adapter-field');
+        }
+        const unrelated=(await f.right.pool.query("SELECT id,next_event_index FROM capacity_workday_runs WHERE id IN ('availability-ended','availability-foreign') ORDER BY id")).rows;
+        expect(unrelated).toEqual([{id:'availability-ended',next_event_index:0},{id:'availability-foreign',next_event_index:0}]);
+      };
       const modelPolicy={provider:'openai',model:'configured-luna',reasoningEffort:'low',capabilities:adapter.capabilities};
       const input = { adapters: [{ id: adapter.id, runtimeBuild: adapter.runtimeBuild, offers: adapter.offers,
         capabilities: adapter.capabilities, status: 'available', maxConcurrentWorkers: 1, activeWorkers: 0,
@@ -43,9 +61,10 @@ describe('provider accounting in disposable PostgreSQL', () => {
           priority: 1, capabilities: adapter.capabilities })) };
       const inputBefore = structuredClone(input), service = new AvailabilitySessionService(store);
       const opened = await service.open(principal, input); if (!opened) throw new Error('Actual canonical session publication required');
+      await observeAvailability([{sequence:opened.sequence,status:'open',at:opened.refreshedAt}]);
       const compileNow = new Date().toISOString();
       const buildSource = { ...original, run: canonicalOfferBuildInput(compileNow).run, now: compileNow };
-      const tables = ['capacity_providers', 'capacity_provider_team_memberships', 'capacity_provider_availability_sessions',
+      const tables = ['capacity_workday_runs','capacity_workday_events','capacity_providers', 'capacity_provider_team_memberships', 'capacity_provider_availability_sessions',
         'capacity_execution_providers', 'capacity_provider_lanes', 'execution_capability_offers', 'capacity_provider_assignments',
         'capacity_reservations', 'capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_operation_receipts'];
       const snapshot = async (database: typeof f.left) => {
@@ -158,7 +177,9 @@ describe('provider accounting in disposable PostgreSQL', () => {
         expect(outcome.cause, outcome.name).toMatchObject({ status: 409, code: 'capacity_execution_provider_unavailable' });
       }
       expect(await compile()).toEqual(frozen); expect(await snapshot(f.right)).toEqual(baseline);
-      await service.close(principal, opened.id); const closed = await snapshot(f.right);
+      const terminalAvailability=await service.close(principal, opened.id);if(!terminalAvailability?.closedAt)throw new Error('Original terminal availability required');
+      await observeAvailability([{sequence:opened.sequence,status:'open',at:opened.refreshedAt},{sequence:terminalAvailability.sequence,status:'closed',at:terminalAvailability.closedAt}]);
+      const closed = await snapshot(f.right);
       await expect(compile()).rejects.toMatchObject({ status: 409, code: 'provider_synthesis_session_not_open' });
       expect(await snapshot(f.left)).toEqual(closed); expect(input).toEqual(inputBefore); expect(original).toEqual(before);
       // Original services, full migrations, two PostgreSQL pools and exact
