@@ -189,13 +189,13 @@ describe('provider accounting in disposable PostgreSQL', () => {
       if(!originalHealth)throw new Error('Original configured health observation required');
       Object.assign(originalHealth.modelUsage,{healthy:false});
       const refreshBefore=structuredClone(refreshInput),failedAvailability:Array<{mode:string;cause:unknown;unchanged:boolean}>=[];
-      for(const mode of ['missing','interrupted']){
-        await f.left.pool.query("CREATE OR REPLACE FUNCTION retained_availability_observation_fault() RETURNS trigger LANGUAGE plpgsql AS $ BEGIN IF NEW.action='provider.availability.updated' THEN "+(mode==='missing'?"RETURN NULL;":"RAISE EXCEPTION 'retained native availability observation interruption';")+" END IF; RETURN NEW; END $");
+      for(const mode of ['missing','interrupted','altered']){
+        await f.left.pool.query("CREATE OR REPLACE FUNCTION retained_availability_observation_fault() RETURNS trigger LANGUAGE plpgsql AS $ BEGIN IF NEW.action='provider.availability.updated' THEN "+(mode==='missing'?"RETURN NULL;":mode==='altered'?"NEW.metadata_json = '{}'; RETURN NEW;":"RAISE EXCEPTION 'retained native availability observation interruption';")+" END IF; RETURN NEW; END $");
         await f.left.pool.query('CREATE TRIGGER retained_availability_observation_fault BEFORE INSERT ON capacity_audit_events FOR EACH ROW EXECUTE FUNCTION retained_availability_observation_fault()');
         let cause:unknown;
         try{await service.refresh(principal,opened.id,refreshInput);}catch(error){cause=error;}
         finally{await f.left.pool.query('DROP TRIGGER retained_availability_observation_fault ON capacity_audit_events');await f.left.pool.query('DROP FUNCTION retained_availability_observation_fault()');}
-        expect(cause).toBeInstanceOf(Error);if(mode==='missing')expect(cause).toMatchObject({code:'provider_availability_observation_conflict'});
+        expect(cause).toBeInstanceOf(Error);if(mode!=='interrupted')expect(cause).toMatchObject({code:'provider_availability_observation_conflict'});
         const unchanged=JSON.stringify(await snapshot(f.right))===JSON.stringify(baseline);expect(unchanged).toBe(true);expect(await snapshot(f.left)).toEqual(baseline);expect(refreshInput).toEqual(refreshBefore);failedAvailability.push({mode,cause,unchanged});
       }
       const peer={db:f.right,ensureInitialized:()=>f.right.migrate(),run:async(sql:string,params:unknown[]=[])=>{await f.right.prepare(sql).bind(...params).run();},
@@ -206,7 +206,7 @@ describe('provider accounting in disposable PostgreSQL', () => {
       const refreshed=winners[0]!;expect(refreshed.sequence).toBe(opened.sequence+1);
       await observeAvailability([{sequence:opened.sequence,status:'open',at:opened.refreshedAt},{sequence:refreshed.sequence,status:'open',at:refreshed.refreshedAt}]);
       const observedHealth=(await f.right.pool.query("SELECT metadata_json FROM capacity_audit_events WHERE resource_id=$1 AND idempotency_key=$2",[opened.id,refreshed.sequence+':open'])).rows;expect(observedHealth).toHaveLength(1);expect(JSON.parse(observedHealth[0].metadata_json).adapters[0].modelHealthy).toBe(false);
-      const refreshedBytes=await snapshot(f.right);expect(await service.refresh(principal,opened.id,refreshInput)).toBeNull();expect(await snapshot(f.left)).toEqual(refreshedBytes);expect(refreshInput).toEqual(refreshBefore);expect(failedAvailability).toHaveLength(2);
+      const refreshedBytes=await snapshot(f.right);expect(await service.refresh(principal,opened.id,refreshInput)).toBeNull();expect(await snapshot(f.left)).toEqual(refreshedBytes);expect(refreshInput).toEqual(refreshBefore);expect(failedAvailability).toHaveLength(3);
       console.log(JSON.stringify({retainedAvailabilityFailures:failedAvailability.map(value=>({mode:value.mode,unchanged:value.unchanged,message:String(value.cause)}))}));
       const terminalAvailability=await service.close(principal, opened.id);if(!terminalAvailability?.closedAt)throw new Error('Original terminal availability required');
       await observeAvailability([{sequence:opened.sequence,status:'open',at:opened.refreshedAt},{sequence:refreshed.sequence,status:'open',at:refreshed.refreshedAt},{sequence:terminalAvailability.sequence,status:'closed',at:terminalAvailability.closedAt}]);
