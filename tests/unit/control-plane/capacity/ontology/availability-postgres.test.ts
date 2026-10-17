@@ -50,9 +50,9 @@ describe('provider accounting in disposable PostgreSQL', () => {
         }while(cursor);
         const complete=(await f.right.pool.query("SELECT * FROM capacity_audit_events WHERE team_id='team' ORDER BY created_at DESC,id DESC")).rows;
         expect(publicRows).toEqual(complete);
-        for(const[index,value]of raw.entries()){
-          expect(value.created_at).toBe(expected[index]!.at);
-          const context=JSON.parse(String(value.metadata_json));expect(context).toMatchObject({providerId:'provider',membershipId:'membership',availabilitySessionId:opened.id,sequence:expected[index]!.sequence,status:expected[index]!.status});
+        const identities=new Set<string>();for(const value of raw){
+          const context=JSON.parse(String(value.metadata_json)),match=expected.filter(item=>item.sequence===context.sequence&&item.status===context.status);expect(match).toHaveLength(1);expect(value.created_at).toBe(match[0]!.at);const key=context.sequence+':'+context.status;expect(identities.has(key)).toBe(false);identities.add(key);
+          expect(context).toMatchObject({providerId:'provider',membershipId:'membership',availabilitySessionId:opened.id});
           expect(JSON.stringify(value)).not.toContain('opaque-controlled-private-adapter-field');
         }
         const unrelated=(await f.right.pool.query("SELECT id,next_event_index FROM capacity_workday_runs WHERE id IN ('availability-live','availability-ended','availability-foreign') ORDER BY id")).rows;
@@ -184,8 +184,33 @@ describe('provider accounting in disposable PostgreSQL', () => {
         expect(outcome.cause, outcome.name).toMatchObject({ status: 409, code: 'capacity_execution_provider_unavailable' });
       }
       expect(await compile()).toEqual(frozen); expect(await snapshot(f.right)).toEqual(baseline);
+      const refreshInput={...structuredClone(input),expectedSequence:opened.sequence};
+      const originalHealth=refreshInput.adapters[0]!.accountingObservation;
+      if(!originalHealth)throw new Error('Original configured health observation required');
+      Object.assign(originalHealth.modelUsage,{healthy:false});
+      const refreshBefore=structuredClone(refreshInput),failedAvailability:Array<{mode:string;cause:unknown;unchanged:boolean}>=[];
+      for(const mode of ['missing','interrupted']){
+        await f.left.pool.query("CREATE OR REPLACE FUNCTION retained_availability_observation_fault() RETURNS trigger LANGUAGE plpgsql AS $ BEGIN IF NEW.action='provider.availability.updated' THEN "+(mode==='missing'?"RETURN NULL;":"RAISE EXCEPTION 'retained native availability observation interruption';")+" END IF; RETURN NEW; END $");
+        await f.left.pool.query('CREATE TRIGGER retained_availability_observation_fault BEFORE INSERT ON capacity_audit_events FOR EACH ROW EXECUTE FUNCTION retained_availability_observation_fault()');
+        let cause:unknown;
+        try{await service.refresh(principal,opened.id,refreshInput);}catch(error){cause=error;}
+        finally{await f.left.pool.query('DROP TRIGGER retained_availability_observation_fault ON capacity_audit_events');await f.left.pool.query('DROP FUNCTION retained_availability_observation_fault()');}
+        expect(cause).toBeInstanceOf(Error);if(mode==='missing')expect(cause).toMatchObject({code:'provider_availability_observation_conflict'});
+        const unchanged=JSON.stringify(await snapshot(f.right))===JSON.stringify(baseline);expect(unchanged).toBe(true);expect(await snapshot(f.left)).toEqual(baseline);expect(refreshInput).toEqual(refreshBefore);failedAvailability.push({mode,cause,unchanged});
+      }
+      const peer={db:f.right,ensureInitialized:()=>f.right.migrate(),run:async(sql:string,params:unknown[]=[])=>{await f.right.prepare(sql).bind(...params).run();},
+        first:<T extends Record<string,unknown>>(sql:string,params:unknown[]=[])=>f.right.prepare(sql).bind(...params).first<T>(),
+        all:async<T extends Record<string,unknown>>(sql:string,params:unknown[]=[]) =>(await f.right.prepare(sql).bind(...params).all<T>()).results,
+        batch:(operations:Array<{query:string;params?:unknown[]}>)=>f.right.batch(operations)};
+      const competing=await Promise.all([service.refresh(principal,opened.id,refreshInput),new AvailabilitySessionService(peer).refresh(principal,opened.id,refreshInput)]),winners=competing.filter(value=>value!==null);expect(winners).toHaveLength(1);expect(competing.filter(value=>value===null)).toHaveLength(1);
+      const refreshed=winners[0]!;expect(refreshed.sequence).toBe(opened.sequence+1);
+      await observeAvailability([{sequence:opened.sequence,status:'open',at:opened.refreshedAt},{sequence:refreshed.sequence,status:'open',at:refreshed.refreshedAt}]);
+      const observedHealth=(await f.right.pool.query("SELECT metadata_json FROM capacity_audit_events WHERE resource_id=$1 AND idempotency_key=$2",[opened.id,refreshed.sequence+':open'])).rows;expect(observedHealth).toHaveLength(1);expect(JSON.parse(observedHealth[0].metadata_json).adapters[0].modelHealthy).toBe(false);
+      const refreshedBytes=await snapshot(f.right);expect(await service.refresh(principal,opened.id,refreshInput)).toBeNull();expect(await snapshot(f.left)).toEqual(refreshedBytes);expect(refreshInput).toEqual(refreshBefore);expect(failedAvailability).toHaveLength(2);
+      console.log(JSON.stringify({retainedAvailabilityFailures:failedAvailability.map(value=>({mode:value.mode,unchanged:value.unchanged,message:String(value.cause)}))}));
       const terminalAvailability=await service.close(principal, opened.id);if(!terminalAvailability?.closedAt)throw new Error('Original terminal availability required');
-      await observeAvailability([{sequence:opened.sequence,status:'open',at:opened.refreshedAt},{sequence:terminalAvailability.sequence,status:'closed',at:terminalAvailability.closedAt}]);
+      await observeAvailability([{sequence:opened.sequence,status:'open',at:opened.refreshedAt},{sequence:refreshed.sequence,status:'open',at:refreshed.refreshedAt},{sequence:terminalAvailability.sequence,status:'closed',at:terminalAvailability.closedAt}]);
+      expect((await new AvailabilitySessionService(peer).close(principal,opened.id))?.closedAt).toBe(terminalAvailability.closedAt);
       const closed = await snapshot(f.right);
       await expect(compile()).rejects.toMatchObject({ status: 409, code: 'provider_synthesis_session_not_open' });
       expect(await snapshot(f.left)).toEqual(closed); expect(input).toEqual(inputBefore); expect(original).toEqual(before);
