@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { validateDecisionAuthority, validateExecutionAuthorityReceipt } from '../../../../../../src/api/governance/decision-authority.ts';
-import { readyProposal } from './ready-proposal-fixture.ts';
+import { readyProposal, nativeProposalProfileInputs } from './ready-proposal-fixture.ts';
 import { verifyNativeProposalReconciliation } from './proposal-reconciliation-fixture.ts';
 import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { stringify } from 'yaml';
@@ -51,24 +51,7 @@ describe('native proposal Decision authority', () => {
 			}
 			const originalInputs = structuredClone({ declaration, principal: f.principal, sources: f.sources });
 			const path = `proposals/${declaration.id}.mdx`, raw = `---\n${stringify(declaration)}---\n`;
-			const profiles = Object.values(f.profiles).filter(value => f.profiles[`${projectId}:${value.agentClass}`] === value)
-				.map(value => {
-					const definition = structuredClone(value);
-					if (canonicalSupply) {
-						definition.capabilities = ['treeseed.research.verification'];
-						for (const profile of Object.values(definition.activityProfiles)) if (profile) profile.permissions.content.read.push('decision');
-					}
-					return definition;
-				});
-			// The public Workday boundary also requires one governed closeout profile.
-			// Publish it with these same exact library bytes before any governance work.
-			const closeout = profiles[0]; assert.ok(closeout);
-			closeout.activityProfiles.reporting = { handler: 'reporter',
-				prompt: { system: 'Commit the deterministic canonical Workday closeout.' },
-				permissions: { content: { read: ['knowledge', 'proposal'], write: ['note'] }, tools: [] },
-				dependsOn: { events: ['workday-closing'] } };
-			const profileInputs = profiles.map(definition => ({ definition, path: `agents/${definition.agentClass}.md`,
-				raw: `---\n${stringify(definition)}---\n` }));
+			const { profileInputs, closeout } = nativeProposalProfileInputs(f.profiles, projectId, canonicalSupply);
 			const profileInputsBefore = structuredClone(profileInputs);
 			const refsBefore = object(await f.client.repositories.refs(repository));
 			assert.ok(Array.isArray(refsBefore.refs));
