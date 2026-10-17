@@ -1,3 +1,4 @@
+import {observeAvailabilitySession} from './availability-observation.ts';
 import { encodeCapacityPageCursor,type CapacityPage,type CapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import type { ProviderAvailabilitySession,ProviderAvailabilitySessionStatus } from '@treeseed/sdk/capacity-provider/contracts';
 import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../database.ts';
@@ -72,8 +73,9 @@ export interface AvailabilitySessionWrite {
 export class AvailabilitySessionRepository {
 	constructor(private readonly database: CapacityGovernanceDatabase) {}
 
-	async open(input: AvailabilitySessionWrite, providerOperations: CapacityDatabaseOperation[]) {
+	async open(input: AvailabilitySessionWrite, providerOperations: CapacityDatabaseOperation[]):Promise<ProviderAvailabilitySession|null> {
 		await this.database.ensureInitialized();
+		const previous=await this.database.all("SELECT id FROM capacity_provider_availability_sessions WHERE membership_id=? AND status IN ('open','draining') ORDER BY id",[input.membershipId]);
 		// These rows serialize publication without changing their referenced keys.
 		// KEY SHARE from in-flight assignment/reservation FKs must remain compatible.
 		await this.database.batch([
@@ -82,7 +84,8 @@ export class AvailabilitySessionRepository {
 			{ query: `UPDATE capacity_provider_availability_sessions SET status = 'closed', closed_at = COALESCE(closed_at, ?), updated_at = ? WHERE membership_id = ? AND status IN ('open','draining')`, params: [input.openedAt, input.openedAt, input.membershipId] },
 			{ query: `INSERT INTO capacity_provider_availability_sessions (id, membership_id, team_id, capacity_provider_id, environment, status, sequence, opened_at, refreshed_at, expires_at, available_from, available_until, execution_providers_json, capabilities_json, native_limits_json, runner_pressure_json, constraints_json, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, params: [input.id, input.membershipId, input.teamId, input.providerId, input.environment, input.sequence, input.openedAt, input.refreshedAt, input.expiresAt, input.availableFrom, input.availableUntil, JSON.stringify(input.executionProviders), JSON.stringify(input.capabilities), JSON.stringify(input.nativeLimits), JSON.stringify(input.runnerPressure), JSON.stringify(input.constraints), JSON.stringify(input.metadata), input.openedAt, input.openedAt] },
 		]);
-		return this.get(input.teamId, input.id);
+		for(const value of previous){const closed=await this.get(input.teamId,String(value.id));if(!closed||closed.status!=='closed')throw new CapacityGovernanceError('provider_availability_observation_conflict','Replaced availability closure is missing.',500);await observeAvailabilitySession(this.database,closed);}
+		const current=await this.get(input.teamId,input.id);if(!current)throw new CapacityGovernanceError('provider_availability_observation_conflict','Committed availability is missing.',500);await observeAvailabilitySession(this.database,current);return current;
 	}
 
 	async refresh(input: AvailabilitySessionWrite, expectedSequence: number, providerOperations: CapacityDatabaseOperation[]) {
@@ -94,14 +97,14 @@ export class AvailabilitySessionRepository {
 		]);
 		const updateResult = (results as Array<{ results?: Row[] }>).at(-1)?.results?.[0] ?? null;
 		if (!updateResult || Number(updateResult.sequence) !== expectedSequence + 1) return null;
-		return this.get(input.teamId, input.id);
+		const current=await this.get(input.teamId,input.id);if(!current)throw new CapacityGovernanceError('provider_availability_observation_conflict','Committed refresh is missing.',500);await observeAvailabilitySession(this.database,current);return current;
 	}
 
 	async close(teamId: string, membershipId: string, sessionId: string) {
 		await this.database.ensureInitialized();
 		const now = new Date().toISOString();
 		await this.database.run(`UPDATE capacity_provider_availability_sessions SET status = 'closed', closed_at = COALESCE(closed_at, ?), updated_at = ? WHERE id = ? AND membership_id = ? AND team_id = ? AND status IN ('open','draining')`, [now, now, sessionId, membershipId, teamId]);
-		return this.get(teamId, sessionId);
+		const current=await this.get(teamId,sessionId);if(current?.status==='closed')await observeAvailabilitySession(this.database,current);return current;
 	}
 
 	/** Retire only sessions referenced by this workday, after every consumer and reservation has closed. */
@@ -114,16 +117,19 @@ export class AvailabilitySessionRepository {
 			AND owned.team_id=session.team_id)`;
 		// The same row lock is acquired by final admission. A separate statement
 		// after that lock observes claims committed while closure was waiting.
-		await this.database.batch([
+		const results=await this.database.batch([
 			{ query: `SELECT session.id FROM capacity_provider_availability_sessions session WHERE ${owned} ORDER BY session.id FOR NO KEY UPDATE`, params: [teamId,workdayId] },
 			{ query: `UPDATE capacity_provider_availability_sessions session SET status='closed',closed_at=COALESCE(closed_at,?),updated_at=?
 				WHERE session.status IN ('open','draining') AND ${owned}
 				AND NOT EXISTS (SELECT 1 FROM capacity_provider_assignments active
 					WHERE active.provider_session_id=session.id AND (active.status IN ('pending','leased','running')
 					OR EXISTS (SELECT 1 FROM capacity_reservations reservation WHERE reservation.assignment_id=active.id
-						AND reservation.team_id=active.team_id AND reservation.state NOT IN ('consumed','released','expired','failed'))))`,
+						AND reservation.team_id=active.team_id AND reservation.state NOT IN ('consumed','released','expired','failed')))) RETURNING session.id`,
 				params: [now,now,teamId,workdayId] },
 		]);
+		const changed=Array.isArray(results)?Reflect.get(Object(results.at(-1)),'results'):undefined;
+		if(!Array.isArray(changed))throw new CapacityGovernanceError('provider_availability_observation_conflict','Native close inventory is unavailable.',500);
+		for(const value of changed){if(!value||typeof value.id!=='string')throw new CapacityGovernanceError('provider_availability_observation_conflict','Native closed identity is unavailable.',500);const closed=await this.get(teamId,value.id);if(!closed||closed.status!=='closed')throw new CapacityGovernanceError('provider_availability_observation_conflict','Closed native session is missing.',500);await observeAvailabilitySession(this.database,closed);}
 	}
 
 	async get(teamId: string, sessionId: string) {

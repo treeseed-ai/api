@@ -2834,3 +2834,9 @@ workflow:
   - id: execution-retired-participation-2
     action: { verifier: api.golden.execution-retired-participation-2 }
     expect: { status: passed }
+  - id: provider-availability-history-unit
+    action: { verifier: api.golden.provider-availability-history-unit }
+    expect: { status: passed }
+  - id: capacity-audit-pagination-unit
+    action: { verifier: api.golden.capacity-audit-pagination-unit }
+    expect: { status: passed }

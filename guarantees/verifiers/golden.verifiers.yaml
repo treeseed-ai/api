@@ -4804,3 +4804,13 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
     testName: "requires native absence of every retired table including source candidates without accepting ambiguous catalog or resolution results"
+  api.golden.provider-availability-history-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
+    testName: "publishes the committed provider availability transition into existing scoped capacity audit history without private adapter observations"
+  api.golden.capacity-audit-pagination-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
+    testName: "public capacity audit preserves raw records and complete cursor pagination including equal-clock identities"

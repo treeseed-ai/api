@@ -1,3 +1,4 @@
+import {createCapacityQueryService} from '../../../../../src/api/control-plane/repositories/capacity/capacity-query-service.ts';
 import {providerAccountingStatus} from '../../../../../src/api/control-plane/repositories/providers/provider-runtime-service.ts';
 import { randomUUID, generateKeyPairSync, createHash } from 'node:crypto';
 import pg from 'pg';
@@ -33,6 +34,31 @@ describe('provider accounting in disposable PostgreSQL', () => {
         all: async <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) => (await f.left.prepare(sql).bind(...params).all<T>()).results,
         batch: (operations: Array<{ query: string; params?: unknown[] }>) => f.left.batch(operations) };
       const principal = { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider' };
+      await f.left.pool.query("INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ('availability-other-team','availability-other-team','Unrelated observation input',$1,$1)",[original.now]);
+      for(const[id,team,status]of[['availability-live','team','running'],['availability-ended','team','completed'],['availability-foreign','availability-other-team','running']]as const)
+        await f.left.pool.query("INSERT INTO capacity_workday_runs (id,team_id,status,execution_mode,execution_kind,started_at,created_at,updated_at) VALUES ($1,$2,$3,'simulation','workday',$4,$4,$4)",[id,team,status,original.now]);
+      for(const id of ['audit-pagination-a','audit-pagination-b','audit-pagination-c'])
+        await f.left.pool.query("INSERT INTO capacity_audit_events (id,team_id,actor_type,action,resource_type,metadata_json,created_at) VALUES ($1,'team','controlled-input','controlled.pagination.input','controlled-input','{}',$2)",[id,original.now]);
+      const observeAvailability=async(expected:Array<{sequence:number;status:string;at:string}>)=>{
+        if(!opened)throw new Error('Original published session identity required before public history readback');
+        const raw=(await f.right.pool.query("SELECT * FROM capacity_audit_events WHERE team_id='team' AND action='provider.availability.updated' ORDER BY created_at,id")).rows;
+        expect(raw).toHaveLength(expected.length);
+        const query=createCapacityQueryService(store),publicRows:typeof raw=[],seen=new Set<string>();let cursor:string|undefined;
+        do{const page=await query.audit(f.principal,'team',{limit:1,cursor});publicRows.push(...page.items);
+          if(!page.page.hasMore){expect(page.page.nextCursor).toBeNull();break;}
+          expect(page.page.nextCursor).toBeTruthy();if(!page.page.nextCursor||seen.has(page.page.nextCursor)||seen.size>10)throw new Error('Complete original audit pagination required');
+          seen.add(page.page.nextCursor);cursor=page.page.nextCursor;
+        }while(cursor);
+        const complete=(await f.right.pool.query("SELECT * FROM capacity_audit_events WHERE team_id='team' ORDER BY created_at DESC,id DESC")).rows;
+        expect(publicRows).toEqual(complete);
+        const identities=new Set<string>();for(const value of raw){
+          const context=JSON.parse(String(value.metadata_json)),match=expected.filter(item=>item.sequence===context.sequence&&item.status===context.status);expect(match).toHaveLength(1);expect(value.created_at).toBe(match[0]!.at);const key=context.sequence+':'+context.status;expect(identities.has(key)).toBe(false);identities.add(key);
+          expect(context).toMatchObject({providerId:'provider',membershipId:'membership',availabilitySessionId:opened.id});
+          expect(JSON.stringify(value)).not.toContain('opaque-controlled-private-adapter-field');
+        }
+        const unrelated=(await f.right.pool.query("SELECT id,next_event_index FROM capacity_workday_runs WHERE id IN ('availability-live','availability-ended','availability-foreign') ORDER BY id")).rows;
+        expect(unrelated).toEqual([{id:'availability-ended',next_event_index:0},{id:'availability-foreign',next_event_index:0},{id:'availability-live',next_event_index:0}]);
+      };
       const modelPolicy={provider:'openai',model:'configured-luna',reasoningEffort:'low',capabilities:adapter.capabilities};
       const input = { adapters: [{ id: adapter.id, runtimeBuild: adapter.runtimeBuild, offers: adapter.offers,
         capabilities: adapter.capabilities, status: 'available', maxConcurrentWorkers: 1, activeWorkers: 0,
@@ -43,9 +69,10 @@ describe('provider accounting in disposable PostgreSQL', () => {
           priority: 1, capabilities: adapter.capabilities })) };
       const inputBefore = structuredClone(input), service = new AvailabilitySessionService(store);
       const opened = await service.open(principal, input); if (!opened) throw new Error('Actual canonical session publication required');
+      await observeAvailability([{sequence:opened.sequence,status:'open',at:opened.refreshedAt}]);
       const compileNow = new Date().toISOString();
       const buildSource = { ...original, run: canonicalOfferBuildInput(compileNow).run, now: compileNow };
-      const tables = ['capacity_providers', 'capacity_provider_team_memberships', 'capacity_provider_availability_sessions',
+      const tables = ['capacity_audit_events','capacity_workday_runs','capacity_workday_events','capacity_providers', 'capacity_provider_team_memberships', 'capacity_provider_availability_sessions',
         'capacity_execution_providers', 'capacity_provider_lanes', 'execution_capability_offers', 'capacity_provider_assignments',
         'capacity_reservations', 'capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_operation_receipts'];
       const snapshot = async (database: typeof f.left) => {
@@ -158,7 +185,42 @@ describe('provider accounting in disposable PostgreSQL', () => {
         expect(outcome.cause, outcome.name).toMatchObject({ status: 409, code: 'capacity_execution_provider_unavailable' });
       }
       expect(await compile()).toEqual(frozen); expect(await snapshot(f.right)).toEqual(baseline);
-      await service.close(principal, opened.id); const closed = await snapshot(f.right);
+      const refreshInput={...structuredClone(input),expectedSequence:opened.sequence};
+      const originalHealth=refreshInput.adapters[0]!.accountingObservation;
+      if(!originalHealth)throw new Error('Original configured health observation required');
+      Object.assign(originalHealth.modelUsage,{healthy:false});
+      const refreshBefore=structuredClone(refreshInput),failedAvailability:Array<{mode:string;cause:unknown;unchanged:boolean}>=[];
+      for(const mode of ['missing','interrupted','altered']){
+        await f.left.pool.query("CREATE OR REPLACE FUNCTION retained_availability_observation_fault() RETURNS trigger LANGUAGE plpgsql AS $ BEGIN IF NEW.action='provider.availability.updated' THEN "+(mode==='missing'?"RETURN NULL;":mode==='altered'?"NEW.metadata_json = '{}'; RETURN NEW;":"RAISE EXCEPTION 'retained native availability observation interruption';")+" END IF; RETURN NEW; END $");
+        await f.left.pool.query('CREATE TRIGGER retained_availability_observation_fault BEFORE INSERT ON capacity_audit_events FOR EACH ROW EXECUTE FUNCTION retained_availability_observation_fault()');
+        let cause:unknown;
+        try{await service.refresh(principal,opened.id,refreshInput);}catch(error){cause=error;}
+        finally{await f.left.pool.query('DROP TRIGGER retained_availability_observation_fault ON capacity_audit_events');await f.left.pool.query('DROP FUNCTION retained_availability_observation_fault()');}
+        expect(cause).toBeInstanceOf(Error);if(mode!=='interrupted')expect(cause).toMatchObject({code:'provider_availability_observation_conflict'});
+        const unchanged=JSON.stringify(await snapshot(f.right))===JSON.stringify(baseline);expect(unchanged).toBe(true);expect(await snapshot(f.left)).toEqual(baseline);expect(refreshInput).toEqual(refreshBefore);failedAvailability.push({mode,cause,unchanged});
+      }
+      for(const corruptedAt of ['not-a-clock','2026-02-30T00:00:00.000Z']){
+        await f.left.pool.query('UPDATE capacity_provider_availability_sessions SET opened_at=$1 WHERE id=$2',[corruptedAt,opened.id]);
+        const malformedClock=await snapshot(f.right);let clockFailure:unknown;
+        try{await service.refresh(principal,opened.id,refreshInput);}catch(error){clockFailure=error;}
+        expect(clockFailure).toMatchObject({code:'provider_availability_observation_invalid'});expect(await snapshot(f.left)).toEqual(malformedClock);const unchanged=JSON.stringify(await snapshot(f.right))===JSON.stringify(malformedClock);expect(unchanged).toBe(true);failedAvailability.push({mode:'clock:'+corruptedAt,cause:clockFailure,unchanged});
+        // Restore only the deliberately corrupted owning input; failed observations remain.
+        await f.left.pool.query('UPDATE capacity_provider_availability_sessions SET opened_at=$1 WHERE id=$2',[opened.openedAt,opened.id]);expect(await snapshot(f.right)).toEqual(baseline);
+      }
+      const peer={db:f.right,ensureInitialized:()=>f.right.migrate(),run:async(sql:string,params:unknown[]=[])=>{await f.right.prepare(sql).bind(...params).run();},
+        first:<T extends Record<string,unknown>>(sql:string,params:unknown[]=[])=>f.right.prepare(sql).bind(...params).first<T>(),
+        all:async<T extends Record<string,unknown>>(sql:string,params:unknown[]=[]) =>(await f.right.prepare(sql).bind(...params).all<T>()).results,
+        batch:(operations:Array<{query:string;params?:unknown[]}>)=>f.right.batch(operations)};
+      const competing=await Promise.all([service.refresh(principal,opened.id,refreshInput),new AvailabilitySessionService(peer).refresh(principal,opened.id,refreshInput)]),winners=competing.filter(value=>value!==null);expect(winners).toHaveLength(1);expect(competing.filter(value=>value===null)).toHaveLength(1);
+      const refreshed=winners[0]!;expect(refreshed.sequence).toBe(opened.sequence+1);
+      await observeAvailability([{sequence:opened.sequence,status:'open',at:opened.refreshedAt},{sequence:refreshed.sequence,status:'open',at:refreshed.refreshedAt}]);
+      const observedHealth=(await f.right.pool.query("SELECT metadata_json FROM capacity_audit_events WHERE resource_id=$1 AND idempotency_key=$2",[opened.id,refreshed.sequence+':open'])).rows;expect(observedHealth).toHaveLength(1);expect(JSON.parse(observedHealth[0].metadata_json).adapters[0].modelHealthy).toBe(false);
+      const refreshedBytes=await snapshot(f.right);expect(await service.refresh(principal,opened.id,refreshInput)).toBeNull();expect(await snapshot(f.left)).toEqual(refreshedBytes);expect(refreshInput).toEqual(refreshBefore);expect(failedAvailability).toHaveLength(5);
+      console.log(JSON.stringify({retainedAvailabilityFailures:failedAvailability.map(value=>({mode:value.mode,unchanged:value.unchanged,message:String(value.cause)}))}));
+      const terminalAvailability=await service.close(principal, opened.id);if(!terminalAvailability?.closedAt)throw new Error('Original terminal availability required');
+      await observeAvailability([{sequence:opened.sequence,status:'open',at:opened.refreshedAt},{sequence:refreshed.sequence,status:'open',at:refreshed.refreshedAt},{sequence:terminalAvailability.sequence,status:'closed',at:terminalAvailability.closedAt}]);
+      expect((await new AvailabilitySessionService(peer).close(principal,opened.id))?.closedAt).toBe(terminalAvailability.closedAt);
+      const closed = await snapshot(f.right);
       await expect(compile()).rejects.toMatchObject({ status: 409, code: 'provider_synthesis_session_not_open' });
       expect(await snapshot(f.left)).toEqual(closed); expect(input).toEqual(inputBefore); expect(original).toEqual(before);
       // Original services, full migrations, two PostgreSQL pools and exact
