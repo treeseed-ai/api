@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_WORKDAY_POLICY, compileWorkday, validateExecutionGraph, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
+import { DEFAULT_WORKDAY_POLICY, compileWorkday, appliedWorkdaySchema, validateExecutionGraph, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
 import { projectActiveWorkdays } from '../../../../../../src/api/capacity/policy/execution/workday-execution-projector.ts';
 import { workdayParticipants } from '../../../../../../src/api/capacity/policy/execution/workday-participants.ts';
 
@@ -329,4 +329,22 @@ describe('workday living-graph projection', () => {
 		expect(graph.nodes.filter((node) => node.kind === 'reviewing')).toHaveLength(0);
 		expect(graph.nodes.filter((node) => node.kind === 'planning')).toHaveLength(0);
 	});
+});
+
+function explicitReportingSelection(){
+ const selected={...definition('reporter'),id:'sdk/digest-writer',agentClass:'digest-writer'},other={...definition('reporter'),id:'api/digest-writer',agentClass:'digest-writer'};
+ const snapshot={sdk:{agents:[{definition:selected,activities:['planning']}]},api:{agents:[{definition:other,activities:['planning']}]}},participants=workdayParticipants({agentProfilesByProjectId:snapshot});
+ // Proposed necessary canonical contract input; current compileWorkday drops it.
+ const input={id:'one-configured-closeout',teamId:'team',policyId:'default',policyRevision:1,executionMode:'simulation' as const,startsAt:'2026-10-17T00:00:00.000Z',agentIds:participants.map(value=>value.id),reportingAgentId:selected.id,policy:{...DEFAULT_WORKDAY_POLICY,durationSeconds:3600,maximumConcurrency:5,communicationConcurrency:5}};
+ return{selected,other,snapshot,input,plan:compileWorkday(input)};
+}
+
+it('retains one explicitly selected configured Reporter in the canonical applied Workday before activation without a second authority',()=>{
+ const f=explicitReportingSelection(),held=structuredClone(f.input);expect.soft(f.plan).toMatchObject({state:'planned',reportingAgentId:f.selected.id});expect.soft(appliedWorkdaySchema.safeParse({...f.plan,reportingAgentId:f.selected.id}).success).toBe(true);expect(f.input).toEqual(held);
+});
+
+it('projects only the selected configured closeout Reporter while preserving every participating project planning contributor',()=>{
+ const f=explicitReportingSelection(),source={id:f.plan.id,teamId:'team',parameters:{appliedPlan:f.plan,scheduledProjectIds:['sdk','api'],agentProfilesByProjectId:f.snapshot}},held=structuredClone(source);
+ const projected=projectActiveWorkdays({teamId:'team',revision:1,profiles:{'sdk:digest-writer':f.selected,'api:digest-writer':f.other},sources:[source]});
+ expect.soft(projected.nodes.filter(node=>node.kind==='planning').map(node=>node.projectId).sort()).toEqual(['api','sdk']);expect.soft(projected.nodes.filter(node=>node.kind==='reporting')).toHaveLength(1);expect.soft(projected.nodes.filter(node=>node.kind==='reporting').map(node=>node.projectId)).toEqual(['sdk']);expect(source).toEqual(held);
 });
