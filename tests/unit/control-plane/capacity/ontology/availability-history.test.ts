@@ -32,6 +32,7 @@ it('publishes the committed provider availability transition into existing scope
  expect(input).toEqual(before);
  if(!result)throw new Error('Original successful session required');
  for(const field of ['expiresAt','openedAt']as const){const bad=structuredClone(result);Reflect.set(bad,field,'not-a-clock');const count=operations.length;await expect(observeAvailabilitySession(database,bad)).rejects.toMatchObject({code:'provider_availability_observation_invalid'});expect(operations).toHaveLength(count);}
+ const invalidCalendar=structuredClone(result);invalidCalendar.openedAt='2026-02-30T00:00:00.000Z';const calendarWrites=operations.length;await expect(observeAvailabilitySession(database,invalidCalendar)).rejects.toMatchObject({code:'provider_availability_observation_invalid'});expect(operations).toHaveLength(calendarWrites);
  const unmeasured=structuredClone(result);unmeasured.snapshot.availableWorkers=NaN;const count=operations.length;await expect(observeAvailabilitySession(database,unmeasured)).rejects.toMatchObject({code:'provider_availability_observation_invalid'});expect(operations).toHaveLength(count);
 });
 
