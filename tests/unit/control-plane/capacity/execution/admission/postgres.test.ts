@@ -419,7 +419,6 @@ describe('living admission in disposable PostgreSQL', () => {
 			expect(await state()).toEqual(retained); expect(await publicInventory()).toEqual(published);
 			for (const replayed of await Promise.all([publicInventory(), publicInventory()]))
 				verifyNativeSettlementReadback(retained.ledger, replayed.ledger, retained.assignments);
-
 			expect(published.assignments.map(value => value.id)).toEqual(retained.assignments.map(value => value.id));
 			expect(published.assignments.map(value => value.assignmentAttempt)).toEqual([admitted.assignmentAttempt]);
 			expect(published.reservations.map(value => value.id)).toEqual(retained.reservations.map(value => value.id));
