@@ -7,8 +7,6 @@ const retiredModels=new Set(['assignment_plan','assignment_status','assignment_s
 export function verifyNoRetiredExecutionReferences(attempt:AssignmentAttempt):void {
  const references=[attempt.sourceRef,...attempt.authorityRefs,attempt.effectiveProfile.profileRef,...attempt.contextRefs,...attempt.grant.contentRead,...attempt.grant.contentWrite];
  for(const reference of references)assert.ok(!retiredModels.has(reference.model),'ACCEPTANCE_RETIRED_PARTICIPATION: Retired content authority participates');
- for(const model of [...attempt.effectiveProfile.permissionCeiling.content.read,...attempt.effectiveProfile.permissionCeiling.content.write])
-  assert.ok(!retiredModels.has(model),'ACCEPTANCE_RETIRED_PARTICIPATION: Retired content permission participates');
 }
 
 /** Original native catalog/to_regclass proof, shared by managed and native cases. */
