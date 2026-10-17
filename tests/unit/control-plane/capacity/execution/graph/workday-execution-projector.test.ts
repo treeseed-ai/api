@@ -348,3 +348,19 @@ it('projects only the selected configured closeout Reporter while preserving eve
  const projected=projectActiveWorkdays({teamId:'team',revision:1,profiles:{'sdk:digest-writer':f.selected,'api:digest-writer':f.other},sources:[source]});
  expect.soft(projected.nodes.filter(node=>node.kind==='planning').map(node=>node.projectId).sort()).toEqual(['api','sdk']);expect.soft(projected.nodes.filter(node=>node.kind==='reporting')).toHaveLength(1);expect.soft(projected.nodes.filter(node=>node.kind==='reporting').map(node=>node.projectId)).toEqual(['sdk']);expect(source).toEqual(held);
 });
+
+it('denies omitted ambiguous foreign duplicate and moved reporting authority without replacing the captured selection',()=>{
+ const f=explicitReportingSelection(),profiles={'sdk:digest-writer':f.selected,'api:digest-writer':f.other},parameters={appliedPlan:f.plan,scheduledProjectIds:['sdk','api'],agentProfilesByProjectId:f.snapshot};
+ for(const reportingAgentId of [undefined,'foreign/digest-writer','sdk/missing']) {
+  const plan={...f.plan};delete plan.reportingAgentId;Object.assign(plan,reportingAgentId===undefined?{}:{reportingAgentId});
+  const source={id:plan.id,teamId:'team',parameters:{...parameters,appliedPlan:plan}},held=structuredClone(source);
+  expect(()=>projectActiveWorkdays({teamId:'team',revision:1,profiles,sources:[source]})).toThrow();expect(source).toEqual(held);
+ }
+ const duplicate={...f.other,id:f.selected.id};
+ expect(()=>projectActiveWorkdays({teamId:'team',revision:1,profiles:{...profiles,'api:digest-writer':duplicate},sources:[{id:f.plan.id,teamId:'team',parameters}]})).toThrow();
+ const moved={...f.selected,purpose:'Changed after frozen selection.'};
+ expect(()=>projectActiveWorkdays({teamId:'team',revision:1,profiles:{...profiles,'sdk:digest-writer':moved},sources:[{id:f.plan.id,teamId:'team',parameters}]})).toThrow();
+ const original=projectActiveWorkdays({teamId:'team',revision:1,profiles,sources:[{id:f.plan.id,teamId:'team',parameters}]}),changed=projectActiveWorkdays({teamId:'team',revision:1,profiles,sources:[{id:f.plan.id,teamId:'team',parameters:{...parameters,appliedPlan:{...f.plan,reportingAgentId:f.other.id}}}]} );
+ expect(changed.changedSourceRefs).not.toEqual(original.changedSourceRefs);
+ expect(changed.nodes.filter(node=>node.kind==='reporting').map(node=>node.projectId)).toEqual(['api']);
+});
