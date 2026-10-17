@@ -4874,3 +4874,18 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/planning/selection.test.ts
     testName: "retains one standing reporting activity beside an exact cooperative selection without changing selected planning work or admitting an empty intersection"
+  api.golden.seed-adopt-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/teams/managed-library-authority.test.ts
+    testName: retains canonical public adopt authority without creating or seeding a replacement repository
+  api.golden.seed-adopt-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/teams/managed-library-authority.test.ts
+    testName: native managed repository metadata keeps canonical adopt authority through credential denial and a measured independent readback
+  api.golden.seed-lane-owner-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/provider-availability-reconciliation.test.ts
+    testName: native seed provider lane readback follows changed adapter ownership and preserves exact replay on independent connections

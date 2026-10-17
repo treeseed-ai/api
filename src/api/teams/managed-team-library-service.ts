@@ -108,7 +108,7 @@ export async function reconcileManagedTeamLibrary(store:any,teamId:string,env:No
 	if(!isManagedTeamLibraryRepositoryName(teamId,repositoryName))throw new Error('Managed Team Library repository identity does not match its owning team.');
 	const repositoryPolicy=record(projectLibrary.repositoryPolicy),visibility=repositoryPolicy.visibility===undefined?'private':repositoryPolicy.visibility,
 		lifecycle=repositoryPolicy.lifecycle===undefined?'create-or-adopt':repositoryPolicy.lifecycle;
-	if((visibility!=='public'&&visibility!=='private')||(lifecycle!=='create-or-adopt'&&lifecycle!=='adopt-only'))throw new Error('Managed Team Library repository policy is invalid.');
+	if((visibility!=='public'&&visibility!=='private')||(lifecycle!=='create-or-adopt'&&lifecycle!=='adopt'))throw new Error('Managed Team Library repository policy is invalid.');
 	const repositoryAuthority=await resolveGitHubRepositoryCreationAuthority({store,teamId,owner,env,fetchImpl:store.config?.fetchImpl});
 	const provider=await reconcileLibraryProvider({store,teamId,projectId:String(project.id),projectSlug:'team',owner,name:repositoryName,visibility,lifecycle,env,fetchImpl:store.config?.fetchImpl,seedFiles:projectLibrary.repositoryPolicy?undefined:managedTeamLibrarySeedFiles(String(project.id)),repositoryAuthority});
 	const binding=await ensureProjectKnowledgeBinding({store,projectId:String(project.id),teamId,projectSlug:'team',libraryRoot:'.',libraryRef:'refs/remotes/origin/staging',libraryRepositoryUrl:`https://github.com/${owner}/${repositoryName}.git`,libraryDefaultBranch:'main',libraryCredentialId:provider.credentialId,expectedUpstreamHeads:provider.heads,env});

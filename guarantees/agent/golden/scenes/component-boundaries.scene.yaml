@@ -2882,3 +2882,9 @@ workflow:
   - id: reporting-selection-cooperative-unit
     action: { verifier: api.golden.reporting-selection-cooperative-unit }
     expect: { status: passed }
+  - id: seed-adopt-unit
+    action: { verifier: api.golden.seed-adopt-unit }
+  - id: seed-adopt-native
+    action: { verifier: api.golden.seed-adopt-native }
+  - id: seed-lane-owner-native
+    action: { verifier: api.golden.seed-lane-owner-native }

@@ -227,7 +227,7 @@ export function parseRepositoryPolicy(value: unknown, path: string, diagnostics:
 	const defaultBranch = asString(value.defaultBranch);
 	const stagingBranch = asString(value.stagingBranch);
 	if (!['public', 'private'].includes(visibility)) diagnostics.push(errorDiagnostic('seed.invalid_repository_policy', 'visibility must be public or private.', `${path}.visibility`));
-	if (!['create-or-adopt', 'adopt-only'].includes(lifecycle)) diagnostics.push(errorDiagnostic('seed.invalid_repository_policy', 'lifecycle must be create-or-adopt or adopt-only.', `${path}.lifecycle`));
+	if (!['create-or-adopt', 'adopt'].includes(lifecycle)) diagnostics.push(errorDiagnostic('seed.invalid_repository_policy', 'lifecycle must be create-or-adopt or adopt.', `${path}.lifecycle`));
 	if (!['retain', 'archive'].includes(deletionPolicy)) diagnostics.push(errorDiagnostic('seed.invalid_repository_policy', 'deletionPolicy must be retain or archive.', `${path}.deletionPolicy`));
 	if (defaultBranch !== 'main') diagnostics.push(errorDiagnostic('seed.invalid_repository_policy', 'defaultBranch must be main.', `${path}.defaultBranch`));
 	if (stagingBranch !== 'staging') diagnostics.push(errorDiagnostic('seed.invalid_repository_policy', 'stagingBranch must be staging.', `${path}.stagingBranch`));
@@ -238,7 +238,7 @@ export function parseRepositoryPolicy(value: unknown, path: string, diagnostics:
 	if (actions === undefined) diagnostics.push(errorDiagnostic('seed.missing_field', 'Missing required field: actions.', `${path}.actions`));
 	return {
 		visibility: visibility === 'public' ? 'public' : 'private',
-		lifecycle: lifecycle === 'adopt-only' ? 'adopt-only' : 'create-or-adopt',
+		lifecycle: lifecycle === 'adopt' ? 'adopt' : 'create-or-adopt',
 		deletionPolicy: deletionPolicy === 'archive' ? 'archive' : 'retain',
 		defaultBranch: 'main',
 		stagingBranch: 'staging',
