@@ -1,5 +1,5 @@
 import {expect,it} from 'vitest';
-import {workdayStartDatabase} from './workday-start-fixture.ts';
+import {workdayStartDatabase} from '../workday-start-fixture.ts';
 
 it('native public preflight and start retain one configured joint Reporter before activation and preserve exact selection through denial and replay',async()=>{
  const f=await workdayStartDatabase();try{
