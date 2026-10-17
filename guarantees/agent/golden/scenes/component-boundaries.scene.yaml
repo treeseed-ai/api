@@ -2853,3 +2853,8 @@ workflow:
       verifier: api.golden.provider-availability-offer-guard-unit
     expect:
       status: passed
+  - id: provider-availability-current-claim-unit
+    action:
+      verifier: api.golden.provider-availability-current-claim-unit
+    expect:
+      status: passed

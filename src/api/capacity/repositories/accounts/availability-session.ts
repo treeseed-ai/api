@@ -90,8 +90,9 @@ export class AvailabilitySessionRepository {
 
 	async refresh(input: AvailabilitySessionWrite, expectedSequence: number, providerOperations: CapacityDatabaseOperation[]) {
 		await this.database.ensureInitialized();
+		const currentClaim=await this.database.first(`SELECT id FROM capacity_provider_availability_sessions WHERE id = ? AND membership_id = ? AND team_id = ? AND capacity_provider_id = ? AND sequence = ? AND status = 'open' FOR NO KEY UPDATE`,[input.id,input.membershipId,input.teamId,input.providerId,expectedSequence]);
+		if(!currentClaim)return null;
 		const results = await this.database.batch([
-			{ query: `SELECT id FROM capacity_provider_availability_sessions WHERE id = ? AND membership_id = ? AND team_id = ? FOR NO KEY UPDATE`, params: [input.id, input.membershipId, input.teamId] },
 			...providerOperations,
 			{ query: `UPDATE capacity_provider_availability_sessions SET sequence = sequence + 1, refreshed_at = ?, expires_at = ?, available_from = ?, available_until = ?, execution_providers_json = ?, capabilities_json = ?, native_limits_json = ?, runner_pressure_json = ?, constraints_json = ?, metadata_json = ?, updated_at = ? WHERE id = ? AND membership_id = ? AND team_id = ? AND capacity_provider_id = ? AND status = 'open' AND sequence = ? RETURNING id, sequence`, params: [input.refreshedAt, input.expiresAt, input.availableFrom, input.availableUntil, JSON.stringify(input.executionProviders), JSON.stringify(input.capabilities), JSON.stringify(input.nativeLimits), JSON.stringify(input.runnerPressure), JSON.stringify(input.constraints), JSON.stringify(input.metadata), input.refreshedAt, input.id, input.membershipId, input.teamId, input.providerId, expectedSequence] },
 		]);

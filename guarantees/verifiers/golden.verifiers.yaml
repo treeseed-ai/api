@@ -4829,3 +4829,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
     testName: "retains exact capability offer bytes on stale foreign or terminal availability publication before original guarded retry"
+  api.golden.provider-availability-current-claim-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
+    testName: "denies a missing current availability claim before every offer lane or seed grant mutation without changing original requests"
