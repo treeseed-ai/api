@@ -1,4 +1,5 @@
 import {proveNativeCreationRollback} from './fixtures/native-creation-observations.ts';
+import {proveNativeRetiredParticipation} from './fixtures/native-retired-participation.ts';
 import { verifyNativeModelUsage, verifyNativeProviderUsage } from '../../../../../acceptance/execution-native-usage.ts';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -160,7 +161,7 @@ describe('living admission in disposable PostgreSQL', () => {
 			const nativeAssignment = (await peerDatabase.pool.query('SELECT * FROM capacity_provider_assignments WHERE id=$1', [winner.id])).rows[0]!;
 			const nativeReservations = (await peerDatabase.pool.query('SELECT * FROM capacity_reservations WHERE work_day_id=$1', ['workday'])).rows;
 			const originalAdmission = structuredClone({ issuedPublic, nativeRun, nativeAssignment, nativeReservations });
-			// Corrupt only the disposable owning database; inspect through an independent connection and original public serializer.
+			await proveNativeRetiredParticipation(database,peerDatabase,peerAccounting,nativeAssignment,nativeReservations); // Disposable native corruption only.
 			const fakeId = 'controlled-cohort-assignment', fakeReservation = 'controlled-cohort-reservation';
 			const other = attempts.find(value => value.id !== winner.id)!;
 			const fakeAttempt = { ...winner, id: fakeId, idempotencyKey: fakeId, nodeId: other.nodeId, reservationId: fakeReservation };
