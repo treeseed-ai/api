@@ -2828,7 +2828,7 @@ workflow:
   - id: connected-content-component-postgres
     action: { verifier: api.golden.connected-content-component-postgres }
     expect: { status: passed }
-- id: execution-retired-participation-1
+  - id: execution-retired-participation-1
     action: { verifier: api.golden.execution-retired-participation-1 }
     expect: { status: passed }
   - id: execution-retired-participation-2

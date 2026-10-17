@@ -4794,7 +4794,7 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/architecture/components/component-content-postgres.test.ts
     testName: "native content-component publication retains unrelated SQL bytes original history and public views through interruption and unchanged concurrent replay"
-api.golden.execution-retired-participation-1:
+  api.golden.execution-retired-participation-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
