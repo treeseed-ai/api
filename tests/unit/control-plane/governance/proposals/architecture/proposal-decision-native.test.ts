@@ -60,6 +60,13 @@ describe('native proposal Decision authority', () => {
 					}
 					return definition;
 				});
+			// The public Workday boundary also requires one governed closeout profile.
+			// Publish it with these same exact library bytes before any governance work.
+			const closeout = profiles[0]; assert.ok(closeout);
+			closeout.activityProfiles.reporting = { handler: 'reporter',
+				prompt: { system: 'Commit the deterministic canonical Workday closeout.' },
+				permissions: { content: { read: ['knowledge', 'proposal'], write: ['note'] }, tools: [] },
+				dependsOn: { events: ['workday-closing'] } };
 			const profileInputs = profiles.map(definition => ({ definition, path: `agents/${definition.agentClass}.md`,
 				raw: `---\n${stringify(definition)}---\n` }));
 			const profileInputsBefore = structuredClone(profileInputs);
@@ -391,6 +398,8 @@ describe('native proposal Decision authority', () => {
 			const storedRows = await f.store.all('SELECT * FROM capacity_operation_receipts WHERE resource_type=? AND resource_id=?', ['workday_preflight', receipt.id]);
 			expect(storedRows).toHaveLength(1); const persisted = object(JSON.parse(String(storedRows[0]!.response_json))); expect(persisted.receipt).toEqual(receipt); expect(persisted.intent).toEqual(intent);
 			expect(object(object(persisted.runInput).parameters).decisionIds).toEqual([decisionId]);
+			expect(object(object(persisted.runInput).parameters).reportingAgentId).toBe(closeout.id);
+			expect(object(object(object(persisted.runInput).parameters).appliedPlan).reportingAgentId).toBe(closeout.id);
 			const hash = (value: unknown) => `sha256:${createHash('sha256').update(canonicalJson(value)).digest('base64url')}`;
 			expect(receipt.intentDigest).toBe(hash(intent)); expect(storedRows[0]!.request_digest).toBe(receipt.intentDigest); expect(receipt.demandSetDigest).toBe(hash({ selectedDemands: receipt.selectedDemands, objectives: [], proposalIds: [], decisionIds: [decisionId] }));
 			const { preflightDigest, ...payload } = receipt; expect(preflightDigest).toBe(hash(payload));
