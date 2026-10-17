@@ -209,6 +209,8 @@ export class WorkdayPreflightService {
 			allocatedSeconds:selectedDemands.filter((entry)=>entry.classSlug===classSlug).reduce((sum,entry)=>sum+entry.requestedSeconds,0),
 			idleSeconds:0,reservedSeconds:0,activeSeconds:0,releasedSeconds:0,overrunSeconds:0}));
 		const appliedPlan=record(projection.appliedPlan);
+		// Retain the resolved choice before creation can observe another configured profile.
+		if(appliedPlan.reportingAgentId!==undefined) record(runInput.parameters).reportingAgentId=appliedPlan.reportingAgentId;
 		const profileGeneration=integer(appliedPlan.policyRevision,1);
 		const state:WorkdayPreflightObservation={
 			profileGeneration, profileDigest:digest({profileId:intent.profileId,policy:appliedPlan.policySnapshot,reportingAgentId:appliedPlan.reportingAgentId,
