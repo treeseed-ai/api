@@ -1,9 +1,11 @@
 import {expect,it} from 'vitest';
+import type {AgentDefinition} from '@treeseed/sdk/agent-capacity';
 import {workdayStartDatabase} from '../workday-start-fixture.ts';
+function configuredCloseout(definition:AgentDefinition):AgentDefinition{return {...definition,activityProfiles:{...definition.activityProfiles,reporting:{handler:'reporter',prompt:{system:'Commit the deterministic closeout.'},permissions:definition.activityProfiles.planning!.permissions,dependsOn:{events:['workday-closing']}}}};}
 
 it('native public preflight and start retain one configured joint Reporter before activation and preserve exact selection through denial and replay',async()=>{
  const f=await workdayStartDatabase();try{
-  const selected={...f.definition,activityProfiles:{...f.definition.activityProfiles,reporting:{handler:'reporter',prompt:{system:'Commit the deterministic closeout.'},permissions:f.definition.activityProfiles.planning!.permissions,dependsOn:{events:['workday-closing']}}}},other={...selected,id:'other/renamed-planner'};
+  const selected=configuredCloseout(f.definition),other={...selected,id:'other/renamed-planner'};
   const selectedBytes=JSON.stringify({agents:[selected]}),now=f.intent.startsAt;
   await f.query('UPDATE project_agent_classes SET handler_refs_json=? WHERE id=?',[selectedBytes,'class']);
   await f.query('INSERT INTO projects (id,team_id,slug,name,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?)',['other','team','other','Other',JSON.stringify({library:{role:'library'}}),now,now]);
@@ -27,5 +29,20 @@ it('native public preflight and start retain one configured joint Reporter befor
    const supplied:Record<string,unknown>={...input};delete supplied.reportingAgentId;Object.assign(supplied,reportingAgentId===undefined?{}:{reportingAgentId});
    const before=await f.snapshot();await expect(f.publicService.preflight(f.principal,'team',supplied)).rejects.toThrow();expect(await f.snapshot()).toEqual(before);
   }
+ }finally{await f.close();}
+},30_000);
+
+it('native public start refuses a different automatic Reporter introduced after fresh preflight instead of silently changing the retained closeout identity',async()=>{
+ const f=await workdayStartDatabase();try{
+  const selected=configuredCloseout(f.definition),replacement={...selected,id:'configured/replacement-closeout'};
+  await f.query('UPDATE project_agent_classes SET handler_refs_json=? WHERE id=?',[JSON.stringify({agents:[selected]}),'class']);
+  const planned=await f.preflight(),original=f.store.createCapacityWorkdayRun.bind(f.store);let calls=0;
+  f.store.createCapacityWorkdayRun=async(teamId,input)=>{
+   calls++;await f.query('UPDATE project_agent_classes SET handler_refs_json=? WHERE id=?',[JSON.stringify({agents:[replacement]}),'class']);
+   return original(teamId,input);
+  };
+  await expect(f.start(planned)).rejects.toThrow();expect(calls).toBe(1);
+  const after=await f.snapshot();expect(after.workdays.filter(row=>row.status==='running')).toEqual([]);
+  expect(after.nodes.filter(row=>row.kind==='reporting')).toEqual([]);expect(after.assignments).toEqual([]);expect(after.reservations).toEqual([]);expect(after.usage).toEqual([]);expect(after.ledger).toEqual([]);
  }finally{await f.close();}
 },30_000);
