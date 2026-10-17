@@ -1,3 +1,4 @@
+import {verifyNoRetiredExecutionReferences} from './execution-retired-authority.ts';
 import { createRequire } from 'node:module';
 export { verifyNativeLeaseHistory, verifyNativeLeaseEventReadback } from './execution-lease-history.ts';
 import { verifyNativeModelUsage } from './execution-native-usage.ts';
@@ -214,6 +215,7 @@ export function verifyNativeAssignmentReadback(native: Row, visible: Row, run: R
 	assert.equal(typeof native.assignment_attempt_json, 'string');
 	const original: unknown = JSON.parse(native.assignment_attempt_json as string), attempt = assignmentAttemptSchema.parse(original);
 	assert.deepEqual(original, attempt, 'ACCEPTANCE_SCHEMA_ATTEMPT: Native bytes contain stripped or coerced canonical fields');
+	verifyNoRetiredExecutionReferences(attempt);
 	assert.equal(attempt.id, native.id); assert.equal(attempt.teamId, run.teamId); assert.equal(attempt.workdayId, run.id);
 	assert.deepEqual(visible.assignmentAttempt, attempt, 'ACCEPTANCE_NATIVE_ALLOCATION: Public issued snapshot differs from original native authority');
 	const allocationCode = 'ACCEPTANCE_NATIVE_ALLOCATION';

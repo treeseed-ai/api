@@ -1,3 +1,4 @@
+import {verifyRetiredExecutionTables} from '../../../../../acceptance/execution-retired-authority.ts';
 import { verifyNativeModelUsage, verifyNativeProviderUsage } from '../../../../../acceptance/execution-native-usage.ts';
 import { serializeProviderAssignmentRow } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { describe, expect, it } from 'vitest';
@@ -5,7 +6,7 @@ import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import { verifyNativeInventory, verifyNativeGraphRevisionInventory, verifyNativeSettlementReadback, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeModelExecutionInventory, verifyNativeReporterCloseout } from '../../../../../acceptance/execution-inventory.ts';
 import { assignment } from '../fixtures/assignment.ts';
 import { graphProjection, graphState } from '../graph/architecture/living/living-graph-fixture.ts';
-import { compileWorkday, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, compileWorkday, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { now as reportClock, reportRef, reportResult } from '../graph/architecture/closeout-sql-fixture.ts';
 
 const clock = '2026-10-09T12:00:00.000Z';
@@ -479,4 +480,20 @@ describe('independent native producer inventory reconciliation', () => {
 		for (const limit of [0, -1, 1.5, NaN, Infinity, 201]) await expect(verifyNativeInventory(native, () => pages[0], limit)).rejects.toThrow();
 		await expect(verifyNativeInventory(native, () => pages[0], 1, 'unknown' as never)).rejects.toThrow();
 	});
+});
+
+it('denies retired content authority even when original native and public assignment records agree without changing valid capacity provenance',()=>{
+ for(const model of ['assignment_plan','assignment_status','assignment_summary','signal_graph','capacity_plan','demand','execution_input','source_candidate'])for(const location of ['source','authority','context','read','write','profile','permission-read','permission-write']){
+  const current=assignmentAttemptSchema.parse(structuredClone(assignment)),reference={store:'treedx' as const,model,id:'retired-authority',revision:1,digest:'sha256:'+'a'.repeat(64),repository:'native-library',commit:'d'.repeat(40),path:'knowledge/retired.md'};
+  if(location==='write'){current.grant.sourceWrite=[];current.workspace={mode:'treedx',repository:reference.repository,baseCommit:reference.commit,workspaceId:'native-content-workspace',writablePaths:['knowledge/retired.md']};}
+  if(location==='source')current.sourceRef=reference;if(location==='authority')current.authorityRefs=[reference];if(location==='context')current.contextRefs.push(reference);if(location==='read')current.grant.contentRead.push(reference);if(location==='write')current.grant.contentWrite.push(reference);if(location==='profile')current.effectiveProfile.profileRef=reference;if(location==='permission-read')Reflect.set(current.effectiveProfile.permissionCeiling.content,'read',[...current.effectiveProfile.permissionCeiling.content.read,model]);if(location==='permission-write')Reflect.set(current.effectiveProfile.permissionCeiling.content,'write',[...current.effectiveProfile.permissionCeiling.content.write,model]);
+  expect(assignmentAttemptSchema.safeParse(current).success,model+'/'+location).toBe(!location.startsWith('permission-'));const raw={...nativeAssignment,assignment_attempt_json:JSON.stringify(current)},visible={...publicAssignment,assignmentAttempt:current},held=structuredClone({raw,visible});
+  expect.soft(()=>verifyNativeAssignmentReadback(raw,visible,scope,[nativeReservation],[raw]),model+'/'+location).toThrow(location.startsWith('permission-')?undefined:'ACCEPTANCE_RETIRED_PARTICIPATION');expect({raw,visible}).toEqual(held);
+ }
+ expect(verifyNativeAssignmentReadback(nativeAssignment,publicAssignment,scope,[nativeReservation],[nativeAssignment])).toEqual(assignment);
+});
+it('requires native absence of every retired table including source candidates without accepting ambiguous catalog or resolution results',async()=>{
+ const catalog=[{table_name:'execution_nodes',column_name:'id'}],resolve=async()=>[{name:null}];await verifyRetiredExecutionTables(catalog,resolve);
+ for(const table of ['agent_capacity_plans','capacity_workday_demands','capacity_workday_participation_cycles','capacity_workday_participation_entries','agent_mode_runs','workday_capacity_envelopes','decision_assignment_graphs','capacity_allocation_sets','provider_source_candidates'])await expect(verifyRetiredExecutionTables([...catalog,{table_name:table,column_name:'id'}],resolve)).rejects.toThrow('ACCEPTANCE_SCHEMA_RETIRED_TABLE');
+ for(const rows of [[],[...catalog,...catalog],[{table_name:'',column_name:'id'}]])await expect(verifyRetiredExecutionTables(rows,resolve)).rejects.toThrow('ACCEPTANCE_SCHEMA_RETIRED_TABLE');for(const result of [[],[{name:'provider_source_candidates'}],[{name:null},{name:null}]])await expect(verifyRetiredExecutionTables(catalog,async()=>result)).rejects.toThrow('ACCEPTANCE_SCHEMA_RETIRED_TABLE');
 });

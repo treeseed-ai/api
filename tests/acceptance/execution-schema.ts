@@ -1,3 +1,4 @@
+import {verifyRetiredExecutionTables} from './execution-retired-authority.ts';
 import {verifyPlanningWindow} from './execution-planning-window.ts';
 import { verifyManagedResourceClosure } from './execution-resource-closure.ts';
 import { verifyNativeProviderUsage } from './execution-native-usage.ts';
@@ -77,11 +78,7 @@ async function verifyManagedExecutionSchema(requireObservedSamples: boolean): Pr
 				const catalog = async () => (await client.query<{ table_name: string; column_name: string }>(
 					"SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' ORDER BY table_name,column_name")).rows;
 				const before = await catalog();
-				for (const table of ['agent_capacity_plans', 'capacity_workday_demands', 'capacity_workday_participation_cycles',
-					'capacity_workday_participation_entries', 'agent_mode_runs', 'workday_capacity_envelopes', 'decision_assignment_graphs', 'capacity_allocation_sets']) {
-					assert.ok(!before.some(value => value.table_name === table), 'ACCEPTANCE_SCHEMA_RETIRED_TABLE: Retired scheduling authority remains');
-					assert.deepEqual((await client.query('SELECT to_regclass($1) AS name', [`public.${table}`])).rows, [{ name: null }]);
-				}
+				await verifyRetiredExecutionTables(before,async table=>(await client.query('SELECT to_regclass($1) AS name',['public.'+table])).rows);
 				const retired = [
 					['capacity_provider_assignments', 'decision_input_json'], ['capacity_provider_assignments', 'allocation_set_id'],
 					...['allowed_modes_json', 'required_capabilities_json', 'kernel_profile_json', 'kernel_policy_json', 'output_contracts_json'].map(name => ['project_agent_classes', name]),
