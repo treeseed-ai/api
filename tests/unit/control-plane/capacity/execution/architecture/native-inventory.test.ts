@@ -5,7 +5,7 @@ import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import { verifyNativeInventory, verifyNativeGraphRevisionInventory, verifyNativeSettlementReadback, verifyNativeAssignmentReadback, verifyNativeCommunicationEdges, verifyNativeModelExecutionInventory, verifyNativeReporterCloseout } from '../../../../../acceptance/execution-inventory.ts';
 import { assignment } from '../fixtures/assignment.ts';
 import { graphProjection, graphState } from '../graph/architecture/living/living-graph-fixture.ts';
-import { compileWorkday, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, compileWorkday, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { now as reportClock, reportRef, reportResult } from '../graph/architecture/closeout-sql-fixture.ts';
 
 const clock = '2026-10-09T12:00:00.000Z';
@@ -479,4 +479,14 @@ describe('independent native producer inventory reconciliation', () => {
 		for (const limit of [0, -1, 1.5, NaN, Infinity, 201]) await expect(verifyNativeInventory(native, () => pages[0], limit)).rejects.toThrow();
 		await expect(verifyNativeInventory(native, () => pages[0], 1, 'unknown' as never)).rejects.toThrow();
 	});
+});
+
+it('denies retired content authority even when original native and public assignment records agree without changing valid capacity provenance',()=>{
+ for(const model of ['assignment_plan','assignment_status','assignment_summary','signal_graph','capacity_plan','demand','execution_input','source_candidate'])for(const location of ['source','context','read','write','profile']){
+  const current=assignmentAttemptSchema.parse(structuredClone(assignment)),reference={store:'treedx' as const,model,id:'retired-authority'};
+  if(location==='source')current.sourceRef=reference;if(location==='context')current.contextRefs.push(reference);if(location==='read')current.grant.contentRead.push(reference);if(location==='write')current.grant.contentWrite.push(reference);if(location==='profile')current.effectiveProfile.profileRef=reference;
+  const raw={...nativeAssignment,assignment_attempt_json:JSON.stringify(current)},visible={...publicAssignment,assignmentAttempt:current},held=structuredClone({raw,visible});
+  expect.soft(()=>verifyNativeAssignmentReadback(raw,visible,scope,[nativeReservation],[raw]),model+'/'+location).toThrow('ACCEPTANCE_RETIRED_PARTICIPATION');expect({raw,visible}).toEqual(held);
+ }
+ expect(verifyNativeAssignmentReadback(nativeAssignment,publicAssignment,scope,[nativeReservation],[nativeAssignment])).toEqual(assignment);
 });
