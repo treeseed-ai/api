@@ -35,7 +35,7 @@ it('native public preflight and start retain one configured joint Reporter befor
   }
   const beforeSchedule=await f.snapshot(),scheduledInput={id:'joint-closeout-selection',intent:input,cadenceSeconds:60,nextRunAt:input.startsAt},scheduledHeld=structuredClone(scheduledInput);
   const scheduled=await f.publicService.createSchedule(f.principal,'team',scheduledInput);
-  expect(scheduled.intent.reportingAgentId).toBe(selected.id);expect(scheduled.intent.projects).toEqual(['other','project']);expect(scheduledInput).toEqual(scheduledHeld);
+  expect(scheduled.intent.reportingAgentId).toBe(selected.id);expect(scheduled.intent.projects).toEqual(input.projects);expect(scheduledInput).toEqual(scheduledHeld);
   const afterSchedule=await f.snapshot();expect(afterSchedule.schedules).toHaveLength(1);expect(JSON.parse(String(afterSchedule.schedules[0]!.intent_json)).reportingAgentId).toBe(selected.id);
   for(const table of ['workdays','nodes','edges','revisions','events','assignments','reservations','usage','ledger'] as const)expect(afterSchedule[table]).toEqual(beforeSchedule[table]);
  }finally{await f.close();}
