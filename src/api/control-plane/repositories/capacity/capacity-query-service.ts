@@ -56,7 +56,7 @@ export function createCapacityQueryService(store: any) {
 		},
 		async audit(principal: CapacityPrincipal, teamId: string, query: Record<string, unknown>) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
-			try{return await new CapacityAuditRepository(store).listRowsPage(teamId,{limit:query.limit,cursor:query.cursor});}catch(error){translate(error);}
+			try{return {...await new CapacityAuditRepository(store).listRowsPage(teamId,{limit:query.limit,cursor:query.cursor})};}catch(error){translate(error);}
 		},
 		async lanes(principal: CapacityPrincipal, teamId: string) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
