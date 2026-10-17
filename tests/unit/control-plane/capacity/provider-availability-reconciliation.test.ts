@@ -1,3 +1,4 @@
+import {createHash,generateKeyPairSync} from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { postgresGraph } from './execution/graph/architecture/living/living-postgres-fixture.ts';
 import { upsertCapacityExecutionProviderOperations } from '../../../../src/api/capacity/repositories/capacity/providers/execution-provider.ts';
@@ -19,7 +20,8 @@ it('native seed provider lane readback follows changed adapter ownership and pre
  const f=await postgresGraph();
  try{
   const now=new Date().toISOString();
-  await f.left.pool.query("INSERT INTO capacity_providers(id,fingerprint,display_name,created_at,updated_at) VALUES('provider','seed-reset-test','Seed reset regression',$1,$1)",[now]);
+  const publicJwk=JSON.stringify(generateKeyPairSync('ed25519').publicKey.export({format:'jwk'}));
+  await f.left.pool.query("INSERT INTO capacity_providers(id,fingerprint,public_jwk_json,display_name,created_at,updated_at) VALUES('provider',$2,$3,'Seed reset regression',$1,$1)",[now,createHash('sha256').update(publicJwk).digest('hex'),publicJwk]);
   const write=async(id:string)=>{
    const operations=upsertCapacityExecutionProviderOperations({providerId:'provider',createdAt:now,executionProviders:[{id,status:'active',capabilities:['source.read'],lanes:[{id:'communication',purpose:'communication',capabilities:['source.read']}]}]});
    await f.left.batch(operations);
