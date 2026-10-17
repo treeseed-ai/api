@@ -1,4 +1,5 @@
 import {expect,it} from 'vitest';
+import {normalizeWorkdayAgentSelection} from '@treeseed/sdk/operator-contracts';
 import type {AgentDefinition} from '@treeseed/sdk/agent-capacity';
 import {workdayStartDatabase} from '../workday-start-fixture.ts';
 function configuredCloseout(definition:AgentDefinition):AgentDefinition{return {...definition,activityProfiles:{...definition.activityProfiles,reporting:{handler:'reporter',prompt:{system:'Commit the deterministic closeout.'},permissions:definition.activityProfiles.planning!.permissions,dependsOn:{events:['workday-closing']}}}};}
@@ -70,7 +71,7 @@ it('native public admission selects the configured closeout Reporter independent
   const input={...f.intent,reportingAgentId:selected.id,agentSelection:{agentSlugs:[planner.id],activityTypes:['planning']}},held=structuredClone(input);
   const planned=await f.publicService.preflight(f.principal,'team',input);await f.start(planned);
   const after=await f.snapshot(),parameters=JSON.parse(String(after.workdays[0]!.parameters_json));
-  expect(parameters.appliedPlan.reportingAgentId).toBe(selected.id);expect(parameters.agentSelection).toEqual(input.agentSelection);
+  expect(parameters.appliedPlan.reportingAgentId).toBe(selected.id);expect(parameters.agentSelection).toEqual(normalizeWorkdayAgentSelection(input.agentSelection));expect(parameters.agentSelection.agentSlugs).toEqual(input.agentSelection.agentSlugs);expect(parameters.agentSelection.activityTypes).toEqual(input.agentSelection.activityTypes);
   expect(parameters.agentProfilesByProjectId.project.agents.map((entry:{definition:{id:string};activities:string[]})=>({id:entry.definition.id,activities:entry.activities}))).toEqual([{id:planner.id,activities:['planning']},{id:selected.id,activities:['reporting']}]);
   expect(after.nodes.filter(row=>row.kind==='planning').map(row=>row.agent_class)).toEqual([planner.agentClass]);expect(after.nodes.filter(row=>row.kind==='reporting').map(row=>row.agent_class)).toEqual([selected.agentClass]);expect(after.nodes.filter(row=>row.kind==='condition')).toHaveLength(1);
   expect(after.assignments).toEqual([]);expect(after.reservations).toEqual([]);expect(after.usage).toEqual([]);expect(after.ledger).toEqual([]);expect(input).toEqual(held);
