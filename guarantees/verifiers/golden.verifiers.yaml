@@ -4834,3 +4834,43 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
     testName: "denies a missing current availability claim before every offer lane or seed grant mutation without changing original requests"
+  api.golden.reporting-selection-plan:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "retains one explicitly selected configured Reporter in the canonical applied Workday before activation without a second authority"
+  api.golden.reporting-selection-projection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "projects only the selected configured closeout Reporter while preserving every participating project planning contributor"
+  api.golden.reporting-selection-denials:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "denies omitted ambiguous foreign duplicate and moved reporting authority without replacing the captured selection"
+  api.golden.reporting-selection-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/reporting/reporting-selection-native.test.ts
+    testName: "native public preflight and start retain one configured joint Reporter before activation and preserve exact selection through denial and replay"
+  api.golden.reporting-selection-admission-seal-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/reporting/reporting-selection-native.test.ts
+    testName: "native public start refuses a different automatic Reporter introduced after fresh preflight instead of silently changing the retained closeout identity"
+  api.golden.reporting-eligibility-required-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/reporting/reporting-selection-native.test.ts
+    testName: "native public preflight denies a Workday with no configured closeout Reporter before any admission or receipt mutation"
+  api.golden.reporting-selection-cooperative-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/reporting/reporting-selection-native.test.ts
+    testName: "native public admission selects the configured closeout Reporter independently of cooperative planning filters without creating extra planning work"
+  api.golden.reporting-selection-cooperative-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/selection.test.ts
+    testName: "retains one standing reporting activity beside an exact cooperative selection without changing selected planning work or admitting an empty intersection"

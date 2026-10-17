@@ -32,3 +32,10 @@ describe('exact activity selection before living-node admission', () => {
 		});
 	}
 });
+
+it('retains one standing reporting activity beside an exact cooperative selection without changing selected planning work or admitting an empty intersection',()=>{
+ const closeout=definition('closeout','digest-writer',{planning:profile('writer'),reporting:profile('reporter')}),rows=[...classes,{id:'class-c',slug:'digest-writer',status:'active',handlerRefs:{agents:[closeout]}}],held=structuredClone(rows);
+ const selected=compileWorkdayAgentProfileSnapshot(rows,{agentSlugs:['architect'],activityTypes:['planning']});
+ expect(selected.agents.map(entry=>({id:entry.definition.id,activities:entry.activities}))).toEqual([{id:'sdk/architect',activities:['planning']},{id:'sdk/closeout',activities:['reporting']}]);
+ expect(()=>compileWorkdayAgentProfileSnapshot(rows,{agentSlugs:['architect'],activityTypes:['reviewing']})).toThrow(/no eligible/);expect(rows).toEqual(held);
+});

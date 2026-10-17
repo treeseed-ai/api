@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { appliedWorkdaySchema, executionEdgeSchema, executionNodeSchema,
 	type AgentDefinition, type ExecutionEdge, type ExecutionNode, type ExactEntityReference } from '@treeseed/sdk/agent-capacity';
-import { workdayParticipants, type WorkdayParticipant } from './workday-participants.ts';
+import { workdayParticipants, selectWorkdayReportingAgent, type WorkdayParticipant } from './workday-participants.ts';
 import { modelTurnEstimate } from './model-turn-estimate.ts';
 
 type Row = Record<string, unknown>;
@@ -34,9 +34,10 @@ export interface ActiveWorkdayProjectionSource {
 }
 
 function sourceRef(workday: ReturnType<typeof appliedWorkdaySchema.parse>): ExactEntityReference {
-	const { schemaVersion, id, teamId, executionMode, policyId, policyRevision, policySnapshot, startsAt, endsAt } = workday;
+	const { schemaVersion, id, teamId, executionMode, policyId, policyRevision, policySnapshot, startsAt, endsAt, reportingAgentId } = workday;
 	return { store: 'postgresql', model: 'workday', id, revision: policyRevision,
-		digest: digest({ schemaVersion, id, teamId, executionMode, policyId, policyRevision, policySnapshot, startsAt, endsAt }) };
+		digest: digest({ schemaVersion, id, teamId, executionMode, policyId, policyRevision, policySnapshot, startsAt, endsAt,
+			...(reportingAgentId === undefined ? {} : { reportingAgentId }) }) };
 }
 
 function edge(teamId: string, fromNodeId: string, toNodeId: string, provenance: ExecutionEdge['provenance'],
@@ -172,13 +173,16 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 				}
 			}
 		}
-		for (const projectId of projectIds) {
-			const candidates = Object.entries(input.profiles).filter(([key, definition]) =>
-				key === `${projectId}:${definition.agentClass}` && definition.activityProfiles.reporting);
-			if (candidates.length > 1) throw new Error(`Ambiguous reporting profile selection for project ${projectId}.`);
-			const reporter = candidates[0]?.[1];
-			const reporting = reporter?.activityProfiles.reporting;
-			if (!reporter || !reporting) continue;
+		const selectedReporter = selectWorkdayReportingAgent(Object.entries(input.profiles).flatMap(([key, definition]) =>
+			projectIds.filter(projectId => key === `${projectId}:${definition.agentClass}`).map(projectId => ({ projectId, definition }))), workday.reportingAgentId);
+		if (selectedReporter) {
+			const { projectId, definition: reporter } = selectedReporter;
+			if (workday.reportingAgentId !== undefined) {
+				const frozen = array(record(record(source.parameters.agentProfilesByProjectId)[projectId]).agents)
+					.map(entry => record(entry).definition).filter(definition => text(record(definition).id) === workday.reportingAgentId);
+				if (frozen.length !== 1 || stable(frozen[0]) !== stable(reporter)) throw new Error('The selected reporting profile differs from its frozen Workday authority.');
+			}
+			const reporting = reporter.activityProfiles.reporting!;
 			const reporterId = `reporting:${workday.id}:${projectId}/${reporter.id}`;
 			const report = executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1', id: reporterId,
 				teamId: input.teamId, projectId, workdayId: workday.id, kind: 'reporting', pairRole: null,
