@@ -10,7 +10,7 @@ const healthy=(value:unknown):boolean|null=>{if(value===undefined||value===null)
 
 /** Existing audit is observation history; the session remains the supply authority. */
 export async function observeAvailabilitySession(database:CapacityGovernanceDatabase,session:ProviderAvailabilitySession):Promise<void>{
- const now=session.status==='closed'?session.closedAt:session.refreshedAt;
+ const now=(session.status==='closed'||session.status==='expired')?session.closedAt:session.refreshedAt;
  const clocks=[session.openedAt,session.refreshedAt,session.expiresAt,session.snapshot.availableFrom,...(session.closedAt?[session.closedAt]:[]),...(session.snapshot.availableUntil?[session.snapshot.availableUntil]:[])];
  if(!clocks.every(value=>typeof value==='string'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value)||Date.parse(session.openedAt)>Date.parse(session.refreshedAt)||Date.parse(session.expiresAt)<=Date.parse(session.refreshedAt)||session.closedAt&&Date.parse(session.closedAt)<Date.parse(session.refreshedAt)||![session.snapshot.maxConcurrentWorkers,session.snapshot.availableWorkers,session.snapshot.reservedWorkers,session.snapshot.borrowedWorkers].every(value=>Number.isSafeInteger(value)&&value>=0))
   throw new CapacityGovernanceError('provider_availability_observation_invalid','Original lifecycle clocks and measured worker quantities required.',500);
