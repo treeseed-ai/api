@@ -1,3 +1,4 @@
+import {CapacityAuditRepository} from '../../../capacity/repositories/support/audit.ts';
 import { decodeCapacityPageCursor, normalizeCapacityPageLimit } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGrantStatus } from '@treeseed/sdk/agent-capacity';
 import { optionalAvailabilityStatus } from '../../../capacity/services/accounts/availability-session-service.ts';
@@ -55,8 +56,7 @@ export function createCapacityQueryService(store: any) {
 		},
 		async audit(principal: CapacityPrincipal, teamId: string, query: Record<string, unknown>) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
-			const { limit } = page(query);
-			return { items: await store.all(`SELECT * FROM capacity_audit_events WHERE team_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`, [teamId, limit]), page: { limit, hasMore: false, nextCursor: null } };
+			try{return {...await new CapacityAuditRepository(store).listRowsPage(teamId,{limit:query.limit,cursor:query.cursor})};}catch(error){translate(error);}
 		},
 		async lanes(principal: CapacityPrincipal, teamId: string) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');

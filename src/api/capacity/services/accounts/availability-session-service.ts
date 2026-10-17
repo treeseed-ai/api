@@ -78,12 +78,14 @@ export class AvailabilitySessionService {
 	}
 
 	async close(principal: ProviderAvailabilityPrincipal, sessionId: string) {
-		await this.assertMembership(principal);
-		const existing = await this.repository.get(principal.teamId, sessionId);
+		return capacityTransaction(this.database,async database=>{const owner=new AvailabilitySessionService(database);
+		await owner.assertMembership(principal);
+		const existing = await owner.repository.get(principal.teamId, sessionId);
 		if (!existing || existing.membershipId !== principal.membershipId || existing.providerId !== principal.capacityProviderId) return null;
 		if (existing.status === 'closed' || existing.status === 'expired') return existing;
 		if (existing.status !== 'open' && existing.status !== 'draining') throw new CapacityGovernanceError('provider_availability_close_conflict', `Availability session in ${existing.status} state cannot be closed.`, 409, { sessionId });
-		return this.repository.close(principal.teamId, principal.membershipId, sessionId);
+		return owner.repository.close(principal.teamId, principal.membershipId, sessionId);
+		});
 	}
 
 	private async accountingTransaction<T>(principal: ProviderAvailabilityPrincipal, write: AvailabilitySessionWrite,

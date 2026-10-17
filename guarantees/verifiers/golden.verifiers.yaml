@@ -4804,3 +4804,33 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/native-inventory.test.ts
     testName: "requires native absence of every retired table including source candidates without accepting ambiguous catalog or resolution results"
+  api.golden.provider-availability-history-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
+    testName: "publishes the committed provider availability transition into existing scoped capacity audit history without private adapter observations"
+  api.golden.capacity-audit-pagination-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
+    testName: "public capacity audit preserves raw records and complete cursor pagination including equal-clock identities"
+  api.golden.provider-availability-fault-sql-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
+    testName: "executes the exact owning native availability fault SQL with missing interrupted and altered audit writes before original source retry"
+  api.golden.provider-availability-expiry-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
+    testName: "retains each actual runtime expiry in the original availability audit clock and reports only newly expired sessions through unchanged replay"
+  api.golden.provider-availability-offer-guard-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
+    testName: "retains exact capability offer bytes on stale foreign or terminal availability publication before original guarded retry"
+  api.golden.provider-availability-current-claim-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-history.test.ts
+    testName: "denies a missing current availability claim before every offer lane or seed grant mutation without changing original requests"
