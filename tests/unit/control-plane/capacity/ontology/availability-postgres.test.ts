@@ -191,7 +191,7 @@ describe('provider accounting in disposable PostgreSQL', () => {
       if(!originalHealth)throw new Error('Original configured health observation required');
       Object.assign(originalHealth.modelUsage,{healthy:false});
       const refreshBefore=structuredClone(refreshInput),failedAvailability:Array<{mode:string;cause:unknown;unchanged:boolean}>=[];
-      for(const mode of ['missing','interrupted','altered']){
+      for(const mode of ['missing','interrupted','altered']as const){
         await f.left.pool.query(availabilityObservationFaultSql(mode));
         await f.left.pool.query('CREATE TRIGGER retained_availability_observation_fault BEFORE INSERT ON capacity_audit_events FOR EACH ROW EXECUTE FUNCTION retained_availability_observation_fault()');
         let cause:unknown;
