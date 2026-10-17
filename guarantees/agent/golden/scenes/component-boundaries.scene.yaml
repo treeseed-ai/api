@@ -2849,3 +2849,12 @@ workflow:
   - id: reporting-selection-admission-seal-native
     action: { verifier: api.golden.reporting-selection-admission-seal-native }
     expect: { status: passed }
+  - id: reporting-eligibility-required-native
+    action: { verifier: api.golden.reporting-eligibility-required-native }
+    expect: { status: passed }
+  - id: reporting-selection-cooperative-native
+    action: { verifier: api.golden.reporting-selection-cooperative-native }
+    expect: { status: passed }
+  - id: reporting-selection-cooperative-unit
+    action: { verifier: api.golden.reporting-selection-cooperative-unit }
+    expect: { status: passed }
