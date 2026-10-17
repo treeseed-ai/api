@@ -1,3 +1,5 @@
+import {upsertCapacityExecutionProviderOperations} from '../../../../../src/api/capacity/repositories/capacity/providers/execution-provider.ts';
+import {translateControlPlaneSqlToPostgres} from '../../../../../src/api/support/control-plane-postgres.ts';
 import {maintainCapacityRuntimeRetention} from '../../../../../src/api/capacity/services/runtime/runtime-retention-service.ts';
 import {PGlite} from '@electric-sql/pglite';
 import {availabilityObservationFaultSql} from './fixtures/availability-observation.ts';
@@ -87,4 +89,19 @@ it('retains each actual runtime expiry in the original availability audit clock 
  const held=structuredClone({session,audits});expect((await maintainCapacityRuntimeRetention(database,now)).expiredAvailabilitySessions).toBe(0);expect({session,audits}).toEqual(held);
  // Transaction mechanics and independent native concurrency are covered by
  // the owning PostgreSQL case; this unit controls only the database protocol.
+});
+
+it('retains exact capability offer bytes on stale foreign or terminal availability publication before original guarded retry',async()=>{
+ const {at,input}=availabilityHistoryInput(),database=new PGlite(),later='2026-10-17T00:00:10.000Z';try{
+  await database.exec("CREATE TABLE capacity_provider_availability_sessions (id TEXT,membership_id TEXT,team_id TEXT,sequence INTEGER,status TEXT);CREATE TABLE execution_capability_offers (capacity_provider_id TEXT,execution_provider_id TEXT,offer_id TEXT,offer_digest TEXT,offer_json TEXT,status TEXT,last_seen_at TEXT,PRIMARY KEY(capacity_provider_id,offer_id));INSERT INTO capacity_provider_availability_sessions VALUES ('session','membership','team',2,'open')");
+  const base={providerId:input.providerId,executionProviders:input.executionProviders,providerNativeLimits:input.nativeLimits,createdAt:at},guard={sessionId:'session',membershipId:'membership',teamId:'team',expectedSequence:2};
+  const publish=async(value:Parameters<typeof upsertCapacityExecutionProviderOperations>[0])=>{const operations=upsertCapacityExecutionProviderOperations(value).filter(item=>item.query.startsWith('INSERT INTO execution_capability_offers'));expect(operations).toHaveLength(1);for(const operation of operations)await database.query(translateControlPlaneSqlToPostgres(operation.query),operation.params);};
+  await publish(base);const held=(await database.query('SELECT * FROM execution_capability_offers')).rows;
+  for(const denied of[{...guard,expectedSequence:1},{...guard,sessionId:'foreign'},{...guard,membershipId:'foreign'},{...guard,teamId:'foreign'}]){await publish({...base,createdAt:later,availabilityGuard:denied});expect((await database.query('SELECT * FROM execution_capability_offers')).rows).toEqual(held);}
+  for(const status of['closed','expired','draining']){await database.query('UPDATE capacity_provider_availability_sessions SET status=$1',[status]);await publish({...base,createdAt:later,availabilityGuard:guard});expect((await database.query('SELECT * FROM execution_capability_offers')).rows).toEqual(held);}
+  await database.query("UPDATE capacity_provider_availability_sessions SET status='open'");await publish({...base,createdAt:later,availabilityGuard:guard});expect((await database.query('SELECT * FROM execution_capability_offers')).rows).toEqual(held.map(value=>({...value,last_seen_at:later})));
+  await database.query("UPDATE execution_capability_offers SET status='context_overflow'");const exact=(await database.query('SELECT * FROM execution_capability_offers')).rows;await publish({...base,createdAt:later,availabilityGuard:guard});expect((await database.query('SELECT * FROM execution_capability_offers')).rows).toEqual(exact);
+ }finally{await database.close();}
+ // Real generated SQL grammar and owning guards, with controlled local data;
+ // independent PostgreSQL contention remains the original native case.
 });
