@@ -63,7 +63,7 @@ export async function ensureProjectSeedDependencies({ action, store, ids, manife
 	const provider = await reconcileLibraryProvider({ store, teamId, projectId, projectSlug:action.payload.slug,
 		owner:action.payload.library.owner,name:action.payload.library.name,
 		visibility:action.payload.library.repositoryPolicy?.visibility ?? 'private',
-		lifecycle:action.payload.library.repositoryPolicy?.lifecycle ?? 'adopt-only',env:env ?? process.env,fetchImpl:store.config?.fetchImpl,repositoryAuthority });
+		lifecycle:action.payload.library.repositoryPolicy?.lifecycle ?? 'adopt',env:env ?? process.env,fetchImpl:store.config?.fetchImpl,repositoryAuthority });
 	repairs.push({ kind: 'libraryProvider', projectId, repository: `${action.payload.library.owner}/${action.payload.library.name}`, heads: provider.heads });
 	if (localOnly === true) {
 		try {

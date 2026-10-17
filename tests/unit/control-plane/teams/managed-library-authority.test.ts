@@ -38,3 +38,31 @@ describe('Team Library managed credential custody', () => {
 		expect(mocks.provider).not.toHaveBeenCalled(); expect(mocks.binding).not.toHaveBeenCalled();
 	});
 });
+
+it('retains canonical public adopt authority without creating or seeding a replacement repository',async()=>{
+ const input=store(),policy={visibility:'public',lifecycle:'adopt'};
+ input.ensureManagedTeamLibraryProject.mockResolvedValue({id:'project-1',metadata:{library:Object.assign({repositoryName:managedTeamLibraryRepositoryName('team-1')},{repositoryPolicy:policy})}});
+ const before=structuredClone(policy);
+ const result=await reconcileManagedTeamLibrary(input,'team-1',{});
+ expect(mocks.provider).toHaveBeenCalledWith(expect.objectContaining({visibility:'public',lifecycle:'adopt',seedFiles:undefined,repositoryAuthority:authority}));
+ expect(result.state).toBe('replicating');expect(policy).toEqual(before);
+});
+
+it('native managed repository metadata keeps canonical adopt authority through credential denial and a measured independent readback',async()=>{
+ const f=await postgresGraph();
+ try{
+  const store=new ControlPlaneStore({TREESEED_ENVIRONMENT:'test'},f.left);store.initializationPromise=Promise.resolve();
+  const project=await store.ensureManagedTeamLibraryProject('team');
+  const metadata={...project.metadata,library:{...project.metadata.library,owner:'example',repositoryName:managedTeamLibraryRepositoryName('team'),repositoryPolicy:{visibility:'public',lifecycle:'adopt'}}};
+  await f.left.pool.query('UPDATE projects SET metadata_json=$1 WHERE id=$2',[JSON.stringify(metadata),project.id]);
+  const snapshot=async()=>({projects:(await f.right.pool.query('SELECT * FROM projects ORDER BY id')).rows,teams:(await f.right.pool.query('SELECT * FROM teams ORDER BY id')).rows});
+  const before=await snapshot();mocks.authority.mockRejectedValueOnce(new Error('controlled credential denial'));
+  await expect(reconcileManagedTeamLibrary(store,'team',{})).rejects.toThrow('controlled credential denial');expect(await snapshot()).toEqual(before);
+  const result=await reconcileManagedTeamLibrary(store,'team',{});
+  expect(result.state).toBe('replicating');expect(mocks.provider).toHaveBeenLastCalledWith(expect.objectContaining({visibility:'public',lifecycle:'adopt',seedFiles:undefined}));
+  const observed=JSON.parse((await f.right.pool.query('SELECT metadata_json FROM projects WHERE id=$1',[project.id])).rows[0].metadata_json);
+  expect(observed.library.repositoryPolicy).toEqual({visibility:'public',lifecycle:'adopt'});
+  expect(observed.library.status).toBe('replicating');expect(observed.provisioning.state).toBe('replicating');
+  expect(await f.snapshot()).toEqual({nodes:[],edges:[],revisions:[],assignments:[],reservations:[]});
+ }finally{await f.close();}
+});

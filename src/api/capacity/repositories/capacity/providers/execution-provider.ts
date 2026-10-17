@@ -117,6 +117,7 @@ export function upsertCapacityExecutionProviderOperations(input: {
 					metadata_json, created_at, updated_at
 				) SELECT ?, ?, ?, ?, ?, ?, ?, CAST(? AS integer), ?, CAST(? AS integer), CAST(? AS integer), CAST(? AS boolean), CAST(? AS boolean), CAST(? AS integer), CAST(? AS integer), ?, ?, ?${guardClause}
 				ON CONFLICT (capacity_provider_id, id) DO UPDATE SET
+					execution_provider_id = EXCLUDED.execution_provider_id,
 					display_name = EXCLUDED.display_name,
 					purpose = EXCLUDED.purpose,
 					status = EXCLUDED.status,

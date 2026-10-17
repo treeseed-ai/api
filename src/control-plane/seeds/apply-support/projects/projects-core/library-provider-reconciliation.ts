@@ -60,7 +60,7 @@ type RepositoryAuthority = { token: string; authorityId: string; serviceConnecti
 
 export async function reconcileLibraryProvider(input: {
 	store: any; teamId: string; projectId: string; projectSlug: string; owner: string; name: string; visibility: 'public'|'private';
-	lifecycle: 'create-or-adopt'|'adopt-only'; env: NodeJS.ProcessEnv; fetchImpl?: typeof fetch;seedFiles?:Record<string,string>;
+	lifecycle: 'create-or-adopt'|'adopt'; env: NodeJS.ProcessEnv; fetchImpl?: typeof fetch;seedFiles?:Record<string,string>;
 	repositoryAuthority?: RepositoryAuthority;
 }) {
 	const fetchImpl = input.fetchImpl ?? fetch;

@@ -44,7 +44,7 @@ export type SeedProjectContentPublishTarget = {
 
 export type SeedRepositoryPolicy = {
 	visibility: 'public' | 'private';
-	lifecycle: 'create-or-adopt' | 'adopt-only';
+	lifecycle: 'create-or-adopt' | 'adopt';
 	deletionPolicy: 'retain' | 'archive';
 	defaultBranch: 'main';
 	stagingBranch: 'staging';
