@@ -16,9 +16,10 @@ it('publishes the committed provider availability transition into existing scope
   execution_providers_json:JSON.stringify(input.executionProviders),capabilities_json:JSON.stringify(input.capabilities),
   native_limits_json:'{}',runner_pressure_json:'{}',constraints_json:'{}',metadata_json:'{}'};
  const operations:CapacityDatabaseOperation[]=[],before=structuredClone(input);
- const database:CapacityGovernanceDatabase={ensureInitialized:vi.fn(async()=>{}),run:vi.fn(async()=>{}),
+ const all=vi.fn<CapacityGovernanceDatabase['all']>().mockResolvedValue([]);
+ const database:CapacityGovernanceDatabase={ensureInitialized:vi.fn(async()=>{}),run:vi.fn(async(query:string,params:unknown[]=[])=>{operations.push({query,params});if(query.includes('INSERT INTO capacity_audit_events')){const [id,team_id,capacity_provider_id,membership_id,actor_type,actor_id,action,resource_type,resource_id,request_id,idempotency_key,metadata_json,created_at]=params;all.mockResolvedValue([{id,team_id,capacity_provider_id,membership_id,actor_type,actor_id,action,resource_type,resource_id,request_id,idempotency_key,metadata_json,created_at}]);}}),
   first:vi.fn<CapacityGovernanceDatabase['first']>().mockResolvedValue(row),
-  all:vi.fn<CapacityGovernanceDatabase['all']>().mockResolvedValue([{id:'workday',team_id:'team',status:'running'}]),
+  all,
   batch:vi.fn(async batch=>{operations.push(...structuredClone(batch));return batch.map(()=>({results:[]}));})};
  const result=await new AvailabilitySessionRepository(database).open(input,[]);
  expect(result).toMatchObject({id:'session',sequence:1,status:'open'});

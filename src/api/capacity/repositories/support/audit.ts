@@ -146,6 +146,18 @@ export class CapacityAuditRepository {
 		limit?: unknown;
 		cursor?: unknown;
 	} = {}): Promise<CapacityPage<CapacityAuditEvent>> {
+		const result=await this.listRowsPage(teamId,input);
+		return {...result,items:result.items.map(auditEvent)};
+	}
+	async listRowsPage(teamId: string, input: {
+		providerId?: unknown;
+		membershipId?: unknown;
+		action?: unknown;
+		resourceType?: unknown;
+		resourceId?: unknown;
+		limit?: unknown;
+		cursor?: unknown;
+	} = {}): Promise<CapacityPage<Record<string, unknown>>> {
 		await this.database.ensureInitialized();
 		let limit: number;
 		let cursor;
@@ -167,17 +179,17 @@ export class CapacityAuditRepository {
 			}
 		}
 		if (cursor) {
-			clauses.push('(created_at < ? OR (created_at = ? AND id > ?))');
+			clauses.push('(created_at < ? OR (created_at = ? AND id < ?))');
 			values.push(cursor.createdAt, cursor.createdAt, cursor.id);
 		}
 		const rows = await this.database.all(
-			`SELECT * FROM capacity_audit_events WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC, id ASC LIMIT ?`,
+			`SELECT * FROM capacity_audit_events WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC, id DESC LIMIT ?`,
 			[...values, limit + 1],
 		);
 		const selected = rows.slice(0, limit);
 		const last = selected.at(-1);
 		return {
-			items: selected.map(auditEvent),
+			items: selected,
 			page: {
 				limit,
 				hasMore: rows.length > limit,
