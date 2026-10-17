@@ -13,7 +13,7 @@ type WorkdayProject,
 import { resolveWorkdayAgentProfileSnapshot } from '../policy/workday-agent-profile-policy.ts';
 import { reconcileTreeDxRefSignals } from '../../../treedx/repositories/treedx-ref-signal-reconciler.ts';
 import { reconcileCommunicationExecutionGraph, reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
-import { workdayParticipants } from '../../../../policy/execution/workday-participants.ts';
+import { workdayParticipants, selectWorkdayReportingAgent } from '../../../../policy/execution/workday-participants.ts';
 import { readExactProposal } from '../../../../../governance/executable-proposal.ts';
 
 type JsonRecord = Record<string, unknown>;
@@ -154,6 +154,8 @@ async function resolveCapacityWorkdayPreflight(
 		proposalsByProjectId: Object.fromEntries(projects.map(project => [project.id,
 			selectedProposals.filter(proposal => proposal.projectId === project.id).map(proposal => proposal.definition)])),
 	}).map((participant) => participant.id);
+	const reportingAgent = selectWorkdayReportingAgent([...agentProfiles].flatMap(([projectId, snapshot]) =>
+		snapshot.agents.map(({ definition }) => ({ projectId, definition }))), parameters.reportingAgentId);
 	const appliedPlan = compileWorkday({ id: run.id, teamId: run.teamId,
 		executionMode,
 		activityTypes: Array.isArray(record(parameters.agentSelection).activityTypes)
@@ -165,7 +167,7 @@ async function resolveCapacityWorkdayPreflight(
 			planningTurnMaximumSeconds: Number(parameters.planningTurnMaximumSeconds ?? 180),
 			communicationConcurrency: Math.max(1, Number(parameters.communicationConcurrency ?? 1)),
 			...canonicalWorkdayShares(parameters, projects) },
-		agentIds, startsAt: startedAt });
+		agentIds, startsAt: startedAt, ...(reportingAgent ? { reportingAgentId: reportingAgent.definition.id } : {}) });
 	// Turn ceilings are not reservations. Admission sizes each turn against supply.
 	return { parameters,executionMode,providerId,startedAt,environment,membership,projects,contexts,proposalContexts,agentProfiles,time,appliedPlan };
 }

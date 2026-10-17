@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { CapacityGovernanceError } from '../../database.ts';
 import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
 
 type Row = Record<string, unknown>;
@@ -61,4 +62,13 @@ export function workdayParticipants(parameters: Row): WorkdayParticipant[] {
 		}
 	}
 	return participants.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+/** Resolve one configured closeout profile without changing planning participation. */
+export function selectWorkdayReportingAgent(candidates: Array<{projectId: string; definition: AgentDefinition}>, selection?: unknown) {
+ const eligible=candidates.filter(candidate=>candidate.definition.activityProfiles.reporting);
+ const selected=selection===undefined?eligible:eligible.filter(candidate=>candidate.definition.id===selection);
+ if((selection!==undefined && selected.length!==1)||selected.length>1) throw new CapacityGovernanceError(
+  'capacity_workday_reporting_selection_invalid','Select exactly one eligible configured reporting agent from the participating projects.',409);
+ return selected[0] ?? null;
 }

@@ -136,6 +136,7 @@ export class WorkdayPreflightService {
 				profileId:intent.profileId,projectSlugs:intent.projects==='all'?[]:intent.projects,
 				projects:intent.projects==='all'?[]:intent.projects,durationSeconds,maximumConcurrency:maxConcurrency,
 				...(intent.agentSelection?{agentSelection:intent.agentSelection}:{}),
+				...(intent.reportingAgentId === undefined ? {} : { reportingAgentId:intent.reportingAgentId }),
 				...(intent.proposalIds?.length?{proposalIds:intent.proposalIds}:{}),
 				...(intent.decisionIds?.length?{decisionIds:intent.decisionIds}:{}),
 				...(intent.continueFromWorkdayId?{continueFromWorkdayId:intent.continueFromWorkdayId}:{}),
@@ -209,7 +210,7 @@ export class WorkdayPreflightService {
 		const appliedPlan=record(projection.appliedPlan);
 		const profileGeneration=integer(appliedPlan.policyRevision,1);
 		const state:WorkdayPreflightObservation={
-			profileGeneration, profileDigest:digest({profileId:intent.profileId,policy:appliedPlan.policySnapshot,
+			profileGeneration, profileDigest:digest({profileId:intent.profileId,policy:appliedPlan.policySnapshot,reportingAgentId:appliedPlan.reportingAgentId,
 				projects:(Array.isArray(projection.projects)?projection.projects.map(record):[]).map(project=>({
 					id:project.id,repositoryId:project.repositoryId,contentRevision:project.contentRevision,agentProfileRevision:project.agentProfileRevision,
 				}))}), demandSetDigest:digest({selectedDemands,objectives:intent.objectiveFilters??[],proposalIds:intent.proposalIds??[],decisionIds:intent.decisionIds??[]}),
