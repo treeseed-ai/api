@@ -4779,3 +4779,8 @@ verifiers:
     kind: vitestCase
     testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-lifecycle-observations.test.ts
     testName: retains initial native applied-plan creation as one null-to-active observation before every later transition and exact replay
+  api.golden.provider-configured-model-policy-readback:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-accounting-status.test.ts
+    testName: "retains original typed configured model policy without exposing private adapter observations or repairing invalid model authority"

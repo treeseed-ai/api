@@ -2819,3 +2819,6 @@ workflow:
       verifier: api.golden.component.workday-initial-plan-observation
     expect:
       status: passed
+  - id: provider-configured-model-policy-readback
+    action: { verifier: api.golden.provider-configured-model-policy-readback }
+    expect: { status: passed }

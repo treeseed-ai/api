@@ -1,3 +1,4 @@
+import {sandboxAssignmentSchema,type SandboxAssignment} from '@treeseed/sdk/capacity-provider';
 import type {
 	CapacityProviderIdentityRotationRequest,
 	CapacityProviderSignedProof,
@@ -54,6 +55,7 @@ function jsonObject(value: unknown): Record<string, unknown> {
 /** Expose the existing provider report, not credentials or arbitrary adapter metadata. */
 export function providerAccountingStatus(value: unknown): Array<{
 	id: unknown; status: unknown; runtimeBuild: unknown;
+	modelPolicy?: SandboxAssignment['modelPolicy'];
 	nativeLimits: CapabilityAccountingLimits | null;
 	accountingObservation: { modelUsage: Record<string, unknown>; capabilityUsage: Record<string, Record<string, unknown>> };
 }> {
@@ -67,7 +69,9 @@ export function providerAccountingStatus(value: unknown): Array<{
 	return adapters.map(input => {
 		const row = jsonObject(input), report = jsonObject(row.accountingObservation);
 		const limits = capabilityAccountingLimitsSchema.safeParse(row.nativeLimits);
+		const model=sandboxAssignmentSchema.shape.modelPolicy.safeParse(jsonObject(row.observations).modelPolicy);
 		return { id: row.id, status: row.status, runtimeBuild: row.runtimeBuild,
+			...(model.success?{modelPolicy:model.data}:{}),
 			nativeLimits: limits.success ? { modelConfigurationId: limits.data.modelConfigurationId,
 				dailyActiveSecondsLimit: limits.data.dailyActiveSecondsLimit, capabilityLimits: limits.data.capabilityLimits } : null,
 			accountingObservation: { modelUsage: observation(report.modelUsage),
