@@ -158,7 +158,7 @@ describe('canonical single report at the real lifecycle and SQL boundary', () =>
             expect((await query("SELECT status,closed_at FROM capacity_provider_availability_sessions WHERE id='sdk-session'")).rows).toEqual([{status:'closed',closed_at:now}]);
             expect((await query("SELECT * FROM capacity_provider_availability_sessions WHERE id='unrelated-session'")).rows).toEqual(unrelated);
             const availabilityAudit=(await query("SELECT * FROM capacity_audit_events ORDER BY id")).rows;expect(availabilityAudit).toHaveLength(1);
-            expect(availabilityAudit[0]).toMatchObject({id:'sdk-session:1:closed',team_id:'team',capacity_provider_id:'provider',membership_id:'membership',actor_type:'system',actor_id:null,action:'provider.availability.updated',resource_type:'provider-availability-session',resource_id:'sdk-session',idempotency_key:'1:closed',created_at:now});
+            expect(availabilityAudit[0]).toMatchObject({id:createHash('sha256').update('provider.availability.updated:sdk-session:1:closed').digest('base64url'),team_id:'team',capacity_provider_id:'provider',membership_id:'membership',actor_type:'system',actor_id:null,action:'provider.availability.updated',resource_type:'provider-availability-session',resource_id:'sdk-session',idempotency_key:'1:closed',created_at:now});
             expect(JSON.parse(String(availabilityAudit[0]!.metadata_json))).toMatchObject({availabilitySessionId:'sdk-session',sequence:1,status:'closed',openedAt:now,refreshedAt:now,closedAt:now});
 			expect(result).toMatchObject({ status: 'completed', plan: { state: 'ended', reportRef } });
 			expect(run).toEqual(original);
