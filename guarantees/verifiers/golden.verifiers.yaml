@@ -4970,3 +4970,27 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/communication/discussion-supply-postgres.test.ts
     testName: "uses reported capability lanes rather than the retired materialized lane owner"
+
+  api.golden.simulation-proposal-frozen-contract:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/proposal-workday-custody.test.ts
+    testName: "revises private proposal bytes using only the original frozen governed contract even after the library moves"
+
+  api.golden.external-publication-native-index:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-publication-native.test.ts
+    testName: "indexes the actual native remote ref while retaining divergent local authoring through the original runner"
+
+  api.golden.external-publication-index-custody:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/publication-scope.test.ts
+    testName: "indexes the verified external native ref without replacing local authoring; missing remote custody is denied (true)"
+
+  api.golden.external-publication-missing-custody:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/publication-scope.test.ts
+    testName: "indexes the verified external native ref without replacing local authoring; missing remote custody is denied (false)"
