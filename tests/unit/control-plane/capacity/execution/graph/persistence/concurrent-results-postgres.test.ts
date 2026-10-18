@@ -5,7 +5,7 @@ import pg from 'pg';
 import { describe, expect, it } from 'vitest';
 import { createControlPlanePostgresDatabase } from '../../../../../../../src/api/support/control-plane-postgres.ts';
 import { commitLivingExecutionLifecycle } from '../../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/execution/living-execution-lifecycle.ts';
-import { persistExecutionGraph, createExecutionGraphService } from '../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { persistExecutionGraph, createExecutionGraphService, reconcileCommunicationExecutionGraph } from '../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { agentDefinitionSchema, type ExecutionNode, type ExecutionEdge, type GraphRevision } from '@treeseed/sdk/agent-capacity';
 import { projectCommunicationInvocations } from '../../../../../../../src/api/capacity/policy/execution/communication-execution-projector.ts';
 import { digest as graphDigest, type TeamGraph } from '../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
@@ -118,6 +118,18 @@ describe('concurrent terminal graph revision custody', () => {
 				const held = structuredClone(retained); expect(() => verifyNativeCommunicationEdges(nativeNodes, retained, scope, ids)).toThrow('ACCEPTANCE_NATIVE_CHAT_EDGE');
 				expect(retained).toEqual(held); expect(await edges()).toEqual(held);
 				expect(previous.nodes.filter(node => node.kind !== 'communication')).toEqual(current.nodes);
+				const beforeRetirement=await peer.query('SELECT revision,changed_source_refs_json FROM execution_graph_revisions WHERE team_id=$1 ORDER BY revision',['team']);
+				const retired=await reconcileCommunicationExecutionGraph(store,'team');
+				expect(retired).toMatchObject({revision:previous.revision+1,changedSourceRefs:projected.changedSourceRefs,changes:{stale:ids}});
+				const closed=await graphService.show(principal,'team',{});
+				expect(closed.nodes.filter(node=>node.kind!=='communication')).toEqual(current.nodes);
+				expect(closed.nodes.filter(node=>node.kind==='communication')).toEqual(projected.nodes.map(node=>expect.objectContaining({id:node.id,status:'stale',sourceRef:node.sourceRef})));
+				const afterRetirement=await peer.query('SELECT revision,changed_source_refs_json FROM execution_graph_revisions WHERE team_id=$1 ORDER BY revision',['team']);
+				expect(afterRetirement.rows.slice(0,-1)).toEqual(beforeRetirement.rows);
+				expect(JSON.parse(afterRetirement.rows.at(-1)!.changed_source_refs_json)).toEqual(projected.changedSourceRefs);
+				const replay=await Promise.all([reconcileCommunicationExecutionGraph(store,'team'),reconcileCommunicationExecutionGraph(store,'team')]);
+				expect(replay).toEqual([retired,retired]);
+				expect((await peer.query('SELECT revision,changed_source_refs_json FROM execution_graph_revisions WHERE team_id=$1 ORDER BY revision',['team'])).rows).toEqual(afterRetirement.rows);
 			} finally { await peer.end(); }
 
 		} finally {

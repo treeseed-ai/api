@@ -251,8 +251,11 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 		: [...(proposalProjection?.nodes ?? []), ...workdayProjection.nodes, ...communicationProjection.nodes, ...frozenNodes];
 	const edges = scope === 'communication' ? current.edges : [...(proposalProjection?.edges ?? []), ...workdayProjection.edges, ...current.edges.filter(
 		(edge) => frozenNodeIds.has(edge.fromNodeId) || frozenNodeIds.has(edge.toNodeId))];
+	const projectedNodeIds = new Set(nodes.map((node) => node.id));
 	const changedSourceRefs = [...new Map([...(proposalProjection?.revision.changedSourceRefs ?? []),
 		...workdayProjection.changedSourceRefs, ...communicationProjection.changedSourceRefs,
+		// A retired source still governs the transition after leaving the active inventory.
+		...current.nodes.filter((node) => !projectedNodeIds.has(node.id)).map((node) => node.sourceRef),
 		...(scope === 'team' && !sources.length && !workdays.length && !communications.length
 			? current.nodes.map((node) => node.sourceRef) : [])]
 		.map((reference) => [stable(reference), reference])).values()];
