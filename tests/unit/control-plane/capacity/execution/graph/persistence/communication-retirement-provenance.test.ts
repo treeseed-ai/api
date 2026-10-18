@@ -1,8 +1,8 @@
 import {describe,expect,it,vi} from 'vitest';
-import {reconcileCommunicationExecutionGraph} from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import {reconcileCommunicationExecutionGraph} from '../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 
 const {persist}=vi.hoisted(()=>({persist:vi.fn(async (_store:unknown,_graph:unknown,_current:unknown,receipt:unknown)=>receipt)}));
-vi.mock('../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-persistence.ts',()=>({persistExecutionGraph:persist}));
+vi.mock('../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-persistence.ts',()=>({persistExecutionGraph:persist}));
 
 describe('communication-only retirement authority',()=>{
  it.each(['ready','assigned'] as const)('retains the exact source of the last %s communication when no active invocation remains',async status=>{
