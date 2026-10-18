@@ -2916,3 +2916,10 @@ workflow:
   - id: native-seconds-postgres
     action: { verifier: api.golden.native-seconds-postgres }
     expect: { status: passed }
+
+  - id: reviewed-ref-promotion-unit
+    action: { verifier: api.golden.reviewed-ref-promotion-unit }
+    expect: { status: passed }
+  - id: reviewed-ref-promotion-native
+    action: { verifier: api.golden.reviewed-ref-promotion-native }
+    expect: { status: passed }

@@ -60,7 +60,7 @@ export function treeDxOperationScope(operation: AdoptedOperation, input: { path?
 	return {
 		repoIds: [...new Set([...strings(['repoId', 'repo_id', 'repositoryId', 'repository_id']), ...fallbackRepositoryIds])],
 		capabilities: [...operation.requiredCapabilities],
-		refs: [...new Set(strings(['ref', 'refs', 'baseRef', 'targetRef', 'sourceRef']))],
+		refs: [...new Set(strings(['ref', 'refs', 'baseRef', 'targetRef', 'sourceRef', 'destinationRef']))],
 		paths: [...new Set(scopedPaths)],
 	};
 }

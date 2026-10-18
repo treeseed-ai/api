@@ -4930,3 +4930,14 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/accounting/architecture/accounting-history-postgres.test.ts
     testName: "native PostgreSQL settles canonical whole seconds with exact fractional provider measurements once across independent connections and replay"
+
+  api.golden.reviewed-ref-promotion-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/upstream-operation.test.ts
+    testName: "delegates only the exact source and destination branch refs for reviewed authoring promotion"
+  api.golden.reviewed-ref-promotion-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/authority/architecture/reviewed-promotion-native.test.ts
+    testName: "promotes only the exact two signed branch refs and preserves native denial stale concurrency and replay custody"
