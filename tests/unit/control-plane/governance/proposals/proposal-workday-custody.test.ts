@@ -22,12 +22,12 @@ function fixture(mode = 'simulation') {
 		appliedPlan: { state: 'active', endsAt: '2099-01-01T00:00:00.000Z' }, scheduledProjectIds: ['project-1'], proposalIds: ['proposal-1'],
 	} };
 	vi.spyOn(CapacityWorkdayRunRepository.prototype, 'get').mockResolvedValue(run as never);
-	const client = { createWorkspace: vi.fn(async (_request: { branchName?: string; baseRef?: string }) => ({ workspaceId: 'workspace-1', baseCommitSha: base })),
-		readRepositoryFiles: vi.fn(async () => ({ resolvedRef: base, files: [{ path: '.treeseed/governance/proposal-types/implementation.yaml', content: JSON.stringify({
+	const client = { createWorkspace: vi.fn(async (request: { branchName?: string; baseRef?: string }) => ({ workspaceId: 'workspace-1', baseCommitSha: /^[a-f0-9]{40}$/u.test(request.baseRef??'') ? request.baseRef : base })),
+		readRepositoryFiles: vi.fn(async (request: {ref:string}) => ({ resolvedRef: /^[a-f0-9]{40}$/u.test(request.ref) ? request.ref : base, files: [{ path: '.treeseed/governance/proposal-types/implementation.yaml', content: JSON.stringify({
 			schemaVersion: 'treeseed.proposal-type/v1', id: 'implementation', label: 'Implementation', description: 'Bounded change.',
-		}) }] })), readRepositoryFile: vi.fn(async () => ({ resolvedRef: base, file: { content: 'before' } })),
+		}) }] })), readRepositoryFile: vi.fn(async (request: {ref:string}) => ({ resolvedRef: /^[a-f0-9]{40}$/u.test(request.ref) ? request.ref : base, file: { content: 'before' } })),
 		closeWorkspace: vi.fn(async () => undefined), commit: vi.fn(async () => ({ commitSha: 'b'.repeat(40), branchName: mode === 'simulation' ? 'refs/heads/workday-1' : 'refs/heads/staging', changedPaths: [path] })) };
-	vi.mocked(resolveKnowledgeGatewayConnection).mockResolvedValue({ client, contentPath: '.', repositoryId: 'repository-1', authoringBranch: 'staging', allowedPaths: ['proposals/**'] } as never);
+	vi.mocked(resolveKnowledgeGatewayConnection).mockResolvedValue({ client, contentPath: '.', repositoryId: 'repository-1', baseRef: base, authoringBranch: 'staging', allowedPaths: ['proposals/**'] } as never);
 	const input = { store: {}, principal: { id: 'user-1' }, proposal: { id: 'proposal-1', teamId: 'team-1', projectId: 'project-1', activeVersion: 4,
 		title: 'Example', proposalTypes: ['implementation'], metadata: { contentProvenance: { contentPath: path, commitSha: base } } }, update: { workdayId: run.id } };
 	return { run, client, input, base, path };

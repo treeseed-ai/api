@@ -53,14 +53,16 @@ export function treeDxOperationScope(operation: AdoptedOperation, input: { path?
 		const value = source[name];
 		return Array.isArray(value) ? value.map(String) : value === undefined || value === null ? [] : [String(value)];
 	}));
-	const requestedPaths = [...new Set(strings(['path', 'paths', 'scopePaths']))];
+	const batchPaths = operation.operationId === 'writeWorkspaceFiles' && Array.isArray(body.files)
+		? body.files.map(file => record(file).path).filter((path): path is string => typeof path === 'string') : [];
+	const requestedPaths = [...new Set([...strings(['path', 'paths', 'scopePaths']), ...batchPaths])];
 	const scopedPaths = operation.operationId === 'readRepositoryFile'
 		? requestedPaths.flatMap((value) => /\.[^/]+$/u.test(value) ? [value] : [value, ...contentExtensions.map((extension) => `${value}${extension}`)])
 		: requestedPaths;
 	return {
 		repoIds: [...new Set([...strings(['repoId', 'repo_id', 'repositoryId', 'repository_id']), ...fallbackRepositoryIds])],
 		capabilities: [...operation.requiredCapabilities],
-		refs: [...new Set(strings(['ref', 'refs', 'baseRef', 'targetRef', 'sourceRef']))],
+		refs: [...new Set(strings(['ref', 'refs', 'baseRef', 'targetRef', 'sourceRef', 'destinationRef', 'additionalParentRefs']))],
 		paths: [...new Set(scopedPaths)],
 	};
 }

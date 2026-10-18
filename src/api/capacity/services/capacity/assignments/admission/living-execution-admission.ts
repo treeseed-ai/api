@@ -1,3 +1,4 @@
+import { durableReal, durableRealEquals } from '../../../support/durable-number.ts';
 import { recordCapacityAccountingObservation } from '../../accounting/accounting-observations.ts';
 import{readExecutionNodeStates,recordExecutionNodeObservations}from'../../../../../control-plane/repositories/capacity/execution/execution-node-observations.ts';
 import {capacityTransaction} from '../../../../transaction.ts';
@@ -365,7 +366,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 					requestedSeconds: assignment.limits.maximumSeconds });
 		}
   const reserved=await database.all('SELECT claim.counter_id,claim.reserved_amount,claim.released_amount,counter.committed_amount,counter.state_version,counter.hard_limit FROM capacity_reservation_counter_claims claim JOIN capacity_admission_counters counter ON counter.id=claim.counter_id WHERE claim.reservation_id=? ORDER BY claim.counter_id',[assignment.reservationId]);
-  if(reserved.length!==claims.length||claims.some(claim=>{const before=counterBasis.find(value=>value.id===claim.id),after=reserved.find(value=>value.counter_id===claim.id);return!before||!after||Number(after.reserved_amount)!==assignment.limits.maximumSeconds||Number(after.released_amount)!==0||Number(after.hard_limit)!==claim.hardLimit||Number(after.committed_amount)!==Number(before.committed_amount)+assignment.limits.maximumSeconds||Number(after.state_version)!==Number(before.state_version)+1;}))throw new CapacityGovernanceError('capacity_admission_counter_not_committed','Admission requires every exact reservation and scoped counter commit.',409);
+  if(reserved.length!==claims.length||claims.some(claim=>{const before=counterBasis.find(value=>value.id===claim.id),after=reserved.find(value=>value.counter_id===claim.id);return!before||!after||Number(after.reserved_amount)!==assignment.limits.maximumSeconds||Number(after.released_amount)!==0||Number(after.hard_limit)!==claim.hardLimit||!durableRealEquals(after.committed_amount,durableReal(before.committed_amount)!+assignment.limits.maximumSeconds)||Number(after.state_version)!==Number(before.state_version)+1;}))throw new CapacityGovernanceError('capacity_admission_counter_not_committed','Admission requires every exact reservation and scoped counter commit.',409);
 		const accepted=requireExactReplay(committed);
 		const event:CapacityWorkdayEventWrite={id:'assignment-created:'+assignment.id,projectId:assignment.projectId,
 			workdayId:assignment.workdayId,assignmentId:assignment.id,eventType:'assignment.created',status:'recorded',

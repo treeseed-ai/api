@@ -71,7 +71,7 @@ describe('living admission in disposable PostgreSQL', () => {
 			await database.pool.query(`INSERT INTO capacity_provider_availability_sessions
 				(id,membership_id,team_id,capacity_provider_id,opened_at,refreshed_at,expires_at,available_from,created_at,updated_at)
 				VALUES ('session','membership','team','provider',$1,$1,$2,$1,$1,$1)`, [now, currentAssignment.deadline]);
-			const observed = { day: now.slice(0, 10), observedAt: now, healthy: true, activeSeconds: 1, reservedSeconds: 0 };
+			const observed = { day: now.slice(0, 10), observedAt: now, healthy: true, activeSeconds: 1.23456789, reservedSeconds: 0 };
 			await database.pool.query(`UPDATE capacity_provider_availability_sessions SET execution_providers_json=$1 WHERE id='session'`,
 				[JSON.stringify([{ id: 'codex', runtimeBuild: assignment.provider.runtimeBuild, status: 'available', capabilities: [],
 					maxConcurrentRunners: 1, lanes: [{ id: 'workday', purpose: 'workday', maxConcurrentRunners: 1 }], nativeLimits: { modelConfigurationId: 'terra-medium' },
@@ -108,7 +108,7 @@ describe('living admission in disposable PostgreSQL', () => {
 			const results = await Promise.allSettled(attempts.map((attempt, index) => run(attempt, index === 0 ? store as never : createCapacityControlPlane(peerAccounting))));
 			expect(results.filter(result => result.status === 'fulfilled'), results.map(result => result.status === 'rejected' ? String(result.reason) : 'admitted').join('\n')).toHaveLength(1);
 			const counters = await database.pool.query('SELECT committed_amount FROM capacity_admission_counters');
-			expect(counters.rows).toEqual([{ committed_amount: 4 }, { committed_amount: 4 }]);
+			expect(counters.rows).toEqual([{ committed_amount: 4.2345676 }, { committed_amount: 4.2345676 }]);
 			expect((await database.pool.query('SELECT count(*)::int AS count FROM capacity_reservations')).rows[0].count).toBe(1);
 			const winner = attempts[results.findIndex(result => result.status === 'fulfilled')]!;
 			await run(winner);

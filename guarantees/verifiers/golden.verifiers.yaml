@@ -4930,3 +4930,25 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/accounting/architecture/accounting-history-postgres.test.ts
     testName: "native PostgreSQL settles canonical whole seconds with exact fractional provider measurements once across independent connections and replay"
+
+  api.golden.reviewed-ref-promotion-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/upstream-operation.test.ts
+    testName: "delegates only the exact source and destination branch refs for reviewed authoring promotion"
+  api.golden.reviewed-ref-promotion-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/authority/architecture/reviewed-promotion-native.test.ts
+    testName: "promotes only the exact two signed branch refs and preserves native denial stale concurrency and replay custody"
+
+  api.golden.proposal-contract-authority-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposal-contract-diagnostics.test.ts
+    testName: "requires the exact governed library contract while preserving mutable authoring custody and denying local fallback"
+  api.golden.proposal-contract-authority-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-contract-authority-native.test.ts
+    testName: "creates from the selected governed schema without replacing local products and denies unpublished local-only types"

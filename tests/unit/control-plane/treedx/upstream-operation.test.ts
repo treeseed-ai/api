@@ -2,6 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { requireTreeDxOperation, treeDxBoundedScopedPaths, treeDxOperationScope, treeDxPathParameters, treeDxQuery, treeDxScopedPathAllows } from '../../../../src/api/control-plane/treedx/upstream-operation.ts';
 
 describe('authoritative TreeDX upstream operations', () => {
+	it('delegates only the exact source and destination branch refs for reviewed authoring promotion', () => {
+		const operation = requireTreeDxOperation('promoteRepositoryRef');
+		const scope = treeDxOperationScope(operation, { path: { repoId: 'repo-owned' }, body: {
+			sourceRef: 'refs/heads/knowledge/reviewed', destinationRef: 'refs/heads/staging',
+			expectedDestinationHead: 'a'.repeat(40),
+		} });
+		expect(scope).toEqual({ repoIds: ['repo-owned'], capabilities: operation.requiredCapabilities,
+			refs: ['refs/heads/knowledge/reviewed', 'refs/heads/staging'], paths: [] });
+		expect(scope.refs).not.toContain('refs/heads/main');
+		expect(scope.refs).not.toContain('*');
+		expect(scope.refs).not.toContain('a'.repeat(40));
+	});
+
 	it('derives exact current workspace metadata and closeout scope from official capabilities while retaining the exact repository', () => {
 		for (const id of ['getWorkspace', 'closeWorkspace']) {
 			const operation = requireTreeDxOperation(id);
@@ -23,6 +36,8 @@ describe('authoritative TreeDX upstream operations', () => {
 		expect(treeDxPathParameters(operation, { workspaceId: 'workspace one' })).toEqual({ workspace_id: 'workspace one' });
 		expect(treeDxOperationScope(operation, { path: { workspaceId: 'workspace one' }, body: { path: 'docs/a.md' } }, ['repo-1']))
 			.toMatchObject({ repoIds: ['repo-1'], capabilities: operation.requiredCapabilities, paths: ['docs/a.md'] });
+		expect(treeDxOperationScope(requireTreeDxOperation('commitWorkspace'), { body: { additionalParentRefs: ['refs/heads/staging'] } }, ['repo-1']).refs).toEqual(['refs/heads/staging']);
+		expect(treeDxOperationScope(requireTreeDxOperation('writeWorkspaceFiles'), { body: { files: [{path:'docs/a.md',content:'Exact bytes'}, {path:'docs/b.md',content:'Other exact bytes'}] } }, ['repo-1']).paths).toEqual(['docs/a.md','docs/b.md']);
 	});
 
 	it('does not forward TreeSeed assignment or proxy-handle query fields', () => {

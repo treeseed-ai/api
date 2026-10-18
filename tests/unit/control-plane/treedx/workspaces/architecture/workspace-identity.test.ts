@@ -10,7 +10,7 @@ describe('exact workspace response identity at the owning proxy verifier', () =>
 	it('retains exact open and closed resource reads without mutating the requested project binding', async () => {
 		const before = structuredClone(library);
 		for (const status of ['open', 'closed']) await expect(verifyTreeDxWorkspace({ runtime: runtime({ workspaceId,
-			repoId: library.repositoryId, status }), projectId: 'project', library, workspaceId })).resolves.toBeUndefined();
+			repoId: library.repositoryId, status }), projectId: 'project', library, workspaceId })).resolves.toEqual({workspaceId,repoId:library.repositoryId,status});
 		expect(library).toEqual(before);
 	});
 	it('denies missing foreign or malformed workspace identity even when the repository matches', async () => {

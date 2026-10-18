@@ -314,7 +314,7 @@ export function createTreeDxProxyOperationService(storeValue: CapacityGovernance
 				providerRefs = authority.refs;
 				if (descriptor.kind === 'read' && !input.path.workspaceId) upstreamInput = bindCurrentLibraryView(operation, input, { contentRepositoryRef: authority.ref });
 			}
-			if (input.path.workspaceId) await verifyTreeDxWorkspace({ runtime, projectId, library, workspaceId: String(input.path.workspaceId) });
+			const workspace = input.path.workspaceId ? await verifyTreeDxWorkspace({ runtime, projectId, library, workspaceId: String(input.path.workspaceId) }) : null;
 			const baseUrl = resolveTreeDxProxyBaseUrl(runtime, library);
 			// TreeDX grants upstream authority to the control-plane service identity. The
 			// end user or capacity provider remains the audited actor below, but must not
@@ -325,7 +325,10 @@ export function createTreeDxProxyOperationService(storeValue: CapacityGovernance
 			const compactScope = access.actorType === 'capacity_provider' ? { ...scope,
 				refs: providerRefs!,
 				paths: crossProjectPaths??(treeDxProxyAuthorizedPathPatterns(access.handle, scope.capabilities[0] ?? null).length
-					? treeDxProxyAuthorizedPathPatterns(access.handle, scope.capabilities[0] ?? null) : ['**']) } : scope;
+					? treeDxProxyAuthorizedPathPatterns(access.handle, scope.capabilities[0] ?? null) : ['**']) } : workspace ? { ...scope,
+				refs: [...new Set([...scope.refs, ...[workspace.baseRef, workspace.branchName].filter((ref): ref is string => typeof ref === 'string' && ref.length > 0)])],
+				paths: scope.paths.length ? scope.paths : Array.isArray(workspace.allowedPaths) ? workspace.allowedPaths.filter((path): path is string => typeof path === 'string') : [],
+			} : scope;
 			const token = resolveTreeDxProxyToken(runtime, baseUrl, projectId, compactScope, { connectionId: connectionId(library, baseUrl) });
 			try {
 				const payload = await admission.run({ connectionId: connectionId(library, baseUrl), projectId, actorId: actorId(access),
