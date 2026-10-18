@@ -38,9 +38,14 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 	const simulationRef = simulation ? `refs/heads/${run.id}-proposal-${createHash('sha256').update(text(input.proposal.id)).digest('hex').slice(0, 16)}` : undefined;
 	const sourceCommit = text(provenance.commitSha);
 	if (simulation && !/^[a-f0-9]{40}$/u.test(sourceCommit)) throw Object.assign(new Error('Simulation proposal authoring requires exact existing content provenance.'), { status: 409, code: 'proposal_simulation_source_required' });
+	const heldContract = object(object(run?.parameters.workdayContextByProjectId)[projectId]);
+	const contractAuthorityError = () => Object.assign(new Error('Simulation proposal authoring requires the exact frozen owning-project library context.'), { status: 409, code: 'proposal_simulation_contract_authority_required' });
+	if (simulation && (heldContract.store !== 'treedx' || heldContract.model !== 'knowledge'
+		|| !/^[a-f0-9]{40}$/u.test(text(heldContract.commit)) || !text(heldContract.repository))) throw contractAuthorityError();
 	const connection = await resolveKnowledgeGatewayConnection(input.store, { projectId, write: true, relationPaths: true, authoringPaths: true,
-		...(simulationRef ? { workspaceRefs: [simulationRef], readRefs: [sourceCommit] } : {}) });
+		...(simulationRef ? { workspaceRefs: [simulationRef], readRefs: [sourceCommit, text(heldContract.commit)] } : {}) });
 	if (!connection) throw Object.assign(new Error('The project TreeDX repository is unavailable for proposal authoring.'), { status: 503, code: 'proposal_treedx_unavailable' });
+	if (simulation && heldContract.repository !== connection.repositoryId) throw contractAuthorityError();
 	const title = text(input.update.title, input.proposal.title); const summary = text(input.update.summary, input.proposal.summary);
 	// Repository proposal documents call this field `request`; PostgreSQL calls
 	// it `body`. Accept the canonical document field on revision and bind the
@@ -56,8 +61,9 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 	if (!types.length) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw Object.assign(new Error('Select at least one repository proposal type before publishing.'), { status: 422, code: 'proposal_type_required' }); }
 	const contractPaths = types.map((id) => `.treeseed/governance/proposal-types/${id}.yaml`);
 	// Governed schema authority and mutable proposal authoring use their existing
-	// owning refs. Simulation retains its frozen source contract unchanged.
-	const contractRef = simulation ? baseRef : connection.baseRef;
+	// owning refs. Simulation keeps the activation's existing frozen project
+	// context; private proposal commits deliberately need not contain schemas.
+	const contractRef = simulation ? text(heldContract.commit) : connection.baseRef;
 	let contractRead: Row, contractBase = workspace.baseCommitSha;
 	try {
 		if (!text(contractRef)) throw Object.assign(new Error('The governed library contract ref is unavailable.'), { status: 503, code: 'proposal_contract_authority_unavailable' });

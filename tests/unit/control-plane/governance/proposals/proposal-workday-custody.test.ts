@@ -20,6 +20,7 @@ function fixture(mode = 'simulation') {
 	const base = 'a'.repeat(40), path = 'proposals/governance/example.mdx';
 	const run = { id: 'workday-1', status: 'running', executionMode: mode, parameters: {
 		appliedPlan: { state: 'active', endsAt: '2099-01-01T00:00:00.000Z' }, scheduledProjectIds: ['project-1'], proposalIds: ['proposal-1'],
+		workdayContextByProjectId: { 'project-1': { store: 'treedx', model: 'knowledge', id: 'project-1:project-context', repository: 'repository-1', commit: base, path: 'README.md' } },
 	} };
 	vi.spyOn(CapacityWorkdayRunRepository.prototype, 'get').mockResolvedValue(run as never);
 	const client = { createWorkspace: vi.fn(async (request: { branchName?: string; baseRef?: string }) => ({ workspaceId: 'workspace-1', baseCommitSha: /^[a-f0-9]{40}$/u.test(request.baseRef??'') ? request.baseRef : base })),
@@ -35,6 +36,32 @@ function fixture(mode = 'simulation') {
 
 describe('workday-scoped proposal authoring', () => {
 	beforeEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); });
+	it('revises private proposal bytes using only the original frozen governed contract even after the library moves', async () => {
+		const {input,client,run,path}=fixture(), frozen='c'.repeat(40), source='b'.repeat(40);
+		run.parameters.workdayContextByProjectId['project-1'].commit=frozen;
+		input.proposal.metadata.contentProvenance.commitSha=source;
+		const original=client.readRepositoryFiles.getMockImplementation()!;
+		client.readRepositoryFiles.mockImplementation(async request=>{
+			if(request.ref!==frozen)throw Object.assign(new Error('No type contract on private proposal or moving library'),{status:404});
+			return original(request);
+		});
+		const result=await commitProposalVersionContent(input);
+		expect(client.readRepositoryFiles).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ref:frozen}));
+		expect(client.createWorkspace).toHaveBeenCalledWith(expect.objectContaining({baseRef:source,allowedPaths:[path]}));
+		expect(result.update.contentProvenance.commitSha).toBe('b'.repeat(40));
+		expect(recordTreeDxAuthoringState).not.toHaveBeenCalled();expect(projectTreeDxCommitSignals).not.toHaveBeenCalled();
+	});
+	it.each(['missing','commit','repository','store','model'])('rejects %s frozen project contract authority before opening a simulation workspace', async invalid=>{
+		const {input,client,run}=fixture();
+		const context=run.parameters.workdayContextByProjectId['project-1'];
+		if(invalid==='missing')Reflect.deleteProperty(run.parameters.workdayContextByProjectId,'project-1');
+		if(invalid==='commit')context.commit='staging';
+		if(invalid==='repository')context.repository='foreign-repository';
+		if(invalid==='store')context.store='git';
+		if(invalid==='model')context.model='proposal';
+		await expect(commitProposalVersionContent(input)).rejects.toMatchObject({code:'proposal_simulation_contract_authority_required',status:409});
+		expect(client.createWorkspace).not.toHaveBeenCalled();expect(client.commit).not.toHaveBeenCalled();
+	});
 	it('writes a simulation version from exact provenance to local workday custody without publication', async () => {
 		const { input, client, base, path } = fixture();
 		const result = await commitProposalVersionContent(input);
