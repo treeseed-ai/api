@@ -14,8 +14,7 @@ describe('assignment recovery eligibility', () => {
 			expect(decideAssignmentRecovery(assignment, input)).toMatchObject({ disposition: 'operator-action', status: 'expired' });
 			expect(input).toEqual(held);
 		}
-		const started = { ...assignment, capacityEnvelope: { ...assignment.capacityEnvelope,
-			budget: { time: { executionStartedAt: assignment.createdAt } } } }, held = structuredClone(started);
+		const started = { ...recoveryAssignment(true), executionKind: 'conversation' as const }, held = structuredClone(started);
 		expect(decideAssignmentRecovery(started, observed)).toMatchObject({ disposition: 'operator-action', status: 'expired' });
 		expect(started).toEqual(held);
 		expect(decideAssignmentRecovery(assignment, observed)).toMatchObject({ disposition: 'terminal-failure', reasonCode: 'expired_communication_final_response_missing' });
