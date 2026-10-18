@@ -2,6 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { requireTreeDxOperation, treeDxBoundedScopedPaths, treeDxOperationScope, treeDxPathParameters, treeDxQuery, treeDxScopedPathAllows } from '../../../../src/api/control-plane/treedx/upstream-operation.ts';
 
 describe('authoritative TreeDX upstream operations', () => {
+	it('delegates only the exact source and destination branch refs for reviewed authoring promotion', () => {
+		const operation = requireTreeDxOperation('promoteRepositoryRef');
+		const scope = treeDxOperationScope(operation, { path: { repoId: 'repo-owned' }, body: {
+			sourceRef: 'refs/heads/knowledge/reviewed', destinationRef: 'refs/heads/staging',
+			expectedDestinationHead: 'a'.repeat(40),
+		} });
+		expect(scope).toEqual({ repoIds: ['repo-owned'], capabilities: operation.requiredCapabilities,
+			refs: ['refs/heads/knowledge/reviewed', 'refs/heads/staging'], paths: [] });
+		expect(scope.refs).not.toContain('refs/heads/main');
+		expect(scope.refs).not.toContain('*');
+		expect(scope.refs).not.toContain('a'.repeat(40));
+	});
+
 	it('derives exact current workspace metadata and closeout scope from official capabilities while retaining the exact repository', () => {
 		for (const id of ['getWorkspace', 'closeWorkspace']) {
 			const operation = requireTreeDxOperation(id);
