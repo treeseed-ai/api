@@ -5,6 +5,7 @@ import { copyNativeAssignmentCustody } from '../../../providers/assignments/arch
 import { frozenAttempt, settlementDatabase, terminalUsage } from './settlement-fixture.ts';
 import { ControlPlaneStore } from '../../../../../../src/api/persistence/store.ts';
 import { createProviderAssignmentService } from '../../../../../../src/api/control-plane/repositories/providers/provider-assignment-service.ts';
+import { createCapacityControlPlane } from '../../../../../../src/api/capacity/control-plane.ts';
 import { CapacityWorkdayEventRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { serializeCapacityReservationRow } from '../../../../../../src/api/capacity/repositories/capacity/accounting/reservation.ts';
 import { serializeTaskUsageActualRow } from '../../../../../../src/api/capacity/repositories/capacity/accounting/task-usage.ts';
@@ -12,6 +13,33 @@ import { serializeCapacityLedgerEntryRow } from '../../../../../../src/api/capac
 
 const auth = { principal: { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider', scopes: ['provider:usage:write', 'provider:assignments:write'] } };
 const tables = ['capacity_workday_runs', 'execution_nodes', 'capacity_reservations', 'capacity_provider_assignments', 'capacity_admission_counters', 'capacity_reservation_counter_claims','capacity_workday_events'];
+
+it('native independent PostgreSQL settlement releases fractional shared supply once and retains its original binary32 arithmetic', async () => {
+ const native = await postgresGraph();
+ try {
+  const supplied = await settlementDatabase();
+  try {
+   await supplied.query("UPDATE capacity_provider_assignments SET reservation_id=? WHERE id=?", ['reservation', frozenAttempt.id]);
+   await supplied.query("UPDATE capacity_admission_counters SET committed_amount=235.495 WHERE id='seconds'");
+   await supplied.query("UPDATE capacity_reservation_counter_claims SET reserved_amount=162 WHERE counter_id='seconds'");
+   await copyNativeAssignmentCustody(native.left, { attempt: frozenAttempt, query: supplied.query }, tables);
+  } finally { await supplied.db.close(); }
+  const services = [native.left, native.right].map(database => {
+   const store = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, database); store.initializationPromise = Promise.resolve();
+   return createProviderAssignmentService(createCapacityControlPlane(store));
+  });
+  const input = { ...terminalUsage, activeSeconds: 0, elapsedSeconds: 0,
+   usageActual: { ...terminalUsage.usageActual, nativeUsage: { activeSeconds: 0, tokens: 7 } } };
+  const results = await Promise.all(services.map(service => service.settle(auth, frozenAttempt.id, input, input.settlementKey)));
+  expect(results.map(result => result.replayed).sort()).toEqual([false, true]);
+  const counter = (await native.right.pool.query("SELECT committed_amount::double precision AS value,state_version FROM capacity_admission_counters WHERE id='seconds'")).rows[0]!;
+  expect(counter).toEqual({ value: Math.fround(Math.fround(235.495) - 162), state_version: 2 });
+  const history = await new CapacityWorkdayEventRepository(new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, native.right)).list('team', 'workday', { limit: 100 });
+  expect(history.items).toHaveLength(1); expect(history.page.hasMore).toBe(false);
+  expect((await native.right.pool.query('SELECT * FROM capacity_ledger_entries')).rows).toHaveLength(1);
+  expect((await native.right.pool.query("SELECT released_amount FROM capacity_reservation_counter_claims WHERE counter_id='seconds'")).rows).toEqual([{ released_amount: 162 }]);
+ } finally { await native.close(); }
+});
 
 it('native PostgreSQL accounting producers retain exact complete public observations across competing requests interruption missing writes denial and unchanged retry', async () => {
  const failures: Array<{ operation: string; mode: string; error: string; custodySha256: string }> = [];
@@ -22,7 +50,7 @@ it('native PostgreSQL accounting producers retain exact complete public observat
    try { await supplied.query('UPDATE capacity_provider_assignments SET reservation_id=? WHERE id=?', ['reservation', frozenAttempt.id]);
     await copyNativeAssignmentCustody(native.left, { attempt: frozenAttempt, query: supplied.query }, tables);
    } finally { await supplied.db.close(); }
-   const stores = [native.left, native.right].map(database => { const store = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, database); store.initializationPromise = Promise.resolve(); return store; });
+   const stores = [native.left, native.right].map(database => { const store = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, database); store.initializationPromise = Promise.resolve(); return createCapacityControlPlane(store); });
    const services = stores.map(store => createProviderAssignmentService(store));
    const connections = await Promise.all([native.left, native.right].map(database => database.pool.query('SELECT pg_backend_pid() AS pid,current_database() AS name')));
    expect(connections.map(result => result.rows[0].name)).toEqual([native.name, native.name]); expect(connections[0]!.rows[0].pid).not.toBe(connections[1]!.rows[0].pid);

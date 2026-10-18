@@ -17,6 +17,23 @@ import { terminalizeCapacityWorkdayAssignments } from '../../../../../../../src/
 import { verifyNativeReporterCloseout } from '../../../../../../acceptance/execution-inventory.ts';
 
 describe('canonical single report at the real lifecycle and SQL boundary', () => {
+	it('cancels a conversation in closing without inventing an ended plan or Reporter reference and retains exact retry', async () => {
+		const f = await closeoutDatabase();
+		try {
+			await f.query("UPDATE capacity_workday_runs SET execution_kind='conversation'");
+			await f.query("UPDATE execution_nodes SET kind='communication',status='assigned'");
+			const run = (await f.reads.get('team', 'workday'))!, original = structuredClone(run);
+			const assignments = (await f.query('SELECT * FROM capacity_provider_assignments')).rows;
+			const outcome = await advanceLivingWorkday(f.store, run, now, true);
+			expect(outcome).toMatchObject({ status: 'cancelled', plan: { state: 'closing', closingAt: now } });
+			expect(outcome.plan).not.toHaveProperty('endedAt'); expect(outcome.plan).not.toHaveProperty('reportRef');
+			const stopped = (await f.reads.get('team', 'workday'))!;
+			expect(stopped.status).toBe('cancelled'); expect(appliedWorkdaySchema.parse(stopped.parameters.appliedPlan).state).toBe('closing');
+			expect((await advanceLivingWorkday(f.store, stopped, now, true)).changed).toBe(false);
+			expect((await f.query('SELECT * FROM capacity_provider_assignments')).rows).toEqual(assignments);
+			expect(run).toEqual(original);
+		} finally { await f.db.close(); }
+	});
 	it('native migration retains unreported ended history as an explicit failed closing workday without fabricating a report or changing valid runs', async () => {
 		const f = await closeoutDatabase();
 		try {

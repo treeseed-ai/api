@@ -3,6 +3,22 @@ import { decideAssignmentRecovery, recoverableLeaseSql, recoverExpiredProviderAs
 import { recoveryAssignment } from '../../providers/assignments/architecture/cancellation-fixture.ts';
 
 describe('assignment recovery eligibility', () => {
+	it('holds expired conversations with original execution or side effects for operator action rather than manufacturing a zero settlement when their final reply is missing', () => {
+		const assignment = { ...recoveryAssignment(false), executionKind: 'conversation' as const };
+		const observed = { reservation: null, settlement: null, usageCount: 0, hasAssignmentResult: false,
+			proxyEvents: 0, fallbackOutputs: 0, node: { id: 'node', status: 'assigned' },
+			failoverAllowed: true, failoverCount: 1, invocationFinalMessageRef: null };
+		for (const change of [{ usageCount: 1 }, { hasAssignmentResult: true }, { proxyEvents: 1 }, { fallbackOutputs: 1 },
+			{ reservation: { usage_report_token: 'original-unresolved-transition' } }]) {
+			const input = { ...observed, ...change }, held = structuredClone(input);
+			expect(decideAssignmentRecovery(assignment, input)).toMatchObject({ disposition: 'operator-action', status: 'expired' });
+			expect(input).toEqual(held);
+		}
+		const started = { ...recoveryAssignment(true), executionKind: 'conversation' as const }, held = structuredClone(started);
+		expect(decideAssignmentRecovery(started, observed)).toMatchObject({ disposition: 'operator-action', status: 'expired' });
+		expect(started).toEqual(held);
+		expect(decideAssignmentRecovery(assignment, observed)).toMatchObject({ disposition: 'terminal-failure', reasonCode: 'expired_communication_final_response_missing' });
+	});
 	it('retries only a graph-admitted attempt, and never equates an assignment result with graph completion', () => {
 		const assignment = recoveryAssignment(false), original = structuredClone(assignment);
 		const observed = { reservation: null, settlement: null, usageCount: 0, hasAssignmentResult: false,

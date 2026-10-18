@@ -2891,3 +2891,21 @@ workflow:
   - id: seed-lane-owner-native
     action: { verifier: api.golden.seed-lane-owner-native }
     expect: { status: passed }
+  - id: settlement-binary32-zero
+    action: { verifier: api.golden.settlement-binary32-zero }
+    expect: { status: passed }
+  - id: settlement-binary32-measured
+    action: { verifier: api.golden.settlement-binary32-measured }
+    expect: { status: passed }
+  - id: settlement-binary32-postgres
+    action: { verifier: api.golden.settlement-binary32-postgres }
+    expect: { status: passed }
+  - id: conversation-stop-report-custody
+    action: { verifier: api.golden.conversation-stop-report-custody }
+    expect: { status: passed }
+  - id: conversation-recovery-usage-unit
+    action: { verifier: api.golden.conversation-recovery-usage-unit }
+    expect: { status: passed }
+  - id: conversation-recovery-usage-postgres
+    action: { verifier: api.golden.conversation-recovery-usage-postgres }
+    expect: { status: passed }

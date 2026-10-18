@@ -3,7 +3,7 @@ vi.mock('../../../../../src/api/capacity/services/capacity/assignments/lifecycle
 	reconcileAssignmentContent: vi.fn(async () => undefined),
 }));
 import { advanceLivingWorkday } from '../../../../../src/api/capacity/services/capacity/workdays/lifecycle/living-workday-lifecycle.ts';
-import { DEFAULT_WORKDAY_POLICY, compileWorkday, validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
+import { DEFAULT_WORKDAY_POLICY, appliedWorkdaySchema, compileWorkday, validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
 import { runtimeWorkdayPhase } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import { compileCapacityWorkdayRunRecord } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 
@@ -82,7 +82,10 @@ describe('living workday lifecycle', () => {
 		const conversation = { ...run, executionKind: 'conversation' } as never;
 		const store = { all: vi.fn(async () => []), updateCapacityWorkdayRun: vi.fn(async () => conversation) };
 		const result = await advanceLivingWorkday(store as never, conversation, now, true);
-		expect(result).toMatchObject({ status: 'cancelled', plan: { state: 'ended', endedAt: now } });
+		expect(result).toMatchObject({ status: 'cancelled', plan: { state: 'closing', closingAt: now } });
+		expect(appliedWorkdaySchema.parse(result.plan)).toEqual(result.plan);
+		expect(result.plan.endedAt).toBeUndefined();
+		expect(result.plan.reportRef).toBeUndefined();
 		expect(store.updateCapacityWorkdayRun).toHaveBeenCalledWith('team', 'workday', expect.objectContaining({ status: 'cancelled' }));
 	});
 	it('creates a third and subsequent planning cycle before the percentage boundary', async () => {

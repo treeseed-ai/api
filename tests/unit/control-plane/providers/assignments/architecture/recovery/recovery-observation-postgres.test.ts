@@ -13,10 +13,10 @@ import {ProviderAssignmentRepository,advanceAssignmentAttemptLifecycle} from '..
 
 // Controlled original SQL inputs and reporting clocks; no provider/model usage
 // or physical teardown is inferred. Native migrations and connections are real.
-async function exerciseNativeRecovery(started:boolean,stop=false){
+async function exerciseNativeRecovery(started:boolean,stop=false,conversation=false){
  const native=await postgresGraph();try{
   const supplied=await cancellationDatabase(stop?'returned':'leased',started),original=supplied.assignment,attempt=supplied.attempt;
-  try{if(stop&&started)await settleCapacityReservationExactlyOnce(supplied.owner,terminalUsage);await copyNativeAssignmentCustody(native.left,supplied,['capacity_workday_runs','execution_nodes','capacity_reservations','capacity_provider_assignments','capacity_admission_counters','capacity_reservation_counter_claims','capacity_usage_actuals','capacity_ledger_entries','capacity_workday_events']);}
+  try{if(conversation)await supplied.query("UPDATE capacity_provider_assignments SET execution_kind='conversation'");if(stop&&started)await settleCapacityReservationExactlyOnce(supplied.owner,terminalUsage);await copyNativeAssignmentCustody(native.left,supplied,['capacity_workday_runs','execution_nodes','capacity_reservations','capacity_provider_assignments','capacity_admission_counters','capacity_reservation_counter_claims','capacity_usage_actuals','capacity_ledger_entries','capacity_workday_events']);}
   finally{await supplied.db.close();}
   const owners=[native.left,native.right].map(db=>{const host=new ControlPlaneStore({TREESEED_ENVIRONMENT:'test'},db);host.initializationPromise=Promise.resolve();return createCapacityControlPlane(host);});
   const now=started&&!stop?new Date(Date.parse(original.leaseExpiresAt!)+90_001).toISOString():cancelNow,input={now,teamId:attempt.teamId,providerId:'provider'},held=structuredClone(input);
@@ -50,6 +50,7 @@ async function exerciseNativeRecovery(started:boolean,stop=false){
  }finally{await native.close();}
 }
 describe('native recovery observation and settlement custody',()=>{
+ it('native PostgreSQL expired conversation without a final reply retains original executed usage holds and every accounting row through rollback concurrency and exact replay',async()=>exerciseNativeRecovery(true,false,true));
  it('native PostgreSQL unknown executed recovery retains all usage holds through suppressed state and missing or interrupted observations before independent replay',async()=>exerciseNativeRecovery(true));
  it('native PostgreSQL pre-execution recovery settles once only with its original terminal observation after atomic rollback and independent replay',async()=>exerciseNativeRecovery(false));
 });

@@ -144,9 +144,8 @@ export async function advanceLivingWorkday(store: CapacityGovernanceDatabase & {
 	}
 	let status = run.status, completedAt = run.completedAt;
 	if (requestClose && run.executionKind === 'conversation') {
-		// Conversations settle through their durable response, not a Reporter.
-		// Explicit stop is cancellation and must not fabricate successful output.
-		next = { ...next, state: 'ended', endedAt: next.endedAt ?? now };
+		// Cancellation fences conversation admission. Without an integrated
+		// closeout report the plan remains closing, never falsely ended.
 		status = 'cancelled'; completedAt = completedAt ?? now;
 	}
 	if (next.state === 'closing') {
