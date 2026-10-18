@@ -82,6 +82,16 @@ if (action === 'serve-jwks') {
 	const address = server.address(); assert.ok(address && typeof address !== 'string');
 	await writeFile(join(root, 'jwks-url'), `http://127.0.0.1:${address.port}/jwks`);
 	process.once('SIGTERM', () => { server.closeAllConnections(); server.close(() => process.exit(0)); });
+} else if (action === 'serve-engine') {
+ assert.ok(directory); const root = await ownedRoot(directory);
+ // Observe the original native engine termination without changing its command,
+ // environment, process group, authentication or test inputs.
+ const child = spawn('mix', ['phx.server', '--no-compile', '--no-deps-check'], { env: process.env, stdio: 'inherit' });
+ const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((accept, reject) => {
+  child.once('error', reject); child.once('exit', (code, signal) => accept({ code, signal }));
+ });
+ await writeFile(join(root, 'engine-exit.json'), JSON.stringify({ ...exit, observedAt: new Date().toISOString() }) + '\n', { mode: 0o600 });
+ process.exitCode = exit.code ?? 1;
 } else if (action === 'start') {
 	assert.ok(process.env.GITHUB_ENV && process.env.GITHUB_WORKSPACE, 'CI-only native setup');
 	const workspace = await realpath(process.env.GITHUB_WORKSPACE);
@@ -118,7 +128,7 @@ if (action === 'serve-jwks') {
 		const address = reservation.address(); assert.ok(address && typeof address !== 'string');
 		const port = address.port; await new Promise<void>(accept => reservation.close(() => accept()));
 		const baseUrl = `http://127.0.0.1:${port}/`;
-		await launch(root, 'engine', 'mix', ['phx.server', '--no-compile', '--no-deps-check'], join(source, 'apps/api'), {
+		await launch(root, 'engine', process.execPath, ['--import', 'tsx', fileURLToPath(import.meta.url), 'serve-engine', root], join(source, 'apps/api'), {
 			...childEnvironment, MIX_ENV: 'dev', PORT: String(port), PHX_SERVER: 'true', PHX_HOST: '127.0.0.1',
 			TREESEED_TREEDX_ENV: 'test', TREESEED_TREEDX_DATA_DIR: join(root, 'data'),
 			TREESEED_TREEDX_AUTH_MODE: 'connected', TREESEED_TREEDX_AUTH_VERIFIER: 'jwks_oidc',

@@ -132,7 +132,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: native-prerequisite-evidence-${{ github.sha }}
-          path: ${{ env.API_NATIVE_TREEDX_ROOT }}/*.log
+          path: |
+            ${{ env.API_NATIVE_TREEDX_ROOT }}/*.log
+            ${{ env.API_NATIVE_TREEDX_ROOT }}/engine-exit.json
           if-no-files-found: error
       - name: Close allocated native TreeDX and signer server
         if: always()

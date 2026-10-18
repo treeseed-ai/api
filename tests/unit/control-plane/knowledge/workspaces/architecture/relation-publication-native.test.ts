@@ -19,7 +19,7 @@ import { runPlatformOperationOnce } from '../../../../../../src/operations-runne
 // authenticated API HTTP, independent Actor review, fixed portfolio, or charges.
 describe('native governed dependency Note publication and graph intake', () => {
 	it('indexes the actual native remote ref while retaining divergent local authoring through the original runner',async()=>{
-		const f=await relationPublicationDatabase();try{
+		const f=await relationPublicationDatabase();let originalFailure:unknown;try{
 			const workspace=await f.create(),written=await f.write(workspace),submitted=await f.submit(written.workspace);
 			assert.ok(submitted.integration);const commit=submitted.commit.commitSha,nativeRef='refs/remotes/origin/staging';
 			const native=new TreeDxInfrastructureClient(f.client);
@@ -46,7 +46,7 @@ describe('native governed dependency Note publication and graph intake', () => {
 			expect(object(indexed.index??indexed)).toMatchObject({resolvedRef:commit,stale:false});
 			expect((await f.storage.readCurrent('team'))!.projects).toContainEqual(expect.objectContaining({projectId:workspace.projectId,commitSha:commit}));
 			expect((await f.snapshot()).ledger).toEqual([]);
-		}finally{await f.close();}
+		}catch(error){originalFailure=error;throw error;}finally{try{await f.close();}catch(cleanup){if(originalFailure)throw new AggregateError([originalFailure,cleanup],'Native publication failure and incomplete cleanup');throw cleanup;}}
 	},60_000);
 	it('denies empty missing foreign and stale submission authority without native commit or queued publication', async () => {
 		const f = await relationPublicationDatabase(); try {
