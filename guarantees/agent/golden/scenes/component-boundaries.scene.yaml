@@ -2903,3 +2903,9 @@ workflow:
   - id: conversation-stop-report-custody
     action: { verifier: api.golden.conversation-stop-report-custody }
     expect: { status: passed }
+  - id: conversation-recovery-usage-unit
+    action: { verifier: api.golden.conversation-recovery-usage-unit }
+    expect: { status: passed }
+  - id: conversation-recovery-usage-postgres
+    action: { verifier: api.golden.conversation-recovery-usage-postgres }
+    expect: { status: passed }

@@ -4909,3 +4909,13 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-closeout-persistence.test.ts
     testName: "cancels a conversation in closing without inventing an ended plan or Reporter reference and retains exact retry"
+  api.golden.conversation-recovery-usage-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/assignment-recovery-service.test.ts
+    testName: "holds expired conversations with original execution or side effects for operator action rather than manufacturing a zero settlement when their final reply is missing"
+  api.golden.conversation-recovery-usage-postgres:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/recovery-observation-postgres.test.ts
+    testName: "native PostgreSQL expired conversation without a final reply retains original executed usage holds and every accounting row through rollback concurrency and exact replay"

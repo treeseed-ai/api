@@ -101,7 +101,6 @@ async function evidence(database: CapacityGovernanceDatabase, assignment: Durabl
 }
 
 export function decideAssignmentRecovery(assignment: DurableProviderAssignment, observed: RecoveryEvidence): AssignmentRecoveryResult {
-	if (assignment.executionKind === 'conversation' && !observed.invocationFinalMessageRef) return { assignmentId: assignment.id, disposition: 'terminal-failure', status: 'failed', reasonCode: 'expired_communication_final_response_missing' };
 	if (observed.settlement) {
 		const settlementSource = String(observed.settlement.source ?? '');
 		if (settlementSource === 'expired_lease_recovery' || settlementSource === 'provider_assignment_fail') return { assignmentId: assignment.id, disposition: 'terminal-failure', status: 'failed', reasonCode: settlementSource === 'provider_assignment_fail' ? 'provider_failure_settlement_recovered' : 'expired_lease_terminal_settlement_recovered' };
@@ -113,6 +112,9 @@ export function decideAssignmentRecovery(assignment: DurableProviderAssignment, 
 	const started = record(record(assignment.capacityEnvelope).budget).time;
 	if (record(started).executionStartedAt !== undefined && record(started).executionStartedAt !== null)
 		return { assignmentId: assignment.id, disposition: 'operator-action', status: 'expired', reasonCode: 'expired_lease_execution_usage_unknown' };
+		// A missing conversation reply cannot erase executed work or side effects.
+		// Only an unstarted, otherwise empty attempt may settle an observed zero.
+		if (assignment.executionKind === 'conversation' && !observed.invocationFinalMessageRef) return { assignmentId: assignment.id, disposition: 'terminal-failure', status: 'failed', reasonCode: 'expired_communication_final_response_missing' };
 	// A retry admits a new immutable assignment for the same graph node. The
 	// current assignment's attempt_count therefore cannot bound that sequence.
 	if (observed.failoverCount >= retryLimit(assignment)) return { assignmentId: assignment.id, disposition: 'terminal-failure', status: 'failed', reasonCode: 'expired_lease_retry_exhausted' };
