@@ -4919,3 +4919,14 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/architecture/recovery/recovery-observation-postgres.test.ts
     testName: "native PostgreSQL expired conversation without a final reply retains original executed usage holds and every accounting row through rollback concurrency and exact replay"
+
+  api.golden.native-seconds-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/usage-observation-persistence.test.ts
+    testName: "preserves raw fractional native seconds while requiring their exact canonical whole-second ceiling"
+  api.golden.native-seconds-postgres:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/accounting-history-postgres.test.ts
+    testName: "native PostgreSQL settles canonical whole seconds with exact fractional provider measurements once across independent connections and replay"

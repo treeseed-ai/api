@@ -96,10 +96,12 @@ export function serializeTaskUsageActualRow(row: Row | null): CapacityUsageActua
 	const elapsedSeconds = nonnegativeNumber(row, 'elapsed_seconds');
 	const nativeUsage = jsonRecord(row, 'native_usage_json');
 	const mode = accountingMode(row.accounting_mode);
-	// Explicit copies of the same measured seconds cannot contradict the durable
-	// columns. Other native units remain untouched; elapsed time is not active time.
+	// The provider preserves precise native seconds and rounds canonical seconds
+	// up once. Verify that exact conversion without changing either observation.
 	for (const [field, measured] of [['activeSeconds', activeSeconds], ['elapsedSeconds', elapsedSeconds]] as const) {
-		if (mode !== 'informational' && Object.hasOwn(nativeUsage, field) && nativeUsage[field] !== measured) throw new CapacityGovernanceError(
+		const native = nativeUsage[field];
+		if (mode !== 'informational' && Object.hasOwn(nativeUsage, field)
+			&& (typeof native !== 'number' || !Number.isFinite(native) || native < 0 || Math.ceil(native) !== measured)) throw new CapacityGovernanceError(
 			'capacity_task_usage_corrupt', `Native ${field} contradicts its durable measurement.`, 500,
 			{ usageActualId: typeof row.id === 'string' ? row.id : null, column: 'native_usage_json' });
 	}

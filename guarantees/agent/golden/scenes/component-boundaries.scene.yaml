@@ -2909,3 +2909,8 @@ workflow:
   - id: conversation-recovery-usage-postgres
     action: { verifier: api.golden.conversation-recovery-usage-postgres }
     expect: { status: passed }
+
+  - id: native-seconds-unit
+    action: { verifier: api.golden.native-seconds-unit }
+  - id: native-seconds-postgres
+    action: { verifier: api.golden.native-seconds-postgres }
