@@ -162,6 +162,18 @@ describe('immutable assignment-attempt construction', () => {
 			.toThrow(/exact Book reference/u);
 	});
 
+
+ it('keeps a lifecycle workspace on its held workday project context when the governed library advances before issuance',()=>{
+  const input=canonicalOfferBuildInput(),exact=structuredClone(input.candidate),held={store:'treedx' as const,model:'knowledge',id:exact.node.projectId+':project-context',repository:exact.projectContentRepositoryId,commit:'d'.repeat(40),path:'README.md',revision:1,digest:'sha256:'+'4'.repeat(64)};
+  exact.node.kind='reporting';exact.node.pairRole=null;exact.node.workspace='treedx';exact.node.sourceRef={store:'postgresql',model:'workday',id:input.run.id,revision:1,digest:'sha256:'+'1'.repeat(64)};
+  exact.node.requestedPermissions={content:{read:['knowledge'],write:['note']},tools:[]};exact.effectiveProfile.activity='reporting';exact.effectiveProfile.permissionCeiling=exact.node.requestedPermissions;
+  exact.contextRefs=[{...held,id:'current-project-objective',commit:'e'.repeat(40),model:'objective',path:'objectives/core'},held];
+  const run={...input.run,parameters:{...input.run.parameters,workdayContextByProjectId:{[exact.node.projectId]:held},appliedPlan:{...input.run.parameters.appliedPlan as object,state:'closing'}}};
+  const before=structuredClone({exact,run}),build=()=>buildAssignmentAttempt({...input,candidate:exact,run});
+  const result=build().assignment;expect(result.workspace).toMatchObject({mode:'treedx',baseCommit:held.commit});expect(result.grant.contentWrite[0]!.commit).toBe(held.commit);
+  exact.contextRefs[0]!.commit='f'.repeat(40);expect(build().assignment.workspace).toEqual(result.workspace);
+  expect(run).toEqual(before.run);
+ });
 	it('freezes graph, profile, provider build, exact grant, workspace, and estimate', () => {
 		const result = buildAssignmentAttempt({
 			candidate: candidate as never, run,
