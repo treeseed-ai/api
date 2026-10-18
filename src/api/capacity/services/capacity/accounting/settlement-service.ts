@@ -5,8 +5,8 @@ import { assignmentAttemptSchema, usageSettlementSchema } from '@treeseed/sdk/ag
 import { isUniqueConstraintViolation } from '../../../database-errors.ts';
 import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
+import { durableReal, durableRealEquals } from '../../support/durable-number.ts';
 import { serializeCapacityLedgerEntryRow } from '../../../repositories/capacity/accounting/ledger.ts';
-import { durableRealEquals } from '../../support/durable-number.ts';
 import type { CapacityUsageActualInput } from './usage-actual-input.ts';
 import {
 assertCapacityUsageMatches,
@@ -324,7 +324,9 @@ async function settleCapacityReservationOnTransaction(database: CapacityGovernan
   for(const expected of prepared.counterSettlements){
    const before=claims.find(claim=>claim.counter_id===expected.counterId),after=await database.first('SELECT counter.team_id,counter.committed_amount,counter.state_version,claim.released_amount FROM capacity_admission_counters counter JOIN capacity_reservation_counter_claims claim ON claim.counter_id=counter.id WHERE counter.id=? AND claim.reservation_id=?',[expected.counterId,input.reservationId]);
    if(!before||!after||typeof before.counter_team_id!=='string'||after.team_id!==before.counter_team_id
-    ||!durableRealEquals(after.committed_amount,Number(before.original_committed_amount)+expected.adjustment)
+    // Reconstruct the stored binary32 operand before subtraction. The driver
+    // returns its shortest decimal spelling, which may cancel differently.
+    ||!durableRealEquals(after.committed_amount,Number(durableReal(before.original_committed_amount))+expected.adjustment)
     ||Number(after.state_version)!==Number(before.original_state_version)+1||!durableRealEquals(after.released_amount,expected.releasedAmount))throw new CapacityGovernanceError('capacity_settlement_counter_not_committed','Terminal scoped counter state was not committed.',500);
   }
  }

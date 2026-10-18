@@ -4889,3 +4889,23 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/provider-availability-reconciliation.test.ts
     testName: native seed provider lane readback follows changed adapter ownership and preserves exact replay on independent connections
+  api.golden.settlement-binary32-zero:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-persistence.test.ts
+    testName: "settles 0 measured seconds against the original binary32 supply counter without losing durable precision"
+  api.golden.settlement-binary32-measured:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-persistence.test.ts
+    testName: "settles 26 measured seconds against the original binary32 supply counter without losing durable precision"
+  api.golden.settlement-binary32-postgres:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/accounting-history-postgres.test.ts
+    testName: "native independent PostgreSQL settlement releases fractional shared supply once and retains its original binary32 arithmetic"
+  api.golden.conversation-stop-report-custody:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-closeout-persistence.test.ts
+    testName: "cancels a conversation in closing without inventing an ended plan or Reporter reference and retains exact retry"
