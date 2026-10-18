@@ -5,7 +5,7 @@ import { copyNativeAssignmentCustody } from '../../../providers/assignments/arch
 import { frozenAttempt, settlementDatabase, terminalUsage } from './settlement-fixture.ts';
 import { ControlPlaneStore } from '../../../../../../src/api/persistence/store.ts';
 import { createProviderAssignmentService } from '../../../../../../src/api/control-plane/repositories/providers/provider-assignment-service.ts';
-import type { ProviderAssignmentStore } from '../../../../../../src/api/control-plane/repositories/providers/provider-assignment-support.ts';
+import { createCapacityControlPlane } from '../../../../../../src/api/capacity/control-plane.ts';
 import { CapacityWorkdayEventRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 import { serializeCapacityReservationRow } from '../../../../../../src/api/capacity/repositories/capacity/accounting/reservation.ts';
 import { serializeTaskUsageActualRow } from '../../../../../../src/api/capacity/repositories/capacity/accounting/task-usage.ts';
@@ -13,14 +13,6 @@ import { serializeCapacityLedgerEntryRow } from '../../../../../../src/api/capac
 
 const auth = { principal: { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider', scopes: ['provider:usage:write', 'provider:assignments:write'] } };
 const tables = ['capacity_workday_runs', 'execution_nodes', 'capacity_reservations', 'capacity_provider_assignments', 'capacity_admission_counters', 'capacity_reservation_counter_claims','capacity_workday_events'];
-
-// ControlPlaneStore installs these owning methods dynamically. Check the real
-// installed boundary before narrowing it for the service's static contract.
-function assertProviderStore(store: ControlPlaneStore): asserts store is ControlPlaneStore & ProviderAssignmentStore {
- for (const key of ['leaseNextProviderAssignment','getProviderAssignment','renewProviderAssignmentLease',
-  'returnProviderAssignment','completeProviderAssignment','failProviderAssignment','createCapacityWorkdayRun',
-  'tickCapacityWorkdayRun','updateCapacityWorkdayRun']) expect(typeof Reflect.get(store,key)).toBe('function');
-}
 
 it('native independent PostgreSQL settlement releases fractional shared supply once and retains its original binary32 arithmetic', async () => {
  const native = await postgresGraph();
@@ -34,7 +26,7 @@ it('native independent PostgreSQL settlement releases fractional shared supply o
   } finally { await supplied.db.close(); }
   const services = [native.left, native.right].map(database => {
    const store = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, database); store.initializationPromise = Promise.resolve();
-   assertProviderStore(store); return createProviderAssignmentService(store);
+   return createProviderAssignmentService(createCapacityControlPlane(store));
   });
   const input = { ...terminalUsage, activeSeconds: 0, elapsedSeconds: 0,
    usageActual: { ...terminalUsage.usageActual, nativeUsage: { activeSeconds: 0, tokens: 7 } } };
@@ -58,8 +50,8 @@ it('native PostgreSQL accounting producers retain exact complete public observat
    try { await supplied.query('UPDATE capacity_provider_assignments SET reservation_id=? WHERE id=?', ['reservation', frozenAttempt.id]);
     await copyNativeAssignmentCustody(native.left, { attempt: frozenAttempt, query: supplied.query }, tables);
    } finally { await supplied.db.close(); }
-   const stores = [native.left, native.right].map(database => { const store = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, database); store.initializationPromise = Promise.resolve(); return store; });
-   const services = stores.map(store => { assertProviderStore(store); return createProviderAssignmentService(store); });
+   const stores = [native.left, native.right].map(database => { const store = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, database); store.initializationPromise = Promise.resolve(); return createCapacityControlPlane(store); });
+   const services = stores.map(store => createProviderAssignmentService(store));
    const connections = await Promise.all([native.left, native.right].map(database => database.pool.query('SELECT pg_backend_pid() AS pid,current_database() AS name')));
    expect(connections.map(result => result.rows[0].name)).toEqual([native.name, native.name]); expect(connections[0]!.rows[0].pid).not.toBe(connections[1]!.rows[0].pid);
    const body = operation === 'usage' ? { assignmentAttempt: 1, usageDimension: 'checkpoint', accountingMode: 'incremental', activeSeconds: 1,
