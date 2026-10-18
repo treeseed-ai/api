@@ -1,3 +1,4 @@
+import {proveNativeStoppedReportContext} from './reporting/native-stopped-report-context.ts';
 import {proveNativeReportGraphScope} from './native-report-context-scope.ts';
 import {expect} from 'vitest';
 import type pg from 'pg';
@@ -32,6 +33,7 @@ export async function proveNativeWorkdayLifecycleObservations(database:ReturnTyp
   await lock.query('COMMIT');expect(await pending).toEqual([closing,closing]);pending=undefined;
   expect(closing).toEqual(held);expect(await reads.get('team',id)).toEqual(closing);
   await proveNativeReportGraphScope(owner,observer,id);
+  await proveNativeStoppedReportContext(owner,observer);
   const first=await events.list('team',id,{limit:50});expect(first.items).toHaveLength(1);
   expect(first.items[0]).toMatchObject({eventType:'workday.lifecycle.changed',workdayId:id,runId:id,teamId:'team',context:{previousStatus:'running',status:'running',previousPlan:plan,plan:closing.parameters.appliedPlan}});
   const snapshot=async()=>({run:(await observer.query('SELECT * FROM capacity_workday_runs WHERE id=$1',[id])).rows,events:(await observer.query('SELECT * FROM capacity_workday_events WHERE run_id=$1 ORDER BY event_index',[id])).rows});

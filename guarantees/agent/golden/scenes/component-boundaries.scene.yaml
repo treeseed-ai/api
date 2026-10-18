@@ -2930,3 +2930,15 @@ workflow:
   - id: proposal-contract-authority-native
     action: { verifier: api.golden.proposal-contract-authority-native }
     expect: { status: passed }
+
+  - id: stopped-reporter-history
+    action: { verifier: api.golden.stopped-reporter-history }
+    expect: { status: passed }
+
+  - id: frozen-reporter-workspace
+    action: { verifier: api.golden.frozen-reporter-workspace }
+    expect: { status: passed }
+
+  - id: project-topic-discussion-scope
+    action: { verifier: api.golden.project-topic-discussion-scope }
+    expect: { status: passed }

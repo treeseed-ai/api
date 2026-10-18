@@ -4952,3 +4952,21 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-contract-authority-native.test.ts
     testName: "creates from the selected governed schema without replacing local products and denies unpublished local-only types"
+
+  api.golden.stopped-reporter-history:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/report-context-lifecycle.test.ts
+    testName: "retains the original stop while proving later terminal planning through its exact public lifecycle chain"
+
+  api.golden.frozen-reporter-workspace:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/assignment-workday-workspace.test.ts
+    testName: "keeps a lifecycle workspace on its held workday project context when the governed library advances before issuance"
+
+  api.golden.project-topic-discussion-scope:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/discussion-supply-postgres.test.ts
+    testName: "uses reported capability lanes rather than the retired materialized lane owner"
