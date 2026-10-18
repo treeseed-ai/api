@@ -41,7 +41,7 @@ it('capacity execution materializes the declared native TreeDX client from its s
 	const job = object(object(object(parse(workflowBytes.toString('utf8'))).jobs).verify);
 	if (!Array.isArray(job.steps)) throw new Error('Original native provider workflow required');
 	const steps = job.steps.map(object), checkout = steps.find(step => step.name === 'Checkout exact native TreeDX');
-	expect(object(checkout?.with)).toEqual({ repository: 'treeseed-ai/treedx', ref: '6d358bb2e536af24918f3c33acb2072b9093a603', path: '.treeseed/tools/treedx' });
+	expect(object(checkout?.with)).toEqual({ repository: 'treeseed-ai/treedx', ref: 'fbd1856f8fc1ce5b21febfab38c653220826f9d6', path: '.treeseed/tools/treedx' });
 	const client = steps.find(step => step.name === 'Materialize the verified native TreeDX client');
 	expect(client).toBeDefined();
 	expect(String(client?.run)).toContain('npm pack ./.treeseed/tools/treedx/packages/ts-sdk --ignore-scripts');
@@ -341,7 +341,7 @@ it('complete provider suites provision the exact native TreeDX engine and origin
 	const steps = job.steps.map(object), checkout = steps.find(step => step.name === 'Checkout exact native TreeDX');
 	expect(checkout?.uses).toBe('actions/checkout@v4');
 	expect(object(checkout?.with)).toEqual({ repository: 'treeseed-ai/treedx',
-		ref: '6d358bb2e536af24918f3c33acb2072b9093a603', path: '.treeseed/tools/treedx' });
+		ref: 'fbd1856f8fc1ce5b21febfab38c653220826f9d6', path: '.treeseed/tools/treedx' });
 	// The signed TreeDX process stays alive through scenes: select the same exact
 	// native runtime required by the held executing Reviewer before starting it.
 	const beam = steps.filter(step => step.uses === 'erlef/setup-beam@v1');
