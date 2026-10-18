@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import { describe, expect, it } from 'vitest';
 import { relationPublicationDatabase } from './relation-publication-fixture.ts';
@@ -20,10 +23,14 @@ describe('native governed dependency Note publication and graph intake', () => {
 			const workspace=await f.create(),written=await f.write(workspace),submitted=await f.submit(written.workspace);
 			assert.ok(submitted.integration);const commit=submitted.commit.commitSha,nativeRef='refs/remotes/origin/staging';
 			const native=new TreeDxInfrastructureClient(f.client);
-			// Controlled upstream-custody input: create only this disposable native
-			// remote alias with native CAS. This does not claim GitHub push/auth proof.
-			const alias=await native.promoteRef({repoId:workspace.repositoryId,sourceRef:workspace.branchName,destinationRef:nativeRef,expectedDestinationHead:workspace.baseCommitSha});
-			expect(alias.afterHead).toBe(commit);
+			// Real public push/fetch against an isolated bare remote. The original
+			// fixture owns and removes this directory; no portfolio or GitHub refs.
+			const remotePath=join(f.root,'publication-upstream.git'),remoteUrl=pathToFileURL(remotePath).href;
+			execFileSync('git',['init','--bare',remotePath],{stdio:'pipe'});
+			const pushed=await native.push({repoId:workspace.repositoryId,remoteUrl,refspecs:[`${workspace.branchName}:refs/heads/staging`],expectedRemoteHead:null});
+			expect(pushed.status).toBe('pushed');
+			expect(execFileSync('git',['--git-dir',remotePath,'rev-parse','refs/heads/staging'],{encoding:'utf8'}).trim()).toBe(commit);
+			await native.fetchRemote({repoId:workspace.repositoryId,remoteUrl,refspecs:[`+refs/heads/staging:${nativeRef}`]});
 			await f.store.upsertProjectTreeDxLibrary(workspace.projectId,{contentRepositoryRef:nativeRef});
 			const executor=createKnowledgePublicationExecutor({environment:'test',controlPlaneStore:f.store,knowledgePublicationStorage:f.storage,
 				publishRemoteRepository:async(input:{reviewedCommit:string;publicationRef:string})=>{
