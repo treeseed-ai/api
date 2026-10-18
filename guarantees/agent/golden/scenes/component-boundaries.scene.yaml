@@ -2912,5 +2912,7 @@ workflow:
 
   - id: native-seconds-unit
     action: { verifier: api.golden.native-seconds-unit }
+    expect: { status: passed }
   - id: native-seconds-postgres
     action: { verifier: api.golden.native-seconds-postgres }
+    expect: { status: passed }
