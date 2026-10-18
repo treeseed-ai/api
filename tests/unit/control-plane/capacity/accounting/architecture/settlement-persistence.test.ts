@@ -7,6 +7,21 @@ import { frozenAttempt, settlementDatabase, terminalUsage } from './settlement-f
 // Supplied terminal measurements are NOT provider-generated usage/live teardown;
 // concurrent PGlite requests are NOT independent PostgreSQL connection proof.
 describe('terminal accounting through the owning transaction and persistence', () => {
+	it.each([0, 26])('settles %s measured seconds against the original binary32 supply counter without losing durable precision', async activeSeconds => {
+		const { db, owner, query, snapshot } = await settlementDatabase();
+		try {
+			await query("UPDATE capacity_admission_counters SET committed_amount=235.495 WHERE id='seconds'");
+			await query("UPDATE capacity_reservation_counter_claims SET reserved_amount=162 WHERE counter_id='seconds'");
+			const input = { ...terminalUsage, activeSeconds, elapsedSeconds: activeSeconds,
+				usageActual: { ...terminalUsage.usageActual, nativeUsage: { activeSeconds, tokens: 7 } } };
+			expect((await settleCapacityReservationExactlyOnce(owner, input)).replayed).toBe(false);
+			const amount = (await query("SELECT committed_amount::double precision AS value FROM capacity_admission_counters WHERE id='seconds'")).rows[0]!.value;
+			expect(amount).toBe(Math.fround(Math.fround(235.495) + activeSeconds - 162));
+			const held = await snapshot();
+			expect((await settleCapacityReservationExactlyOnce(owner, input)).replayed).toBe(true);
+			expect(await snapshot()).toEqual(held);
+		} finally { await db.close(); }
+	});
 	it('settles repeated and concurrent matching terminal reports once with exact native usage and immutable authority', async () => {
 		const { db, owner, query, snapshot } = await settlementDatabase();
 		try {
