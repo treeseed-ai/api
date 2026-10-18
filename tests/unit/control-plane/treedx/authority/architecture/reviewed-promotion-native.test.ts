@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { splitPostgresSqlStatements } from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { TreeDxClient } from '@treeseed/treedx/treedx/client';
@@ -32,9 +34,19 @@ describe('reviewed authoring ref promotion through public API and native TreeDX'
 		const refs = async () => object(await native.repositories.refs(repoId)).refs as Array<{ name: string; target: string }>;
 		const base = (await refs()).find(ref => ref.name === 'refs/heads/main')?.target;
 		if (!base || !/^[a-f0-9]{40}$/u.test(base)) throw new Error('Exact initialized base required.');
-		let workspaceId: string | undefined;
+		let workspaceId: string | undefined, scopedWorkspaceId: string | undefined;
 		const f = await cancellationDatabase();
 		try {
+			const originalDdl = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql','utf8'));
+			for(const table of ['projects','treedx_project_libraries']) {
+				const ddl=originalDdl.filter(sql=>sql.startsWith(`CREATE TABLE "${table}" (`));
+				expect(ddl).toHaveLength(1);await f.db.exec(ddl[0]!);
+			}
+			for(const migration of ['0006_treedx_commit_replication.sql','0017_remove_git_backup_replication.sql','0018_repair_git_backup_column_removal.sql']) await f.db.exec(readFileSync('drizzle/control-plane/'+migration,'utf8'));
+			const at=new Date().toISOString();
+			await f.owner.run("INSERT INTO teams(id,slug,name,created_at,updated_at) VALUES('team','team','Native fixture',?,?)",[at,at]);
+			await f.owner.run("INSERT INTO projects(id,team_id,slug,name,created_at,updated_at) VALUES('project','team','project','Native fixture',?,?)",[at,at]);
+			await f.owner.run("INSERT INTO treedx_project_libraries(id,team_id,project_id,instance_id,library_id,repository_id,content_path,created_at,updated_at) VALUES('library','team','project','isolated-native-connection','library',?,'.',?,?)",[repoId,at,at]);
 			await promote(native, { sourceRef: 'refs/heads/main', destinationRef: 'refs/heads/staging', expectedDestinationHead: base });
 			const sourceRef = 'refs/heads/knowledge/reviewed', destinationRef = 'refs/heads/staging';
 			const workspace = object(await native.workspaces.create(repoId, { mode: 'writable', baseRef: 'refs/heads/main', branchName: sourceRef, allowedPaths: ['docs/**'] }));
@@ -62,6 +74,22 @@ describe('reviewed authoring ref promotion through public API and native TreeDX'
 			const original = structuredClone(input), before = await f.snapshot();
 			const context = { interface: 'rest' as const, requestId: 'native-reviewed-promotion', idempotencyKey: randomUUID(), principal: { id: 'isolated-operator', roles: ['admin'] } };
 			const invoke = (value = input) => operation.handler(value, context);
+			// Exercise the same public workspace operations used by governed authoring,
+			// including exact batch paths and a real additional publication parent.
+			const scoped = object(await native.workspaces.create(repoId, { mode: 'writable', baseRef: 'refs/heads/main', branchName: 'refs/heads/knowledge/scoped', allowedPaths: ['docs/**'] }));
+			if (typeof scoped.workspaceId !== 'string') throw new Error('Second exact owning workspace required.');
+			scopedWorkspaceId = scoped.workspaceId;
+			const workspacePath = {projectId:'project',workspaceId:scopedWorkspaceId};
+			const catalog = createTreeDxOperations({treeDxProxy:service});
+			const workspaceOperation = (id:string) => {const entry=catalog.find(value=>value.binding.descriptor.operationId===id);if(!entry)throw new Error('Original public workspace operation required: '+id);return entry;};
+			await workspaceOperation('treedx.workspaces.files.batch').handler({path:workspacePath,query:{},body:{files:[{path:'docs/proof.md',content:'Reviewed native candidate\n'},{path:'docs/scoped.md',content:'Exact public workspace bytes\n'}]}},context);
+			const read = await workspaceOperation('treedx.workspaces.files.read').handler({path:workspacePath,query:{path:'docs/scoped.md',encoding:'utf8'},body:undefined},context);
+			expect(read).toMatchObject({result:{file:{path:'docs/scoped.md',content:'Exact public workspace bytes\n'}}});
+			await expect(workspaceOperation('treedx.workspaces.files.batch').handler({path:workspacePath,query:{},body:{files:[{path:'private/denied.md',content:'Denied'}]}},context)).rejects.toMatchObject({status:403});
+			const merged = await workspaceOperation('treedx.workspaces.commit').handler({path:workspacePath,query:{},body:{message:'Preserve both native fixture parents',author:{name:'Native fixture',email:'native@example.invalid'},additionalParentRefs:[sourceRef]}},context);
+			expect(merged).toMatchObject({result:{commitSha:expect.stringMatching(/^[a-f0-9]{40}$/u),branchName:'refs/heads/knowledge/scoped'}});
+			await native.workspaces.close(scopedWorkspaceId);
+
 			const narrowed = new TreeDxClient({ baseUrl, token: authority.mint({ actorId: 'treeseed-api', tenantId: 'treeseed-control-plane',
 				projectId: 'project', connectionId: 'isolated-native-connection', scope: { repositoryIds: [repoId], capabilities: ['git:push'], refs: [sourceRef], paths: ['**'] } }).token });
 			await expect(promote(narrowed, input.body)).rejects.toMatchObject({ status: 403, code: 'permission_denied' });
@@ -76,11 +104,13 @@ describe('reviewed authoring ref promotion through public API and native TreeDX'
 			expect((await refs()).find(ref => ref.name === 'refs/heads/main')?.target).toBe(base);
 			expect((await refs()).find(ref => ref.name === destinationRef)?.target).toBe(candidate);
 			expect(await f.snapshot()).toEqual(before); expect(input).toEqual(original);
-			const audit = await f.owner.all('SELECT project_id,actor_id,result_status FROM treedx_project_proxy_audit');
-			expect(audit).toHaveLength(3);
-			for (const row of audit) expect(row).toMatchObject({ project_id: 'project', actor_id: 'isolated-operator', result_status: 'proxied' });
+			const audit = await f.owner.all('SELECT project_id,actor_id,result_status,path FROM treedx_project_proxy_audit');
+			expect(audit.filter(row=>String(row.path).endsWith('/refs/promote'))).toHaveLength(3);
+			for (const row of audit.filter(row=>row.result_status==='proxied')) expect(row).toMatchObject({ project_id: 'project', actor_id: 'isolated-operator' });
+			expect(audit.filter(row=>row.result_status==='authoring_unpublished')).toHaveLength(1);
+			expect(await f.owner.all('SELECT project_id,repository_id,source_ref,status FROM treedx_commit_replications')).toEqual([{project_id:'project',repository_id:repoId,source_ref:'refs/heads/knowledge/scoped',status:'pending'}]);
 		} finally {
-			try { if (workspaceId) { await native.workspaces.close(workspaceId); expect(object(await native.workspaces.get(workspaceId)).status).toBe('closed'); } }
+			try { for(const id of [workspaceId,scopedWorkspaceId]) if(id) { await native.workspaces.close(id); expect(object(await native.workspaces.get(id)).status).toBe('closed'); } }
 			finally { try { await native.repositories.retire(repoId); } finally { await f.db.close(); } }
 		}
 	});

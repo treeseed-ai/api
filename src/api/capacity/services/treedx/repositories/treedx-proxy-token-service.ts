@@ -123,7 +123,7 @@ export async function verifyTreeDxWorkspace(input: {
 	library: Record<string, unknown> | null;
 	workspaceId: string;
 	fetchImpl?: typeof fetch;
-}): Promise<void> {
+}): Promise<Record<string, unknown>> {
 	const topology = record(input.library?.topology);
 	const contentRepository = record(topology.contentRepository);
 	const treeDx = record(contentRepository.treeDx);
@@ -145,4 +145,6 @@ export async function verifyTreeDxWorkspace(input: {
 		});
 	}
 	assertTreeDxWorkspaceIdentity({ projectId: input.projectId, repositoryId, workspaceId: input.workspaceId }, payload);
+	const outer = record(payload), nested = record(outer.payload);
+	return record(outer.workspace ?? nested.workspace ?? outer.payload ?? payload);
 }
