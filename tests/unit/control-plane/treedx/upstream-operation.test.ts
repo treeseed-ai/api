@@ -34,8 +34,8 @@ describe('authoritative TreeDX upstream operations', () => {
 		const operation = requireTreeDxOperation('writeWorkspaceFile');
 		expect(operation.requiredCapabilities).toContain('files:write');
 		expect(treeDxPathParameters(operation, { workspaceId: 'workspace one' })).toEqual({ workspace_id: 'workspace one' });
-		expect(treeDxOperationScope(operation, { path: { workspaceId: 'workspace one' }, body: { path: 'docs/a.md' } }, ['repo-1']))
-			.toMatchObject({ repoIds: ['repo-1'], capabilities: operation.requiredCapabilities, paths: ['docs/a.md'] });
+		expect(treeDxOperationScope(operation, { path: { workspaceId: 'workspace one' }, body: { path: 'docs/a.md', additionalParentRefs: ['refs/heads/staging'] } }, ['repo-1']))
+			.toMatchObject({ repoIds: ['repo-1'], capabilities: operation.requiredCapabilities, paths: ['docs/a.md'], refs: ['refs/heads/staging'] });
 	});
 
 	it('does not forward TreeSeed assignment or proxy-handle query fields', () => {
