@@ -71,9 +71,11 @@ describe('governed proposal contract authority with divergent native authoring',
 			expect(await head()).toBe(created.receipt.commitSha);
 			const frozenSource=await read(String(published.commitSha),typePath);expect(object(frozenSource.file).content).toBe(JSON.stringify(contract));
 			const beforeDeny=await f.query('SELECT * FROM capacity_provider_assignments');
-			await f.query('UPDATE capacity_workday_runs SET parameters_json=? WHERE id=?',[JSON.stringify({...parameters,workdayContextByProjectId:{[projectId]:{...held,repository:'foreign-repository'}}}),workdayId]);
-			await expect(commitProposalVersionContent(revision)).rejects.toMatchObject({code:'proposal_simulation_contract_authority_required',status:409});
-			expect(await f.query('SELECT * FROM capacity_provider_assignments')).toEqual(beforeDeny);
+			for(const invalid of [undefined,{...held,repository:'foreign-repository'},{...held,commit:'staging'},{...held,store:'git'},{...held,model:'proposal'}]){
+				await f.query('UPDATE capacity_workday_runs SET parameters_json=? WHERE id=?',[JSON.stringify({...parameters,workdayContextByProjectId:invalid?{[projectId]:invalid}:{}}),workdayId]);
+				await expect(commitProposalVersionContent(revision)).rejects.toMatchObject({code:'proposal_simulation_contract_authority_required',status:409});
+				expect(await f.query('SELECT * FROM capacity_provider_assignments')).toEqual(beforeDeny);expect(await head()).toBe(created.receipt.commitSha);
+			}
 			await f.store.upsertProjectTreeDxLibrary(projectId,{contentRepositoryRef:governedRef});
 			const committed=await head();expect(committed).toBe(created.receipt.commitSha);
 			await expect(commitProposalVersionContent(input)).rejects.toMatchObject({code:'proposal_source_path_occupied',status:409});

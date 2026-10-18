@@ -171,12 +171,18 @@ export function createKnowledgePublicationExecutor(options: any) {
 			if (!publicationAlreadyApplied) {
 				// Scheduling consumes the published ref, whose native index is distinct
 				// from the exact-commit index. Both must resolve to the reviewed commit.
+				// External publication already verifies its native remote-tracking ref;
+				// local authoring history can legitimately remain on a different head.
+				const publishedIndexRef = external ? remote?.fetch?.ref : publication.published_ref;
+				if (typeof publishedIndexRef !== 'string' || !publishedIndexRef.trim()) {
+					throw Object.assign(new Error('External knowledge publication requires verified native ref custody.'), { code: 'knowledge_publication_native_ref_required' });
+				}
 				const publishedGraph = await completedGraphRefresh(connection.client, {
-					repoId: connection.repositoryId, ref: publication.published_ref, paths: workspace.allowedPaths,
+					repoId: connection.repositoryId, ref: publishedIndexRef, paths: workspace.allowedPaths,
 					changedPaths: Array.isArray(review.changedPaths) ? review.changedPaths : [],
 				});
 				const publishedSearch = treeDxResult(await connection.client.refreshSearchIndex({
-					repoId: connection.repositoryId, ref: publication.published_ref, paths: workspace.allowedPaths,
+					repoId: connection.repositoryId, ref: publishedIndexRef, paths: workspace.allowedPaths,
 				}), 'index');
 				requireIndexedSourceClosure({ projectId: workspace.projectId, commitSha: publication.commit_sha,
 					graph: publishedGraph, search: publishedSearch });

@@ -6,7 +6,7 @@ describe('reviewed publication source scope', () => {
 		const commit='a'.repeat(40),local='b'.repeat(40),ref='refs/heads/staging',nativeRef='refs/remotes/origin/staging';
 		const publication={id:'publication',status:'queued',commit_sha:commit,published_ref:ref};
 		const workspace={id:'workspace',status:'approved',projectId:'admin',teamId:'team',repositoryId:'repo',branchName:'review',baseCommitSha:local,allowedPaths:['knowledge/**']};
-		const store={first:async(sql:string)=>sql.includes('knowledge_publications')?publication:{clone_url:'https://github.com/treeseed-ai/admin-library.git',grant_status:'ready'},getKnowledgeWorkspace:async()=>workspace,getKnowledgeReview:async()=>({status:'approved',commitSha:commit})};
+		const store={first:async(sql:string)=>sql.includes('knowledge_publications')?publication:{clone_url:'https://github.com/treeseed-ai/admin-library.git',grant_status:'ready'},getKnowledgeWorkspace:async()=>workspace,getKnowledgeReview:async()=>({status:'approved',commitSha:commit}),listTeamProjects:async()=>[{id:'admin'}]};
 		const observed=(input:{ref:string})=>({resolvedRef:input.ref===ref?local:commit,graphVersion:'native-graph',stale:false});
 		const client={getRepository:async()=>({storageKind:'managed'}),promoteRef:vi.fn(),refreshGraph:vi.fn(async(input:{ref:string})=>observed(input)),refreshSearchIndex:vi.fn(async(input:{ref:string})=>observed(input))};
 		const load=vi.fn(async()=>{throw new Error('verified-native-snapshot-boundary');});
