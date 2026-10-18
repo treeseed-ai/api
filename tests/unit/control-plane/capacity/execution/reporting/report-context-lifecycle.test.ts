@@ -39,4 +39,31 @@ describe('original Reporter lifecycle input custody',()=>{
    expect((await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows).toEqual(held);
   }finally{await f.db.close();}
  });
+ it('retains the original stop while proving later terminal planning through its exact public lifecycle chain',async()=>{
+  const f=await settlementDatabase();try{
+   await f.query("UPDATE capacity_reservations SET state='expired' WHERE id='reservation'");
+   const original=(await f.reads.get('team','workday'))!,plan=appliedWorkdaySchema.parse(original.parameters.appliedPlan);
+   const active={...plan,state:'active' as const,planningRounds:[{round:1,state:'active' as const,assignmentIds:['stopped-turn'],startedAt:plan.startsAt}]};delete active.closingAt;
+   await f.query('UPDATE capacity_workday_runs SET parameters_json=? WHERE id=?',[JSON.stringify({...original.parameters,appliedPlan:active}),original.id]);
+   const write=new CapacityWorkdayRunWriteRepository(f.owner),at='2026-10-02T21:01:00.000Z';
+   const closing={...original,parameters:{...original.parameters,appliedPlan:{...active,state:'closing' as const,closingAt:at}},updatedAt:at};
+   await write.update(closing,'running');const first=(await new CapacityWorkdayEventRepository(f.owner).list('team','workday',{limit:50})).items[0]!;
+   await expect(workdayReportContext(f.owner,reporter)).rejects.toMatchObject({code:'reporter_workday_authority_required'});
+   await f.query(`INSERT INTO execution_nodes (id,team_id,project_id,workday_id,kind,source_ref_json,rule_revision,node_revision,status,graph_revision_created,graph_revision_updated,created_at,updated_at)
+    VALUES ('stopped-turn','team','project','workday','estimating','{}',1,1,'cancelled',1,1,?,?)`,[at,at]);
+   const completedAt='2026-10-02T21:01:01.000Z',complete={...closing,parameters:{...closing.parameters,appliedPlan:{...closing.parameters.appliedPlan,planningRounds:[{...active.planningRounds[0]!,state:'complete' as const,completedAt}]}},updatedAt:completedAt};
+   await write.update(complete,'running');const held=await f.snapshot(),events=(await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows;
+   const [context]=await workdayReportContext(f.owner,reporter);expect(context!.value).toMatchObject({closingEvent:first});
+   expect(await workdayReportContext(f.owner,reporter)).toEqual([context]);expect(await f.snapshot()).toEqual(held);
+   for(const mode of ['missing-terminal-event','altered-terminal-event','unfinished-node']){
+    const latest=events.at(-1)!;
+    if(mode==='unfinished-node')await f.query("UPDATE execution_nodes SET status='running' WHERE id='stopped-turn'");
+    else await f.query('UPDATE capacity_workday_events SET event_type=?,context_json=? WHERE id=?',[mode==='missing-terminal-event'?'controlled-excluded':latest.event_type,mode==='altered-terminal-event'?'{}':latest.context_json,latest.id]);
+    await expect(workdayReportContext(f.owner,reporter)).rejects.toMatchObject({code:'reporter_workday_authority_required'});expect(await f.snapshot()).toEqual(held);
+    await f.query("UPDATE execution_nodes SET status='cancelled' WHERE id='stopped-turn'");await f.query('UPDATE capacity_workday_events SET event_type=?,context_json=? WHERE id=?',[latest.event_type,latest.context_json,latest.id]);
+   }
+   expect((await f.query('SELECT * FROM capacity_workday_events ORDER BY event_index')).rows).toEqual(events);
+  }finally{await f.db.close();}
+ });
+
 });

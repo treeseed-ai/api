@@ -84,11 +84,20 @@ function communicationDiscussionReference(candidate: ReadyExecutionNode): ExactE
 	return [{ ...source, id: `${source.id}:discussion`, path: `${match[1]}discussions/${match[2]}.mdx` }];
 }
 
-function projectTreeDxWorkspaceReference(candidate: ReadyExecutionNode): ExactEntityReference | undefined {
+function projectTreeDxWorkspaceReference(candidate: ReadyExecutionNode, run: DurableCapacityWorkdayRun): ExactEntityReference | undefined {
 	const source = candidate.node.sourceRef.store === 'treedx' ? candidate.node.sourceRef : undefined;
 	if (source && source.repository !== candidate.projectContentRepositoryId) throw new CapacityGovernanceError(
 		'assignment_content_project_mismatch', 'Writable TreeDX content must belong to the assignment project library.', 409);
-	return source ?? candidate.contextRefs.find((reference) => reference.store === 'treedx'
+	if (source) return source;
+	if (candidate.node.kind === 'reporting' && candidate.node.sourceRef.store === 'postgresql' && candidate.node.sourceRef.model === 'workday') {
+		const held = (run.parameters.workdayContextByProjectId as Record<string, ExactEntityReference> | undefined)?.[candidate.node.projectId];
+		if (!held || held.store !== 'treedx' || held.repository !== candidate.projectContentRepositoryId
+			|| !/^[a-f0-9]{40}$/u.test(held.commit ?? '') || !held.path
+			|| !candidate.contextRefs.some(reference => stable(reference) === stable(held))) throw new CapacityGovernanceError(
+				'assignment_workspace_reference_missing', 'Lifecycle workspace requires its original exact workday project context.', 409);
+		return held;
+	}
+	return candidate.contextRefs.find((reference) => reference.store === 'treedx'
 		&& reference.repository === candidate.projectContentRepositoryId);
 }
 
@@ -105,7 +114,7 @@ function primaryGitReference(candidate: ReadyExecutionNode): ExactEntityReferenc
 	return reference;
 }
 
-function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant {
+function grant(candidate: ReadyExecutionNode, assignmentId: string, run: DurableCapacityWorkdayRun): ExactGrant {
 	const requested = candidate.node.requestedPermissions!;
 	const ceiling = candidate.effectiveProfile.permissionCeiling;
 	const outside = (values: string[], allowed: string[]) => values.filter((value) => !allowed.includes(value));
@@ -129,7 +138,7 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant 
 		: [];
 	const contentRefs = candidate.contextRefs.filter((reference) => reference.store === 'treedx');
 	const readableModels = new Set<string>(requested.content.read);
-	const treeDxBase = candidate.node.workspace === 'treedx' ? projectTreeDxWorkspaceReference(candidate) : undefined;
+	const treeDxBase = candidate.node.workspace === 'treedx' ? projectTreeDxWorkspaceReference(candidate, run) : undefined;
 	const bookRef = contentRefs.find((reference) => reference.model === 'book'
 		&& reference.repository === treeDxBase?.repository && reference.commit && reference.path);
 	if (candidate.node.kind === 'acting' && candidate.node.workspace === 'treedx'
@@ -164,7 +173,7 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant 
 
 function workspace(candidate: ReadyExecutionNode, assignmentId: string, exactGrant: ExactGrant, run: DurableCapacityWorkdayRun) {
 	if (candidate.node.workspace === 'read-only') return { mode: 'read-only' as const };
-	const reference = candidate.node.workspace === 'treedx' ? projectTreeDxWorkspaceReference(candidate)
+	const reference = candidate.node.workspace === 'treedx' ? projectTreeDxWorkspaceReference(candidate, run)
 		: primaryGitReference(candidate);
 	if (!reference?.repository || !reference.commit) throw new CapacityGovernanceError(
 		'assignment_workspace_reference_missing', `Node ${candidate.node.id} lacks its exact ${candidate.node.workspace} workspace reference.`, 409);
@@ -276,7 +285,7 @@ export function buildAssignmentAttempt(input: {
 	const deadline = compileAssignmentTimeBudget({ now: input.now,
 		requestedSeconds: allocation.allocatedSeconds,
 		configuredBudget: candidate.node.kind === 'reporting' && appliedPlan.state === 'closing' ? {} : { deadline: windowEnd } }).authorityExpiresAt;
-	const exactGrant = grant(candidate, assignmentId);
+	const exactGrant = grant(candidate, assignmentId, input.run);
 	if (candidate.node.kind === 'reporting') exactGrant.contentRead.push(candidate.node.sourceRef);
 	const contentRead = new Set(exactGrant.contentRead.map(stable));
 	const contextRefs = candidate.contextRefs.filter((reference) => reference.store === 'treedx'

@@ -51,6 +51,14 @@ describe('current communication supply in PostgreSQL', () => {
 				parameters: expect.objectContaining({ scheduledProjectIds: ['project'] }),
 			}));
 			await database.pool.query(`INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('project','team','sdk','SDK',$1,$1)`, [now]);
+
+   // The same operator topic is a project-local discussion in each library.
+   await database.pool.query(`INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('second-project','team','ui','UI',$1,$1)`,[now]);
+   await database.pool.query(`INSERT INTO communication_discussion_topics (id,team_id,slug,status,created_at,updated_at) VALUES ('portfolio-topic','team','atlas','active',$1,$1)`,[now]);
+   for(const projectId of ['project','second-project'])await database.pool.query(`INSERT INTO communication_discussion_streams (id,topic_id,team_id,project_id,discussion_id,created_at,updated_at) VALUES ($1,'portfolio-topic','team',$2,'atlas',$3,$3)`,['stream-'+projectId,projectId,now]);
+   expect((await database.pool.query("SELECT project_id,discussion_id FROM communication_discussion_streams ORDER BY project_id")).rows).toEqual([{project_id:'project',discussion_id:'atlas'},{project_id:'second-project',discussion_id:'atlas'}]);
+   await database.pool.query(`INSERT INTO communication_discussion_topics (id,team_id,slug,status,created_at,updated_at) VALUES ('other-topic','team','other-atlas','active',$1,$1)`,[now]);
+   await expect(database.pool.query(`INSERT INTO communication_discussion_streams (id,topic_id,team_id,project_id,discussion_id,created_at,updated_at) VALUES ('duplicate','other-topic','team','project','atlas',$1,$1)`,[now])).rejects.toMatchObject({code:'23505',constraint:'communication_discussion_streams_project_discussion_unique'});
 			await database.pool.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,created_at,updated_at) VALUES ('class','team','project','architect','Architect',$1,$1)`, [now]);
 			const realStore = { ...store,
 				ensureInitialized: () => database.migrate(),
