@@ -33,6 +33,27 @@ async function fixture() {
 // REAL owning SQL/operator evidence/service, supplied measurements only. No
 // actual provider charge, canonical UsageSettlement, live DB or server concurrency claim.
 describe('complete scoped usage observation through original SQL and owning service', () => {
+
+ it('preserves raw fractional native seconds while requiring their exact canonical whole-second ceiling', () => {
+  const row = { id: 'usage', idempotency_key: 'key', project_id: 'project', task_signature: 'task',
+   execution_profile_id: 'profile', assignment_attempt: 1, usage_dimension: 'aggregate', accounting_mode: 'aggregate',
+   business_model: 'isolated-test', metadata_json: '{}', created_at: '2026-10-18T06:25:51.863Z' };
+  for (const [active, elapsed] of [[15.271684438, 15.307804102], [0, 0], [0.001, 0.999], [16, 16], [15.999999999, 16.000000001]]) {
+   const nativeUsage = { activeSeconds: active!, elapsedSeconds: elapsed!, tokens: 118653 };
+   const input = { ...row, active_seconds: Math.ceil(active!), elapsed_seconds: Math.ceil(elapsed!), native_usage_json: JSON.stringify(nativeUsage) };
+   const before = structuredClone(input);
+   expect(serializeTaskUsageActualRow(input)).toMatchObject({ activeSeconds: Math.ceil(active!), elapsedSeconds: Math.ceil(elapsed!), nativeUsage });
+   expect(input).toEqual(before);
+   for (const field of ['active_seconds', 'elapsed_seconds'] as const) {
+    for (const changed of [input[field] + 1, input[field] + 0.5, ...(input[field] > 0 ? [input[field] - 1] : [])]) {
+     const invalid = { ...input, [field]: changed }, retained = structuredClone(invalid);
+     expect(() => serializeTaskUsageActualRow(invalid)).toThrowError(expect.objectContaining({ code: 'capacity_task_usage_corrupt' }));
+     expect(invalid).toEqual(retained);
+    }
+   }
+  }
+ });
+
 	it('retains separately measured infrastructure time and rejects contradictory native second measurements without rewriting either input', () => {
 		const row = { id: 'usage', idempotency_key: 'key', project_id: 'project', task_signature: 'task',
 			execution_profile_id: 'profile', assignment_attempt: 1, usage_dimension: 'aggregate', accounting_mode: 'aggregate',

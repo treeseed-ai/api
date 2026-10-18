@@ -103,3 +103,41 @@ it('native PostgreSQL accounting producers retain exact complete public observat
  // Complete original migrations and independent native connections, supplied
  // measurements and principals; no provider-generated or managed pass claim.
 });
+
+
+it('native PostgreSQL settles canonical whole seconds with exact fractional provider measurements once across independent connections and replay', async () => {
+ const native = await postgresGraph();
+ try {
+  const supplied = await settlementDatabase();
+  try {
+   await supplied.query("UPDATE capacity_provider_assignments SET reservation_id=? WHERE id=?", ['reservation', frozenAttempt.id]);
+   await supplied.query("UPDATE capacity_admission_counters SET committed_amount=235.495,hard_limit=28800 WHERE id='seconds'");
+   await supplied.query("UPDATE capacity_reservation_counter_claims SET reserved_amount=162 WHERE counter_id='seconds'");
+   await copyNativeAssignmentCustody(native.left, { attempt: frozenAttempt, query: supplied.query }, tables);
+  } finally { await supplied.db.close(); }
+  const services = [native.left, native.right].map(database => {
+   const store = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, database); store.initializationPromise = Promise.resolve();
+   return createProviderAssignmentService(createCapacityControlPlane(store));
+  });
+  const nativeUsage = { activeSeconds: 15.271684438, elapsedSeconds: 15.307804102, tokens: 118653 };
+  const input = { ...terminalUsage, activeSeconds: 16, elapsedSeconds: 16,
+   usageActual: { ...terminalUsage.usageActual, nativeUsage } }, before = structuredClone(input);
+  const results = await Promise.all(services.map(service => service.settle(auth, frozenAttempt.id, input, input.settlementKey)));
+  expect(results.map(result => result.replayed).sort()).toEqual([false, true]);
+  const rows = (await native.right.pool.query('SELECT * FROM capacity_usage_actuals')).rows;
+  expect(rows).toHaveLength(1);
+  expect(serializeTaskUsageActualRow(rows[0]!)).toMatchObject({ activeSeconds: 16, elapsedSeconds: 16, nativeUsage });
+  expect(JSON.parse(rows[0]!.native_usage_json)).toEqual(nativeUsage);
+  const snapshot = async () => Object.fromEntries(await Promise.all(['capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_admission_counters', 'capacity_reservation_counter_claims', 'capacity_workday_events'].map(async table =>
+   [table, (await native.right.pool.query('SELECT * FROM '+table+' ORDER BY 1,2')).rows])));
+  const retained = await snapshot();
+  expect((await services[0]!.settle(auth, frozenAttempt.id, input, input.settlementKey)).replayed).toBe(true);
+  expect(await snapshot()).toEqual(retained); expect(input).toEqual(before);
+  expect((await native.right.pool.query('SELECT * FROM capacity_ledger_entries')).rows).toHaveLength(1);
+  expect((await native.right.pool.query('SELECT * FROM capacity_workday_events')).rows).toHaveLength(1);
+  expect((await native.right.pool.query("SELECT committed_amount::double precision AS value,state_version FROM capacity_admission_counters WHERE id='seconds'")).rows)
+   .toEqual([{ value: Math.fround(Math.fround(235.495) - 146), state_version: 2 }]);
+  await expect(services[1]!.settle(auth, frozenAttempt.id, { ...input, activeSeconds: 17 }, input.settlementKey)).rejects.toThrow();
+  expect(await snapshot()).toEqual(retained);
+ } finally { await native.close(); }
+});
