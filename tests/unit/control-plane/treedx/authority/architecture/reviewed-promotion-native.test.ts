@@ -20,12 +20,18 @@ const object = (value: unknown): Record<string, unknown> => {
 // production authentication, reviewed content semantics, or assignment settlement.
 describe('reviewed authoring ref promotion through public API and native TreeDX', () => {
 	it('promotes only the exact two signed branch refs and preserves native denial stale concurrency and replay custody', async () => {
-		const baseUrl = process.env.TREEDX_BASE_URL, token = process.env.TREEDX_TOKEN;
-		if (!baseUrl || !token || !process.env.API_NATIVE_TREEDX_ROOT || !process.env.TREESEED_TREEDX_DELEGATION_PRIVATE_KEY) {
+		const baseUrl = process.env.TREEDX_BASE_URL;
+		if (!baseUrl || !process.env.TREEDX_TOKEN || !process.env.API_NATIVE_TREEDX_ROOT || !process.env.TREESEED_TREEDX_DELEGATION_PRIVATE_KEY) {
 			throw new Error('The original disposable signed native TreeDX prerequisite is required.');
 		}
+		const authority = new TreeDxDelegationAuthority(process.env);
+		// The prerequisite bearer may expire before this case runs in the full
+		// suite. Refresh through its original trusted signer with normal lifetime.
+		const setupOperations=['createRepository','listRepositoryRefs','promoteRepositoryRef','createWorkspace','writeWorkspaceFile','commitWorkspace','getWorkspace','closeWorkspace','retireRepository'];
+		const token=authority.mint({actorId:'treeseed-api',tenantId:'treeseed-control-plane',projectId:'disposable-conformance',connectionId:'disposable-conformance',
+			scope:{repositoryIds:['*'],capabilities:[...new Set(setupOperations.flatMap(id=>requireTreeDxOperation(id).requiredCapabilities))],refs:['*'],paths:['**']}}).token;
 		const native = new TreeDxClient({ baseUrl, token });
-		const created = object(await native.repositories.create({ repositoryName: `reviewed-promotion-${randomUUID()}`, source: { type: 'empty' } }));
+		const created = object(await native.repositories.create({ repositoryName: `reviewed-promotion-${randomUUID()}` }));
 		const repoId = object(created.repo).repoId;
 		if (typeof repoId !== 'string' || !repoId) throw new Error('Allocated native repository required.');
 		const promotion = requireTreeDxOperation('promoteRepositoryRef');
@@ -57,7 +63,6 @@ describe('reviewed authoring ref promotion through public API and native TreeDX'
 			const candidate = committed.commitSha;
 			if (typeof candidate !== 'string' || !/^[a-f0-9]{40}$/u.test(candidate)) throw new Error('Native committed candidate required.');
 			await native.workspaces.close(workspaceId);
-			const authority = new TreeDxDelegationAuthority(process.env);
 			const evidence = new CapacityRuntimeEvidenceRepository(f.owner);
 			const store = { ...f.owner,
 				getProjectDetails: async (id: string) => id === 'project' ? { project: { id, teamId: 'team' } } : null,
@@ -84,7 +89,7 @@ describe('reviewed authoring ref promotion through public API and native TreeDX'
 			const workspaceOperation = (id:string) => {const entry=catalog.find(value=>value.binding.descriptor.operationId===id);if(!entry)throw new Error('Original public workspace operation required: '+id);return entry;};
 			await workspaceOperation('treedx.workspaces.files.batch').handler({path:workspacePath,query:{},body:{files:[{path:'docs/proof.md',content:'Reviewed native candidate\n'},{path:'docs/scoped.md',content:'Exact public workspace bytes\n'}]}},context);
 			const read = await workspaceOperation('treedx.workspaces.files.read').handler({path:workspacePath,query:{path:'docs/scoped.md',encoding:'utf8'},body:undefined},context);
-			expect(read).toMatchObject({result:{file:{path:'docs/scoped.md',content:'Exact public workspace bytes\n'}}});
+			expect(read).toMatchObject({result:{path:'docs/scoped.md',content:'Exact public workspace bytes\n'}});
 			await expect(workspaceOperation('treedx.workspaces.files.batch').handler({path:workspacePath,query:{},body:{files:[{path:'private/denied.md',content:'Denied'}]}},context)).rejects.toMatchObject({status:403});
 			const merged = await workspaceOperation('treedx.workspaces.commit').handler({path:workspacePath,query:{},body:{message:'Preserve both native fixture parents',author:{name:'Native fixture',email:'native@example.invalid'},additionalParentRefs:[sourceRef]}},context);
 			expect(merged).toMatchObject({result:{commitSha:expect.stringMatching(/^[a-f0-9]{40}$/u),branchName:'refs/heads/knowledge/scoped'}});
