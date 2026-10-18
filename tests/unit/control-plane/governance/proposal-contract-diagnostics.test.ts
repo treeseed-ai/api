@@ -28,7 +28,11 @@ describe('proposal contract lookup failures', () => {
 		client.readRepositoryFiles.mockResolvedValueOnce({resolvedRef:'c'.repeat(40),files:[]});
 		await expect(commitProposalVersionContent(input)).rejects.toMatchObject({code:'proposal_contract_base_stale',expectedBase:governed});
 		expect(client.commit).not.toHaveBeenCalled();
-		expect(client.closeWorkspace).toHaveBeenCalledTimes(3);
+		for(const refs of [[],[{name:protectedRef,target:governed},{name:protectedRef,target:'c'.repeat(40)}]]){
+			client.listRepositoryRefs.mockResolvedValueOnce(refs);
+			await expect(commitProposalVersionContent(input)).rejects.toMatchObject({code:'proposal_contract_authority_unavailable',status:503});
+		}
+		expect(client.closeWorkspace).toHaveBeenCalledTimes(5);
 	});
 	it.each([401, 503])('does not treat existing-source HTTP %i as a missing file', async (status) => {
 		const failure = Object.assign(new Error('Source unavailable'), { status });
@@ -37,7 +41,7 @@ describe('proposal contract lookup failures', () => {
 				content: JSON.stringify({ schemaVersion: 'treeseed.proposal-type/v1', id: 'implementation', label: 'Implementation', description: 'Bounded change.' }) }] })),
 			readRepositoryFile: vi.fn(async () => { throw failure; }), applyChangeset: vi.fn(), closeWorkspace: vi.fn(async () => undefined), commit: vi.fn() };
 		vi.mocked(resolveKnowledgeGatewayConnection).mockResolvedValue({ client, contentPath: '.', repositoryId: 'repository-1',
-			authoringBranch: 'staging', allowedPaths: ['proposals/**'] } as unknown as NonNullable<Awaited<ReturnType<typeof resolveKnowledgeGatewayConnection>>>);
+			baseRef: 'a'.repeat(40), authoringBranch: 'staging', allowedPaths: ['proposals/**'] } as unknown as NonNullable<Awaited<ReturnType<typeof resolveKnowledgeGatewayConnection>>>);
 		await expect(commitProposalVersionContent({ store: {}, principal: { id: 'user-1' },
 			proposal: { id: 'proposal-1', projectId: 'project-1', activeVersion: 1, title: 'Test proposal', summary: 'Verify source custody.', body: 'Test body.', proposalTypes: ['implementation'],
 				metadata: { plan: { desiredOutcome: 'Verified source', currentProblem: 'Digest mismatch', proposedApproach: 'Compare bytes',
@@ -54,7 +58,7 @@ describe('proposal contract lookup failures', () => {
 			readRepositoryFile: vi.fn(async () => ({ resolvedRef: 'a'.repeat(40), file: { content: '  existing\n\n\n' } })), applyChangeset: vi.fn(async (_input: unknown) => ({ files: [{ path, afterSha256 }] })),
 			closeWorkspace: vi.fn(async () => undefined), commit: vi.fn() };
 		vi.mocked(resolveKnowledgeGatewayConnection).mockResolvedValue({ client, contentPath: '.', repositoryId: 'repository-1',
-			authoringBranch: 'staging', allowedPaths: ['proposals/**'] } as unknown as NonNullable<Awaited<ReturnType<typeof resolveKnowledgeGatewayConnection>>>);
+			baseRef: 'a'.repeat(40), authoringBranch: 'staging', allowedPaths: ['proposals/**'] } as unknown as NonNullable<Awaited<ReturnType<typeof resolveKnowledgeGatewayConnection>>>);
 		await expect(commitProposalVersionContent({ store: {}, principal: { id: 'user-1' },
 			proposal: { id: 'proposal-1', projectId: 'project-1', activeVersion: 1, title: 'Test proposal', summary: 'Verify source custody.', body: 'Test body.', proposalTypes: ['implementation'],
 				metadata: { plan: { desiredOutcome: 'Verified source', currentProblem: 'Digest mismatch', proposedApproach: 'Compare bytes',
@@ -70,7 +74,7 @@ describe('proposal contract lookup failures', () => {
 			readRepositoryFiles: vi.fn(async () => { throw upstreamError; }), closeWorkspace: vi.fn(async () => undefined),
 			commit: vi.fn() };
 		vi.mocked(resolveKnowledgeGatewayConnection).mockResolvedValue({ client, contentPath: '.', repositoryId: 'repository-1',
-			authoringBranch: 'staging', allowedPaths: ['proposals/**'] } as unknown as NonNullable<Awaited<ReturnType<typeof resolveKnowledgeGatewayConnection>>>);
+			baseRef: 'a'.repeat(40), authoringBranch: 'staging', allowedPaths: ['proposals/**'] } as unknown as NonNullable<Awaited<ReturnType<typeof resolveKnowledgeGatewayConnection>>>);
 		const operation = commitProposalVersionContent({ store: {}, principal: { id: 'user-1' },
 			proposal: { id: 'proposal-1', projectId: 'project-1', activeVersion: 1, title: 'Test proposal', proposalTypes: ['implementation'] }, update: {} });
 		if (status === 404) await expect(operation).rejects.toMatchObject({ status: 422, code: 'proposal_type_contract_missing',

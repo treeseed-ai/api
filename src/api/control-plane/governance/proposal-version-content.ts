@@ -55,18 +55,33 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 	if (expectedBase && expectedBase !== workspace.baseCommitSha) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw Object.assign(new Error('The proposal content branch changed. Compare and rebase before publishing.'), { status: 409, code: 'proposal_treedx_base_stale', currentBase: workspace.baseCommitSha }); }
 	if (!types.length) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw Object.assign(new Error('Select at least one repository proposal type before publishing.'), { status: 422, code: 'proposal_type_required' }); }
 	const contractPaths = types.map((id) => `.treeseed/governance/proposal-types/${id}.yaml`);
-	let contractRead: Row;
-	try { contractRead = object(await connection.client.readRepositoryFiles({ repoId: connection.repositoryId, ref: baseRef, paths: contractPaths, encoding: 'utf8', parseFrontmatter: false, allowProtected: true })); }
+	// Governed schema authority and mutable proposal authoring use their existing
+	// owning refs. Simulation retains its frozen source contract unchanged.
+	const contractRef = simulation ? baseRef : connection.baseRef;
+	let contractRead: Row, contractBase = workspace.baseCommitSha;
+	try {
+		if (!text(contractRef)) throw Object.assign(new Error('The governed library contract ref is unavailable.'), { status: 503, code: 'proposal_contract_authority_unavailable' });
+		if (/^[a-f0-9]{40}$/u.test(contractRef)) contractBase = contractRef;
+		else {
+			const refs = await connection.client.listRepositoryRefs(connection.repositoryId);
+			const heads: Row[] = Array.isArray(refs) ? refs.map(object) : [];
+			const matches = heads.filter(ref => ref.name === contractRef || ref.name === `refs/heads/${contractRef}`);
+			const head = matches.length === 1 ? text(matches[0]?.target, matches[0]?.sha) : '';
+			if (!/^[a-f0-9]{40}$/u.test(head)) throw Object.assign(new Error('The selected governed library contract head is unavailable or ambiguous.'), { status: 503, code: 'proposal_contract_authority_unavailable' });
+			contractBase = head;
+		}
+		contractRead = object(await connection.client.readRepositoryFiles({ repoId: connection.repositoryId, ref: contractRef, paths: contractPaths, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }));
+	}
 	catch (error) {
 		await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined);
-		if (Number(object(error).status) === 404) throw Object.assign(new Error(`Proposal type contracts could not be read from the project library at ${workspace.baseCommitSha}. Reconcile these contracts before publishing: ${contractPaths.join(', ')}.`), {
-			status: 422, code: 'proposal_type_contract_missing', paths: contractPaths, commitSha: workspace.baseCommitSha,
+		if (Number(object(error).status) === 404) throw Object.assign(new Error(`Proposal type contracts could not be read from the project library at ${contractBase}. Reconcile these contracts before publishing: ${contractPaths.join(', ')}.`), {
+			status: 422, code: 'proposal_type_contract_missing', paths: contractPaths, commitSha: contractBase,
 		});
 		throw error;
 	}
-	if (text(contractRead.resolvedRef) !== workspace.baseCommitSha) {
+	if (text(contractRead.resolvedRef) !== contractBase) {
 		await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined);
-		throw Object.assign(new Error('The proposal contract branch changed while authoring began. Retry against the current branch.'), { status: 409, code: 'proposal_contract_base_stale', expectedBase: workspace.baseCommitSha, currentBase: text(contractRead.resolvedRef) });
+		throw Object.assign(new Error('The proposal contract branch changed while authoring began. Retry against the current branch.'), { status: 409, code: 'proposal_contract_base_stale', expectedBase: contractBase, currentBase: text(contractRead.resolvedRef) });
 	}
 	const contracts = new Map((Array.isArray(contractRead.files) ? contractRead.files : []).map((file: unknown) => [text(object(file).path), text(object(file).content)]));
 	const invalid = contractPaths.filter((contractPath,index) => { try { const validation = validateProposalTypeContract(parseYaml(contracts.get(contractPath) ?? '')); return !validation.ok || validation.value?.id !== types[index]; } catch { return true; } });
