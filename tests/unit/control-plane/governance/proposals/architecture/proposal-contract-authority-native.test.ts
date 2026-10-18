@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { compileWorkday, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { describe, expect, it } from 'vitest';
 import { relationAuthoringDatabase, object } from '../../../knowledge/workspaces/architecture/relation-authoring-fixture.ts';
 import { commitProposalVersionContent } from '../../../../../../src/api/control-plane/governance/proposal-version-content.ts';
@@ -53,6 +54,27 @@ describe('governed proposal contract authority with divergent native authoring',
 			const product=await read(created.receipt.commitSha,created.receipt.path);
 			expect(object(product.file).content).toContain(input.proposal.body);
 			await expect(read(created.receipt.commitSha,typePath)).rejects.toMatchObject({status:404});
+			// A simulated estimate revises private proposal bytes, but its schema
+			// remains the exact existing governed context frozen at activation.
+			const workdayId='workday-'+randomUUID(),now=new Date().toISOString();
+			const held={store:'treedx',model:'knowledge',id:projectId+':project-context',repository:repoId,commit:published.commitSha,path:'README.md'};
+			const plan=compileWorkday({id:workdayId,teamId:'team',policyId:'default',policyRevision:1,executionMode:'simulation',startsAt:now,agentIds:[projectId+'/configured-estimator'],policy:{...DEFAULT_WORKDAY_POLICY,durationSeconds:3600,maximumConcurrency:1}});
+			const parameters={appliedPlan:{...plan,state:'active',activatedAt:now},scheduledProjectIds:[projectId],proposalIds:[input.proposal.id],workdayContextByProjectId:{[projectId]:held}};
+			await f.query('INSERT INTO capacity_workday_runs (id,team_id,execution_kind,execution_mode,status,parameters_json,started_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',[workdayId,'team','workday','simulation','running',JSON.stringify(parameters),now,now,now]);
+			// Moving current library authority cannot replace the original freeze.
+			await f.store.upsertProjectTreeDxLibrary(projectId,{contentRepositoryRef:'refs/heads/main'});
+			const revision={...input,initial:false,proposal:{...input.proposal,activeVersion:1,metadata:{contentProvenance:{repositoryId:repoId,contentPath:created.receipt.path,commitSha:created.receipt.commitSha}}},update:{workdayId,request:'Genuine estimate revision on exact prior private source.'}};
+			const revised=await commitProposalVersionContent(revision);
+			expect(revised.update.body).toBe(revision.update.request);
+			expect((await read(revised.receipt.commitSha,retainedPath)).file).toMatchObject({content:retained});
+			await expect(read(revised.receipt.commitSha,typePath)).rejects.toMatchObject({status:404});
+			expect(await head()).toBe(created.receipt.commitSha);
+			const frozenSource=await read(String(published.commitSha),typePath);expect(object(frozenSource.file).content).toBe(JSON.stringify(contract));
+			const beforeDeny=await f.query('SELECT * FROM capacity_provider_assignments');
+			await f.query('UPDATE capacity_workday_runs SET parameters_json=? WHERE id=?',[JSON.stringify({...parameters,workdayContextByProjectId:{[projectId]:{...held,repository:'foreign-repository'}}}),workdayId]);
+			await expect(commitProposalVersionContent(revision)).rejects.toMatchObject({code:'proposal_simulation_contract_authority_required',status:409});
+			expect(await f.query('SELECT * FROM capacity_provider_assignments')).toEqual(beforeDeny);
+			await f.store.upsertProjectTreeDxLibrary(projectId,{contentRepositoryRef:governedRef});
 			const committed=await head();expect(committed).toBe(created.receipt.commitSha);
 			await expect(commitProposalVersionContent(input)).rejects.toMatchObject({code:'proposal_source_path_occupied',status:409});
 			expect(await head()).toBe(committed);
