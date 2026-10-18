@@ -2942,3 +2942,19 @@ workflow:
   - id: project-topic-discussion-scope
     action: { verifier: api.golden.project-topic-discussion-scope }
     expect: { status: passed }
+
+  - id: simulation-proposal-frozen-contract
+    action: { verifier: api.golden.simulation-proposal-frozen-contract }
+    expect: { status: passed }
+
+  - id: external-publication-native-index
+    action: { verifier: api.golden.external-publication-native-index }
+    expect: { status: passed }
+
+  - id: external-publication-index-custody
+    action: { verifier: api.golden.external-publication-index-custody }
+    expect: { status: passed }
+
+  - id: external-publication-missing-custody
+    action: { verifier: api.golden.external-publication-missing-custody }
+    expect: { status: passed }

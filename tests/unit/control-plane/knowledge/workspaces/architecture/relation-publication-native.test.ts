@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import { describe, expect, it } from 'vitest';
 import { relationPublicationDatabase } from './relation-publication-fixture.ts';
@@ -6,12 +9,45 @@ import { object } from './relation-authoring-fixture.ts';
 import { relationPath } from '../../../capacity/execution/graph/architecture/relations/relation-fixture.ts';
 import { emptyLivingGraph, graphState, graphNode } from '../../../capacity/execution/graph/architecture/living/living-graph-fixture.ts';
 import { createExecutionGraphService, persistExecutionGraph } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { TreeDxInfrastructureClient } from '../../../../../../src/api/control-plane/treedx/infrastructure-client.ts';
+import { createKnowledgePublicationExecutor } from '../../../../../../src/operations-runner/knowledge/publication-executor.ts';
+import { runPlatformOperationOnce } from '../../../../../../src/operations-runner/entrypoint-support/operations/operation-execution.ts';
 
 // Actual submit -> original operation SQL -> DirectControlPlaneRunnerClient ->
 // runPlatformOperationOnce -> original executor -> native TreeDX + local immutable
 // manifest -> original graph intake/SQL/public explain. NOT provider dispatch,
 // authenticated API HTTP, independent Actor review, fixed portfolio, or charges.
 describe('native governed dependency Note publication and graph intake', () => {
+	it('indexes the actual native remote ref while retaining divergent local authoring through the original runner',async()=>{
+		const f=await relationPublicationDatabase();let originalFailure:unknown;try{
+			const workspace=await f.create(),written=await f.write(workspace),submitted=await f.submit(written.workspace);
+			assert.ok(submitted.integration);const commit=submitted.commit.commitSha,nativeRef='refs/remotes/origin/staging';
+			const native=new TreeDxInfrastructureClient(f.client);
+			// Real public push/fetch against an isolated bare remote. The original
+			// fixture owns and removes this directory; no portfolio or GitHub refs.
+			const remotePath=join(f.root,'publication-upstream.git'),remoteUrl=pathToFileURL(remotePath).href;
+			execFileSync('git',['init','--bare',remotePath],{stdio:'pipe'});
+			const pushed=await native.push({repoId:workspace.repositoryId,remoteUrl,refspecs:[`${workspace.branchName}:refs/heads/staging`],expectedRemoteHead:null});
+			expect(pushed.status).toBe('pushed');
+			expect(execFileSync('git',['--git-dir',remotePath,'rev-parse','refs/heads/staging'],{encoding:'utf8'}).trim()).toBe(commit);
+			await native.fetchRemote({repoId:workspace.repositoryId,remoteUrl,refspecs:[`+refs/heads/staging:${nativeRef}`]});
+			await f.store.upsertProjectTreeDxLibrary(workspace.projectId,{contentRepositoryRef:nativeRef});
+			const executor=createKnowledgePublicationExecutor({environment:'test',controlPlaneStore:f.store,knowledgePublicationStorage:f.storage,
+				publishRemoteRepository:async(input:{reviewedCommit:string;publicationRef:string})=>{
+					expect(input.reviewedCommit).toBe(commit);expect(input.publicationRef).toBe('refs/heads/staging');
+					return {push:{afterHead:commit},fetch:{ref:nativeRef}};
+				}});
+			const result=await runPlatformOperationOnce({client:f.runnerClient,runnerId:'isolated-relation-publication',operationId:submitted.integration.operation.id,executors:[executor],environment:'local'});
+			expect(result).toMatchObject({ok:true,operation:{status:'succeeded'},output:{commitSha:commit,publishedRef:'refs/heads/staging'}});
+			const refs=await native.listRepositoryRefs(workspace.repositoryId);
+			expect(refs).toContainEqual(expect.objectContaining({name:nativeRef,target:commit}));
+			expect(refs).toContainEqual(expect.objectContaining({name:'refs/heads/staging',target:workspace.baseCommitSha}));
+			const indexed=await native.refreshSearchIndex({repoId:workspace.repositoryId,ref:nativeRef,paths:['notes/**']});
+			expect(object(indexed.index??indexed)).toMatchObject({resolvedRef:commit,stale:false});
+			expect((await f.storage.readCurrent('team'))!.projects).toContainEqual(expect.objectContaining({projectId:workspace.projectId,commitSha:commit}));
+			expect((await f.snapshot()).ledger).toEqual([]);
+		}catch(error){originalFailure=error;throw error;}finally{try{await f.close();}catch(cleanup){if(originalFailure)throw new AggregateError([originalFailure,cleanup],'Native publication failure and incomplete cleanup');throw cleanup;}}
+	},60_000);
 	it('denies empty missing foreign and stale submission authority without native commit or queued publication', async () => {
 		const f = await relationPublicationDatabase(); try {
 			const workspace = await f.create(), before = await f.snapshot();

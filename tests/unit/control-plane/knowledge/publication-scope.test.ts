@@ -2,6 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { createKnowledgePublicationExecutor } from '../../../../src/operations-runner/knowledge/publication-executor.ts';
 
 describe('reviewed publication source scope', () => {
+	it.each([true,false])('indexes the verified external native ref without replacing local authoring; missing remote custody is denied (%s)',async hasCustody=>{
+		const commit='a'.repeat(40),local='b'.repeat(40),ref='refs/heads/staging',nativeRef='refs/remotes/origin/staging';
+		const publication={id:'publication',status:'queued',commit_sha:commit,published_ref:ref};
+		const workspace={id:'workspace',status:'approved',projectId:'admin',teamId:'team',repositoryId:'repo',branchName:'review',baseCommitSha:local,allowedPaths:['knowledge/**']};
+		const store={first:async(sql:string)=>sql.includes('knowledge_publications')?publication:{clone_url:'https://github.com/treeseed-ai/admin-library.git',grant_status:'ready'},getKnowledgeWorkspace:async()=>workspace,getKnowledgeReview:async()=>({status:'approved',commitSha:commit}),listTeamProjects:async()=>[{id:'admin'}]};
+		const observed=(input:{ref:string})=>({resolvedRef:input.ref===ref?local:commit,graphVersion:'native-graph',stale:false});
+		const client={getRepository:async()=>({storageKind:'managed'}),promoteRef:vi.fn(),refreshGraph:vi.fn(async(input:{ref:string})=>observed(input)),refreshSearchIndex:vi.fn(async(input:{ref:string})=>observed(input))};
+		const load=vi.fn(async()=>{throw new Error('verified-native-snapshot-boundary');});
+		const executor=createKnowledgePublicationExecutor({environment:'local',controlPlaneStore:store,knowledgePublicationStorage:{readCurrent:async()=>null},resolveKnowledgeGatewayConnection:async()=>({client,repositoryId:'repo',publicationRef:ref,baseRef:nativeRef,nodeId:'broker'}),publishRemoteRepository:async()=>({push:{afterHead:commit},...(hasCustody?{fetch:{ref:nativeRef}}:{})}),loadKnowledgeSnapshotProjects:load});
+		const result=executor.run({publicationId:'publication'},{operation:{id:'operation'},checkpoint:async()=>{}});
+		if(hasCustody){await expect(result).rejects.toThrow('verified-native-snapshot-boundary');expect(client.refreshGraph).toHaveBeenCalledWith(expect.objectContaining({ref:nativeRef}));expect(client.refreshSearchIndex).toHaveBeenCalledWith(expect.objectContaining({ref:nativeRef}));}
+		else {await expect(result).rejects.toMatchObject({code:'knowledge_publication_native_ref_required'});expect(load).not.toHaveBeenCalled();}
+		expect(client.promoteRef).not.toHaveBeenCalled();expect(publication.published_ref).toBe(ref);
+	});
 	it.each([null, { revision: 'previous', projects: [{ projectId: 'other', commitSha: 'older' }] }])(
 		'snapshots only the reviewed project, with prior manifest %j', async previous => {
 			const commit = 'a'.repeat(40), ref = 'refs/heads/staging';

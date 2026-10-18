@@ -45,7 +45,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: treeseed-ai/treedx
-          ref: 6d358bb2e536af24918f3c33acb2072b9093a603
+          ref: fbd1856f8fc1ce5b21febfab38c653220826f9d6
           path: .treeseed/tools/treedx
       - name: Checkout exact execution authority
         uses: actions/checkout@v4
@@ -56,6 +56,7 @@ jobs:
           submodules: false
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: "1.99.0"
           components: rustfmt, clippy
       - uses: erlef/setup-beam@v1
         env:
@@ -63,6 +64,12 @@ jobs:
         with:
           otp-version: '27.3.4.18'
           elixir-version: '1.17.3'
+      - name: Setup pinned native reporter fixture Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install native pytest reporter fixture dependency
+        run: python3 -m pip install pytest==8.4.2
       - name: Verify all native TreeDX server prerequisites
         working-directory: .treeseed/tools/treedx
         run: |
@@ -97,7 +104,7 @@ jobs:
       - name: Reproduce native lease transition history before complete verification
         run: node node_modules/vitest/vitest.mjs run --config ./vitest.control-plane.config.ts tests/unit/control-plane/governance/proposals/architecture/proposal-decision-native.test.ts tests/unit/control-plane/capacity/execution/admission/postgres.test.ts tests/unit/control-plane/release/provider-prerequisites.test.ts tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-observation-postgres.test.ts tests/unit/control-plane/capacity/execution/graph/persistence/concurrent-results-postgres.test.ts tests/unit/control-plane/providers/assignments/architecture/recovery/operator-recovery-postgres.test.ts tests/unit/control-plane/providers/assignments/architecture/recovery/recovery-observation-postgres.test.ts tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts tests/unit/control-plane/capacity/workdays/lifecycle/concurrent-runs-postgres.test.ts tests/unit/control-plane/capacity/execution/graph/architecture/workday-closeout-persistence.test.ts tests/unit/control-plane/capacity/execution/architecture/initial/admission/session-authority-unit.test.ts tests/unit/control-plane/capacity/planning/assignment-estimate-integration.test.ts tests/unit/control-plane/capacity/planning/estimate-source-native.test.ts tests/unit/control-plane/providers/assignments/architecture/cancellation-persistence.test.ts tests/unit/control-plane/capacity/execution/architecture/initial/admission/resource-closure-unit.test.ts tests/unit/control-plane/capacity/execution/architecture/monitoring/node-status-history-postgres.test.ts tests/unit/control-plane/capacity/accounting/architecture/accounting-history-postgres.test.ts tests/unit/control-plane/capacity/execution/architecture/monitoring/node-review-exhaustion-postgres.test.ts tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-node-history-native.test.ts tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts tests/unit/control-plane/capacity/execution/architecture/admission-replay-authority.test.ts tests/unit/control-plane/capacity/execution/architecture/admission-replay-native.test.ts tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts tests/unit/control-plane/capacity/execution/scheduling/planning/planning-window-evidence.test.ts tests/unit/control-plane/capacity/execution/scheduling/planning/planning-phase-native.test.ts tests/unit/control-plane/capacity/execution/admission/closeout/closeout-admission.test.ts tests/unit/control-plane/capacity/workdays/lifecycle/workday-lifecycle-observations.test.ts tests/unit/control-plane/capacity/execution/reporting/report-context-scope.test.ts tests/unit/control-plane/capacity/execution/reporting/report-context-lifecycle.test.ts tests/unit/control-plane/capacity/execution/architecture/monitoring/node-status-history.test.ts tests/unit/control-plane/capacity/execution/graph/architecture/workday-observation-persistence.test.ts tests/unit/control-plane/capacity/ontology/availability-history.test.ts tests/unit/control-plane/capacity/ontology/availability-postgres.test.ts tests/unit/control-plane/teams/managed-library-authority.test.ts tests/unit/control-plane/capacity/provider-availability-reconciliation.test.ts
       - name: Verify native public TreeDX workspace and promotion boundaries before complete verification
-        run: node node_modules/vitest/vitest.mjs run --config ./vitest.control-plane.config.ts tests/unit/control-plane/treedx/authority/architecture/reviewed-promotion-native.test.ts tests/unit/control-plane/governance/proposals/architecture/proposal-contract-authority-native.test.ts
+        run: node node_modules/vitest/vitest.mjs run --config ./vitest.control-plane.config.ts tests/unit/control-plane/treedx/authority/architecture/reviewed-promotion-native.test.ts tests/unit/control-plane/governance/proposals/architecture/proposal-contract-authority-native.test.ts tests/unit/control-plane/knowledge/workspaces/architecture/relation-publication-native.test.ts
       - run: npm run verify:direct
       - name: Verify real PostgreSQL backup-writer migration closure
         run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/services/live/replication-migration-postgres.test.ts
@@ -132,7 +139,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: native-prerequisite-evidence-${{ github.sha }}
-          path: ${{ env.API_NATIVE_TREEDX_ROOT }}/*.log
+          path: |
+            ${{ env.API_NATIVE_TREEDX_ROOT }}/*.log
+            ${{ env.API_NATIVE_TREEDX_ROOT }}/engine-exit.json
           if-no-files-found: error
       - name: Close allocated native TreeDX and signer server
         if: always()
