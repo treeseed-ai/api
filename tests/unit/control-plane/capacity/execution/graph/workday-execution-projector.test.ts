@@ -54,6 +54,12 @@ describe('workday living-graph projection', () => {
 		expect(validateExecutionGraph(graph.nodes,graph.edges)).toMatchObject({ok:true});expect(input).toEqual(held);
 		// Existing nodes OR original attempts must never be reclassified by recovery.
 		expect(()=>projectActiveWorkdays({...input,issuedNodeIds:[...first.assignmentIds,...second.assignmentIds]})).toThrow('Missing original node for an issued planning turn');
+		// Independent review: a missing frozen declaration must not bypass issued-node custody.
+		const omitted=second.assignmentIds[0]!;
+		const missingDeclaration={...source,parameters:{...source.parameters,appliedPlan:{...plan,planningRounds:[plan.planningRounds[0]!,{...second,assignmentIds:second.assignmentIds.filter(id=>id!==omitted)}]}}};
+		expect(()=>projectActiveWorkdays({...input,sources:[missingDeclaration],issuedNodeIds:[...first.assignmentIds,omitted]})).toThrow('Issued planning turn is absent from its frozen Workday round');
+		expect(projectActiveWorkdays({...input,issuedNodeIds:[...first.assignmentIds,'planning:another-workday:2:sdk/sdk/engineer:estimating:ready-proposal']})).toEqual(graph);
+
 		const {closingAt:_closingAt,...withoutClosing}=plan;
 		const active={...source,parameters:{...source.parameters,appliedPlan:{...withoutClosing,state:'active' as const}}};
 		expect(projectActiveWorkdays({...input,sources:[active]}).nodes).toEqual([]);
