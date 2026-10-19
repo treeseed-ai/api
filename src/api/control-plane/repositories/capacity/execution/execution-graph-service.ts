@@ -207,9 +207,9 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 		loadGraphSource('agent_profiles', () => loadProfiles(store, teamId)),
 		scope === 'communication' ? Promise.resolve([]) : loadGraphSource('workdays', () => loadActiveWorkdays(store, teamId)),
 		loadGraphSource('communications', () => loadCommunicationInvocations(store, teamId)),
-		loadGraphSource('assignments', () => store.all(`SELECT DISTINCT execution_node_id,work_day_id FROM capacity_provider_assignments
+		loadGraphSource<Row[]>('assignments', () => store.all(`SELECT DISTINCT execution_node_id,work_day_id FROM capacity_provider_assignments
 			WHERE team_id=? AND execution_node_id IS NOT NULL AND status IN ('pending','leased','running','returned')`, [teamId])),
-		loadGraphSource('assignment_history', () => store.all(`SELECT
+		loadGraphSource<Row[]>('assignment_history', () => store.all(`SELECT
 			execution_node_id,execution_node_revision,work_day_id,status,lifecycle_output_json,metadata_json,assignment_attempt_json,
 			COALESCE(completed_at,failed_at,updated_at) AS terminal_at FROM capacity_provider_assignments
 			WHERE team_id=? AND execution_node_id IS NOT NULL AND status IN ('completed','failed','expired','cancelled')
@@ -242,7 +242,8 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 		return runId ? { ...node, workdayId: runId } : node;
 	});
 	const workdayProjection = projectActiveWorkdays({ teamId, revision, sources: workdays, profiles,
-		decisionNodes: proposalProjection?.nodes ?? [] });
+		decisionNodes: proposalProjection?.nodes ?? [], retainedNodes: current.nodes,
+		issuedNodeIds: [...activeAssignmentRows, ...terminalAssignmentRows].map((row: Row) => text(row.execution_node_id)) });
 	const communicationProjection = projectCommunicationInvocations({ teamId, revision, sources: communications, profiles });
 	const frozenNodes = current.nodes.filter((node) => frozenInvalid.has(`${node.sourceRef.id}\u0000${node.sourceRef.digest}`));
 	const frozenNodeIds = new Set(frozenNodes.map((node) => node.id));
