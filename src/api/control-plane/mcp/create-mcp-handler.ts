@@ -5,7 +5,7 @@ import { sdkOperationInputStandardSchema, sdkStandardSchema } from '../catalog/s
 import { createMcpCatalog } from './mcp-catalog.ts';
 import { decodeConfirmation, encodeConfirmation, type ConfirmationService } from '../confirmation/confirmation-service.ts';
 import { completePromptObjective, completeResourceVariable } from './completion-source.ts';
-import { enforceOperationAuthorization } from '../authorization/invocation-policy.ts';
+import { enforceOperationAuthorization, readOperationPreconditions } from '../authorization/invocation-policy.ts';
 
 export function createControlPlaneMcpHandler(registry: OperationRegistry, confirmations?: ConfirmationService, bus?: ServerEventBus) {
 	const mcpCatalog = createMcpCatalog(registry);
@@ -28,6 +28,7 @@ export function createControlPlaneMcpHandler(registry: OperationRegistry, confir
 				},
 			}, async (input, context) => {
 				enforceOperationAuthorization(descriptor, requestContext.authInfo);
+				const preconditions = readOperationPreconditions(descriptor, requestContext.requestInfo?.headers);
 				if (descriptor.confirmation === 'input_required') {
 					const principalId = String((requestContext.authInfo?.extra?.principal as any)?.id ?? '');
 					const clientId = String(requestContext.authInfo?.clientId ?? '');
@@ -51,6 +52,7 @@ export function createControlPlaneMcpHandler(registry: OperationRegistry, confir
 				if (progressToken !== undefined) await context.mcpReq.notify({ method: 'notifications/progress', params: { progressToken, progress: 0, total: 1 } });
 				const output = await operation.handler(input as any, {
 					interface: 'mcp', requestId: crypto.randomUUID(), authInfo: requestContext.authInfo,
+					...preconditions,
 					principal: requestContext.authInfo?.extra?.principal as any, signal: context.mcpReq.signal,
 				});
 				if (context.mcpReq.signal.aborted) throw context.mcpReq.signal.reason;

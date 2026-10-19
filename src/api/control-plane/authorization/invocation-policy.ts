@@ -17,3 +17,18 @@ export function enforceOperationAuthorization(
 	const missingScope = descriptor.oauthScopes.find((scope) => !authInfo.scopes.includes(scope));
 	if (missingScope) throw new ControlPlaneOperationError(403, 'oauth_scope_insufficient', `The operation requires ${missingScope}.`);
 }
+
+/** Apply the descriptor's write guards before either transport dispatches work. */
+export function readOperationPreconditions(descriptor: ControlPlaneOperationDescriptor, headers?: Headers) {
+	const idempotencyKey = headers?.get(descriptor.idempotency.header)
+		?? (descriptor.operationId === 'repositories.github.webhook' ? headers?.get('x-github-delivery') : undefined)
+		?? undefined;
+	const ifMatch = headers?.get(descriptor.concurrency.writeHeader) ?? undefined;
+	if (descriptor.idempotency.required && !idempotencyKey) {
+		throw new ControlPlaneOperationError(400, 'idempotency_key_required', `${descriptor.idempotency.header} is required.`);
+	}
+	if (descriptor.concurrency.required && !ifMatch) {
+		throw new ControlPlaneOperationError(412, 'precondition_required', `${descriptor.concurrency.writeHeader} is required.`);
+	}
+	return { idempotencyKey, ifMatch: ifMatch?.replace(/^"|"$/gu, '') };
+}

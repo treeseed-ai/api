@@ -18,6 +18,12 @@ Use this package when you operate or develop the Treeseed backend. Ordinary admi
 
 Site and external clients reach this package through its REST or MCP surfaces.
 
+### MCP mutation requests
+
+Header-capable MCP clients must send the operation's `Idempotency-Key` and, when required by the catalog, `If-Match` on each tool-call HTTP request. Retain the same key when recovering an unchanged request and obtain the current resource version before a new mutation. REST and MCP apply the same descriptor guards and pass these values to the same owning handler. Header presence does not replace the handler's authorization, retry, or stale-version checks.
+
+This transport support does not supply a model-visible key/version argument for clients that cannot set per-call headers. Such client integration and full proposal-to-simulated-release acceptance remain tracked in [SDK #429](https://github.com/treeseed-ai/sdk/issues/429).
+
 ## Authentication and account ownership
 
 The API is authoritative for normalized username/email availability, registration races, immutable usernames, configured OAuth providers, one-time state/nonce/PKCE, explicit identity linking, scoped five-minute reauthentication, email/credential/session lifecycle, deletion blockers, personal themes, and exact notification preferences. The operations runner also owns idempotent immediate/daily/weekly notification delivery. Admin never persists or reimplements these policies.
