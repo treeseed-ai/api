@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { recoverExpiredProviderAssignments } from '../../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-recovery-service.ts';
 import { OperatorAssignmentService } from '../../../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
-import { principal, returnedCompletion, completionFixture } from './terminal-report-fixture.ts';
+import { principal, returnedCompletion, completionFixture, expiredCloseoutFixture } from './terminal-report-fixture.ts';
 import { assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 
 // Real original-DDL owning transactions and public service methods. The
@@ -19,6 +19,84 @@ async function financialTruth(f: Awaited<ReturnType<typeof completionFixture>>) 
 		counters: (await f.query('SELECT * FROM capacity_admission_counters ORDER BY id')).rows };
 }
 describe('terminal races preserve one immutable attempt and prior measured truth', () => {
+ it('retains original native report bytes when canonical result also contains normalized token counters',async()=>{
+  const f=await expiredCloseoutFixture(false,true);try{
+   const original=await financialTruth(f),snapshot=await f.snapshot();
+   const native=f.output.assignmentResult.usage.native;
+   for(const changed of [{...native,cachedInputTokens:4},{...native,reasoningTokens:3},{...native,unexpectedCounter:1},{...native,input_tokens:8}]){
+    const denied={...f.input,output:{...f.output,assignmentResult:{...f.output.assignmentResult,usage:{...f.output.assignmentResult.usage,native:changed}}}};
+    await expect(f.service.fail(principal,f.attempt.id,denied)).rejects.toMatchObject({code:'provider_expired_closeout_conflict'});expect(await f.snapshot()).toEqual(snapshot);
+   }
+   const ack=await f.service.fail(principal,f.attempt.id,f.input);expect(ack?.assignment).toMatchObject({status:'expired',leaseState:'released',assignmentResult:null});
+   const actual=await financialTruth(f),aggregate=actual.usage.filter((row:any)=>row.accounting_mode==='aggregate');
+   expect(aggregate).toHaveLength(1);expect(aggregate[0]).toMatchObject({input_tokens:7,cached_input_tokens:3,reasoning_tokens:2,native_usage_json:original.usage[0].native_usage_json});
+   expect(actual.usage.filter((row:any)=>row.accounting_mode==='informational')).toEqual(original.usage);
+   const once=await f.snapshot();await f.service.fail(principal,f.attempt.id,f.input);expect(await f.snapshot()).toEqual(once);
+  }finally{await f.close();}
+ });
+
+ it('settles previously reported native usage once while retaining original expired status and diagnostic history',async()=>{
+  const f=await expiredCloseoutFixture(false);try{
+   const before=(await f.repository.get('team',f.attempt.id))!,finance=await financialTruth(f),held=structuredClone(f.input);
+   expect(before.lifecycleCode).toBe('expired_lease_side_effect_evidence_present');expect(finance.ledger).toHaveLength(0);expect(finance.reservations[0]).toMatchObject({state:'consuming'});
+   expect(finance.usage).toHaveLength(1);expect(finance.usage[0]).toMatchObject({accounting_mode:'informational',active_seconds:0,elapsed_seconds:0});
+   const original=await f.snapshot();
+   for(const denied of [{...f.input,runnerId:'foreign'}, {...f.input,output:{...f.output,assignmentResult:{...f.output.assignmentResult,usage:{...f.output.assignmentResult.usage,modelInputTokens:8}}}}, {...f.input,output:{...f.output,teardown:{...f.output.teardown,verified:false}}}]){
+    await expect(f.service.fail(principal,f.attempt.id,denied as typeof f.input)).rejects.toMatchObject({code:'provider_expired_closeout_conflict'});expect(await f.snapshot()).toEqual(original);expect(await financialTruth(f)).toEqual(finance);
+   }
+   await f.db.exec("CREATE FUNCTION interrupt_unsettled_closeout() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.lease_state='released' THEN RAISE EXCEPTION 'unsettled custody interruption'; END IF; RETURN NEW; END $$; CREATE TRIGGER interrupt_unsettled_closeout BEFORE UPDATE ON capacity_provider_assignments FOR EACH ROW EXECUTE FUNCTION interrupt_unsettled_closeout();");
+   await expect(f.service.fail(principal,f.attempt.id,f.input)).rejects.toThrow('unsettled custody interruption');expect(await f.snapshot()).toEqual(original);expect(await financialTruth(f)).toEqual(finance);
+   await f.db.exec('DROP TRIGGER interrupt_unsettled_closeout ON capacity_provider_assignments; DROP FUNCTION interrupt_unsettled_closeout();');
+   const outcomes=await Promise.all([f.service.fail(principal,f.attempt.id,f.input),f.service.fail(principal,f.attempt.id,f.input)]);
+   expect(outcomes.every(result=>result?.assignment.status==='expired'&&result.assignment.leaseState==='released')).toBe(true);
+   const after=(await f.repository.get('team',f.attempt.id))!,actual=await financialTruth(f);
+   expect(after).toMatchObject({assignmentResult:null,assignmentAttempt:before.assignmentAttempt,metadata:before.metadata,lifecycleCode:before.lifecycleCode,failedAt:before.failedAt,stateVersion:before.stateVersion+1,lifecycleOutput:{...f.output,completion:null,performance:{disposition:'failed'}}});
+   expect(actual.usage.filter((row:any)=>row.accounting_mode==='informational')).toEqual(finance.usage);
+   expect(actual.usage.filter((row:any)=>row.accounting_mode==='aggregate')).toHaveLength(1);
+   expect(actual.ledger).toHaveLength(1);expect(actual.ledger[0]).toMatchObject({active_seconds:1,elapsed_seconds:2});
+   expect(actual.reservations[0]).toMatchObject({state:'consumed',active_seconds:1,elapsed_seconds:2});
+   const once=await f.snapshot();expect((await f.service.fail(principal,f.attempt.id,f.input))?.assignment).toEqual(after);expect(await f.snapshot()).toEqual(once);expect(f.input).toEqual(held);
+  }finally{await f.close();}
+ });
+
+	it('acknowledges original closed measured output after settlement races expiry without accepting completion or settling again', async () => {
+		const f = await expiredCloseoutFixture(); try {
+			const { input, output } = f;
+			const expired = (await f.repository.get('team', f.attempt.id))!, finance = await financialTruth(f);
+			expect(expired).toMatchObject({ status: 'expired', leaseState: 'expired', assignmentResult: null,
+				lifecycleCode: 'expired_lease_settlement_without_success_evidence' });
+			const held = structuredClone(input), original = await f.snapshot();
+			for (const denied of [
+				{ ...input, runnerId: 'foreign' }, { ...input, completion: { disposition: 'completed' } },
+				{ ...input, output: { ...output, teardown: { ...output.teardown, verified: false } } },
+				{ ...input, output: { ...output, teardown: { ...output.teardown, completedAt: '2099-01-01T00:00:00.000Z' } } },
+				{ ...input, output: { ...output, assignmentResult: { ...output.assignmentResult, assignmentId: 'foreign' } } },
+				{ ...input, output: { ...output, assignmentResult: { ...output.assignmentResult, usage: { ...output.assignmentResult.usage, modelInputTokens: 8 } } } },
+			]) {
+				await expect(f.service.fail(principal, f.attempt.id, denied as typeof input)).rejects.toMatchObject({ code: 'provider_expired_closeout_conflict' });
+				expect(await f.snapshot()).toEqual(original);
+			}
+			for (const foreign of [{ ...principal, membershipId: 'foreign' }, { ...principal, capacityProviderId: 'foreign' }]) {
+				await expect(f.service.fail(foreign, f.attempt.id, input)).rejects.toMatchObject({ code: 'provider_expired_closeout_conflict' });
+				expect(await f.snapshot()).toEqual(original);
+			}
+			await f.db.exec("CREATE FUNCTION reject_closeout_custody() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.lease_state='released' THEN RAISE EXCEPTION 'original custody interruption'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_closeout_custody BEFORE UPDATE ON capacity_provider_assignments FOR EACH ROW EXECUTE FUNCTION reject_closeout_custody();");
+			await expect(f.service.fail(principal, f.attempt.id, input)).rejects.toThrow('original custody interruption');
+			expect(await f.snapshot()).toEqual(original); expect(await financialTruth(f)).toEqual(finance);
+			await f.db.exec('DROP TRIGGER reject_closeout_custody ON capacity_provider_assignments; DROP FUNCTION reject_closeout_custody();');
+			const reply = await f.service.fail(principal, f.attempt.id, input);
+			expect(reply?.assignment).toMatchObject({ status: 'expired', leaseState: 'released', assignmentResult: null,
+				lifecycleCode: expired.lifecycleCode, failedAt: expired.failedAt, assignmentAttempt: expired.assignmentAttempt,
+				metadata: expired.metadata, lifecycleOutput: { ...output, completion: null,
+					performance: { disposition: 'failed', actual: { activeSeconds: 1, elapsedSeconds: 2, inputTokens: 7 } } } });
+			expect(await financialTruth(f)).toEqual(finance); expect(input).toEqual(held);
+			const once = await f.snapshot();
+			expect((await f.service.fail(principal, f.attempt.id, input))?.assignment).toEqual(reply?.assignment);
+			expect(await f.snapshot()).toEqual(once);
+			await expect(f.service.fail(principal, f.attempt.id, { ...input, output: { ...output, sandboxId: 'substituted' } })).rejects.toMatchObject({ code: 'provider_expired_closeout_conflict' });
+			expect(await f.snapshot()).toEqual(once);
+		} finally { await f.close(); }
+	});
 	it('native failure preserves exact canonical failed results and actual settlement once including truthful post-deadline closeout', async () => {
 		const checks: Array<() => Promise<void>> = [];
 		for (const expired of [false, true]) {

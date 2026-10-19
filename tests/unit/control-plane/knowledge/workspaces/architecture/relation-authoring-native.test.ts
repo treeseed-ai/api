@@ -3,6 +3,9 @@ import { stringify } from 'yaml';
 import { serializeFrontmatterDocument } from '../../../../../../src/api/content/frontmatter.ts';
 import { describe, expect, it } from 'vitest';
 import { object, relationAuthoringDatabase } from './relation-authoring-fixture.ts';
+import { managedTeamLibrarySeedFiles } from '../../../../../../src/api/teams/managed-team-library-service.ts';
+import { parseBook } from '../../../../../../src/api/knowledge/runtime/catalog.ts';
+import { resolveKnowledgeGatewayConnection } from '../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { relationPath } from '../../../capacity/execution/graph/architecture/relations/relation-fixture.ts';
 
 // Real native TreeDX workspace/Git/graph/search plus original API store SQL and
@@ -10,6 +13,41 @@ import { relationPath } from '../../../capacity/execution/graph/architecture/rel
 // This is not a managed provider run, authenticated operator HTTP or whole
 // publication-runner/portfolio acceptance. All resources created inside tests.
 describe('native ordinary relation creation and indexing', () => {
+	it('real native Book metadata authoring retains exact legacy and current body bytes without publication or duplicate writes', async () => {
+		const f = await relationAuthoringDatabase(); try {
+			for (const legacy of [true, false]) {
+				const workspace = await f.create(), path = 'books/team-operations.md';
+				const seeded = managedTeamLibrarySeedFiles('precursor')[path];
+				if (!seeded) throw new Error('Original canonical Book seed required');
+				let header = seeded.slice(0, seeded.indexOf('\n---\n') + 5);
+				if (legacy) header = header.replace('treeseed.book/v3', 'treeseed.book/v2').replace(/^projectId:.*\n/mu, '').replace(/^revision:.*\n/mu, '');
+				const body = 'Original Book Ω 雪.  \r\n\r\nKeep this final paragraph.\r\n', source = header + body;
+				// Original historical source is fixture INPUT in a new owned native
+				// workspace. The metadata write/read below uses the owning API service.
+				await f.client.files.write(workspace.treeDxWorkspaceId, { path, content: source });
+				const input = { kind: 'book', version: workspace.version, sourcePath: path, id: 'team-operations',
+					slug: 'team-operations', title: 'Reviewed Book metadata', summary: 'Retain original governed content.', visibility: 'team', order: 0 };
+				const before = await f.snapshot(), held = structuredClone(input);
+				const written = await f.service.updateContent(f.principal, workspace.id, input);
+				expect(written.workspace.version).toBe(workspace.version + 1);
+				const read = await f.service.readContent(f.principal, workspace.id, path);
+				expect(read).toMatchObject({ kind: 'book', definition: { id: 'team-operations', projectId: 'precursor', revision: legacy ? 1 : 2 } });
+				const connection = await resolveKnowledgeGatewayConnection(f.store, { projectId: 'precursor', write: false,
+					workspaceRefs: [workspace.branchName], authoringPaths: true });
+				if (!connection) throw new Error('Original native scoped Book file reader required');
+				const file = await connection.client.readFile({ workspaceId: workspace.treeDxWorkspaceId, path });
+				const bytes = Buffer.from(file.content);
+				const offset = bytes.indexOf(Buffer.from('\n---\n')); expect(offset).toBeGreaterThanOrEqual(0);
+				expect(bytes.subarray(offset + 5).equals(Buffer.from(body))).toBe(true);
+				expect(parseBook({ path, raw: file.content })).toMatchObject({ id: 'team-operations', projectId: 'precursor',
+					revision: legacy ? 1 : 2, title: input.title, summary: input.summary });
+				const once = await f.snapshot();
+				await expect(f.service.updateContent(f.principal, workspace.id, input)).rejects.toMatchObject({ status: 409 });
+				expect(await f.snapshot()).toEqual(once); expect(input).toEqual(held);
+				expect(once.ledger).toEqual(before.ledger); expect(once.reviews).toEqual(before.reviews); expect(once.publications).toEqual(before.publications);
+			}
+		} finally { await f.close(); }
+	}, 60_000);
 	it('native governed Note authoring denies every missing exact dependency endpoint field without source or SQL repair before unchanged committed link input retry', async () => {
 		const f = await relationAuthoringDatabase(); try {
 			const workspace = await f.create(), before = await f.snapshot(), original = structuredClone(f.note);

@@ -230,7 +230,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			}
 			let content;
 			try { content = input.kind === 'book'
-				? bookDocument(contentInput, access.workspace.projectId, status, bookRevision + 1)
+				? bookDocument(contentInput, access.workspace.projectId, status, bookRevision + 1, before)
 				: pageDocument(contentInput, access.workspace.projectId, status); }
 			catch (error) { throw new KnowledgeOperationError(422, 'invalid_knowledge_content', error instanceof Error ? error.message : 'Invalid knowledge content.'); }
 			const slug = text(input.slug);
@@ -403,11 +403,15 @@ function pageDocument(body: Record<string, unknown>, projectId: string, status: 
 			keywords: list(body.keywords), documentationUrls: list(body.documentationUrls) }, bodyMarkdown: String(body.bodyMarkdown ?? '') });
 }
 
-function bookDocument(body: Record<string, unknown>, projectId: string, status: 'published' | 'archived', revision: number) {
+function bookDocument(body: Record<string, unknown>, projectId: string, status: 'published' | 'archived', revision: number, source: string | null) {
+	// Metadata replacement must carry the original body verbatim, including
+	// CRLF and trailing spaces. Parsing legacy YAML must not normalize its bytes.
+	const markdown = source === null ? '\n' : /^---\r?\n[\s\S]*?\r?\n---\r?\n([\s\S]*)$/u.exec(source)?.[1];
+	if (markdown === undefined) throw new Error('The existing Book body cannot be read safely.');
 	return serializeBookDraft({ id: text(body.id), projectId, revision,
 		slug: text(body.slug), title: text(body.title), summary: text(body.summary),
 		description: text(body.description) || text(body.summary), status, visibility: body.visibility ?? 'team', order: Number(body.order ?? 0),
 		groupIds: list(body.groupIds), audience: list(body.audience), relatedBookIds: list(body.relatedBookIds),
 		editorialCoreNoteId: text(body.editorialCoreNoteId) || undefined, packPolicy: body.packPolicy ?? 'allowed',
-		cover: body.cover && typeof body.cover === 'object' ? body.cover : undefined });
+		cover: body.cover && typeof body.cover === 'object' ? body.cover : undefined }, markdown);
 }

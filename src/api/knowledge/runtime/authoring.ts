@@ -35,14 +35,14 @@ export function serializeKnowledgePageDraft(input: KnowledgePageDraft): string {
 	return raw;
 }
 
-export function serializeBookDraft(input: Omit<BookDefinition, 'schemaVersion' | 'visibility' | 'packPolicy'> & { visibility: unknown; packPolicy: unknown }): string {
+export function serializeBookDraft(input: Omit<BookDefinition, 'schemaVersion' | 'visibility' | 'packPolicy'> & { visibility: unknown; packPolicy: unknown }, body = '\n'): string {
 	if (!safeSlug.test(input.slug)) throw new Error('The book slug is invalid.');
 	const coverImage = input.cover?.image?.trim();
 	if (coverImage && (!coverImage.startsWith('/') || coverImage.includes('..') || /[?#]/u.test(coverImage))) {
 		throw new Error('Book covers must use a safe root-relative project asset path.');
 	}
 	const { sourceDigest: _derivedDigest, sourcePath: _derivedPath, ...content } = input;
-	const raw = serializeFrontmatterDocument({ schemaVersion: BOOK_SCHEMA_VERSION, ...content }, '\n');
+	const raw = serializeFrontmatterDocument({ schemaVersion: BOOK_SCHEMA_VERSION, ...content }, body);
 	parseBook({ path: `${input.slug}.md`, raw });
 	return raw;
 }
