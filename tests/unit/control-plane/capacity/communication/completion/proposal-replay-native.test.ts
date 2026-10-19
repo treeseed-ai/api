@@ -15,7 +15,7 @@ describe('native communication proposal recovery', () => {
 		// Original owning services, PostgreSQL pools and disposable signed TreeDX.
 		// The principal/profile/proposal are controlled inputs, not agent results,
 		// OAuth, provider execution or a full objective workflow acceptance claim.
-		const f = await relationAuthoringDatabase(true);
+		const f = await relationAuthoringDatabase(true), owned = new Set<string>();
 		try {
 			const projectId = f.sources[0]!.projectId, repository = f.sources[0]!.repository;
 			const now = new Date().toISOString();
@@ -27,17 +27,20 @@ describe('native communication proposal recovery', () => {
 			const declaration = { schemaVersion: 'treeseed.proposal/v1', id: 'recover-mcp', projectId, title: 'Recover meaningful MCP work',
 				request: 'Keep the original invocation when retrying project work after proposal edits.', summary: 'Repair the observed retry-context drift.', status: 'draft' };
 			const path = 'proposals/governance/recover-mcp.mdx', source = `---\n${stringify(declaration)}---\n`;
+			const typePath = '.treeseed/governance/proposal-types/implementation.yaml';
+			const contract = { schemaVersion: 'treeseed.proposal-type/v1', id: 'implementation', label: 'Implementation', description: 'Bounded recovery verification.' };
 			const refs = object(await f.client.repositories.refs(repository)); assert.ok(Array.isArray(refs.refs));
 			const staging = refs.refs.map(object).find(ref => ref.name === 'refs/heads/staging'); assert.ok(staging);
-			const workspace = object(await f.client.workspaces.create(repository, { baseRef: String(staging.target ?? staging.sha), branchName: 'refs/heads/staging', mode: 'writable', allowedPaths: [path] }));
+			const workspace = object(await f.client.workspaces.create(repository, { baseRef: String(staging.target ?? staging.sha), branchName: 'refs/heads/staging', mode: 'writable', allowedPaths: [path, typePath] }));
 			const workspaceId = String(workspace.workspaceId); let commit: string;
 			try {
+				await f.client.files.write(workspaceId, { path: typePath, content: JSON.stringify(contract), allowProtected: true });
 				await f.client.files.write(workspaceId, { path, content: source });
 				commit = String(object(await f.client.files.commit(workspaceId, { message: 'Controlled recovery proposal input', author: { name: 'Native input', email: 'native@example.invalid' } })).commitSha);
 			} finally { await f.client.workspaces.close(workspaceId); }
 			const digest = createHash('sha256').update(source).digest('hex');
 			const proposal = await f.store.createGovernanceProposal(f.principal, { id: declaration.id, teamId: 'team', projectId, title: declaration.title,
-				summary: declaration.summary, request: declaration.request, contentProvenance: { repositoryId: repository, contentPath: path, commitSha: commit, digest } }); assert.ok(proposal);
+				summary: declaration.summary, body: declaration.request, proposalTypes: ['implementation'], contentProvenance: { repositoryId: repository, contentPath: path, commitSha: commit, digest } }); assert.ok(proposal);
 			await f.query('UPDATE governance_proposals SET active_content_hash=? WHERE id=?', [digest, declaration.id]);
 			await f.query('UPDATE governance_proposal_versions SET content_hash=? WHERE proposal_id=?', [digest, declaration.id]);
 			await f.query('UPDATE treedx_project_libraries SET content_repository_ref=? WHERE project_id=?', [commit, projectId]);
@@ -45,6 +48,11 @@ describe('native communication proposal recovery', () => {
 			const discussion = createDiscussionService({ store: f.store, capacity: f.store, sessionEvents: new SessionEventService(f.store) });
 			const communication = createCommunicationService(f.store, discussion);
 			const governance = createGovernanceService(f.store, discussion);
+			const edit = async (summary: string, changeReason: string, version: string) => {
+				const result = await governance.updateProposal(f.principal, projectId, declaration.id, { summary, changeReason }, version);
+				const id = String(result.authoringReceipt.changeset.workspaceId ?? ''); assert.ok(id); owned.add(id);
+				await f.client.workspaces.close(id); expect(object(await f.client.workspaces.get(id)).status).toBe('closed'); owned.delete(id);
+			};
 			const body = { message: `@${projectId}/researcher Trace the MCP retry-context boundary.`, proposalId: declaration.id };
 			const send = (key = 'same-project-work', input = body) => communication.send(f.principal, 'team', 'mcp-recovery', input, key);
 			const first = await send(); expect(first.targets).toHaveLength(1);
@@ -53,7 +61,7 @@ describe('native communication proposal recovery', () => {
 				events: await f.store.all('SELECT * FROM communication_topic_events ORDER BY sequence') });
 			const before = await snapshots(); expect(before.invocations).toHaveLength(1); expect(before.assignments).toHaveLength(0);
 			const originalRefs = before.invocations[0]!.content_refs_json;
-			await governance.updateProposal(f.principal, projectId, declaration.id, { summary: 'Retain frozen context after the real proposal changes.', changeReason: 'Reproduce the observed unchanged-send recovery failure.' }, '1');
+			await edit('Retain frozen context after the real proposal changes.', 'Reproduce the observed unchanged-send recovery failure.', '1');
 			const edited = await f.store.getGovernanceProposal(declaration.id); assert.ok(edited); expect(edited.activeVersion).toBe(2); expect(edited.activeContentHash).not.toBe(digest);
 			const editedState = await snapshots();
 			for (const replay of await Promise.all([send(), send()])) {
@@ -74,7 +82,7 @@ describe('native communication proposal recovery', () => {
 			finally { await f.db.exec('DROP TRIGGER reject_recovery_admission ON agent_invocation_requests; DROP FUNCTION reject_recovery_admission();'); }
 			const interrupted = await loadDiscussions({ store: f.store, projectId, discussionId: 'mcp-recovery', collection: 'messages' });
 			const frozen = interrupted.messages.find(message => message.id !== first.projectStreams[0]!.messageRef.split('/').at(-1)?.replace('.mdx','')); assert.ok(frozen);
-			await governance.updateProposal(f.principal, projectId, declaration.id, { summary: 'Recover the interrupted admission against its original proposal.', changeReason: 'Exercise the observed authoring-before-admission interruption.' }, '2');
+			await edit('Recover the interrupted admission against its original proposal.', 'Exercise the observed authoring-before-admission interruption.', '2');
 			const moved = await f.store.getGovernanceProposal(declaration.id); assert.ok(moved);
 			const exact = await readExactProposal(f.store, moved), interruptedState = await snapshots();
 			// This is the state a racing caller reaches after its first lookup missed
@@ -90,6 +98,6 @@ describe('native communication proposal recovery', () => {
 			const persisted = typeof newRow.content_refs_json === 'string' ? JSON.parse(newRow.content_refs_json) : newRow.content_refs_json;
 			expect(persisted.slice(1)).toEqual(frozen.frontmatter.contextRefs);
 			expect((await snapshots()).assignments).toHaveLength(0); expect((await snapshots()).ledger).toHaveLength(0);
-		} finally { await f.close(); }
+		} finally { try { for (const id of owned) await f.client.workspaces.close(id); } finally { await f.close(); } }
 	}, 60_000);
 });
