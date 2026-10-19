@@ -2418,6 +2418,12 @@ workflow:
   - id: execution-electorate-readback-native
     action: { verifier: api.golden.execution-electorate-readback-native }
     expect: { status: passed }
+  - id: mcp-write-preconditions-unit
+    action: { verifier: api.golden.mcp-write-preconditions-unit }
+    expect: { status: passed }
+  - id: mcp-write-preconditions-postgres
+    action: { verifier: api.golden.mcp-write-preconditions-postgres }
+    expect: { status: passed }
   - id: execution-schema-consumer-unit
     action: { verifier: api.golden.execution-schema-consumer-unit }
     expect: { status: passed }
