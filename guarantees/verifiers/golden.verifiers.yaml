@@ -5100,3 +5100,8 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/communication/completion/proposal-replay.test.ts
     testName: "rejects changed exact context when a concurrent writer already committed the message"
+  api.golden.communication-proposal-absence-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/discussions/discussion-targeted-read.test.ts
+    testName: "returns no original message only for an absent branch file while retaining denied and missing immutable authority"

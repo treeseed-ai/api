@@ -3,6 +3,11 @@ import { createCommunicationOperations } from '../../../../src/api/control-plane
 import { createResearchOperations } from '../../../../src/api/control-plane/catalog/capacity/research.ts';
 import { createCommunicationService } from '../../../../src/api/control-plane/repositories/capacity/communication-service.ts';
 
+vi.mock('../../../../src/api/discussions/content.ts', async original => ({
+	...await original<typeof import('../../../../src/api/discussions/content.ts')>(),
+	loadDiscussions: vi.fn(async () => ({ messages: [] })),
+}));
+
 const principal = { id: 'user-a', roles: [], permissions: [] };
 
 function store(overrides: Record<string, unknown> = {}) {
