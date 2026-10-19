@@ -39,3 +39,17 @@ export function nativeProposalProfileInputs(configured: Record<string, AgentDefi
 		raw: `---\n${stringify(definition)}---\n` }));
 	return { profileInputs, closeout };
 }
+
+/** Actual native user/owner inputs; the original membership and electorate readers remain authoritative. */
+export async function prepareNativeProposalVoting(f: {
+ store: Pick<import('../../../../../../src/api/persistence/store.ts').ControlPlaneStore,'upsertTeamMember'|'governanceEligibleVoters'|'startGovernanceProposalVoting'>;
+ query: (sql:string,params:unknown[])=>Promise<unknown>; principal:{id:string};
+},proposalId:string,profileTime:string) {
+	await f.query("INSERT INTO users(id,status,display_name,metadata_json,created_at,updated_at) VALUES(?,'active','Native proposal operator','{}',?,?)", [f.principal.id,profileTime,profileTime]);
+	await f.query("INSERT INTO roles(id,key,created_at) VALUES('native-proposal-owner','team_owner',?) ON CONFLICT(key) DO NOTHING",[profileTime]);
+	const voter = await f.store.upsertTeamMember('team',f.principal.id,'team_owner');
+	assert.ok(voter); assert.deepEqual({userId:voter.userId,status:voter.status,roles:voter.roles},{userId:f.principal.id,status:'active',roles:['team_owner']});
+	const voters=await f.store.governanceEligibleVoters('team','admin_approval_v1');
+	assert.ok(voters.some(v=>v.userId===f.principal.id&&v.chambers.some(c=>c.chamberId==='admin_chamber'&&c.eligible===true&&c.weight===1)));
+	await f.store.startGovernanceProposalVoting(f.principal,proposalId,{expectedProposalVersion:1});
+}

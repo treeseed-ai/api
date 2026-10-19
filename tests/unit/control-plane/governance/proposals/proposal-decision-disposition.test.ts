@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const observed=vi.hoisted(()=>({ definition:undefined as unknown,read:vi.fn() }));
-vi.mock('../../../../src/api/knowledge/gateway-treedx-connection.ts',()=>({
+vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts',()=>({
  projectLibraryPath:(_prefix:string,collection:string,file:string)=>collection+'/'+file,
  resolveKnowledgeGatewayConnection:vi.fn(async()=>({repositoryId:'repository',contentPath:'.',client:{readRepositoryFile:observed.read}})),
 }));
-vi.mock('../../../../src/api/content/frontmatter.ts',async(importOriginal)=>{
- const actual=await importOriginal<typeof import('../../../../src/api/content/frontmatter.ts')>();
+vi.mock('../../../../../src/api/content/frontmatter.ts',async(importOriginal)=>{
+ const actual=await importOriginal<typeof import('../../../../../src/api/content/frontmatter.ts')>();
  return {...actual,serializeFrontmatterDocument:vi.fn((value:Record<string,unknown>)=>{observed.definition=structuredClone(value);return actual.serializeFrontmatterDocument(value);})};
 });
-import { publishProposalDecision } from '../../../../src/api/governance/executable-proposal.ts';
+import { publishProposalDecision } from '../../../../../src/api/governance/executable-proposal.ts';
 const ref={store:'treedx',model:'proposal',id:'proposal',revision:6,digest:`sha256:${'a'.repeat(64)}`,repository:'repository',commit:'b'.repeat(40),path:'proposals/proposal.mdx'};
 const row={id:'decision',project_id:'project',created_by_type:'system',created_by_id:null,created_at:'2026-10-19T09:26:25.873Z',decision_record_json:JSON.stringify({proposalRef:ref,rationale:'Authorize the exact bounded repair.'})};
 const proposal={closedReason:'admin_approved'};
