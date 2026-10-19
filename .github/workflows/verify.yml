@@ -110,7 +110,7 @@ jobs:
       - name: Verify native public TreeDX workspace and promotion boundaries before complete verification
         run: node node_modules/vitest/vitest.mjs run --config ./vitest.control-plane.config.ts tests/unit/control-plane/treedx/authority/architecture/reviewed-promotion-native.test.ts tests/unit/control-plane/governance/proposals/architecture/proposal-contract-authority-native.test.ts tests/unit/control-plane/knowledge/workspaces/architecture/relation-publication-native.test.ts
       - name: Verify proposal retry recovery before complete verification
-        run: node node_modules/vitest/vitest.mjs run --config ./vitest.control-plane.config.ts tests/unit/control-plane/capacity/communication/completion/proposal-replay.test.ts tests/unit/control-plane/capacity/communication/completion/proposal-replay-native.test.ts tests/unit/control-plane/capacity/planning-and-estimate-operations.test.ts tests/unit/control-plane/discussions/discussion-targeted-read.test.ts
+        run: node node_modules/vitest/vitest.mjs run --config ./vitest.control-plane.config.ts tests/unit/control-plane/capacity/communication/completion/proposal-replay.test.ts tests/unit/control-plane/capacity/communication/completion/proposal-replay-native.test.ts tests/unit/control-plane/capacity/planning-and-estimate-operations.test.ts tests/unit/control-plane/discussions/discussion-targeted-read.test.ts tests/unit/control-plane/mcp/schema-dialect.test.ts
       - run: npm run verify:direct
       - name: Verify real PostgreSQL backup-writer migration closure
         run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/services/live/replication-migration-postgres.test.ts

@@ -82,7 +82,8 @@ describe('MCP authorization equivalence', () => {
 		const expected = { type: 'object', properties: { teamId: { type: 'string', minLength: 1 } }, required: ['teamId'], additionalProperties: false };
 		expect(sdkSchemaJson(binding.schema.path)).toEqual(expected);
 		const path = sdkStandardSchema(binding.schema.path)['~standard'];
-		expect(path.jsonSchema.input()).toEqual(expected); expect(path.jsonSchema.output()).toEqual(expected);
+		const jsonSchema = { $schema: 'http://json-schema.org/draft-07/schema#', ...expected };
+		expect(path.jsonSchema.input()).toEqual(jsonSchema); expect(path.jsonSchema.output()).toEqual(jsonSchema);
 		expect(path.validate({ teamId: 'native-team' })).toEqual({ value: { teamId: 'native-team' } });
 		expect(path.validate({ teamId: '' })).toMatchObject({ issues: [{ path: ['teamId'] }] });
 		const input = { path: { teamId: 'native-team' }, query: {}, body: { profileId: 'arbitrary-profile', projects: ['sdk'],
