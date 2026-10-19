@@ -66,8 +66,8 @@ const planningAgent = (agentClass: string) => ({ schemaVersion: 'treeseed.agent/
 const plan = { schemaVersion: 'treeseed.workday/v1', id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
 	executionMode: 'simulation',
 	policySnapshot: policy, state: 'active', startsAt: '2026-09-13T15:00:00.000Z', endsAt: '2026-09-13T15:01:00.000Z',
-	planningRounds: [{ round: 1, state: 'active', assignmentIds: ['planning:workday:1:project/architect'] },
-		{ round: 2, state: 'pending', assignmentIds: ['planning:workday:2:project/architect'] }],
+	planningRounds: [{ round: 1, state: 'active', assignmentIds: ['planning:workday:1:project/architect:planning'] },
+		{ round: 2, state: 'pending', assignmentIds: ['planning:workday:2:project/architect:planning'] }],
 	admittedSecondsByProject: {}, admittedSecondsByAgentClass: {}, activatedAt: '2026-09-13T15:00:00.000Z' } as const;
 const run = compileCapacityWorkdayRunRecord('team', { id: 'workday', status: 'running', executionMode: 'simulation',
 	startedAt: plan.startsAt, parameters: { durationSeconds: 60, appliedPlan: plan } }, { now });
@@ -98,7 +98,7 @@ describe('living workday lifecycle', () => {
 			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
 		const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:02:00Z');
 		expect(result.plan.planningRounds.at(-1)).toMatchObject({ round: 3, state: 'active',
-			assignmentIds: ['planning:workday:3:project/architect'] });
+			assignmentIds: ['planning:workday:3:project/architect:planning'] });
 	});
 	it('adds a newly created proposal owner and Reviewer to the next round without replacing the frozen planning agents', async () => {
 		const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z',
@@ -114,7 +114,7 @@ describe('living workday lifecycle', () => {
 			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
 		const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:02:00Z');
 		expect(result.plan.planningRounds.at(-1)?.assignmentIds).toEqual([
-			'planning:workday:3:project/architect',
+			'planning:workday:3:project/architect:planning',
 			'planning:workday:3:project/project/researcher:estimating:new-proposal',
 			'planning:workday:3:project/project/reviewer:estimating:new-proposal',
 		]);
@@ -157,7 +157,7 @@ describe('living workday lifecycle', () => {
 			: currentPlan.planningRounds.flatMap(round => round.assignmentIds.map(id => ({ id, kind: 'planning', status: 'completed' })))),
 			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
 		const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:03:00Z');
-		expect(result.plan.planningRounds.at(-1)?.assignmentIds).toEqual(['planning:workday:3:project/architect']);
+		expect(result.plan.planningRounds.at(-1)?.assignmentIds).toEqual(['planning:workday:3:project/architect:planning']);
 	});
 	it('keeps one or several explicit proposals while ignoring unrelated open proposals', async () => {
 		for (const selected of [['new-proposal'], ['new-proposal', 'other-proposal']]) {
@@ -225,6 +225,30 @@ describe('living workday lifecycle', () => {
 			expect(store.updateCapacityWorkdayRun).not.toHaveBeenCalled();
 		}
 	});
+	it.each(['ready', 'revised'])('does not repeat an estimating-only round after %s estimates are complete', async proposalId => {
+		const initialId = `planning:workday:1:project/project/researcher:estimating:${proposalId}`;
+		const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z', planningRounds: [
+			{ round: 1, state: 'complete', assignmentIds: [initialId],
+				startedAt: '2026-09-13T15:00:00Z', completedAt: '2026-09-13T15:01:00Z' },
+		], policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
+		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
+			proposalIds: [proposalId], agentProfilesByProjectId: { project: { agents: ['researcher', 'reviewer'].map(agentClass =>
+				({ definition: planningAgent(agentClass), activities: ['estimating'] })) } } } } as never;
+		const store = { all: vi.fn(async (sql: string) => sql.includes('execution_nodes')
+			? [{ id: initialId, kind: 'estimating', status: 'completed' }]
+			: [{ id: proposalId, team_id: 'team', project_id: 'project' }]),
+			getGovernanceProposal: vi.fn(async () => ({ id: proposalId, team_id: 'team', project_id: 'project' })),
+			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
+		const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:02:00Z');
+		expect(result.plan.planningRounds).toEqual(currentPlan.planningRounds);
+		expect(result.plan).toMatchObject({ state: 'active', startsAt: currentPlan.startsAt,
+			endsAt: currentPlan.endsAt, policySnapshot: currentPlan.policySnapshot });
+		const closingRun = { ...currentRun, parameters: { ...currentRun.parameters, appliedPlan: result.plan } } as never;
+		const closing = await advanceLivingWorkday(store as never, closingRun, '2026-09-13T15:03:00Z', true);
+		expect(closing.plan.planningRounds.every(round => round.state === 'complete')).toBe(true);
+		expect(closing.plan.state).toBe('closing');
+		expect(closing.plan.endsAt).toBe(currentPlan.endsAt);
+	});
 	it('continues collaborative planning without regenerating estimates after the proposal is ready', async () => {
 		const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z', planningRounds: [
 			{ round: 1, state: 'complete', assignmentIds: [
@@ -274,8 +298,8 @@ describe('living workday lifecycle', () => {
 	it('completes planning rounds and enters closing without consulting demand or envelope storage', async () => {
 		const updateCapacityWorkdayRun = vi.fn(async () => run);
 		const store = { all: vi.fn(async (sql: string) => sql.includes('SELECT id,kind,status') ? [
-			{ id: 'planning:workday:1:project/architect', kind: 'planning', status: 'completed' },
-			{ id: 'planning:workday:2:project/architect', kind: 'planning', status: 'completed' },
+			{ id: 'planning:workday:1:project/architect:planning', kind: 'planning', status: 'completed' },
+			{ id: 'planning:workday:2:project/architect:planning', kind: 'planning', status: 'completed' },
 			{ id: 'reporting:workday:project/reporter', kind: 'reporting', status: 'ready' },
 		] : sql.includes('JOIN execution_edges') ? [{ status: 'completed' }] : []), updateCapacityWorkdayRun };
 		const result = await advanceLivingWorkday(store as never, run, now);

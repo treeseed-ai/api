@@ -50,10 +50,18 @@ function edge(teamId: string, fromNodeId: string, toNodeId: string, provenance: 
 /** Project the applied workday plan into ordinary living-graph nodes. */
 export function projectActiveWorkdays(input: { teamId: string; revision: number;
 	sources: ActiveWorkdayProjectionSource[]; profiles: Record<string, AgentDefinition>;
-	decisionNodes?: ExecutionNode[] }) {
+	decisionNodes?: ExecutionNode[]; retainedNodes?: readonly ExecutionNode[]; issuedNodeIds?: readonly string[] }) {
 	const nodes: ExecutionNode[] = [], edges: ExecutionEdge[] = [], changedSourceRefs: ExactEntityReference[] = [];
+	const retainedById = new Map((input.retainedNodes ?? []).map(node => [node.id, node]));
+	const issuedIds = new Set(input.issuedNodeIds ?? []);
 	for (const source of [...input.sources].sort((left, right) => left.id.localeCompare(right.id))) {
 		const workday = appliedWorkdaySchema.parse(record(source.parameters.appliedPlan));
+		const declaredPlanningIds = new Set(workday.planningRounds.flatMap(round => round.assignmentIds));
+		for (const id of issuedIds) if (id.startsWith(`planning:${workday.id}:`)) {
+			if (!declaredPlanningIds.has(id)) throw new Error('Issued planning turn is absent from its frozen Workday round');
+			if (!retainedById.has(id)) throw new Error('Missing original node for an issued planning turn');
+		}
+
 		const reference = sourceRef(workday);
 		const lifecycleConditions = new Map<string, ExecutionNode>();
 		const lifecycleDependencies = (node: ExecutionNode, events: string[] = []) => {
@@ -74,32 +82,50 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 			}
 		};
 		const planningSources = record(source.parameters.planningSourceByProposalId);
-		const participants = workdayParticipants({ ...source.parameters, proposalsByProjectId: source.proposalsByProjectId });
+		const participation = { ...source.parameters, proposalsByProjectId: source.proposalsByProjectId };
+		const participants = workdayParticipants(participation);
+		const requiredIds = new Set(participants.map(participant => participant.id));
+		// Closing keeps every original planned identity. Exact completed estimates
+		// can cancel a never-admitted obsolete turn, never an issued attempt.
+		const plannedParticipants = workday.state === 'closing'
+			? workdayParticipants(participation, { includeEstimated: true }) : participants;
 		changedSourceRefs.push(reference);
 		const projectIds = array(source.parameters.scheduledProjectIds).map(text).filter(Boolean).sort();
 		const roundNodes = new Map<number, ExecutionNode[]>();
 		for (const { round } of workday.planningRounds) {
 			const plannedIds = new Set(workday.planningRounds.find((candidate) => candidate.round === round)?.assignmentIds ?? []);
 			const current: ExecutionNode[] = [];
-			for (const participant of participants.filter((candidate) => projectIds.includes(candidate.projectId))) {
+			for (const participant of plannedParticipants.filter((candidate) => projectIds.includes(candidate.projectId))) {
 				const { projectId, definition, activity } = participant;
 				const planningSource = record(planningSources[participant.proposalId ?? '']);
 				const nodeSource = activity === 'estimating' && planningSource.store === 'treedx'
 					&& planningSource.model === 'proposal' ? planningSource as ExactEntityReference : reference;
 				const plannedId = `planning:${workday.id}:${round}:${participant.id}`;
 				if (!plannedIds.has(plannedId)) continue;
+				const obsolete = activity === 'estimating' && !requiredIds.has(participant.id);
+				if (obsolete) {
+					const retained = retainedById.get(plannedId);
+					if (retained) {
+						if (retained.teamId !== input.teamId || retained.projectId !== projectId || retained.workdayId !== workday.id
+							|| retained.kind !== 'estimating' || retained.agentClass !== definition.agentClass) throw new Error('Original planned node custody differs.');
+						current.push(retained); nodes.push(retained); continue;
+					}
+					if (issuedIds.has(plannedId)) throw new Error('Missing original node for an issued planning turn');
+					if (planningSource.store !== 'treedx' || planningSource.model !== 'proposal' || planningSource.id !== participant.proposalId)
+						throw new Error('Exact original estimating proposal authority required.');
+				}
 				const profile = definition.activityProfiles[activity]!;
 				const proposal = source.proposalsByProjectId?.[projectId]?.find((candidate) => text(candidate.id) === participant.proposalId);
 				const workItems = array(record(proposal?.executionPlan).workItems).map(record);
 				const workItem = activity === 'estimating' && definition.agentClass !== 'reviewer'
 					? workItems.filter((item) => text(item.agentClass) === definition.agentClass
-						&& Object.keys(record(item.estimate)).length === 0) : [];
+						&& (obsolete || Object.keys(record(item.estimate)).length === 0)) : [];
 				if (activity === 'estimating' && (!workItems.length
 					|| (definition.agentClass !== 'reviewer' && !workItem.length))) throw new Error(
 					`Estimating ${definition.agentClass} requires proposal work items owned by that class.`);
 				const estimatingCriteria = definition.agentClass === 'reviewer'
 					? workItems.filter((item) => item.review === 'required'
-						&& Object.keys(record(item.reviewEstimate)).length === 0).map((item) =>
+						&& (obsolete || Object.keys(record(item.reviewEstimate)).length === 0)).map((item) =>
 						`Estimate the generated review of work item ${text(item.id)} independently: expectedSeconds, maximumSeconds, and rationale.`)
 					: workItem.flatMap((item) => [`Estimate work item ${text(item.id)}: expectedSeconds, maximumSeconds, and rationale.`,
 						...array(item.acceptanceCriteria).map(text)]);
@@ -110,7 +136,7 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 						? { workItemId: text(workItem[0]?.id) } : {}),
 					sourceRef: nodeSource, authorityRefs: [reference], ruleRevision: 1, nodeRevision: 1,
 						agentClass: definition.agentClass,
-					status: activity === 'estimating' && proposalStatus
+					status: obsolete ? 'cancelled' : activity === 'estimating' && proposalStatus
 						&& !['draft', 'submitted', 'open'].includes(proposalStatus)
 						? 'cancelled' : 'blocked',
 					estimate: modelTurnEstimate(workday.policySnapshot.planningTurnMaximumSeconds),

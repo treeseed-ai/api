@@ -18,6 +18,55 @@ const definition = (agentClass: string, dependsOn: string[] = []): AgentDefiniti
 });
 
 describe('workday living-graph projection', () => {
+	it('accounts for only never-admitted obsolete estimator turns as cancelled in the original closing round', () => {
+		const projectId='sdk',proposalId='ready-proposal';
+		const agents=['engineer','reviewer'].map(agentClass=>{
+			const agent=definition(agentClass);agent.activityProfiles.estimating={handler:'estimate',permissions,prompt:{system:'Estimate exact governed work.'}};
+			return {definition:agent,activities:['estimating']};
+		});
+		const draft={id:proposalId,executionPlan:{workItems:[{id:'repair',agentClass:'engineer',review:'required'}]}};
+		const snapshot={sdk:{agents}},participants=workdayParticipants({agentProfilesByProjectId:snapshot,proposalsByProjectId:{sdk:[draft]}});
+		expect(participants).toHaveLength(2);
+		const original=compileWorkday({id:'orphan',teamId:'team',policyId:'default',policyRevision:1,executionMode:'simulation',
+			startsAt:'2026-10-19T09:00:00.000Z',policy:DEFAULT_WORKDAY_POLICY,agentIds:participants.map(p=>p.id)});
+		const first=original.planningRounds[0]!;
+		const second={round:2,state:'active' as const,assignmentIds:first.assignmentIds.map(id=>id.replace('planning:orphan:1:','planning:orphan:2:')),startedAt:'2026-10-19T09:03:00.000Z'};
+		const plan={...original,state:'closing' as const,activatedAt:original.startsAt,closingAt:'2026-10-19T09:04:00.000Z',planningRounds:[
+			{...first,state:'complete' as const,startedAt:original.startsAt,completedAt:'2026-10-19T09:02:00.000Z'},second]};
+		const complete={...draft,executionPlan:{workItems:[{...draft.executionPlan.workItems[0]!,
+			estimate:{expectedSeconds:120,maximumSeconds:180,rationale:'Controlled owning input.'},
+			reviewEstimate:{expectedSeconds:60,maximumSeconds:90,rationale:'Controlled independent input.'}}]}};
+		const reference={store:'treedx',model:'proposal',id:proposalId,revision:6,digest:'sha256:'+'a'.repeat(64),repository:'sdk-library',commit:'b'.repeat(40),path:'proposals/repair.mdx'};
+		const source={id:plan.id,teamId:'team',proposalsByProjectId:{sdk:[complete]},proposalStatusesByProposalId:{[proposalId]:'accepted'},parameters:{appliedPlan:plan,
+			scheduledProjectIds:[projectId],agentProfilesByProjectId:snapshot,planningSourceByProposalId:{[proposalId]:reference}}};
+		const profiles=Object.fromEntries(agents.map(a=>['sdk:'+a.definition.agentClass,a.definition]));
+		const historicReference={...reference,revision:2,commit:'c'.repeat(40)};
+		const historicSource={...source,proposalsByProjectId:{sdk:[draft]},proposalStatusesByProposalId:{[proposalId]:'open'},parameters:{...source.parameters,
+			planningSourceByProposalId:{[proposalId]:historicReference}}};
+		const retainedNodes=projectActiveWorkdays({teamId:'team',revision:1,profiles,sources:[historicSource]}).nodes
+			.filter(n=>first.assignmentIds.includes(n.id)).map(n=>({...n,status:'completed' as const}));
+		expect(retainedNodes).toHaveLength(2);
+		const input={teamId:'team',revision:8,profiles,sources:[source],retainedNodes,issuedNodeIds:first.assignmentIds};
+		const held=structuredClone(input),graph=projectActiveWorkdays(input);
+		expect(graph.nodes.map(n=>n.id).sort()).toEqual([...first.assignmentIds,...second.assignmentIds].sort());
+		for(const prior of retainedNodes)expect(graph.nodes.find(n=>n.id===prior.id)).toEqual(prior);
+		for(const node of graph.nodes.filter(n=>second.assignmentIds.includes(n.id))){expect(node).toMatchObject({kind:'estimating',status:'cancelled',workdayId:plan.id,sourceRef:reference});expect(node.authorityRefs).toHaveLength(1);expect(node.authorityRefs![0]).toMatchObject({store:'postgresql',model:'workday',id:plan.id});}
+		expect(validateExecutionGraph(graph.nodes,graph.edges)).toMatchObject({ok:true});expect(input).toEqual(held);
+		// Existing nodes OR original attempts must never be reclassified by recovery.
+		expect(()=>projectActiveWorkdays({...input,issuedNodeIds:[...first.assignmentIds,...second.assignmentIds]})).toThrow('Missing original node for an issued planning turn');
+		// Independent review: a missing frozen declaration must not bypass issued-node custody.
+		const omitted=second.assignmentIds[0]!;
+		const missingDeclaration={...source,parameters:{...source.parameters,appliedPlan:{...plan,planningRounds:[plan.planningRounds[0]!,{...second,assignmentIds:second.assignmentIds.filter(id=>id!==omitted)}]}}};
+		expect(()=>projectActiveWorkdays({...input,sources:[missingDeclaration],issuedNodeIds:[...first.assignmentIds,omitted]})).toThrow('Issued planning turn is absent from its frozen Workday round');
+		expect(projectActiveWorkdays({...input,issuedNodeIds:[...first.assignmentIds,'planning:another-workday:2:sdk/sdk/engineer:estimating:ready-proposal']})).toEqual(graph);
+
+		const {closingAt:_closingAt,...withoutClosing}=plan;
+		const active={...source,parameters:{...source.parameters,appliedPlan:{...withoutClosing,state:'active' as const}}};
+		expect(projectActiveWorkdays({...input,sources:[active]}).nodes).toEqual([]);
+		const noSource={...source,proposalsByProjectId:{sdk:[]}};
+		expect(projectActiveWorkdays({...input,sources:[noSource]}).nodes).toEqual([]);
+	});
+
 	it('admits a long governed proposal without exceeding the planning node ID bound', () => {
 		const projectId = '8cbfb810-6da5-4da2-9ae9-cad53101253f';
 		const proposalId = `golden-sdk-decision-governed-workday-intent-v4-${'f'.repeat(36)}`;
