@@ -56,6 +56,12 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 	const issuedIds = new Set(input.issuedNodeIds ?? []);
 	for (const source of [...input.sources].sort((left, right) => left.id.localeCompare(right.id))) {
 		const workday = appliedWorkdaySchema.parse(record(source.parameters.appliedPlan));
+		const declaredPlanningIds = new Set(workday.planningRounds.flatMap(round => round.assignmentIds));
+		for (const id of issuedIds) if (id.startsWith(`planning:${workday.id}:`)) {
+			if (!declaredPlanningIds.has(id)) throw new Error('Issued planning turn is absent from its frozen Workday round');
+			if (!retainedById.has(id)) throw new Error('Missing original node for an issued planning turn');
+		}
+
 		const reference = sourceRef(workday);
 		const lifecycleConditions = new Map<string, ExecutionNode>();
 		const lifecycleDependencies = (node: ExecutionNode, events: string[] = []) => {
