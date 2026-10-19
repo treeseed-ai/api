@@ -75,15 +75,17 @@ export async function completionFixture(settled = true) {
 
 /** Original production ordering: native settlement commits, then closeout
  * expires before completion. Measurements and sandbox receipts are inputs. */
-export async function expiredCloseoutFixture() {
+export async function expiredCloseoutFixture(settled = true) {
 	const f = await completionFixture(false);
 	try {
 		const runnerId = 'original-runner', nativeUsage = { activeSeconds: 1, elapsedSeconds: 2, tokens: 7 };
 		await f.query("UPDATE capacity_provider_assignments SET runner_id=?,metadata_json=jsonb_set(metadata_json::jsonb,'{operationalState}','\"closeout\"'::jsonb)::text WHERE id=?", [runnerId, f.attempt.id]);
-		await createProviderAssignmentService(f.owner as unknown as Parameters<typeof createProviderAssignmentService>[0]).settle(
+		const provider=createProviderAssignmentService(f.owner as unknown as Parameters<typeof createProviderAssignmentService>[0]);
+		if(settled) await provider.settle(
 			{ principal: { ...principal, scopes: ['provider:usage:write', 'provider:assignments:write'] } }, f.attempt.id,
 			{ ...terminalUsage, activeSeconds: 1, elapsedSeconds: 2, usageActual: { ...terminalUsage.usageActual, nativeUsage } },
 			`assignment-settlement:${f.attempt.id}:${runnerId}`);
+		else await provider.reportUsage({principal:{...principal,scopes:['provider:usage:write']}},f.attempt.id,{usageDimension:'diagnostic-0',accountingMode:'informational',activeSeconds:0,elapsedSeconds:0,usageActual:{...terminalUsage.usageActual,nativeUsage}},`usage:${f.attempt.id}:${runnerId}:0`);
 		const output = { sandboxId: 'original-sandbox', teardown: { verified: true, completedAt: f.result.completedAt },
 			assignmentResult: { ...f.result, usage: { ...f.result.usage, native: nativeUsage } }, artifacts: [] };
 		vi.setSystemTime(new Date(Date.parse(f.attempt.deadline) + 1));

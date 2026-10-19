@@ -19,6 +19,23 @@ async function financialTruth(f: Awaited<ReturnType<typeof completionFixture>>) 
 		counters: (await f.query('SELECT * FROM capacity_admission_counters ORDER BY id')).rows };
 }
 describe('terminal races preserve one immutable attempt and prior measured truth', () => {
+ it('settles previously reported native usage once while retaining original expired status and diagnostic history',async()=>{
+  const f=await expiredCloseoutFixture(false);try{
+   const before=(await f.repository.get('team',f.attempt.id))!,finance=await financialTruth(f),held=structuredClone(f.input);
+   expect(before.lifecycleCode).toBe('expired_lease_side_effect_evidence_present');expect(finance.ledger).toHaveLength(0);
+   expect(finance.usage).toHaveLength(1);expect(finance.usage[0]).toMatchObject({accounting_mode:'informational',active_seconds:0,elapsed_seconds:0});
+   const outcomes=await Promise.all([f.service.fail(principal,f.attempt.id,f.input),f.service.fail(principal,f.attempt.id,f.input)]);
+   expect(outcomes.every(result=>result?.assignment.status==='expired'&&result.assignment.leaseState==='released')).toBe(true);
+   const after=(await f.repository.get('team',f.attempt.id))!,actual=await financialTruth(f);
+   expect(after).toMatchObject({assignmentResult:null,assignmentAttempt:before.assignmentAttempt,metadata:before.metadata,lifecycleCode:before.lifecycleCode,failedAt:before.failedAt,stateVersion:before.stateVersion+1,lifecycleOutput:{...f.output,completion:null,performance:{disposition:'failed'}}});
+   expect(actual.usage.filter((row:any)=>row.accounting_mode==='informational')).toEqual(finance.usage);
+   expect(actual.usage.filter((row:any)=>row.accounting_mode==='aggregate')).toHaveLength(1);
+   expect(actual.ledger).toHaveLength(1);expect(actual.ledger[0]).toMatchObject({active_seconds:1,elapsed_seconds:2});
+   expect(actual.reservations[0]).toMatchObject({state:'consumed',active_seconds:1,elapsed_seconds:2});
+   const once=await f.snapshot();expect((await f.service.fail(principal,f.attempt.id,f.input))?.assignment).toEqual(after);expect(await f.snapshot()).toEqual(once);expect(f.input).toEqual(held);
+  }finally{await f.close();}
+ });
+
 	it('acknowledges original closed measured output after settlement races expiry without accepting completion or settling again', async () => {
 		const f = await expiredCloseoutFixture(); try {
 			const { input, output } = f;
