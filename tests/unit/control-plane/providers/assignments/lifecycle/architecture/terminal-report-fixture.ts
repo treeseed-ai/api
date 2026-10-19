@@ -80,7 +80,7 @@ export async function expiredCloseoutFixture() {
 	try {
 		const runnerId = 'original-runner', nativeUsage = { activeSeconds: 1, elapsedSeconds: 2, tokens: 7 };
 		await f.query("UPDATE capacity_provider_assignments SET runner_id=?,metadata_json=jsonb_set(metadata_json::jsonb,'{operationalState}','\"closeout\"'::jsonb)::text WHERE id=?", [runnerId, f.attempt.id]);
-		await createProviderAssignmentService(f.owner as Parameters<typeof createProviderAssignmentService>[0]).settle(
+		await createProviderAssignmentService(f.owner as unknown as Parameters<typeof createProviderAssignmentService>[0]).settle(
 			{ principal: { ...principal, scopes: ['provider:usage:write', 'provider:assignments:write'] } }, f.attempt.id,
 			{ ...terminalUsage, activeSeconds: 1, elapsedSeconds: 2, usageActual: { ...terminalUsage.usageActual, nativeUsage } },
 			`assignment-settlement:${f.attempt.id}:${runnerId}`);

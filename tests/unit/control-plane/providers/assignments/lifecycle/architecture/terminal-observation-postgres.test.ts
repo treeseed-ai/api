@@ -5,6 +5,7 @@ import {completionFixture,expiredCloseoutFixture,principal} from './terminal-rep
 import {terminalUsage} from '../../../../capacity/accounting/architecture/settlement-fixture.ts';
 import {ControlPlaneStore} from '../../../../../../../src/api/persistence/store.ts';
 import {proveNativeTerminalObservation} from '../../../../capacity/execution/admission/fixtures/native-terminal-observations.ts';
+import {createCapacityControlPlane} from '../../../../../../../src/api/capacity/control-plane.ts';
 
 describe('terminal observation through independent native PostgreSQL owners',()=>{
  it('independent native owners acknowledge expired measured closeout once without new settlement completion or graph history',async()=>{
@@ -12,7 +13,8 @@ describe('terminal observation through independent native PostgreSQL owners',()=
    const supplied=await expiredCloseoutFixture();const {attempt,input}=supplied;
    try{await copyNativeAssignmentCustody(native.left,supplied,['capacity_workday_runs','execution_nodes','capacity_reservations','capacity_provider_assignments','capacity_admission_counters','capacity_reservation_counter_claims','capacity_usage_actuals','capacity_ledger_entries','capacity_workday_events','capacity_audit_events']);}
    finally{await supplied.close();vi.useRealTimers();}
-   const owners=[native.left,native.right].map(db=>new ControlPlaneStore({TREESEED_ENVIRONMENT:'test'},db));for(const owner of owners)owner.initializationPromise=Promise.resolve();
+   const stores=[native.left,native.right].map(db=>new ControlPlaneStore({TREESEED_ENVIRONMENT:'test'},db));for(const store of stores)store.initializationPromise=Promise.resolve();
+   const owners=stores.map(store=>createCapacityControlPlane(store));
    const before=await owners[0]!.getProviderAssignment('team',attempt.id), held=structuredClone(input);
    const financial=async()=>Promise.all(['capacity_reservations','capacity_usage_actuals','capacity_ledger_entries','capacity_admission_counters','capacity_reservation_counter_claims','execution_graph_revisions'].map(table=>native.left.pool.query(`SELECT * FROM ${table} ORDER BY 1`).then(result=>result.rows)));
    const original=await financial();
