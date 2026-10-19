@@ -48,6 +48,29 @@ describe('MCP authorization equivalence', () => {
 				.toMatchObject({ isError: true, content: [{ type: 'text', text: expect.stringMatching(/current project revision/iu) }] });
 			expect(observations).toHaveLength(2);
 			expect(observations[1]).toMatchObject({ idempotencyKey: 'api-objective-update', ifMatch: 'revision-stale' });
+			const tool = (await client.listTools()).tools.find(value => value.name === binding.descriptor.operationId);
+			expect(tool?.inputSchema).toHaveProperty('properties.headers.additionalProperties', false);
+			supplied = {};
+			const modelHeaders = { 'Idempotency-Key': 'model-api-objective-update', 'If-Match': '"revision-1"' };
+			expect(await client.callTool({ name: binding.descriptor.operationId, arguments: { ...arguments_, headers: modelHeaders } }))
+				.toMatchObject({ structuredContent: { id: 'project-api', updatedAt: 'revision-2' } });
+			expect(observations[2]).toMatchObject({ idempotencyKey: 'model-api-objective-update', ifMatch: 'revision-1' });
+			for (const headers of [{ ...modelHeaders, 'If-Match': '' }, { ...modelHeaders, 'Idempotency-Key': '  ' },
+				{ ...modelHeaders, 'Idempotency-Key': 7 }, { ...modelHeaders, 'Idempotency-Key': 'key\r\ninjected' },
+				...['Authorization', 'Cookie', 'x-treeseed-confirmation', 'x-treeseed-provider-proof', 'x-treeseed-assignment-id'].map(name => ({ ...modelHeaders, [name]: 'forbidden' })),
+				[], null, 'not-headers']) {
+				expect(await client.callTool({ name: binding.descriptor.operationId, arguments: { ...arguments_, headers } })).toMatchObject({ isError: true });
+				expect(observations).toHaveLength(3);
+			}
+			supplied = { 'idempotency-key': 'different-host-request' };
+			expect(await client.callTool({ name: binding.descriptor.operationId, arguments: { ...arguments_, headers: modelHeaders } }))
+				.toMatchObject({ isError: true, content: [{ type: 'text', text: expect.stringMatching(/conflicting.*Idempotency-Key/iu) }] });
+			expect(observations).toHaveLength(3);
+			supplied = {};
+			const parallel = ['first-model-request', 'second-model-request'].map(key => client.callTool({ name: binding.descriptor.operationId,
+				arguments: { ...arguments_, headers: { ...modelHeaders, 'Idempotency-Key': key } } }));
+			for (const result of await Promise.all(parallel)) expect(result).toMatchObject({ structuredContent: { id: 'project-api', updatedAt: 'revision-2' } });
+			expect(observations.slice(3).map(value => value.idempotencyKey).sort()).toEqual(['first-model-request', 'second-model-request']);
 		} finally { await client.close(); }
 	});
 	it('keeps provider and workday Standard Schema projections exact while native validation denies caller derived authority', () => {

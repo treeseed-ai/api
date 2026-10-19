@@ -44,16 +44,18 @@ it('native MCP cancels only the inspected queued project discussion and retains 
 				return app.fetch(new Request(request, { headers: supplied }));
 			},
 		}));
-		const call = () => client.callTool({ name: 'communications.invocations.cancel', arguments: {
+		const call = (modelHeaders?: Record<string, string>) => client.callTool({ name: 'communications.invocations.cancel', arguments: {
 			path: { teamId: 'team', invocationId: 'research' }, body: { reason: 'The coordinator consolidated this review into the approved proposal.' },
+			...(modelHeaders ? { headers: modelHeaders } : {}),
 		} });
 		const before = await rows();
 		for (const supplied of [{}, { 'Idempotency-Key': 'cancel-api-research' }, { 'Idempotency-Key': 'cancel-api-research', 'If-Match': 'stale' }]) {
 			Object.assign(headers, supplied);
 			expect(await call()).toMatchObject({ isError: true }); expect(await rows()).toEqual(before);
 		}
-		headers['If-Match'] = `"${at}"`;
-		expect(await call()).toMatchObject({ structuredContent: { id: 'research', status: 'cancelled' } });
+		delete headers['Idempotency-Key']; delete headers['If-Match'];
+		expect(await call({ 'Idempotency-Key': 'cancel-api-research', 'If-Match': `"${at}"` }))
+			.toMatchObject({ structuredContent: { id: 'research', status: 'cancelled' } });
 		const after = await rows(); expect(after).toHaveLength(1);
 		expect(after[0]).toMatchObject({ status: 'cancelled', idempotency_key: 'original-send',
 			blocking_state_json: JSON.stringify({ code: 'operator_cancelled', idempotencyKey: 'cancel-api-research',
@@ -61,6 +63,7 @@ it('native MCP cancels only the inspected queued project discussion and retains 
 		const readback = await app.request('/v1/teams/team/agent-invocations/research', { headers: { authorization: 'Bearer controlled-native-operator' } });
 		expect(readback.status).toBe(200); expect(await readback.json()).toMatchObject({ data: { id: 'research', status: 'cancelled' } });
 		headers['If-Match'] = String(after[0]!.updated_at);
+		headers['Idempotency-Key'] = 'cancel-api-research';
 		expect(await call()).toMatchObject({ structuredContent: { id: 'research', status: 'cancelled', replayed: true } });
 		expect(await rows()).toEqual(after);
 		expect((await f.right.pool.query('SELECT * FROM capacity_provider_assignments')).rows).toEqual([]);
