@@ -1,13 +1,13 @@
 import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCommunicationService } from '../../../../../src/api/control-plane/repositories/capacity/communication-service.ts';
+import { createCommunicationService } from '../../../../../../src/api/control-plane/repositories/capacity/communication-service.ts';
 
 const mocks = vi.hoisted(() => ({ history: vi.fn(), exact: vi.fn(), targets: vi.fn() }));
-vi.mock('../../../../../src/api/discussions/content.ts', async original => ({
-	...await original<typeof import('../../../../../src/api/discussions/content.ts')>(), loadDiscussions: mocks.history,
+vi.mock('../../../../../../src/api/discussions/content.ts', async original => ({
+	...await original<typeof import('../../../../../../src/api/discussions/content.ts')>(), loadDiscussions: mocks.history,
 }));
-vi.mock('../../../../../src/api/governance/executable-proposal.ts', () => ({ readExactProposal: mocks.exact }));
-vi.mock('../../../../../src/api/capacity/services/capacity/invocations/communication-target-resolution.ts', () => ({ resolveTeamCommunicationTargets: mocks.targets }));
+vi.mock('../../../../../../src/api/governance/executable-proposal.ts', () => ({ readExactProposal: mocks.exact }));
+vi.mock('../../../../../../src/api/capacity/services/capacity/invocations/communication-target-resolution.ts', () => ({ resolveTeamCommunicationTargets: mocks.targets }));
 
 const originalRef = { kind: 'proposal', id: 'proposal', projectId: 'project', immutableRef: 'a'.repeat(40), path: 'proposals/repair.mdx', digest: `sha256:${'b'.repeat(64)}` };
 const message = '@api/researcher Trace the real MCP retry boundary.';

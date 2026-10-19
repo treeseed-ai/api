@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { admitDiscussionInvocations, resolveDiscussionInvocationAgents } from '../capacity/services/capacity/invocations/discussion-invocation-service.ts';
-import { changeDiscussionStatus, commitDiscussionMessage, loadDiscussions, validateDiscussionContextRefs } from './content.ts';
+import { changeDiscussionStatus, commitDiscussionMessage, discussionMessageId, loadDiscussions, validateDiscussionContextRefs } from './content.ts';
 import { discussionHistorySnapshot } from './history-snapshot.ts';
 
 type Principal = { id: string; roles?: string[]; permissions?: string[]; metadata?: Record<string, unknown> } | undefined;
@@ -130,7 +130,7 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 			if (body.intent === 'act') throw new DiscussionServiceError(409, 'discussion_operation_handoff_required',
 				'Discussion cannot directly create acting authority. Prepare an approval-backed operation handoff instead.');
 			const discussionId = text(body.discussionId, `discussion-${stableId(projectId, idempotencyKey)}`);
-			const messageId = stableId(discussionId, idempotencyKey);
+			const messageId = discussionMessageId(discussionId, idempotencyKey);
 			const parentWorkdayId = text(body.parentWorkdayId) || null;
 			const parentAssignmentId = text(body.parentAssignmentId) || null;
 			let contextRefs: Awaited<ReturnType<typeof validateDiscussionContextRefs>> = [];

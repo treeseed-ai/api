@@ -3,7 +3,7 @@ import { parseCommunicationAddresses } from '@treeseed/sdk/operator-contracts';
 import { createHash } from 'node:crypto';
 import { authorizeCapacityTeam, type CapacityPrincipal } from './capacity-authorization.ts';
 import { CapacityOperationError } from './capacity-operation-error.ts';
-import { loadDiscussions } from '../../../discussions/content.ts';
+import { discussionMessageId, loadDiscussions } from '../../../discussions/content.ts';
 import { resolveTeamCommunicationTargets } from '../../../capacity/services/capacity/invocations/communication-target-resolution.ts';
 import { reconcileBlockedDiscussionInvocations } from '../../../capacity/services/capacity/invocations/discussion-invocation-service.ts';
 import type { DiagnosticEnvelopeService } from '../../../../security/diagnostic-envelope.ts';
@@ -302,7 +302,26 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 				const projectTargets = targets.filter((target) => target.projectId === projectId);
 				const contextRefs: Row[] = [];
 				const proposalId = text(body.proposalId);
-				if (proposalId) {
+				// The committed message freezes derived proposal context, including when
+				// authoring succeeded but invocation admission was interrupted. Retrying
+				// the declared request must not resolve a newer proposal into that grant.
+				const messageId = discussionMessageId(slug, `${idempotencyKey}:${projectId}`);
+				const history = await loadDiscussions({ store: contentStore, projectId, discussionId: slug,
+					exactMessageIds: [messageId], collection: 'messages' });
+				const original = history.messages.find((message: Row) => text(message.id) === messageId);
+				if (original) {
+					const frontmatter = record(original.frontmatter);
+					const frozen = Array.isArray(frontmatter.contextRefs) ? frontmatter.contextRefs.map(record) : [];
+					const proposals = frozen.filter(ref => ref.kind === 'proposal');
+					const recipients = strings(frontmatter.recipientIds).sort();
+					if (text(original.body) !== text(body.message)
+						|| text(frontmatter.parentWorkdayId) !== text(body.parentWorkdayId)
+						|| JSON.stringify(recipients) !== JSON.stringify(projectTargets.map(target => target.agentSlug).sort())
+						|| (proposalId ? proposals.length !== 1 || proposals[0]!.id !== proposalId || proposals[0]!.projectId !== projectId : proposals.length !== 0)) {
+						throw new CapacityOperationError(409, 'discussion_idempotency_conflict', 'The idempotency key is already bound to another discussion request.');
+					}
+					contextRefs.push(...frozen);
+				} else if (proposalId) {
 					const proposal = await store.getGovernanceProposal(proposalId);
 					if (!proposal || text(proposal.teamId, text(proposal.team_id)) !== teamId
 						|| text(proposal.projectId, text(proposal.project_id)) !== projectId) {

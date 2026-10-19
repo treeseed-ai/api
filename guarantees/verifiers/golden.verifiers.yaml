@@ -5072,3 +5072,15 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
     testName: "real native Book metadata authoring retains exact legacy and current body bytes without publication or duplicate writes"
+
+  api.golden.communication-proposal-recovery-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/completion/proposal-replay.test.ts
+    testName: "reuses the committed message context instead of resolving the moved proposal"
+
+  api.golden.communication-proposal-recovery-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/completion/proposal-replay-native.test.ts
+    testName: "keeps the original context and one invocation after real proposal authoring, concurrent retries and interrupted admission"

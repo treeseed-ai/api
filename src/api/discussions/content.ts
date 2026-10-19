@@ -13,6 +13,9 @@ import { parseCommunicationAddresses } from '@treeseed/sdk/operator-contracts';
 import type { OperationInvocationContext } from '../control-plane/catalog/operation-registry.ts';
 
 type Row = Record<string, unknown>;
+export function discussionMessageId(discussionId: string, idempotencyKey: string): string {
+	return createHash('sha256').update(`${discussionId}:${idempotencyKey}`).digest('hex').slice(0, 32);
+}
 function text(value: unknown, fallback = '') { return typeof value === 'string' && value.trim() ? value.trim() : fallback; }
 function record(value: unknown): Row { if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row; if (typeof value === 'string') try { return record(JSON.parse(value)); } catch { return {}; } return {}; }
 function slug(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 72) || 'discussion'; }
