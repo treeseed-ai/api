@@ -20,9 +20,9 @@ Site and external clients reach this package through its REST or MCP surfaces.
 
 ### MCP mutation requests
 
-Header-capable MCP clients must send the operation's `Idempotency-Key` and, when required by the catalog, `If-Match` on each tool-call HTTP request. Retain the same key when recovering an unchanged request and obtain the current resource version before a new mutation. REST and MCP apply the same descriptor guards and pass these values to the same owning handler. Header presence does not replace the handler's authorization, retry, or stale-version checks.
+MCP tools advertise a `headers` argument containing the operation's `Idempotency-Key` and, when required by its catalog descriptor, `If-Match`. For example, `projects.update` accepts `{ "path": { "projectId": "api" }, "body": { "name": "TreeSeed API" }, "headers": { "Idempotency-Key": "update-api-name", "If-Match": "<current-version>" } }`. Header-capable clients can instead send these values on each tool-call HTTP request. Conflicting argument and HTTP values reject before dispatch. Authentication, cookies, confirmation tokens, and provider authority cannot be supplied through this argument.
 
-This transport support does not supply a model-visible key/version argument for clients that cannot set per-call headers. Such client integration and full proposal-to-simulated-release acceptance remain tracked in [SDK #429](https://github.com/treeseed-ai/sdk/issues/429).
+Retain the same key when recovering an unchanged request and obtain the current resource version before a new mutation. REST and MCP use the same descriptor guards and owning handler; presence of a key does not implement missing handler-specific retry storage. Full real-workflow and external-client acceptance remain tracked in [SDK #429](https://github.com/treeseed-ai/sdk/issues/429).
 
 ## Authentication and account ownership
 

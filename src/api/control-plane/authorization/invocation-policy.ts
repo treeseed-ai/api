@@ -19,11 +19,18 @@ export function enforceOperationAuthorization(
 }
 
 /** Apply the descriptor's write guards before either transport dispatches work. */
-export function readOperationPreconditions(descriptor: ControlPlaneOperationDescriptor, headers?: Headers) {
-	const idempotencyKey = headers?.get(descriptor.idempotency.header)
+export function readOperationPreconditions(descriptor: ControlPlaneOperationDescriptor, headers?: Headers, supplied?: Record<string, string>) {
+	const read = (name: string) => {
+		const transport = headers?.get(name) ?? undefined, argument = supplied?.[name]?.trim();
+		if (transport !== undefined && argument !== undefined && transport !== argument) {
+			throw new ControlPlaneOperationError(409, 'operation_metadata_conflict', `Conflicting ${name} values in HTTP headers and tool arguments.`);
+		}
+		return argument ?? transport;
+	};
+	const idempotencyKey = read(descriptor.idempotency.header)
 		?? (descriptor.operationId === 'repositories.github.webhook' ? headers?.get('x-github-delivery') : undefined)
 		?? undefined;
-	const ifMatch = headers?.get(descriptor.concurrency.writeHeader) ?? undefined;
+	const ifMatch = read(descriptor.concurrency.writeHeader);
 	if (descriptor.idempotency.required && !idempotencyKey) {
 		throw new ControlPlaneOperationError(400, 'idempotency_key_required', `${descriptor.idempotency.header} is required.`);
 	}
