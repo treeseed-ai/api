@@ -340,7 +340,7 @@ export class ProviderAssignmentLifecycleService {
 		// Expiration ends productive authority, not the current owner's obligation
 		// to report its terminal timeout. The row lock prevents recovery taking it.
 		const timeout = input.code === 'assignment_timeout';
-		if (timeout && assignment?.status === 'expired' && assignment.lifecycleCode === 'expired_lease_settlement_without_success_evidence')
+		if (timeout && assignment?.status === 'expired' && ['expired_lease_settlement_without_success_evidence','expired_lease_side_effect_evidence_present'].includes(String(assignment.lifecycleCode)))
 			return acknowledgeExpiredCloseout(this.store, assignment, principal, input, now);
 		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now, true)) return null;
 		const phaseCancelled = await planningBoundaryCancellation(this.store, assignment, input, now);

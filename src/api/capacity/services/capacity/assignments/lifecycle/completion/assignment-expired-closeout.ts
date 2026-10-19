@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
+import { settleCapacityReservationExactlyOnce } from '../../../accounting/settlement-service.ts';
 import { assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError, type CapacityGovernanceDatabase } from '../../../../../database.ts';
 import { ProviderAssignmentRepository, type DurableProviderAssignment } from '../../../../../repositories/capacity/assignments/assignment.ts';
@@ -23,7 +24,7 @@ export async function acknowledgeExpiredCloseout(database: CapacityGovernanceDat
 		|| attempt.id !== assignment.id || attempt.teamId !== assignment.teamId || attempt.projectId !== assignment.projectId
 		|| attempt.workdayId !== assignment.workDayId || attempt.provider.providerId !== assignment.capacityProviderId
 		|| attempt.reservationId !== assignment.reservationId || attempt.status !== 'expired'
-		|| recovery.disposition !== 'operator-action' || recovery.reasonCode !== 'expired_lease_settlement_without_success_evidence'
+		|| recovery.disposition !== 'operator-action' || !['expired_lease_settlement_without_success_evidence','expired_lease_side_effect_evidence_present'].includes(String(recovery.reasonCode))
 		|| assignment.lifecycleCode !== recovery.reasonCode || typeof input.runnerId !== 'string' || !input.runnerId
 		|| input.runnerId !== recovery.priorRunnerId || input.code !== 'assignment_timeout' || input.retryable !== false
 		|| input.completion != null || record(input).assignmentResult != null || input.performance != null || input.fallbackOutput != null) return deny();
@@ -37,11 +38,41 @@ export async function acknowledgeExpiredCloseout(database: CapacityGovernanceDat
 		typeof value === 'number' && Number.isFinite(value) && value > 0;
 	if (!positive(native.activeSeconds) || !positive(native.elapsedSeconds) || native.activeSeconds > native.elapsedSeconds
 		|| Math.ceil(native.elapsedSeconds) !== parsed.data.usage.elapsedSeconds) return deny();
-	const reservation = await database.first('SELECT * FROM capacity_reservations WHERE id=? AND team_id=? FOR UPDATE',
+	const count=(value:unknown):number=>{if(typeof value!=='number'||!Number.isSafeInteger(value)||value<0)return deny();return value;};
+	const expected = { active_seconds: Math.ceil(native.activeSeconds), elapsed_seconds: parsed.data.usage.elapsedSeconds,
+		input_tokens: parsed.data.usage.modelInputTokens ?? 0, output_tokens: parsed.data.usage.modelOutputTokens ?? 0,
+		cached_input_tokens: count(native.cachedInputTokens ?? 0), reasoning_tokens: count(native.reasoningTokens ?? 0) };
+	let reservation = await database.first('SELECT * FROM capacity_reservations WHERE id=? AND team_id=? FOR UPDATE',
 		[assignment.reservationId, assignment.teamId]);
-	const entries = await database.all("SELECT * FROM capacity_ledger_entries WHERE reservation_id=? AND phase='task_completed_actual_settlement'",
+	let entries = await database.all("SELECT * FROM capacity_ledger_entries WHERE reservation_id=? AND phase='task_completed_actual_settlement'",
 		[assignment.reservationId]);
-	const usages = await database.all("SELECT * FROM capacity_usage_actuals WHERE assignment_id=? AND accounting_mode='aggregate'", [assignment.id]);
+	let usages = await database.all("SELECT * FROM capacity_usage_actuals WHERE assignment_id=? AND accounting_mode='aggregate'", [assignment.id]);
+
+	// A retained diagnostic is not a settlement. Transfer only the original
+	// provider/attempt's matching native observation through the same exactly-once
+	// accounting service; unknown, conflicting or incremental usage stays held.
+	if(recovery.reasonCode==='expired_lease_side_effect_evidence_present' && reservation?.state==='consuming' && entries.length===0 && usages.length===0){
+		if(reservation.settlement_token || reservation.usage_report_token)return deny();
+		const reports=await database.all("SELECT * FROM capacity_usage_actuals WHERE assignment_id=?",[assignment.id]);
+		const report=reports[0];
+		if(reports.length!==1 || !report || report.id!==`usage:${assignment.id}:${attempt.attempt}:diagnostic-0`
+			|| report.idempotency_key!==`usage:${assignment.id}:${input.runnerId}:0` || report.assignment_attempt!==attempt.attempt
+			|| report.accounting_mode!=='informational' || report.usage_dimension!=='diagnostic-0'
+			|| report.active_seconds!==0 || report.elapsed_seconds!==0
+			|| report.capacity_provider_id!==assignment.capacityProviderId || report.execution_provider_id!==assignment.executionProviderId
+			|| report.project_id!==assignment.projectId || report.work_day_id!==assignment.workDayId
+			|| !isDeepStrictEqual(record(report.native_usage_json),native)
+			|| !Object.entries(expected).filter(([key])=>key.endsWith('_tokens')).every(([key,value])=>(report[key]??0)===value))return deny();
+		await settleCapacityReservationExactlyOnce(database,{settlementKey:`assignment-settlement:${assignment.id}:${input.runnerId}`,
+			teamId:assignment.teamId,membershipId:assignment.membershipId,reservationId:assignment.reservationId!,assignmentId:assignment.id,assignmentAttempt:attempt.attempt,
+			activeSeconds:expected.active_seconds,elapsedSeconds:expected.elapsed_seconds,
+			providerUnits:report.provider_units==null?null:Number(report.provider_units),usd:report.actual_usd==null?null:Number(report.actual_usd),
+			usageActual:{inputTokens:expected.input_tokens,outputTokens:expected.output_tokens,cachedInputTokens:expected.cached_input_tokens,reasoningTokens:expected.reasoning_tokens,nativeUsage:native},
+			source:'provider_assignment_fail',existingSettlementPolicy:'require-match',metadata:{code:'assignment_timeout',originalRecoveryCode:assignment.lifecycleCode}});
+		reservation=await database.first('SELECT * FROM capacity_reservations WHERE id=? AND team_id=? FOR UPDATE',[assignment.reservationId,assignment.teamId]);
+		entries=await database.all("SELECT * FROM capacity_ledger_entries WHERE reservation_id=? AND phase='task_completed_actual_settlement'",[assignment.reservationId]);
+		usages=await database.all("SELECT * FROM capacity_usage_actuals WHERE assignment_id=? AND accounting_mode='aggregate'",[assignment.id]);
+	}
 	const entry = entries[0], usage = usages[0];
 	if (!reservation || !entry || !usage || entries.length !== 1 || usages.length !== 1 || reservation.state !== 'consumed'
 		|| !reservation.settlement_token || reservation.usage_report_token
@@ -52,9 +83,7 @@ export async function acknowledgeExpiredCloseout(database: CapacityGovernanceDat
 		project_id: assignment.projectId, work_day_id: assignment.workDayId };
 	if (!Object.entries(scope).every(([key, value]) => reservation[key] === value && entry[key] === value
 		&& (!['team_id', 'membership_id'].includes(key) ? usage[key] === value : true))) return deny();
-	const expected = { active_seconds: Math.ceil(native.activeSeconds), elapsed_seconds: parsed.data.usage.elapsedSeconds,
-		input_tokens: parsed.data.usage.modelInputTokens ?? 0, output_tokens: parsed.data.usage.modelOutputTokens ?? 0,
-		cached_input_tokens: native.cachedInputTokens ?? 0, reasoning_tokens: native.reasoningTokens ?? 0 };
+
 	if (!Object.entries(expected).every(([key, value]) => Number.isSafeInteger(value) && Number(value) >= 0
 		&& (key.endsWith('_tokens') ? usage[key] ?? 0 : usage[key]) === value)
 		|| !['active_seconds', 'elapsed_seconds'].every(key => entry[key] === usage[key] && reservation[key] === usage[key])
