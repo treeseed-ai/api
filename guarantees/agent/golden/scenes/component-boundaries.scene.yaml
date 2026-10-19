@@ -837,6 +837,42 @@ workflow:
   - id: architecture-dependency-credential-native-2
     action: { verifier: api.golden.architecture-dependency-credential-native-2 }
     expect: { status: passed }
+  - id: architecture-dependency-credential-native-2-pending
+    action: { verifier: api.golden.architecture-dependency-credential-native-2-pending }
+    expect: { status: passed }
+  - id: architecture-dependency-credential-native-2-rejected
+    action: { verifier: api.golden.architecture-dependency-credential-native-2-rejected }
+    expect: { status: passed }
+  - id: architecture-dependency-credential-native-2-cancelled
+    action: { verifier: api.golden.architecture-dependency-credential-native-2-cancelled }
+    expect: { status: passed }
+  - id: architecture-dependency-credential-native-2-member
+    action: { verifier: api.golden.architecture-dependency-credential-native-2-member }
+    expect: { status: passed }
+  - id: architecture-dependency-credential-native-2-missing-member
+    action: { verifier: api.golden.architecture-dependency-credential-native-2-missing-member }
+    expect: { status: passed }
+  - id: architecture-dependency-credential-native-2-revoked-provider
+    action: { verifier: api.golden.architecture-dependency-credential-native-2-revoked-provider }
+    expect: { status: passed }
+  - id: architecture-dependency-credential-native-2-version
+    action: { verifier: api.golden.architecture-dependency-credential-native-2-version }
+    expect: { status: passed }
+  - id: architecture-dependency-credential-native-2-signature
+    action: { verifier: api.golden.architecture-dependency-credential-native-2-signature }
+    expect: { status: passed }
+  - id: architecture-dependency-credential-native-2-path
+    action: { verifier: api.golden.architecture-dependency-credential-native-2-path }
+    expect: { status: passed }
+  - id: architecture-dependency-credential-native-2-key
+    action: { verifier: api.golden.architecture-dependency-credential-native-2-key }
+    expect: { status: passed }
+  - id: architecture-dependency-credential-native-2-missing-proof
+    action: { verifier: api.golden.architecture-dependency-credential-native-2-missing-proof }
+    expect: { status: passed }
+  - id: architecture-dependency-credential-native-2-authorization
+    action: { verifier: api.golden.architecture-dependency-credential-native-2-authorization }
+    expect: { status: passed }
   - id: architecture-dependency-credential-native-3
     action: { verifier: api.golden.architecture-dependency-credential-native-3 }
     expect: { status: passed }
