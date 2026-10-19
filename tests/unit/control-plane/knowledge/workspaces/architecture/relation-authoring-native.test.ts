@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { object, relationAuthoringDatabase } from './relation-authoring-fixture.ts';
 import { managedTeamLibrarySeedFiles } from '../../../../../../src/api/teams/managed-team-library-service.ts';
 import { parseBook } from '../../../../../../src/api/knowledge/runtime/catalog.ts';
+import { resolveKnowledgeGatewayConnection } from '../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { relationPath } from '../../../capacity/execution/graph/architecture/relations/relation-fixture.ts';
 
 // Real native TreeDX workspace/Git/graph/search plus original API store SQL and
@@ -29,10 +30,16 @@ describe('native ordinary relation creation and indexing', () => {
 				const before = await f.snapshot(), held = structuredClone(input);
 				const written = await f.service.updateContent(f.principal, workspace.id, input);
 				expect(written.workspace.version).toBe(workspace.version + 1);
-				const read = await f.service.readContent(f.principal, workspace.id, path), bytes = Buffer.from(String(read.content));
+				const read = await f.service.readContent(f.principal, workspace.id, path);
+				expect(read).toMatchObject({ kind: 'book', definition: { id: 'team-operations', projectId: 'precursor', revision: legacy ? 1 : 2 } });
+				const connection = await resolveKnowledgeGatewayConnection(f.store, { projectId: 'precursor', write: false,
+					workspaceRefs: [workspace.branchName], authoringPaths: true });
+				if (!connection) throw new Error('Original native scoped Book file reader required');
+				const file = await connection.client.readFile({ workspaceId: workspace.treeDxWorkspaceId, path });
+				const bytes = Buffer.from(file.content);
 				const offset = bytes.indexOf(Buffer.from('\n---\n')); expect(offset).toBeGreaterThanOrEqual(0);
 				expect(bytes.subarray(offset + 5).equals(Buffer.from(body))).toBe(true);
-				expect(parseBook({ path, raw: String(read.content) })).toMatchObject({ id: 'team-operations', projectId: 'precursor',
+				expect(parseBook({ path, raw: file.content })).toMatchObject({ id: 'team-operations', projectId: 'precursor',
 					revision: legacy ? 1 : 2, title: input.title, summary: input.summary });
 				const once = await f.snapshot();
 				await expect(f.service.updateContent(f.principal, workspace.id, input)).rejects.toMatchObject({ status: 409 });
