@@ -18,6 +18,41 @@ const definition = (agentClass: string, dependsOn: string[] = []): AgentDefiniti
 });
 
 describe('workday living-graph projection', () => {
+	it('accounts for only never-admitted obsolete estimator turns as cancelled in the original closing round', () => {
+		const projectId='sdk',proposalId='ready-proposal';
+		const agents=['engineer','reviewer'].map(agentClass=>{
+			const agent=definition(agentClass);agent.activityProfiles.estimating={handler:'estimate',permissions,prompt:{system:'Estimate exact governed work.'}};
+			return {definition:agent,activities:['estimating']};
+		});
+		const draft={id:proposalId,executionPlan:{workItems:[{id:'repair',agentClass:'engineer',review:'required'}]}};
+		const snapshot={sdk:{agents}},participants=workdayParticipants({agentProfilesByProjectId:snapshot,proposalsByProjectId:{sdk:[draft]}});
+		expect(participants).toHaveLength(2);
+		const original=compileWorkday({id:'orphan',teamId:'team',policyId:'default',policyRevision:1,executionMode:'simulation',
+			startsAt:'2026-10-19T09:00:00.000Z',policy:DEFAULT_WORKDAY_POLICY,agentIds:participants.map(p=>p.id)});
+		const first=original.planningRounds[0]!;
+		const second={round:2,state:'active' as const,assignmentIds:first.assignmentIds.map(id=>id.replace('planning:orphan:1:','planning:orphan:2:')),startedAt:'2026-10-19T09:03:00.000Z'};
+		const plan={...original,state:'closing' as const,activatedAt:original.startsAt,closingAt:'2026-10-19T09:04:00.000Z',planningRounds:[
+			{...first,state:'complete' as const,startedAt:original.startsAt,completedAt:'2026-10-19T09:02:00.000Z'},second]};
+		const complete={...draft,executionPlan:{workItems:[{...draft.executionPlan.workItems[0]!,
+			estimate:{expectedSeconds:120,maximumSeconds:180,rationale:'Controlled owning input.'},
+			reviewEstimate:{expectedSeconds:60,maximumSeconds:90,rationale:'Controlled independent input.'}}]}};
+		const reference={store:'treedx',model:'proposal',id:proposalId,revision:6,digest:'sha256:'+'a'.repeat(64),repository:'sdk-library',commit:'b'.repeat(40),path:'proposals/repair.mdx'};
+		const source={id:plan.id,teamId:'team',proposalsByProjectId:{sdk:[complete]},proposalStatusesByProposalId:{[proposalId]:'accepted'},parameters:{appliedPlan:plan,
+			scheduledProjectIds:[projectId],agentProfilesByProjectId:snapshot,planningSourceByProposalId:{[proposalId]:reference}}};
+		const input={teamId:'team',revision:8,profiles:Object.fromEntries(agents.map(a=>['sdk:'+a.definition.agentClass,a.definition])),sources:[source],retainedNodeIds:first.assignmentIds};
+		const held=structuredClone(input),graph=projectActiveWorkdays(input);
+		expect(graph.nodes.map(n=>n.id).sort()).toEqual([...second.assignmentIds].sort());
+		for(const node of graph.nodes){expect(node).toMatchObject({kind:'estimating',status:'cancelled',workdayId:plan.id,sourceRef:reference});expect(node.authorityRefs).toHaveLength(1);expect(node.authorityRefs![0]).toMatchObject({store:'postgresql',model:'workday',id:plan.id});}
+		expect(validateExecutionGraph(graph.nodes,graph.edges)).toMatchObject({ok:true});expect(input).toEqual(held);
+		// Existing nodes OR original attempts must never be reclassified by recovery.
+		expect(projectActiveWorkdays({...input,retainedNodeIds:[...first.assignmentIds,...second.assignmentIds]}).nodes).toEqual([]);
+		const {closingAt:_closingAt,...withoutClosing}=plan;
+		const active={...source,parameters:{...source.parameters,appliedPlan:{...withoutClosing,state:'active' as const}}};
+		expect(projectActiveWorkdays({...input,sources:[active]}).nodes).toEqual([]);
+		const noSource={...source,proposalsByProjectId:{sdk:[]}};
+		expect(projectActiveWorkdays({...input,sources:[noSource]}).nodes).toEqual([]);
+	});
+
 	it('admits a long governed proposal without exceeding the planning node ID bound', () => {
 		const projectId = '8cbfb810-6da5-4da2-9ae9-cad53101253f';
 		const proposalId = `golden-sdk-decision-governed-workday-intent-v4-${'f'.repeat(36)}`;
