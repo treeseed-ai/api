@@ -64,7 +64,7 @@ it('native MCP cancels only the inspected queued project discussion and retains 
 		expect(readback.status).toBe(200); expect(await readback.json()).toMatchObject({ data: { id: 'research', status: 'cancelled' } });
 		headers['If-Match'] = String(after[0]!.updated_at);
 		headers['Idempotency-Key'] = 'cancel-api-research';
-		expect(await call()).toMatchObject({ structuredContent: { id: 'research', status: 'cancelled', replayed: true } });
+		expect(await call({ ...headers })).toMatchObject({ structuredContent: { id: 'research', status: 'cancelled', replayed: true } });
 		expect(await rows()).toEqual(after);
 		expect((await f.right.pool.query('SELECT * FROM capacity_provider_assignments')).rows).toEqual([]);
 	} finally { await client.close(); await f.close(); }

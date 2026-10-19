@@ -66,11 +66,15 @@ describe('MCP authorization equivalence', () => {
 			expect(await client.callTool({ name: binding.descriptor.operationId, arguments: { ...arguments_, headers: modelHeaders } }))
 				.toMatchObject({ isError: true, content: [{ type: 'text', text: expect.stringMatching(/conflicting.*Idempotency-Key/iu) }] });
 			expect(observations).toHaveLength(3);
+			supplied = { 'Idempotency-Key': ' model-api-objective-update ', 'If-Match': '  "revision-1"  ' };
+			expect(await client.callTool({ name: binding.descriptor.operationId, arguments: { ...arguments_, headers: modelHeaders } }))
+				.toMatchObject({ structuredContent: { id: 'project-api', updatedAt: 'revision-2' } });
+			expect(observations[3]).toMatchObject({ idempotencyKey: 'model-api-objective-update', ifMatch: 'revision-1' });
 			supplied = {};
 			const parallel = ['first-model-request', 'second-model-request'].map(key => client.callTool({ name: binding.descriptor.operationId,
 				arguments: { ...arguments_, headers: { ...modelHeaders, 'Idempotency-Key': key } } }));
 			for (const result of await Promise.all(parallel)) expect(result).toMatchObject({ structuredContent: { id: 'project-api', updatedAt: 'revision-2' } });
-			expect(observations.slice(3).map(value => value.idempotencyKey).sort()).toEqual(['first-model-request', 'second-model-request']);
+			expect(observations.slice(4).map(value => value.idempotencyKey).sort()).toEqual(['first-model-request', 'second-model-request']);
 		} finally { await client.close(); }
 	});
 	it('keeps provider and workday Standard Schema projections exact while native validation denies caller derived authority', () => {
@@ -120,7 +124,8 @@ describe('MCP authorization equivalence', () => {
 		const client = new Client({ name: 'workday-schema-consumer', version: '1.0.0' }, { versionNegotiation: { mode: { pin: '2026-07-28' } } });
 		try {
 			await client.connect(transport);
-			expect(await client.callTool({ name: binding.descriptor.operationId, arguments: { path: { teamId: 'native-team' }, body } }))
+			expect(await client.callTool({ name: binding.descriptor.operationId, arguments: { path: { teamId: 'native-team' }, body,
+				headers: { 'Idempotency-Key': 'controlled-schema-consumer' } } }))
 				.toMatchObject({ structuredContent: { received: body } });
 			for (const invalid of [{ ...body, executionPlanId: 'caller-derived' }, { ...body, decisionIds: [] }, { ...body, decisionIds: ['é'] }]) {
 				const before = structuredClone(invalid), count = observations.length;
