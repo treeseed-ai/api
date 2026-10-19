@@ -67,15 +67,17 @@ describe('Book revision custody',()=>{
 	});
 
 	it.each([
-		['legacyv2', 'treeseed.book/v2'],
-		['currentv3', 'treeseed.book/v3'],
-	])('preserves exact Markdown body bytes for a metadata update of a %s Book', async (label, schemaVersion) => {
+		['legacyv2', 'treeseed.book/v2', '\n'],
+		['currentv3', 'treeseed.book/v3', '\n'],
+		['legacyv2 CRLF', 'treeseed.book/v2', '\r\n'],
+		['currentv3 CRLF', 'treeseed.book/v3', '\r\n'],
+	])('preserves exact Markdown body bytes for a metadata update of a %s Book', async (label, schemaVersion, newline) => {
 		const bookPath = 'books/team-operations.md';
 		const seed = managedTeamLibrarySeedFiles('workspace-project');
 		const currentSource = seed[bookPath];
 		if (typeof currentSource !== 'string') throw new Error(`Missing canonical Book fixture: ${bookPath}`);
 
-		const body = 'Distinctive body — naïve café 雪.\nLine with trailing spaces.  \n\nFinal paragraph Ω.\n';
+		const body = ['Distinctive body — naïve café 雪.', 'Line with trailing spaces.  ', '', 'Final paragraph Ω.', ''].join(newline);
 		const separator = currentSource.indexOf('\n---\n');
 		if (separator < 0) throw new Error('Canonical Book fixture has no frontmatter boundary.');
 		let frontmatter = currentSource.slice(0, separator + 1);
