@@ -9,8 +9,8 @@ import { record, terminalPerformance, type ExtendedProviderAssignmentLifecycleRe
 import { composeAssignmentLifecycleOutput } from '../assignment-lifecycle-output.ts';
 
 /** Nonproductive acknowledgement through the existing failure operation. The
- * original expiration, immutable attempt and accepted charge remain authority.
- * No new result, settlement, successful review or productive lease is issued. */
+ * original expiration, immutable attempt and native measurement remain authority.
+ * A matching original report can settle once; no successful result or productive lease is issued. */
 export async function acknowledgeExpiredCloseout(database: CapacityGovernanceDatabase,
 	assignment: DurableProviderAssignment, principal: ProviderLeasePrincipal,
 	input: ExtendedProviderAssignmentLifecycleRequest, now: string) {
@@ -54,20 +54,23 @@ export async function acknowledgeExpiredCloseout(database: CapacityGovernanceDat
 	if(recovery.reasonCode==='expired_lease_side_effect_evidence_present' && reservation?.state==='consuming' && entries.length===0 && usages.length===0){
 		if(reservation.settlement_token || reservation.usage_report_token)return deny();
 		const reports=await database.all("SELECT * FROM capacity_usage_actuals WHERE assignment_id=?",[assignment.id]);
-		const report=reports[0];
+		const report=reports[0], reportedNative=record(report?.native_usage_json);
+		const normalizedNative={cachedInputTokens:expected.cached_input_tokens,reasoningTokens:expected.reasoning_tokens};
 		if(reports.length!==1 || !report || report.id!==`usage:${assignment.id}:${attempt.attempt}:diagnostic-0`
 			|| report.idempotency_key!==`usage:${assignment.id}:${input.runnerId}:0` || report.assignment_attempt!==attempt.attempt
 			|| report.accounting_mode!=='informational' || report.usage_dimension!=='diagnostic-0'
 			|| report.active_seconds!==0 || report.elapsed_seconds!==0
 			|| report.capacity_provider_id!==assignment.capacityProviderId || report.execution_provider_id!==assignment.executionProviderId
 			|| report.project_id!==assignment.projectId || report.work_day_id!==assignment.workDayId
-			|| !isDeepStrictEqual(record(report.native_usage_json),native)
+			|| !Object.entries(reportedNative).every(([key,value])=>native[key]===value)
+			|| !Object.entries(native).every(([key,value])=>Object.hasOwn(reportedNative,key)
+				|| (Object.hasOwn(normalizedNative,key)&&Reflect.get(normalizedNative,key)===value))
 			|| !Object.entries(expected).filter(([key])=>key.endsWith('_tokens')).every(([key,value])=>(report[key]??0)===value))return deny();
 		await settleCapacityReservationExactlyOnce(database,{settlementKey:`assignment-settlement:${assignment.id}:${input.runnerId}`,
 			teamId:assignment.teamId,membershipId:assignment.membershipId,reservationId:assignment.reservationId!,assignmentId:assignment.id,assignmentAttempt:attempt.attempt,
 			activeSeconds:expected.active_seconds,elapsedSeconds:expected.elapsed_seconds,
 			providerUnits:report.provider_units==null?null:Number(report.provider_units),usd:report.actual_usd==null?null:Number(report.actual_usd),
-			usageActual:{inputTokens:expected.input_tokens,outputTokens:expected.output_tokens,cachedInputTokens:expected.cached_input_tokens,reasoningTokens:expected.reasoning_tokens,nativeUsage:native},
+			usageActual:{inputTokens:expected.input_tokens,outputTokens:expected.output_tokens,cachedInputTokens:expected.cached_input_tokens,reasoningTokens:expected.reasoning_tokens,nativeUsage:reportedNative},
 			source:'provider_assignment_fail',existingSettlementPolicy:'require-match',metadata:{code:'assignment_timeout',originalRecoveryCode:assignment.lifecycleCode}});
 		reservation=await database.first('SELECT * FROM capacity_reservations WHERE id=? AND team_id=? FOR UPDATE',[assignment.reservationId,assignment.teamId]);
 		entries=await database.all("SELECT * FROM capacity_ledger_entries WHERE reservation_id=? AND phase='task_completed_actual_settlement'",[assignment.reservationId]);
