@@ -4251,6 +4251,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-denial-native.test.ts
     testName: "native governance evaluation retains interrupted electorate history and rejects absent readback before a fresh unchanged retry can close the proposal"
+  api.golden.mcp-write-preconditions-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/mcp/authorization-equivalence.test.ts
+    testName: "retains real MCP mutation identity and version headers and denies missing authority before dispatch"
+  api.golden.mcp-write-preconditions-postgres:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/mcp/mutation-postgres.test.ts
+    testName: "native MCP cancels only the inspected queued project discussion and retains its exact request identity in PostgreSQL"
   api.golden.execution-schema-consumer-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
