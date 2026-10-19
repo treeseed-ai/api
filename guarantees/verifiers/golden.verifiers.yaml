@@ -5105,3 +5105,13 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/discussions/discussion-targeted-read.test.ts
     testName: "returns no original message only for an absent branch file while retaining denied and missing immutable authority"
+  api.golden.mcp-schema-dialect-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/mcp/schema-dialect.test.ts
+    testName: "compiles every declared MCP tool input and output with the official client validator"
+  api.golden.mcp-schema-constraints-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/mcp/schema-dialect.test.ts
+    testName: "preserves native numeric nullable tuple and strict object constraints without changing OpenAPI projection"

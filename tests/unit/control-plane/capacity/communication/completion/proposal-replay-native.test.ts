@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
+import { Hono } from 'hono';
 import { stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { relationAuthoringDatabase, object } from '../../../knowledge/workspaces/architecture/relation-authoring-fixture.ts';
@@ -9,6 +12,9 @@ import { createGovernanceService } from '../../../../../../src/api/control-plane
 import { SessionEventService } from '../../../../../../src/api/realtime/session-events.ts';
 import { loadDiscussions } from '../../../../../../src/api/discussions/content.ts';
 import { readExactProposal } from '../../../../../../src/api/governance/executable-proposal.ts';
+import { createCommunicationOperations } from '../../../../../../src/api/control-plane/catalog/capacity/communications.ts';
+import { OperationRegistry } from '../../../../../../src/api/control-plane/catalog/operation-registry.ts';
+import { installControlPlaneProtocolRoutes } from '../../../../../../src/api/control-plane/http/protocol-routes.ts';
 
 describe('native communication proposal recovery', () => {
 	it('keeps the original context and one invocation after real proposal authoring, concurrent retries and interrupted admission', async () => {
@@ -55,7 +61,25 @@ describe('native communication proposal recovery', () => {
 			};
 			const body = { message: `@${projectId}/researcher Trace the MCP retry-context boundary.`, proposalId: declaration.id };
 			const send = (key = 'same-project-work', input = body) => communication.send(f.principal, 'team', 'mcp-recovery', input, key);
-			const first = await send(); expect(first.targets).toHaveLength(1);
+			// The original official client must compile the actual receipt schema and
+			// validate real owning-service output; no relaxed validator or fake receipt.
+			const binding = CONTROL_PLANE_OPERATIONS.communications.send, app = new Hono();
+			installControlPlaneProtocolRoutes(app, async () => ({ principal: { ...f.principal, scopes: binding.descriptor.oauthScopes },
+				credential: { id: 'native-recovery-client' } }), undefined, new OperationRegistry(createCommunicationOperations({ communications: communication })));
+			const client = new Client({ name: 'native-proposal-recovery', version: '1' }, { versionNegotiation: { mode: { pin: '2026-07-28' } } });
+			let first: Awaited<ReturnType<typeof send>>;
+			try {
+				await client.connect(new StreamableHTTPClientTransport(new URL('http://localhost/mcp'), {
+					authProvider: { token: async () => 'controlled-native-principal' }, fetch: async (input, init) => {
+						const request = input instanceof Request ? input : new Request(input, init), headers = new Headers(request.headers);
+						headers.set('host', 'localhost'); return app.fetch(new Request(request, { headers }));
+					},
+				}));
+				const result = await client.callTool({ name: binding.descriptor.operationId, arguments: {
+					path: { teamId: 'team', channel: 'mcp-recovery' }, body, headers: { 'Idempotency-Key': 'same-project-work' } } });
+				expect(result.isError).not.toBe(true); first = binding.schema.output.parse(result.structuredContent);
+			} finally { await client.close(); }
+			expect(first.targets).toHaveLength(1);
 			const snapshots = async () => ({ invocations: await f.store.all('SELECT * FROM agent_invocation_requests ORDER BY id'),
 				assignments: await f.store.all('SELECT * FROM capacity_provider_assignments ORDER BY id'), ledger: await f.store.all('SELECT * FROM capacity_ledger_entries ORDER BY id'),
 				events: await f.store.all('SELECT * FROM communication_topic_events ORDER BY sequence') });

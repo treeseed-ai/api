@@ -7,8 +7,14 @@ function issues(error: { issues: Array<{ message: string; path: Array<string | n
 	return error.issues.map((issue) => ({ message: issue.message, path: issue.path }));
 }
 
+// MCP consumes JSON Schema; the SDK's shared REST projector emits OpenAPI 3.
+// Keep the original SDK schemas as validation authority for both projections.
+function mcpSchemaJson(schema: SdkSchema) {
+	return controlPlaneSchemaJson(schema, 'jsonSchema7');
+}
+
 export function sdkStandardSchema(schema: SdkSchema) {
-	const document = controlPlaneSchemaJson(schema);
+	const document = mcpSchemaJson(schema);
 	return {
 		'~standard': {
 			version: 1 as const,
@@ -36,12 +42,13 @@ export function sdkOperationInputStandardSchema(binding: {
 			? 'Reuse this key for retries of the unchanged request.' : 'Exact current resource version read before this mutation.'),
 	]))).strict() : undefined;
 	const document = {
+		$schema: 'http://json-schema.org/draft-07/schema#',
 		type: 'object',
 		properties: {
-			path: controlPlaneSchemaJson(binding.schema.path),
-			query: controlPlaneSchemaJson(binding.schema.query),
-			...(binding.descriptor.kind === 'mutation' ? { body: controlPlaneSchemaJson(binding.schema.body) } : {}),
-			...(headersSchema ? { headers: z.toJSONSchema(headersSchema) } : {}),
+			path: mcpSchemaJson(binding.schema.path),
+			query: mcpSchemaJson(binding.schema.query),
+			...(binding.descriptor.kind === 'mutation' ? { body: mcpSchemaJson(binding.schema.body) } : {}),
+			...(headersSchema ? { headers: z.toJSONSchema(headersSchema, { target: 'draft-7' }) } : {}),
 		},
 		additionalProperties: false,
 	};

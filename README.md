@@ -20,6 +20,8 @@ Site and external clients reach this package through its REST or MCP surfaces.
 
 ### MCP mutation requests
 
+Tool input and output schemas declare JSON Schema draft-07 and retain the SDK's native validation constraints.
+
 MCP tools advertise a `headers` argument containing the operation's `Idempotency-Key` and, when required by its catalog descriptor, `If-Match`. For example, `projects.update` accepts `{ "path": { "projectId": "api" }, "body": { "name": "TreeSeed API" }, "headers": { "Idempotency-Key": "update-api-name", "If-Match": "<current-version>" } }`. Header-capable clients can instead send these values on each tool-call HTTP request. Conflicting argument and HTTP values reject before dispatch. Authentication, cookies, confirmation tokens, and provider authority cannot be supplied through this argument.
 
 Retain the same key when recovering an unchanged request and obtain the current resource version before a new mutation. REST and MCP use the same descriptor guards and owning handler; presence of a key does not implement missing handler-specific retry storage. Full real-workflow and external-client acceptance remain tracked in [SDK #429](https://github.com/treeseed-ai/sdk/issues/429).

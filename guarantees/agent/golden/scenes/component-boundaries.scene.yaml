@@ -3027,3 +3027,9 @@ workflow:
   - id: communication-proposal-absence-unit
     action: { verifier: api.golden.communication-proposal-absence-unit }
     expect: { status: passed }
+  - id: mcp-schema-dialect-unit
+    action: { verifier: api.golden.mcp-schema-dialect-unit }
+    expect: { status: passed }
+  - id: mcp-schema-constraints-unit
+    action: { verifier: api.golden.mcp-schema-constraints-unit }
+    expect: { status: passed }
