@@ -26,6 +26,7 @@ import { assertAssignmentCompletionEvidence } from './completion/assignment-comp
 import { quarantineContextOverflowOffer } from './context-capacity/overflow.ts';
 import { optionalFiniteNumber,record,terminalPerformance,type ExtendedProviderAssignmentLifecycleRequest,type JsonRecord } from './completion/assignment-terminal-performance.ts';
 import { reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { acknowledgeExpiredCloseout } from './assignment-expired-closeout.ts';
 export type { ExtendedProviderAssignmentLifecycleRequest } from './completion/assignment-terminal-performance.ts';
 interface ProviderAssignmentLifecycleStore extends CapacityGovernanceDatabase, Partial<WorkdayTreeDxConnectionStore> {
 	getProviderAssignment(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null>;
@@ -339,6 +340,7 @@ export class ProviderAssignmentLifecycleService {
 		// Expiration ends productive authority, not the current owner's obligation
 		// to report its terminal timeout. The row lock prevents recovery taking it.
 		const timeout = input.code === 'assignment_timeout';
+		if (timeout && assignment?.status === 'expired') return acknowledgeExpiredCloseout(this.store, assignment, principal, input, now);
 		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now, true)) return null;
 		const phaseCancelled = await planningBoundaryCancellation(this.store, assignment, input, now);
 		if (!timeout && !phaseCancelled && !activeLeaseOwnedBy(assignment, principal, input.leaseToken, now)) return null;
