@@ -39,13 +39,21 @@ describe('workday living-graph projection', () => {
 		const reference={store:'treedx',model:'proposal',id:proposalId,revision:6,digest:'sha256:'+'a'.repeat(64),repository:'sdk-library',commit:'b'.repeat(40),path:'proposals/repair.mdx'};
 		const source={id:plan.id,teamId:'team',proposalsByProjectId:{sdk:[complete]},proposalStatusesByProposalId:{[proposalId]:'accepted'},parameters:{appliedPlan:plan,
 			scheduledProjectIds:[projectId],agentProfilesByProjectId:snapshot,planningSourceByProposalId:{[proposalId]:reference}}};
-		const input={teamId:'team',revision:8,profiles:Object.fromEntries(agents.map(a=>['sdk:'+a.definition.agentClass,a.definition])),sources:[source],retainedNodeIds:first.assignmentIds};
+		const profiles=Object.fromEntries(agents.map(a=>['sdk:'+a.definition.agentClass,a.definition]));
+		const historicReference={...reference,revision:2,commit:'c'.repeat(40)};
+		const historicSource={...source,proposalsByProjectId:{sdk:[draft]},proposalStatusesByProposalId:{[proposalId]:'open'},parameters:{...source.parameters,
+			planningSourceByProposalId:{[proposalId]:historicReference}}};
+		const retainedNodes=projectActiveWorkdays({teamId:'team',revision:1,profiles,sources:[historicSource]}).nodes
+			.filter(n=>first.assignmentIds.includes(n.id)).map(n=>({...n,status:'completed' as const}));
+		expect(retainedNodes).toHaveLength(2);
+		const input={teamId:'team',revision:8,profiles,sources:[source],retainedNodes,issuedNodeIds:first.assignmentIds};
 		const held=structuredClone(input),graph=projectActiveWorkdays(input);
-		expect(graph.nodes.map(n=>n.id).sort()).toEqual([...second.assignmentIds].sort());
-		for(const node of graph.nodes){expect(node).toMatchObject({kind:'estimating',status:'cancelled',workdayId:plan.id,sourceRef:reference});expect(node.authorityRefs).toHaveLength(1);expect(node.authorityRefs![0]).toMatchObject({store:'postgresql',model:'workday',id:plan.id});}
+		expect(graph.nodes.map(n=>n.id).sort()).toEqual([...first.assignmentIds,...second.assignmentIds].sort());
+		for(const prior of retainedNodes)expect(graph.nodes.find(n=>n.id===prior.id)).toEqual(prior);
+		for(const node of graph.nodes.filter(n=>second.assignmentIds.includes(n.id))){expect(node).toMatchObject({kind:'estimating',status:'cancelled',workdayId:plan.id,sourceRef:reference});expect(node.authorityRefs).toHaveLength(1);expect(node.authorityRefs![0]).toMatchObject({store:'postgresql',model:'workday',id:plan.id});}
 		expect(validateExecutionGraph(graph.nodes,graph.edges)).toMatchObject({ok:true});expect(input).toEqual(held);
 		// Existing nodes OR original attempts must never be reclassified by recovery.
-		expect(projectActiveWorkdays({...input,retainedNodeIds:[...first.assignmentIds,...second.assignmentIds]}).nodes).toEqual([]);
+		expect(()=>projectActiveWorkdays({...input,issuedNodeIds:[...first.assignmentIds,...second.assignmentIds]})).toThrow('Missing original node for an issued planning turn');
 		const {closingAt:_closingAt,...withoutClosing}=plan;
 		const active={...source,parameters:{...source.parameters,appliedPlan:{...withoutClosing,state:'active' as const}}};
 		expect(projectActiveWorkdays({...input,sources:[active]}).nodes).toEqual([]);
