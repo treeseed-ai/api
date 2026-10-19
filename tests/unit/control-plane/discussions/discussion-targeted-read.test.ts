@@ -44,6 +44,37 @@ describe('targeted Discussion reads', () => {
 		expect(result.messages[0]?.body).toBe('Hello');
 	});
 
+	it('returns no original message only for an absent branch file while retaining denied and missing immutable authority', async () => {
+		const input = { store: { all: vi.fn(async () => [] as unknown[]) }, projectId: 'project-1',
+			discussionId: 'discussion-1', exactMessageIds: ['message-1'], collection: 'messages' as const };
+		const missing = () => Object.assign(new Error('File not found.'), { status: 404, code: 'not_found' });
+		mocks.readRepositoryFiles.mockRejectedValueOnce(missing());
+		await expect(loadDiscussions(input)).resolves.toMatchObject({ messages: [] });
+		expect(mocks.listRepositoryPaths).not.toHaveBeenCalled();
+		for (const denied of [
+			Object.assign(new Error('Repository not found.'), { status: 404, code: 'not_found' }),
+			Object.assign(new Error('Ref not found.'), { status: 404, code: 'not_found' }),
+			Object.assign(new Error('File not found.'), { status: 403, code: 'not_found' }),
+			Object.assign(new Error('File not found.'), { status: 404, code: 'access_denied' }),
+			Object.assign(new Error('File not found.'), { status: 401, code: 'authentication_required' }),
+			Object.assign(new Error('Unavailable'), { status: 503, code: 'unavailable' }),
+			new Error('File not found.'),
+		]) {
+			mocks.readRepositoryFiles.mockRejectedValueOnce(denied);
+			await expect(loadDiscussions(input)).rejects.toBe(denied);
+		}
+		const path = 'discussion-messages/discussion-1/message-1.mdx';
+		for (const selected of [{ ...input, exactMessageIds: undefined, exactPaths: [path] },
+			{ ...input, exactMessageIds: ['message-1', 'message-2'] }]) {
+			const denied = missing(); mocks.readRepositoryFiles.mockRejectedValueOnce(denied);
+			await expect(loadDiscussions(selected)).rejects.toBe(denied);
+		}
+		input.store.all.mockResolvedValueOnce([{ result_status: 'authoring_unpublished',
+			metadata_json: JSON.stringify({ commitSha: 'a'.repeat(40), changedPaths: [path] }) }]);
+		const denied = missing(); mocks.readRepositoryFiles.mockRejectedValueOnce(denied);
+		await expect(loadDiscussions(input)).rejects.toBe(denied);
+	});
+
 	it('reads journal-backed messages from their commit without probing an absent branch path', async () => {
 		const path = 'discussion-messages/discussion-1/message-2.mdx';
 		const commitSha = 'a'.repeat(40);

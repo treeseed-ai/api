@@ -3012,3 +3012,18 @@ workflow:
   - id: book-body-preservation-native
     action: { verifier: api.golden.book-body-preservation-native }
     expect: { status: passed }
+
+  - id: communication-proposal-recovery-unit
+    action: { verifier: api.golden.communication-proposal-recovery-unit }
+    expect: { status: passed }
+
+  - id: communication-proposal-recovery-native
+    action: { verifier: api.golden.communication-proposal-recovery-native }
+    expect: { status: passed }
+
+  - id: communication-proposal-race-unit
+    action: { verifier: api.golden.communication-proposal-race-unit }
+    expect: { status: passed }
+  - id: communication-proposal-absence-unit
+    action: { verifier: api.golden.communication-proposal-absence-unit }
+    expect: { status: passed }
