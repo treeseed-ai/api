@@ -32,8 +32,11 @@ export async function acknowledgeExpiredCloseout(database: CapacityGovernanceDat
 	if (!parsed.success || !isDeepStrictEqual(parsed.data, output.assignmentResult) || parsed.data.assignmentId !== assignment.id
 		|| teardown.verified !== true || typeof output.sandboxId !== 'string' || !output.sandboxId.trim()) return deny();
 	const produced = Date.parse(parsed.data.completedAt), closed = Date.parse(String(teardown.completedAt ?? ''));
+		// The owning host may assemble its final report after physical teardown.
+		// Bound both original observations without promoting the expired result.
 	if (!Number.isFinite(produced) || !Number.isFinite(closed) || produced < Date.parse(attempt.createdAt)
-		|| produced > Date.parse(attempt.deadline) || produced > closed || closed > Date.parse(now)) return deny();
+			|| produced > Date.parse(attempt.deadline) || produced > Date.parse(now)
+			|| closed < Date.parse(attempt.createdAt) || closed > Date.parse(now)) return deny();
 	const native = record(parsed.data.usage.native), positive = (value: unknown): value is number =>
 		typeof value === 'number' && Number.isFinite(value) && value > 0;
 	if (!positive(native.activeSeconds) || !positive(native.elapsedSeconds) || native.activeSeconds > native.elapsedSeconds
