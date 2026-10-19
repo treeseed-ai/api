@@ -5084,3 +5084,9 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/communication/completion/proposal-replay-native.test.ts
     testName: "keeps the original context and one invocation after real proposal authoring, concurrent retries and interrupted admission"
+
+  api.golden.communication-proposal-race-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/completion/proposal-replay.test.ts
+    testName: "rejects changed exact context when a concurrent writer already committed the message"

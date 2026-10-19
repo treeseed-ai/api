@@ -8,6 +8,7 @@ import { createDiscussionService } from '../../../../../../src/api/discussions/d
 import { createGovernanceService } from '../../../../../../src/api/control-plane/governance/governance-service.ts';
 import { SessionEventService } from '../../../../../../src/api/realtime/session-events.ts';
 import { loadDiscussions } from '../../../../../../src/api/discussions/content.ts';
+import { readExactProposal } from '../../../../../../src/api/governance/executable-proposal.ts';
 
 describe('native communication proposal recovery', () => {
 	it('keeps the original context and one invocation after real proposal authoring, concurrent retries and interrupted admission', async () => {
@@ -74,6 +75,15 @@ describe('native communication proposal recovery', () => {
 			const interrupted = await loadDiscussions({ store: f.store, projectId, discussionId: 'mcp-recovery', collection: 'messages' });
 			const frozen = interrupted.messages.find(message => message.id !== first.projectStreams[0]!.messageRef.split('/').at(-1)?.replace('.mdx','')); assert.ok(frozen);
 			await governance.updateProposal(f.principal, projectId, declaration.id, { summary: 'Recover the interrupted admission against its original proposal.', changeReason: 'Exercise the observed authoring-before-admission interruption.' }, '2');
+			const moved = await f.store.getGovernanceProposal(declaration.id); assert.ok(moved);
+			const exact = await readExactProposal(f.store, moved), interruptedState = await snapshots();
+			// This is the state a racing caller reaches after its first lookup missed
+			// the message but another writer committed before its own create call.
+			await expect(discussion.create(f.principal, { teamId: 'team', projectId, discussionId: 'mcp-recovery', body: body.message,
+				contextRefs: [{ kind: 'proposal', id: declaration.id, projectId, immutableRef: exact.ref.commit, path: exact.ref.path, digest: exact.ref.digest }],
+				recipients: ['researcher'] }, `interrupted-project-work:${projectId}`))
+				.rejects.toMatchObject({ status: 409, code: 'discussion_idempotency_conflict' });
+			expect(await snapshots()).toEqual(interruptedState);
 			const recovered = await send('interrupted-project-work'); expect(recovered.replayed).toBe(true);
 			const rows = await f.store.all('SELECT * FROM agent_invocation_requests ORDER BY id'); expect(rows).toHaveLength(2);
 			const newRow = rows.find(row => row.id !== before.invocations[0]!.id); assert.ok(newRow);

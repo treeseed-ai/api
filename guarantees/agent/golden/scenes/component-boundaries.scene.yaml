@@ -3014,3 +3014,7 @@ workflow:
   - id: communication-proposal-recovery-native
     action: { verifier: api.golden.communication-proposal-recovery-native }
     expect: { status: passed }
+
+  - id: communication-proposal-race-unit
+    action: { verifier: api.golden.communication-proposal-race-unit }
+    expect: { status: passed }
