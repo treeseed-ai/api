@@ -140,7 +140,12 @@ describe('native proposal Decision authority', () => {
 				// a genuine Researcher finding or external authenticated decision-maker.
 			}
 			if (canonicalSupply) {
-				await f.store.upsertTeamMember('team',f.principal.id,'team_owner');
+				// Membership alone is not a voter: the real reader joins its active user.
+				await f.query("INSERT INTO users(id,status,display_name,metadata_json,created_at,updated_at) VALUES(?,'active','Native proposal operator','{}',?,?)", [f.principal.id,profileTime,profileTime]);
+				await f.query("INSERT INTO roles(id,key,created_at) VALUES('native-proposal-owner','team_owner',?) ON CONFLICT(key) DO NOTHING",[profileTime]);
+				const voter = await f.store.upsertTeamMember('team',f.principal.id,'team_owner');
+				expect(voter).toMatchObject({userId:f.principal.id,status:'active',roles:['team_owner']});
+				expect(await f.store.governanceEligibleVoters('team','admin_approval_v1')).toContainEqual(expect.objectContaining({userId:f.principal.id,chambers:expect.arrayContaining([expect.objectContaining({chamberId:'admin_chamber',eligible:true,weight:1})])}));
 				await f.store.startGovernanceProposalVoting(f.principal,declaration.id,{expectedProposalVersion:1});
 			}
 			const accept = () => canonicalSupply
