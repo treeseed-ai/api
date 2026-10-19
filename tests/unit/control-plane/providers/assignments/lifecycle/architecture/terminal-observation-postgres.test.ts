@@ -8,6 +8,28 @@ import {proveNativeTerminalObservation} from '../../../../capacity/execution/adm
 import {createCapacityControlPlane} from '../../../../../../../src/api/capacity/control-plane.ts';
 
 describe('terminal observation through independent native PostgreSQL owners',()=>{
+ it('independent native owners settle original diagnostic usage once while preserving expired history and canonical null completion',async()=>{
+  const native=await postgresGraph();try{
+   const supplied=await expiredCloseoutFixture(false);const {attempt,input}=supplied;
+   try{await copyNativeAssignmentCustody(native.left,supplied,['capacity_workday_runs','execution_nodes','capacity_reservations','capacity_provider_assignments','capacity_admission_counters','capacity_reservation_counter_claims','capacity_usage_actuals','capacity_ledger_entries','capacity_workday_events','capacity_audit_events']);}
+   finally{await supplied.close();vi.useRealTimers();}
+   const stores=[native.left,native.right].map(db=>new ControlPlaneStore({TREESEED_ENVIRONMENT:'test'},db));for(const store of stores)store.initializationPromise=Promise.resolve();const owners=stores.map(store=>createCapacityControlPlane(store));
+   const before=(await owners[0]!.getProviderAssignment('team',attempt.id))!,held=structuredClone(input);
+   const diagnostic=(await native.left.pool.query("SELECT * FROM capacity_usage_actuals WHERE assignment_id=$1 ORDER BY id",[attempt.id])).rows;
+   const graph=(await native.left.pool.query('SELECT * FROM execution_graph_revisions ORDER BY 1')).rows;
+   expect((await native.left.pool.query('SELECT * FROM capacity_ledger_entries')).rows).toHaveLength(0);
+   const results=await Promise.all(owners.map(owner=>owner.failProviderAssignment(principal,attempt.id,input)));
+   expect(results.every(result=>result?.assignment.status==='expired'&&result.assignment.leaseState==='released')).toBe(true);
+   const actual=(await owners[1]!.getProviderAssignment('team',attempt.id))!;
+   expect(actual).toMatchObject({assignmentResult:null,assignmentAttempt:before.assignmentAttempt,failedAt:before.failedAt,lifecycleCode:before.lifecycleCode,metadata:before.metadata,stateVersion:before.stateVersion+1,lifecycleOutput:{...input.output,completion:null,performance:{disposition:'failed'}}});
+   const usage=(await native.right.pool.query('SELECT * FROM capacity_usage_actuals WHERE assignment_id=$1 ORDER BY id',[attempt.id])).rows;
+   expect(usage.filter(row=>row.accounting_mode==='informational')).toEqual(diagnostic);expect(usage.filter(row=>row.accounting_mode==='aggregate')).toHaveLength(1);
+   const ledger=(await native.left.pool.query('SELECT * FROM capacity_ledger_entries')).rows;expect(ledger).toHaveLength(1);expect(ledger[0]).toMatchObject({active_seconds:1,elapsed_seconds:2});
+   expect((await native.right.pool.query('SELECT * FROM execution_graph_revisions ORDER BY 1')).rows).toEqual(graph);
+   expect((await owners[0]!.failProviderAssignment(principal,attempt.id,input))?.assignment).toEqual(actual);expect((await native.left.pool.query('SELECT * FROM capacity_ledger_entries')).rows).toEqual(ledger);expect(input).toEqual(held);
+  }finally{vi.useRealTimers();await native.close();}
+ });
+
  it('independent native owners acknowledge expired measured closeout once without new settlement completion or graph history',async()=>{
   const native=await postgresGraph();try{
    const supplied=await expiredCloseoutFixture();const {attempt,input}=supplied;
