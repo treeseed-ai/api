@@ -157,7 +157,15 @@ describe('native proposal Decision authority', () => {
 				for (const result of await Promise.all([f.store.createGovernanceDecisionFromProposal(declaration.id, { actorType: 'user', actorId: f.principal.id }),
 					f.peerStore.createGovernanceDecisionFromProposal(declaration.id, { actorType: 'user', actorId: f.principal.id })])) { assert.ok(result); expect(result.id).toBe(interruptedDecision.id); }
 			}
-			const accepted = await f.store.adminDecideGovernanceProposal(f.principal, declaration.id, input);
+			if (canonicalSupply) {
+				// Supplied operator membership is input; only the owning vote/evaluate
+				// path may produce acceptance and the canonical Decision.
+				await f.store.upsertTeamMember('team',f.principal.id,'team_owner');
+				await f.store.startGovernanceProposalVoting(f.principal,declaration.id,{expectedProposalVersion:1});
+				await f.store.voteGovernanceProposal(f.principal,declaration.id,{expectedProposalVersion:1,vote:'support',reason:input.reason});
+			}
+			const accepted = canonicalSupply ? await f.store.getGovernanceProposal(declaration.id)
+				: await f.store.adminDecideGovernanceProposal(f.principal, declaration.id, input);
 			const receivedAt = Date.now();
 			expect(accepted).toMatchObject({ status: 'accepted', id: declaration.id }); assert.ok(accepted);
 			const decisionId = String(accepted.decisionId ?? ''); expect(decisionId).not.toBe('');
@@ -196,7 +204,7 @@ describe('native proposal Decision authority', () => {
 						if (parsed.frontmatter.id !== decisionId) continue;
 						const validated = validatePortableContentData('decision', parsed.frontmatter);
 						expect(validated.ok).toBe(true); expect(validated.data).toMatchObject({ id: decisionId, projectId,
-							decisionClass: 'proposal', disposition: 'approved', decisionMethod: 'authority', subjectRef: proposalRef });
+							decisionClass: 'proposal', disposition: 'approved', decisionMethod: canonicalSupply ? 'vote' : 'authority', subjectRef: proposalRef });
 						const definition = object(validated.data); assert.ok(Array.isArray(definition.decidedByRefs));
 						expect(definition.decidedByRefs.map(object)).toContainEqual(expect.objectContaining({ model: 'user', id: f.principal.id })); expect(Date.parse(String(definition.decidedAt))).toBeGreaterThanOrEqual(Date.parse(proposal.createdAt));
 						expect(Date.parse(String(definition.decidedAt))).toBeLessThanOrEqual(receivedAt);
