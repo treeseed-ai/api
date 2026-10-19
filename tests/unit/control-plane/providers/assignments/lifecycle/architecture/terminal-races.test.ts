@@ -56,15 +56,23 @@ describe('terminal races preserve one immutable attempt and prior measured truth
   }finally{await f.close();}
  });
 
- it('settles previously reported native usage once while retaining original expired status and diagnostic history',async()=>{
-  const f=await expiredCloseoutFixture(false);try{
+ it.each(['reserved', 'consuming'] as const)('settles previously reported native usage once while retaining original expired status and diagnostic history (reservation=%s)',async reservationState=>{
+  const f=await expiredCloseoutFixture(false, false, false, reservationState);try{
    const before=(await f.repository.get('team',f.attempt.id))!,finance=await financialTruth(f),held=structuredClone(f.input);
-   expect(before.lifecycleCode).toBe('expired_lease_side_effect_evidence_present');expect(finance.ledger).toHaveLength(0);expect(finance.reservations[0]).toMatchObject({state:'consuming'});
+   expect(before.lifecycleCode).toBe('expired_lease_side_effect_evidence_present');expect(finance.ledger).toHaveLength(0);expect(finance.reservations[0]).toMatchObject({state:reservationState});
    expect(finance.usage).toHaveLength(1);expect(finance.usage[0]).toMatchObject({accounting_mode:'informational',active_seconds:0,elapsed_seconds:0});
    const original=await f.snapshot();
    for(const denied of [{...f.input,runnerId:'foreign'}, {...f.input,output:{...f.output,assignmentResult:{...f.output.assignmentResult,usage:{...f.output.assignmentResult.usage,modelInputTokens:8}}}}, {...f.input,output:{...f.output,teardown:{...f.output.teardown,verified:false}}}]){
     await expect(f.service.fail(principal,f.attempt.id,denied as typeof f.input)).rejects.toMatchObject({code:'provider_expired_closeout_conflict'});expect(await f.snapshot()).toEqual(original);expect(await financialTruth(f)).toEqual(finance);
    }
+   for (const state of ['released', 'expired', 'failed', 'consumed']) {
+    await f.query('UPDATE capacity_reservations SET state=? WHERE id=?', [state, f.attempt.reservationId]);
+    const deniedFinance = await financialTruth(f), deniedSnapshot = await f.snapshot();
+    await expect(f.service.fail(principal, f.attempt.id, f.input)).rejects.toMatchObject({code:'provider_expired_closeout_conflict'});
+    expect(await financialTruth(f)).toEqual(deniedFinance); expect(await f.snapshot()).toEqual(deniedSnapshot);
+   }
+   await f.query('UPDATE capacity_reservations SET state=? WHERE id=?', [reservationState, f.attempt.reservationId]);
+   expect(await financialTruth(f)).toEqual(finance); expect(await f.snapshot()).toEqual(original);
    await f.db.exec("CREATE FUNCTION interrupt_unsettled_closeout() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.lease_state='released' THEN RAISE EXCEPTION 'unsettled custody interruption'; END IF; RETURN NEW; END $$; CREATE TRIGGER interrupt_unsettled_closeout BEFORE UPDATE ON capacity_provider_assignments FOR EACH ROW EXECUTE FUNCTION interrupt_unsettled_closeout();");
    await expect(f.service.fail(principal,f.attempt.id,f.input)).rejects.toThrow('unsettled custody interruption');expect(await f.snapshot()).toEqual(original);expect(await financialTruth(f)).toEqual(finance);
    await f.db.exec('DROP TRIGGER interrupt_unsettled_closeout ON capacity_provider_assignments; DROP FUNCTION interrupt_unsettled_closeout();');
