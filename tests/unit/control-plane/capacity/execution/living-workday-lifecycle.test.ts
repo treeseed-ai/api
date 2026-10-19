@@ -225,6 +225,30 @@ describe('living workday lifecycle', () => {
 			expect(store.updateCapacityWorkdayRun).not.toHaveBeenCalled();
 		}
 	});
+	it.each(['ready', 'revised'])('does not repeat an estimating-only round after %s estimates are complete', async proposalId => {
+		const initialId = `planning:workday:1:project/project/researcher:estimating:${proposalId}`;
+		const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z', planningRounds: [
+			{ round: 1, state: 'complete', assignmentIds: [initialId],
+				startedAt: '2026-09-13T15:00:00Z', completedAt: '2026-09-13T15:01:00Z' },
+		], policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
+		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
+			proposalIds: [proposalId], agentProfilesByProjectId: { project: { agents: ['researcher', 'reviewer'].map(agentClass =>
+				({ definition: planningAgent(agentClass), activities: ['estimating'] })) } } } } as never;
+		const store = { all: vi.fn(async (sql: string) => sql.includes('execution_nodes')
+			? [{ id: initialId, kind: 'estimating', status: 'completed' }]
+			: [{ id: proposalId, team_id: 'team', project_id: 'project' }]),
+			getGovernanceProposal: vi.fn(async () => ({ id: proposalId, team_id: 'team', project_id: 'project' })),
+			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
+		const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:02:00Z');
+		expect(result.plan.planningRounds).toEqual(currentPlan.planningRounds);
+		expect(result.plan).toMatchObject({ state: 'active', startsAt: currentPlan.startsAt,
+			endsAt: currentPlan.endsAt, policySnapshot: currentPlan.policySnapshot });
+		const closingRun = { ...currentRun, parameters: { ...currentRun.parameters, appliedPlan: result.plan } } as never;
+		const closing = await advanceLivingWorkday(store as never, closingRun, '2026-09-13T15:03:00Z', true);
+		expect(closing.plan.planningRounds.every(round => round.state === 'complete')).toBe(true);
+		expect(closing.plan.state).toBe('closing');
+		expect(closing.plan.endsAt).toBe(currentPlan.endsAt);
+	});
 	it('continues collaborative planning without regenerating estimates after the proposal is ready', async () => {
 		const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z', planningRounds: [
 			{ round: 1, state: 'complete', assignmentIds: [
