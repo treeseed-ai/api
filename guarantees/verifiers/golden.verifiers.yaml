@@ -5072,3 +5072,27 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
     testName: "real native Book metadata authoring retains exact legacy and current body bytes without publication or duplicate writes"
+
+  api.golden.expired-measured-unsettled-persistence-reserved:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "settles previously reported native usage once while retaining original expired status and diagnostic history (reservation=reserved)"
+
+  api.golden.expired-measured-unsettled-persistence-consuming:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "settles previously reported native usage once while retaining original expired status and diagnostic history (reservation=consuming)"
+
+  api.golden.expired-measured-unsettled-postgres-reserved:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-observation-postgres.test.ts
+    testName: "independent native owners settle original diagnostic usage once while preserving expired history and canonical null completion (reservation=reserved)"
+
+  api.golden.expired-measured-unsettled-postgres-consuming:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-observation-postgres.test.ts
+    testName: "independent native owners settle original diagnostic usage once while preserving expired history and canonical null completion (reservation=consuming)"
