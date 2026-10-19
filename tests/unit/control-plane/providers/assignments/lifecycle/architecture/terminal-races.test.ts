@@ -19,6 +19,22 @@ async function financialTruth(f: Awaited<ReturnType<typeof completionFixture>>) 
 		counters: (await f.query('SELECT * FROM capacity_admission_counters ORDER BY id')).rows };
 }
 describe('terminal races preserve one immutable attempt and prior measured truth', () => {
+ it('retains original native report bytes when canonical result also contains normalized token counters',async()=>{
+  const f=await expiredCloseoutFixture(false,true);try{
+   const original=await financialTruth(f),snapshot=await f.snapshot();
+   const native=f.output.assignmentResult.usage.native;
+   for(const changed of [{...native,cachedInputTokens:4},{...native,reasoningTokens:3},{...native,unexpectedCounter:1},{...native,input_tokens:8}]){
+    const denied={...f.input,output:{...f.output,assignmentResult:{...f.output.assignmentResult,usage:{...f.output.assignmentResult.usage,native:changed}}}};
+    await expect(f.service.fail(principal,f.attempt.id,denied)).rejects.toMatchObject({code:'provider_expired_closeout_conflict'});expect(await f.snapshot()).toEqual(snapshot);
+   }
+   const ack=await f.service.fail(principal,f.attempt.id,f.input);expect(ack?.assignment).toMatchObject({status:'expired',leaseState:'released',assignmentResult:null});
+   const actual=await financialTruth(f),aggregate=actual.usage.filter((row:any)=>row.accounting_mode==='aggregate');
+   expect(aggregate).toHaveLength(1);expect(aggregate[0]).toMatchObject({input_tokens:7,cached_input_tokens:3,reasoning_tokens:2,native_usage_json:original.usage[0].native_usage_json});
+   expect(actual.usage.filter((row:any)=>row.accounting_mode==='informational')).toEqual(original.usage);
+   const once=await f.snapshot();await f.service.fail(principal,f.attempt.id,f.input);expect(await f.snapshot()).toEqual(once);
+  }finally{await f.close();}
+ });
+
  it('settles previously reported native usage once while retaining original expired status and diagnostic history',async()=>{
   const f=await expiredCloseoutFixture(false);try{
    const before=(await f.repository.get('team',f.attempt.id))!,finance=await financialTruth(f),held=structuredClone(f.input);

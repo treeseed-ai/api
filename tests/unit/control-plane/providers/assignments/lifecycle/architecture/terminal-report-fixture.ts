@@ -75,19 +75,22 @@ export async function completionFixture(settled = true) {
 
 /** Original production ordering: native settlement commits, then closeout
  * expires before completion. Measurements and sandbox receipts are inputs. */
-export async function expiredCloseoutFixture(settled = true) {
+export async function expiredCloseoutFixture(settled = true, canonicalCounters = false) {
 	const f = await completionFixture(false);
 	try {
-		const runnerId = 'original-runner', nativeUsage = { activeSeconds: 1, elapsedSeconds: 2, tokens: 7 };
+		const runnerId = 'original-runner', nativeUsage = canonicalCounters
+			? { activeSeconds: 1, elapsedSeconds: 2, input_tokens: 7, cached_input_tokens: 3, output_tokens: 0, reasoning_output_tokens: 2 }
+			: { activeSeconds: 1, elapsedSeconds: 2, tokens: 7 };
+		const usageActual = { ...terminalUsage.usageActual, ...(canonicalCounters ? { cachedInputTokens: 3, reasoningTokens: 2 } : {}), nativeUsage };
 		await f.query("UPDATE capacity_provider_assignments SET runner_id=?,metadata_json=jsonb_set(metadata_json::jsonb,'{operationalState}','\"closeout\"'::jsonb)::text WHERE id=?", [runnerId, f.attempt.id]);
 		const provider=createProviderAssignmentService(f.owner as unknown as Parameters<typeof createProviderAssignmentService>[0]);
 		if(settled) await provider.settle(
 			{ principal: { ...principal, scopes: ['provider:usage:write', 'provider:assignments:write'] } }, f.attempt.id,
-			{ ...terminalUsage, activeSeconds: 1, elapsedSeconds: 2, usageActual: { ...terminalUsage.usageActual, nativeUsage } },
+			{ ...terminalUsage, activeSeconds: 1, elapsedSeconds: 2, usageActual },
 			`assignment-settlement:${f.attempt.id}:${runnerId}`);
-		else await provider.reportUsage({principal:{...principal,scopes:['provider:usage:write']}},f.attempt.id,{usageDimension:'diagnostic-0',accountingMode:'informational',activeSeconds:0,elapsedSeconds:0,usageActual:{...terminalUsage.usageActual,nativeUsage}},`usage:${f.attempt.id}:${runnerId}:0`);
+		else await provider.reportUsage({principal:{...principal,scopes:['provider:usage:write']}},f.attempt.id,{usageDimension:'diagnostic-0',accountingMode:'informational',activeSeconds:0,elapsedSeconds:0,usageActual},`usage:${f.attempt.id}:${runnerId}:0`);
 		const output = { sandboxId: 'original-sandbox', teardown: { verified: true, completedAt: f.result.completedAt },
-			assignmentResult: { ...f.result, usage: { ...f.result.usage, native: nativeUsage } }, artifacts: [] };
+			assignmentResult: { ...f.result, usage: { ...f.result.usage, native: { ...nativeUsage, ...(canonicalCounters ? { cachedInputTokens: 3, reasoningTokens: 2 } : {}) } } }, artifacts: [] };
 		vi.setSystemTime(new Date(Date.parse(f.attempt.deadline) + 1));
 		await recoverExpiredProviderAssignments(f.owner, { teamId: 'team' });
 		return { ...f, output, input: { leaseToken: 'lease-token', runnerId, code: 'assignment_timeout', retryable: false, output } };
