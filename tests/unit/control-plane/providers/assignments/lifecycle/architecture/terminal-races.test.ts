@@ -3,6 +3,8 @@ import { recoverExpiredProviderAssignments } from '../../../../../../../src/api/
 import { OperatorAssignmentService } from '../../../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
 import { principal, returnedCompletion, completionFixture } from './terminal-report-fixture.ts';
 import { assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
+import { createProviderAssignmentService } from '../../../../../../../src/api/control-plane/repositories/providers/provider-assignment-service.ts';
+import { terminalUsage } from '../../../../capacity/accounting/architecture/settlement-fixture.ts';
 
 // Real original-DDL owning transactions and public service methods. The
 // preparation/execution clocks and previously settled measurements are inputs.
@@ -19,6 +21,34 @@ async function financialTruth(f: Awaited<ReturnType<typeof completionFixture>>) 
 		counters: (await f.query('SELECT * FROM capacity_admission_counters ORDER BY id')).rows };
 }
 describe('terminal races preserve one immutable attempt and prior measured truth', () => {
+	it('acknowledges original closed measured output after settlement races expiry without accepting completion or settling again', async () => {
+		const f = await completionFixture(false); try {
+			const runnerId = 'original-runner', nativeUsage = { activeSeconds: 1, elapsedSeconds: 2, tokens: 7 };
+			// Isolated original closeout phase, not an extension of productive time.
+			await f.query("UPDATE capacity_provider_assignments SET runner_id=?,metadata_json=jsonb_set(metadata_json::jsonb,'{operationalState}','\"closeout\"'::jsonb)::text WHERE id=?", [runnerId, f.attempt.id]);
+			await createProviderAssignmentService(f.owner as Parameters<typeof createProviderAssignmentService>[0]).settle(
+				{ principal: { ...principal, scopes: ['provider:usage:write', 'provider:assignments:write'] } }, f.attempt.id,
+				{ ...terminalUsage, activeSeconds: 1, elapsedSeconds: 2, usageActual: { ...terminalUsage.usageActual, nativeUsage } },
+				`assignment-settlement:${f.attempt.id}:${runnerId}`);
+			const output = { sandboxId: 'original-sandbox', teardown: { verified: true, completedAt: f.result.completedAt },
+				assignmentResult: { ...f.result, usage: { ...f.result.usage, native: nativeUsage } }, artifacts: [] };
+			vi.setSystemTime(new Date(Date.parse(f.attempt.deadline) + 1));
+			await recoverExpiredProviderAssignments(f.owner, { teamId: 'team' });
+			const expired = (await f.repository.get('team', f.attempt.id))!, finance = await financialTruth(f);
+			expect(expired).toMatchObject({ status: 'expired', leaseState: 'expired', assignmentResult: null,
+				lifecycleCode: 'expired_lease_settlement_without_success_evidence' });
+			const input = { leaseToken: 'lease-token', runnerId, code: 'assignment_timeout', retryable: false, output };
+			const held = structuredClone(input), reply = await f.service.fail(principal, f.attempt.id, input);
+			expect(reply?.assignment).toMatchObject({ status: 'expired', leaseState: 'released', assignmentResult: null,
+				lifecycleCode: expired.lifecycleCode, failedAt: expired.failedAt, assignmentAttempt: expired.assignmentAttempt,
+				metadata: expired.metadata, lifecycleOutput: { ...output, completion: null,
+					performance: { disposition: 'failed', actual: { activeSeconds: 1, elapsedSeconds: 2, inputTokens: 7 } } } });
+			expect(await financialTruth(f)).toEqual(finance); expect(input).toEqual(held);
+			const once = await f.snapshot();
+			expect((await f.service.fail(principal, f.attempt.id, input))?.assignment).toEqual(reply?.assignment);
+			expect(await f.snapshot()).toEqual(once);
+		} finally { await f.close(); }
+	});
 	it('native failure preserves exact canonical failed results and actual settlement once including truthful post-deadline closeout', async () => {
 		const checks: Array<() => Promise<void>> = [];
 		for (const expired of [false, true]) {
