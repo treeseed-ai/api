@@ -2958,3 +2958,15 @@ workflow:
   - id: external-publication-missing-custody
     action: { verifier: api.golden.external-publication-missing-custody }
     expect: { status: passed }
+
+  - id: expired-measured-closeout-persistence
+    action: { verifier: api.golden.expired-measured-closeout-persistence }
+    expect: { status: passed }
+
+  - id: expired-measured-closeout-postgres
+    action: { verifier: api.golden.expired-measured-closeout-postgres }
+    expect: { status: passed }
+
+  - id: book-body-preservation-native
+    action: { verifier: api.golden.book-body-preservation-native }
+    expect: { status: passed }

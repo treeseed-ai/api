@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { recoverExpiredProviderAssignments } from '../../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-recovery-service.ts';
 import { OperatorAssignmentService } from '../../../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
-import { principal, returnedCompletion, completionFixture } from './terminal-report-fixture.ts';
+import { principal, returnedCompletion, completionFixture, expiredCloseoutFixture } from './terminal-report-fixture.ts';
 import { assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
-import { createProviderAssignmentService } from '../../../../../../../src/api/control-plane/repositories/providers/provider-assignment-service.ts';
-import { terminalUsage } from '../../../../capacity/accounting/architecture/settlement-fixture.ts';
 
 // Real original-DDL owning transactions and public service methods. The
 // preparation/execution clocks and previously settled measurements are inputs.
@@ -22,23 +20,31 @@ async function financialTruth(f: Awaited<ReturnType<typeof completionFixture>>) 
 }
 describe('terminal races preserve one immutable attempt and prior measured truth', () => {
 	it('acknowledges original closed measured output after settlement races expiry without accepting completion or settling again', async () => {
-		const f = await completionFixture(false); try {
-			const runnerId = 'original-runner', nativeUsage = { activeSeconds: 1, elapsedSeconds: 2, tokens: 7 };
-			// Isolated original closeout phase, not an extension of productive time.
-			await f.query("UPDATE capacity_provider_assignments SET runner_id=?,metadata_json=jsonb_set(metadata_json::jsonb,'{operationalState}','\"closeout\"'::jsonb)::text WHERE id=?", [runnerId, f.attempt.id]);
-			await createProviderAssignmentService(f.owner as Parameters<typeof createProviderAssignmentService>[0]).settle(
-				{ principal: { ...principal, scopes: ['provider:usage:write', 'provider:assignments:write'] } }, f.attempt.id,
-				{ ...terminalUsage, activeSeconds: 1, elapsedSeconds: 2, usageActual: { ...terminalUsage.usageActual, nativeUsage } },
-				`assignment-settlement:${f.attempt.id}:${runnerId}`);
-			const output = { sandboxId: 'original-sandbox', teardown: { verified: true, completedAt: f.result.completedAt },
-				assignmentResult: { ...f.result, usage: { ...f.result.usage, native: nativeUsage } }, artifacts: [] };
-			vi.setSystemTime(new Date(Date.parse(f.attempt.deadline) + 1));
-			await recoverExpiredProviderAssignments(f.owner, { teamId: 'team' });
+		const f = await expiredCloseoutFixture(); try {
+			const { input, output } = f;
 			const expired = (await f.repository.get('team', f.attempt.id))!, finance = await financialTruth(f);
 			expect(expired).toMatchObject({ status: 'expired', leaseState: 'expired', assignmentResult: null,
 				lifecycleCode: 'expired_lease_settlement_without_success_evidence' });
-			const input = { leaseToken: 'lease-token', runnerId, code: 'assignment_timeout', retryable: false, output };
-			const held = structuredClone(input), reply = await f.service.fail(principal, f.attempt.id, input);
+			const held = structuredClone(input), original = await f.snapshot();
+			for (const denied of [
+				{ ...input, runnerId: 'foreign' }, { ...input, completion: { disposition: 'completed' } },
+				{ ...input, output: { ...output, teardown: { ...output.teardown, verified: false } } },
+				{ ...input, output: { ...output, teardown: { ...output.teardown, completedAt: '2099-01-01T00:00:00.000Z' } } },
+				{ ...input, output: { ...output, assignmentResult: { ...output.assignmentResult, assignmentId: 'foreign' } } },
+				{ ...input, output: { ...output, assignmentResult: { ...output.assignmentResult, usage: { ...output.assignmentResult.usage, modelInputTokens: 8 } } } },
+			]) {
+				await expect(f.service.fail(principal, f.attempt.id, denied as typeof input)).rejects.toMatchObject({ code: 'provider_expired_closeout_conflict' });
+				expect(await f.snapshot()).toEqual(original);
+			}
+			for (const foreign of [{ ...principal, membershipId: 'foreign' }, { ...principal, capacityProviderId: 'foreign' }]) {
+				await expect(f.service.fail(foreign, f.attempt.id, input)).rejects.toMatchObject({ code: 'provider_expired_closeout_conflict' });
+				expect(await f.snapshot()).toEqual(original);
+			}
+			await f.db.exec("CREATE FUNCTION reject_closeout_custody() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.lease_state='released' THEN RAISE EXCEPTION 'original custody interruption'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_closeout_custody BEFORE UPDATE ON capacity_provider_assignments FOR EACH ROW EXECUTE FUNCTION reject_closeout_custody();");
+			await expect(f.service.fail(principal, f.attempt.id, input)).rejects.toThrow('original custody interruption');
+			expect(await f.snapshot()).toEqual(original); expect(await financialTruth(f)).toEqual(finance);
+			await f.db.exec('DROP TRIGGER reject_closeout_custody ON capacity_provider_assignments; DROP FUNCTION reject_closeout_custody();');
+			const reply = await f.service.fail(principal, f.attempt.id, input);
 			expect(reply?.assignment).toMatchObject({ status: 'expired', leaseState: 'released', assignmentResult: null,
 				lifecycleCode: expired.lifecycleCode, failedAt: expired.failedAt, assignmentAttempt: expired.assignmentAttempt,
 				metadata: expired.metadata, lifecycleOutput: { ...output, completion: null,
@@ -46,6 +52,8 @@ describe('terminal races preserve one immutable attempt and prior measured truth
 			expect(await financialTruth(f)).toEqual(finance); expect(input).toEqual(held);
 			const once = await f.snapshot();
 			expect((await f.service.fail(principal, f.attempt.id, input))?.assignment).toEqual(reply?.assignment);
+			expect(await f.snapshot()).toEqual(once);
+			await expect(f.service.fail(principal, f.attempt.id, { ...input, output: { ...output, sandboxId: 'substituted' } })).rejects.toMatchObject({ code: 'provider_expired_closeout_conflict' });
 			expect(await f.snapshot()).toEqual(once);
 		} finally { await f.close(); }
 	});

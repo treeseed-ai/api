@@ -4994,3 +4994,21 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/knowledge/publication-scope.test.ts
     testName: "indexes the verified external native ref without replacing local authoring; missing remote custody is denied (false)"
+
+  api.golden.expired-measured-closeout-persistence:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "acknowledges original closed measured output after settlement races expiry without accepting completion or settling again"
+
+  api.golden.expired-measured-closeout-postgres:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-observation-postgres.test.ts
+    testName: "independent native owners acknowledge expired measured closeout once without new settlement completion or graph history"
+
+  api.golden.book-body-preservation-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
+    testName: "real native Book metadata authoring retains exact legacy and current body bytes without publication or duplicate writes"

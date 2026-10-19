@@ -8,6 +8,7 @@ import { createProviderAssignmentService } from '../../../../../../../src/api/co
 import { terminalUsage } from '../../../../capacity/accounting/architecture/settlement-fixture.ts';
 import { workspaceCleanupFixture } from '../../architecture/workspace-cleanup-fixture.ts';
 import { cancellationDatabase, cancelNow } from '../../architecture/cancellation-fixture.ts';
+import { recoverExpiredProviderAssignments } from '../../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-recovery-service.ts';
 
 export const principal = { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider' };
 export const report = { leaseToken: 'lease-token', code: 'assignment_timeout', retryable: false,
@@ -70,4 +71,23 @@ export async function completionFixture(settled = true) {
 				lastToolSucceeded: true, firstToolCompliant: true, finalToolCompliant: true }, completedAt: '2026-10-02T21:00:02.000Z' });
 		return { ...native, ...await lifecycle(native), result, close: () => native.db.close() };
 	} catch (error) { await native.db.close(); throw error; }
+}
+
+/** Original production ordering: native settlement commits, then closeout
+ * expires before completion. Measurements and sandbox receipts are inputs. */
+export async function expiredCloseoutFixture() {
+	const f = await completionFixture(false);
+	try {
+		const runnerId = 'original-runner', nativeUsage = { activeSeconds: 1, elapsedSeconds: 2, tokens: 7 };
+		await f.query("UPDATE capacity_provider_assignments SET runner_id=?,metadata_json=jsonb_set(metadata_json::jsonb,'{operationalState}','\"closeout\"'::jsonb)::text WHERE id=?", [runnerId, f.attempt.id]);
+		await createProviderAssignmentService(f.owner as Parameters<typeof createProviderAssignmentService>[0]).settle(
+			{ principal: { ...principal, scopes: ['provider:usage:write', 'provider:assignments:write'] } }, f.attempt.id,
+			{ ...terminalUsage, activeSeconds: 1, elapsedSeconds: 2, usageActual: { ...terminalUsage.usageActual, nativeUsage } },
+			`assignment-settlement:${f.attempt.id}:${runnerId}`);
+		const output = { sandboxId: 'original-sandbox', teardown: { verified: true, completedAt: f.result.completedAt },
+			assignmentResult: { ...f.result, usage: { ...f.result.usage, native: nativeUsage } }, artifacts: [] };
+		vi.setSystemTime(new Date(Date.parse(f.attempt.deadline) + 1));
+		await recoverExpiredProviderAssignments(f.owner, { teamId: 'team' });
+		return { ...f, output, input: { leaseToken: 'lease-token', runnerId, code: 'assignment_timeout', retryable: false, output } };
+	} catch (error) { await f.close(); throw error; }
 }
