@@ -1,11 +1,11 @@
 import { isDeepStrictEqual } from 'node:util';
 import { assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
-import { CapacityGovernanceError, type CapacityGovernanceDatabase } from '../../../../database.ts';
-import { ProviderAssignmentRepository, type DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
-import { CapacityWorkdayEventRepository, type CapacityWorkdayEventWrite } from '../../../../repositories/capacity/workdays/workday-event.ts';
-import type { ProviderLeasePrincipal } from '../../../accounts/lease-authority-service.ts';
-import { record, terminalPerformance, type ExtendedProviderAssignmentLifecycleRequest } from './completion/assignment-terminal-performance.ts';
-import { composeAssignmentLifecycleOutput } from './assignment-lifecycle-output.ts';
+import { CapacityGovernanceError, type CapacityGovernanceDatabase } from '../../../../../database.ts';
+import { ProviderAssignmentRepository, type DurableProviderAssignment } from '../../../../../repositories/capacity/assignments/assignment.ts';
+import { CapacityWorkdayEventRepository, type CapacityWorkdayEventWrite } from '../../../../../repositories/capacity/workdays/workday-event.ts';
+import type { ProviderLeasePrincipal } from '../../../../accounts/lease-authority-service.ts';
+import { record, terminalPerformance, type ExtendedProviderAssignmentLifecycleRequest } from './assignment-terminal-performance.ts';
+import { composeAssignmentLifecycleOutput } from '../assignment-lifecycle-output.ts';
 
 /** Nonproductive acknowledgement through the existing failure operation. The
  * original expiration, immutable attempt and accepted charge remain authority.
