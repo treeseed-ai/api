@@ -62,3 +62,19 @@ describe('communication recovery after a proposal edit', () => {
 		expect(f.created).toHaveBeenCalledWith(principal, expect.objectContaining({ contextRefs: [{ ...originalRef, immutableRef: 'c'.repeat(40), digest: `sha256:${'d'.repeat(64)}` }] }), `${key}:project`);
 	});
 });
+
+describe('discussion replay before invocation admission', () => {
+	it('rejects changed exact context when a concurrent writer already committed the message', async () => {
+		const { createDiscussionService } = await import('../../../../../../src/api/discussions/discussion-service.ts');
+		const f = fixture();
+		const invocation = await import("../../../../../../src/api/capacity/services/capacity/invocations/discussion-invocation-service.ts");
+		const admitted = vi.spyOn(invocation, "admitDiscussionInvocations").mockResolvedValue([]);
+		const store = { ...f.store, all: async () => [], first: async () => ({ id: 'proposal' }) };
+		const service = createDiscussionService({ store, capacity: store, sessionEvents: { publish: vi.fn() } });
+		mocks.history.mockResolvedValue({ messages: [{ ...source, frontmatter: { ...source.frontmatter, mentionedAgents: ['researcher'] } }] });
+		await expect(service.create(principal, { teamId: 'team', projectId: 'project', discussionId: 'mcp-coordination', body: message,
+			contextRefs: [{ ...originalRef, immutableRef: 'c'.repeat(40) }], recipients: ['researcher'] }, `${key}:project`))
+			.rejects.toMatchObject({ status: 409, code: 'discussion_idempotency_conflict' });
+		expect(admitted).not.toHaveBeenCalled();
+	});
+});
