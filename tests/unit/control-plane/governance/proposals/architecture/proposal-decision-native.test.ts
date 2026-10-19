@@ -139,14 +139,21 @@ describe('native proposal Decision authority', () => {
 				// Native Question and original Discussion/Governance publication, not
 				// a genuine Researcher finding or external authenticated decision-maker.
 			}
+			if (canonicalSupply) {
+				await f.store.upsertTeamMember('team',f.principal.id,'team_owner');
+				await f.store.startGovernanceProposalVoting(f.principal,declaration.id,{expectedProposalVersion:1});
+			}
+			const accept = () => canonicalSupply
+				? f.store.voteGovernanceProposal(f.principal,declaration.id,{expectedProposalVersion:1,vote:'support',reason:input.reason})
+				: f.store.adminDecideGovernanceProposal(f.principal,declaration.id,input);
 			const originalInput = structuredClone(input), before = await f.snapshot();
 			let interruptedDecision: Record<string, unknown> | undefined, interruptedRefs: Record<string, unknown> | undefined;
-			if (!canonicalSupply) {
+			{
 				await f.db.exec(`CREATE FUNCTION reject_decision_created() RETURNS trigger AS $$ BEGIN
 					IF NEW.event_type='decision.created' THEN RAISE EXCEPTION 'controlled Decision projection interruption'; END IF;
 					RETURN NEW; END; $$ LANGUAGE plpgsql;
 					CREATE TRIGGER reject_decision_created BEFORE INSERT ON governance_events FOR EACH ROW EXECUTE FUNCTION reject_decision_created();`);
-				await expect(f.store.adminDecideGovernanceProposal(f.principal, declaration.id, input)).rejects.toThrow('controlled Decision projection interruption');
+				await expect(accept()).rejects.toThrow('controlled Decision projection interruption');
 				const retained = await f.store.all('SELECT * FROM governance_decisions ORDER BY id'); expect(retained).toHaveLength(1);
 				interruptedDecision = retained[0]!; expect(interruptedDecision.status).toBe('creating');
 				const retainedProposal = await f.store.getGovernanceProposal(declaration.id); assert.ok(retainedProposal); expect(retainedProposal.decisionId).toBeNull(); expect((await f.store.all('SELECT * FROM governance_events ORDER BY id')).filter(event => event.event_type === 'decision.created')).toEqual([]);
@@ -156,13 +163,6 @@ describe('native proposal Decision authority', () => {
 				// Each original store uses a different native PostgreSQL pool.
 				for (const result of await Promise.all([f.store.createGovernanceDecisionFromProposal(declaration.id, { actorType: 'user', actorId: f.principal.id }),
 					f.peerStore.createGovernanceDecisionFromProposal(declaration.id, { actorType: 'user', actorId: f.principal.id })])) { assert.ok(result); expect(result.id).toBe(interruptedDecision.id); }
-			}
-			if (canonicalSupply) {
-				// Supplied operator membership is input; only the owning vote/evaluate
-				// path may produce acceptance and the canonical Decision.
-				await f.store.upsertTeamMember('team',f.principal.id,'team_owner');
-				await f.store.startGovernanceProposalVoting(f.principal,declaration.id,{expectedProposalVersion:1});
-				await f.store.voteGovernanceProposal(f.principal,declaration.id,{expectedProposalVersion:1,vote:'support',reason:input.reason});
 			}
 			const accepted = canonicalSupply ? await f.store.getGovernanceProposal(declaration.id)
 				: await f.store.adminDecideGovernanceProposal(f.principal, declaration.id, input);
