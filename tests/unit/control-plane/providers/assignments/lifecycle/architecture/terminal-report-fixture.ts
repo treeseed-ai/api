@@ -75,7 +75,7 @@ export async function completionFixture(settled = true) {
 
 /** Original production ordering: native settlement commits, then closeout
  * expires before completion. Measurements and sandbox receipts are inputs. */
-export async function expiredCloseoutFixture(settled = true, canonicalCounters = false) {
+export async function expiredCloseoutFixture(settled = true, canonicalCounters = false, producedAfterTeardown = false) {
 	const f = await completionFixture(false);
 	try {
 		const runnerId = 'original-runner', nativeUsage = canonicalCounters
@@ -90,7 +90,7 @@ export async function expiredCloseoutFixture(settled = true, canonicalCounters =
 			`assignment-settlement:${f.attempt.id}:${runnerId}`);
 		else await provider.reportUsage({principal:{...principal,scopes:['provider:usage:write']}},f.attempt.id,{usageDimension:'diagnostic-0',accountingMode:'informational',activeSeconds:0,elapsedSeconds:0,usageActual},`usage:${f.attempt.id}:${runnerId}:0`);
 		const output = { sandboxId: 'original-sandbox', teardown: { verified: true, completedAt: f.result.completedAt },
-			assignmentResult: { ...f.result, usage: { ...f.result.usage, native: { ...nativeUsage, ...(canonicalCounters ? { cachedInputTokens: 3, reasoningTokens: 2 } : {}) } } }, artifacts: [] };
+			assignmentResult: { ...f.result, ...(producedAfterTeardown ? { completedAt: new Date(Date.parse(f.result.completedAt) + 1).toISOString() } : {}), usage: { ...f.result.usage, native: { ...nativeUsage, ...(canonicalCounters ? { cachedInputTokens: 3, reasoningTokens: 2 } : {}) } } }, artifacts: [] };
 		vi.setSystemTime(new Date(Date.parse(f.attempt.deadline) + 1));
 		await recoverExpiredProviderAssignments(f.owner, { teamId: 'team' });
 		return { ...f, output, input: { leaseToken: 'lease-token', runnerId, code: 'assignment_timeout', retryable: false, output } };

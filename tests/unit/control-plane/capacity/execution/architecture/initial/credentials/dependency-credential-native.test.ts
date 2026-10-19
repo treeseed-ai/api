@@ -40,30 +40,28 @@ describe('real public credential rotation authorization exchange and dependency 
 			expect(await f.custody()).toEqual({ ...custody, attempt: { ...f.attempt, status: 'leased' } }); expect(Date.now()).toBeLessThanOrEqual(Date.parse(f.attempt.deadline));
 		} finally { await f.close(); }
 	});
-	it('missing unapproved foreign revoked stale and malformed public exchange authority denies without credential issuance or financial changes', async () => {
-		for (const mode of ['missing-request', 'pending', 'rejected', 'cancelled', 'member', 'missing-member', 'revoked-provider', 'version', 'signature', 'path', 'key', 'missing-proof', 'authorization'] as const) {
-			const f = await dependencyCredential(); try {
-				expect((await f.evaluate()).eligible).toBe(true); expect(f.authorization).toMatchObject({ generation: 2, status: 'pending' });
-				let proof = f.proof(f.exchangePayload); const options: Parameters<typeof f.exchange>[1] = {};
-				if (mode === 'missing-request') options.requestId = 'foreign-request';
-				if (mode === 'pending' || mode === 'rejected' || mode === 'cancelled') await f.query("UPDATE capacity_provider_registration_requests SET status=? WHERE id='credential-request'", [mode]);
-				if (mode === 'member') await f.query("UPDATE capacity_provider_team_memberships SET status='suspended' WHERE id='membership'");
-				if (mode === 'missing-member') await f.query("UPDATE capacity_provider_registration_requests SET membership_id='foreign-membership' WHERE id='credential-request'");
-				if (mode === 'revoked-provider') await f.query("UPDATE capacity_providers SET status='revoked' WHERE id='provider'");
-				if (mode === 'version') proof = f.proof({ ...f.exchangePayload, identityVersion: 2 });
-				if (mode === 'signature') proof = { ...proof, signature: Buffer.alloc(64).toString('base64url') };
-				if (mode === 'path') proof = f.proof({ ...f.exchangePayload, path: '/foreign' }); if (mode === 'key') options.key = 'foreign-issuance-key';
-				if (mode === 'missing-proof') options.body = { proof: null };
-				if (mode === 'authorization') await f.query("UPDATE capacity_provider_credential_issuance_authorizations SET status='cancelled' WHERE id=?", [f.authorization.id]);
-				const before = await f.credentialState(), custody = await f.custody(); const response = await f.exchange(proof, options);
-				expect(response.status).toBe(['missing-request', 'pending', 'rejected', 'cancelled', 'authorization'].includes(mode) ? 409 : ['member', 'missing-member', 'revoked-provider'].includes(mode) ? 403 : 401);
-				const after = await f.credentialState();
-				if (mode === 'authorization') { expect(after.nonces).toHaveLength(before.nonces.length + 1); expect({ ...after, nonces: before.nonces }).toEqual(before); }
-				else expect(after).toEqual(before);
-				expect(await f.custody()).toEqual(custody);
-				expect(Date.now()).toBeLessThanOrEqual(Date.parse(f.attempt.deadline));
-			} finally { await f.close(); }
-		}
+	it.each(['missing-request', 'pending', 'rejected', 'cancelled', 'member', 'missing-member', 'revoked-provider', 'version', 'signature', 'path', 'key', 'missing-proof', 'authorization'] as const)('public exchange denial %s preserves credential and financial custody', async (mode) => {
+		const f = await dependencyCredential(); try {
+			expect((await f.evaluate()).eligible).toBe(true); expect(f.authorization).toMatchObject({ generation: 2, status: 'pending' });
+			let proof = f.proof(f.exchangePayload); const options: Parameters<typeof f.exchange>[1] = {};
+			if (mode === 'missing-request') options.requestId = 'foreign-request';
+			if (mode === 'pending' || mode === 'rejected' || mode === 'cancelled') await f.query("UPDATE capacity_provider_registration_requests SET status=? WHERE id='credential-request'", [mode]);
+			if (mode === 'member') await f.query("UPDATE capacity_provider_team_memberships SET status='suspended' WHERE id='membership'");
+			if (mode === 'missing-member') await f.query("UPDATE capacity_provider_registration_requests SET membership_id='foreign-membership' WHERE id='credential-request'");
+			if (mode === 'revoked-provider') await f.query("UPDATE capacity_providers SET status='revoked' WHERE id='provider'");
+			if (mode === 'version') proof = f.proof({ ...f.exchangePayload, identityVersion: 2 });
+			if (mode === 'signature') proof = { ...proof, signature: Buffer.alloc(64).toString('base64url') };
+			if (mode === 'path') proof = f.proof({ ...f.exchangePayload, path: '/foreign' }); if (mode === 'key') options.key = 'foreign-issuance-key';
+			if (mode === 'missing-proof') options.body = { proof: null };
+			if (mode === 'authorization') await f.query("UPDATE capacity_provider_credential_issuance_authorizations SET status='cancelled' WHERE id=?", [f.authorization.id]);
+			const before = await f.credentialState(), custody = await f.custody(); const response = await f.exchange(proof, options);
+			expect(response.status).toBe(['missing-request', 'pending', 'rejected', 'cancelled', 'authorization'].includes(mode) ? 409 : ['member', 'missing-member', 'revoked-provider'].includes(mode) ? 403 : 401);
+			const after = await f.credentialState();
+			if (mode === 'authorization') { expect(after.nonces).toHaveLength(before.nonces.length + 1); expect({ ...after, nonces: before.nonces }).toEqual(before); }
+			else expect(after).toEqual(before);
+			expect(await f.custody()).toEqual(custody);
+			expect(Date.now()).toBeLessThanOrEqual(Date.parse(f.attempt.deadline));
+		} finally { await f.close(); }
 	});
 	it('concurrent same key exchanges and fresh nonce replay retain one exact credential while duplicate nonce and different issuance key cannot reveal another', async () => {
 		const f = await dependencyCredential(); try {

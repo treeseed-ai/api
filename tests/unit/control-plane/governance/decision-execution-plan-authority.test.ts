@@ -43,7 +43,7 @@ describe('accepted proposal decision recovery', () => {
 	it('retains the original open workspace journal and close failure after native Decision readback instead of reporting successful closure', async () => {
 		const proposalRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 2, digest: `sha256:${digest}`,
 			repository: 'repository', commit: 'a'.repeat(40), path: 'proposals/proposal.mdx' };
-		const row = { id: 'decision', project_id: 'project', status: 'creating', created_by_id: 'operator', created_at: '2026-10-04T00:00:00.000Z',
+		const row = { id: 'decision', project_id: 'project', status: 'creating', created_by_type: 'user', created_by_id: 'operator', created_at: '2026-10-04T00:00:00.000Z',
 			decision_record_json: JSON.stringify({ proposalRef, rationale: 'Original approval.' }) }, proposal = { closedReason: 'admin_approved' };
 		const client = new TreeDxInfrastructureClient(new TreeDxClient({ baseUrl: 'http://127.0.0.1:1', transport: new FetchTransport({ baseUrl: 'http://127.0.0.1:1', token: 'UNIT input' }) }));
 		const journal: unknown[][] = [], closeFailure = new Error('controlled native close failure'); let source = '';

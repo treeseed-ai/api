@@ -19,6 +19,27 @@ async function financialTruth(f: Awaited<ReturnType<typeof completionFixture>>) 
 		counters: (await f.query('SELECT * FROM capacity_admission_counters ORDER BY id')).rows };
 }
 describe('terminal races preserve one immutable attempt and prior measured truth', () => {
+ it.each([true, false])('retains a result assembled after verified teardown without accepting completion or replacing original usage (settled=%s)', async settled => {
+  const f = await expiredCloseoutFixture(settled, true, true); try {
+   const before = (await f.repository.get('team', f.attempt.id))!, finance = await financialTruth(f);
+   const held = structuredClone(f.input), snapshot = await f.snapshot();
+   expect(Date.parse(f.output.assignmentResult.completedAt)).toBeGreaterThan(Date.parse(f.output.teardown.completedAt));
+   const future = { ...f.input, output: { ...f.output, assignmentResult: { ...f.output.assignmentResult, completedAt: '2099-01-01T00:00:00.000Z' } } };
+   await expect(f.service.fail(principal, f.attempt.id, future)).rejects.toMatchObject({ code: 'provider_expired_closeout_conflict' });
+   const backdated = { ...f.input, output: { ...f.output, teardown: { ...f.output.teardown, completedAt: '2000-01-01T00:00:00.000Z' } } };
+   await expect(f.service.fail(principal, f.attempt.id, backdated)).rejects.toMatchObject({ code: 'provider_expired_closeout_conflict' });
+   expect(await f.snapshot()).toEqual(snapshot);
+   const result = await f.service.fail(principal, f.attempt.id, f.input);
+   expect(result?.assignment).toMatchObject({ status: 'expired', leaseState: 'released', assignmentResult: null,
+    assignmentAttempt: before.assignmentAttempt, metadata: before.metadata, lifecycleOutput: { ...f.output, completion: null, performance: { disposition: 'failed' } } });
+   const actual = await financialTruth(f); expect(actual.ledger).toHaveLength(1);
+   expect(actual.usage.filter((row: Record<string, unknown>) => row.accounting_mode === 'aggregate')).toHaveLength(1);
+   if (settled) expect(actual).toEqual(finance);
+   else expect(actual.usage.filter((row: Record<string, unknown>) => row.accounting_mode === 'informational')).toEqual(finance.usage);
+   const once = await f.snapshot(); await f.service.fail(principal, f.attempt.id, f.input);
+   expect(await f.snapshot()).toEqual(once); expect(f.input).toEqual(held);
+  } finally { await f.close(); }
+ });
  it('retains original native report bytes when canonical result also contains normalized token counters',async()=>{
   const f=await expiredCloseoutFixture(false,true);try{
    const original=await financialTruth(f),snapshot=await f.snapshot();

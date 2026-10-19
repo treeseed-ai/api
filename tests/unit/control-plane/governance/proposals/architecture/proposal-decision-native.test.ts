@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { validateDecisionAuthority, validateExecutionAuthorityReceipt } from '../../../../../../src/api/governance/decision-authority.ts';
-import { readyProposal, nativeProposalProfileInputs } from './ready-proposal-fixture.ts';
+import { readyProposal, nativeProposalProfileInputs, prepareNativeProposalVoting } from './ready-proposal-fixture.ts';
 import { verifyNativeProposalReconciliation } from './proposal-reconciliation-fixture.ts';
 import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { stringify } from 'yaml';
@@ -139,14 +139,18 @@ describe('native proposal Decision authority', () => {
 				// Native Question and original Discussion/Governance publication, not
 				// a genuine Researcher finding or external authenticated decision-maker.
 			}
+			if (canonicalSupply) await prepareNativeProposalVoting(f,declaration.id,profileTime);
+			const accept = () => canonicalSupply
+				? f.store.voteGovernanceProposal(f.principal,declaration.id,{expectedProposalVersion:1,vote:'support',reason:input.reason})
+				: f.store.adminDecideGovernanceProposal(f.principal,declaration.id,input);
 			const originalInput = structuredClone(input), before = await f.snapshot();
 			let interruptedDecision: Record<string, unknown> | undefined, interruptedRefs: Record<string, unknown> | undefined;
-			if (!canonicalSupply) {
+			{
 				await f.db.exec(`CREATE FUNCTION reject_decision_created() RETURNS trigger AS $$ BEGIN
 					IF NEW.event_type='decision.created' THEN RAISE EXCEPTION 'controlled Decision projection interruption'; END IF;
 					RETURN NEW; END; $$ LANGUAGE plpgsql;
 					CREATE TRIGGER reject_decision_created BEFORE INSERT ON governance_events FOR EACH ROW EXECUTE FUNCTION reject_decision_created();`);
-				await expect(f.store.adminDecideGovernanceProposal(f.principal, declaration.id, input)).rejects.toThrow('controlled Decision projection interruption');
+				await expect(accept()).rejects.toThrow('controlled Decision projection interruption');
 				const retained = await f.store.all('SELECT * FROM governance_decisions ORDER BY id'); expect(retained).toHaveLength(1);
 				interruptedDecision = retained[0]!; expect(interruptedDecision.status).toBe('creating');
 				const retainedProposal = await f.store.getGovernanceProposal(declaration.id); assert.ok(retainedProposal); expect(retainedProposal.decisionId).toBeNull(); expect((await f.store.all('SELECT * FROM governance_events ORDER BY id')).filter(event => event.event_type === 'decision.created')).toEqual([]);
@@ -157,7 +161,8 @@ describe('native proposal Decision authority', () => {
 				for (const result of await Promise.all([f.store.createGovernanceDecisionFromProposal(declaration.id, { actorType: 'user', actorId: f.principal.id }),
 					f.peerStore.createGovernanceDecisionFromProposal(declaration.id, { actorType: 'user', actorId: f.principal.id })])) { assert.ok(result); expect(result.id).toBe(interruptedDecision.id); }
 			}
-			const accepted = await f.store.adminDecideGovernanceProposal(f.principal, declaration.id, input);
+			const accepted = canonicalSupply ? await f.store.getGovernanceProposal(declaration.id)
+				: await f.store.adminDecideGovernanceProposal(f.principal, declaration.id, input);
 			const receivedAt = Date.now();
 			expect(accepted).toMatchObject({ status: 'accepted', id: declaration.id }); assert.ok(accepted);
 			const decisionId = String(accepted.decisionId ?? ''); expect(decisionId).not.toBe('');
@@ -196,7 +201,7 @@ describe('native proposal Decision authority', () => {
 						if (parsed.frontmatter.id !== decisionId) continue;
 						const validated = validatePortableContentData('decision', parsed.frontmatter);
 						expect(validated.ok).toBe(true); expect(validated.data).toMatchObject({ id: decisionId, projectId,
-							decisionClass: 'proposal', disposition: 'approved', decisionMethod: 'authority', subjectRef: proposalRef });
+							decisionClass: 'proposal', disposition: 'approved', decisionMethod: canonicalSupply ? 'vote' : 'authority', subjectRef: proposalRef });
 						const definition = object(validated.data); assert.ok(Array.isArray(definition.decidedByRefs));
 						expect(definition.decidedByRefs.map(object)).toContainEqual(expect.objectContaining({ model: 'user', id: f.principal.id })); expect(Date.parse(String(definition.decidedAt))).toBeGreaterThanOrEqual(Date.parse(proposal.createdAt));
 						expect(Date.parse(String(definition.decidedAt))).toBeLessThanOrEqual(receivedAt);

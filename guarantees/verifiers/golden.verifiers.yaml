@@ -1535,7 +1535,67 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
-    testName: "missing unapproved foreign revoked stale and malformed public exchange authority denies without credential issuance or financial changes"
+    testName: "public exchange denial missing-request preserves credential and financial custody"
+  api.golden.architecture-dependency-credential-native-2-pending:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "public exchange denial pending preserves credential and financial custody"
+  api.golden.architecture-dependency-credential-native-2-rejected:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "public exchange denial rejected preserves credential and financial custody"
+  api.golden.architecture-dependency-credential-native-2-cancelled:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "public exchange denial cancelled preserves credential and financial custody"
+  api.golden.architecture-dependency-credential-native-2-member:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "public exchange denial member preserves credential and financial custody"
+  api.golden.architecture-dependency-credential-native-2-missing-member:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "public exchange denial missing-member preserves credential and financial custody"
+  api.golden.architecture-dependency-credential-native-2-revoked-provider:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "public exchange denial revoked-provider preserves credential and financial custody"
+  api.golden.architecture-dependency-credential-native-2-version:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "public exchange denial version preserves credential and financial custody"
+  api.golden.architecture-dependency-credential-native-2-signature:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "public exchange denial signature preserves credential and financial custody"
+  api.golden.architecture-dependency-credential-native-2-path:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "public exchange denial path preserves credential and financial custody"
+  api.golden.architecture-dependency-credential-native-2-key:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "public exchange denial key preserves credential and financial custody"
+  api.golden.architecture-dependency-credential-native-2-missing-proof:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "public exchange denial missing-proof preserves credential and financial custody"
+  api.golden.architecture-dependency-credential-native-2-authorization:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "public exchange denial authorization preserves credential and financial custody"
   api.golden.architecture-dependency-credential-native-3:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

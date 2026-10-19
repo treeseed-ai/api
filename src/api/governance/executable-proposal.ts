@@ -133,7 +133,10 @@ export async function publishProposalDecision(store: any, proposal: Row, row: Ro
 	const path = projectLibraryPath(initial.contentPath, 'decisions', `${id}.mdx`);
 	const connection = await resolveKnowledgeGatewayConnection(store, { projectId, write: true, workspaceRefs: [branchName, text(proposalRef.commit)], workspacePaths: [path] });
 	if (!connection) throw new Error('Decision publication requires the original project binding.');
-	const authority = proposal.closedReason === 'admin_approved';
+	// The administrative chamber also emits admin_approved for a recorded vote.
+	// Automatic evaluation has no user creator; preserve its real vote authority.
+	const authority = proposal.closedReason === 'admin_approved'
+		&& row.created_by_type === 'user' && Boolean(text(row.created_by_id));
 	const userRef = (userId: string) => ({ store: 'postgresql', model: 'user', id: userId });
 	const decidedByRefs = authority ? [userRef(text(row.created_by_id))] : votes.map(vote => userRef(text(vote.userId)));
 	const definition = { schemaVersion: 'treeseed.decision/v1', id, projectId, decisionClass: 'proposal',
