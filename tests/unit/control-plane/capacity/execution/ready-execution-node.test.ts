@@ -21,6 +21,25 @@ const sourceRef = {
 const decisionRef = { store: 'postgresql', model: 'decision', id: 'decision', revision: 1, digest: `sha256:${'c'.repeat(64)}` };
 const permissions = { content: { read: ['proposal', 'decision'], write: [] }, tools: ['source.read'] };
 
+it('reads shared planning proposal context through its owning project binding and refuses a foreign team', async () => {
+	for (const teamId of ['team', 'foreign-team']) {
+		vi.mocked(resolveKnowledgeGatewayConnection).mockImplementation(async (_store, input) => ({
+			repositoryId: input.projectId === 'ui' ? 'repository' : 'admin-library', client: gateway,
+		}) as never);
+		gateway.readRepositoryFile.mockResolvedValue({ resolvedRef: sourceRef.commit, file: { frontmatter: {
+			schemaVersion: 'treeseed.proposal/v1', id: 'proposal', projectId: 'ui', groupIds: ['portfolio-atlas'],
+			title: 'Complete scoped activity snapshots', request: 'Plan the shared UI contract and Admin integration.', status: 'draft',
+		} } });
+		const store = { getGovernanceProposal: async () => ({ id: 'proposal', projectId: 'ui', teamId }),
+			getProjectTreeDxLibrary: async () => ({ repositoryId: 'repository' }) };
+		const read = workItemContext(store, { id: 'shared-planning', projectId: 'admin', teamId: 'team',
+			kind: 'planning', workItemId: null, sourceRef } as never);
+		if (teamId === 'team') expect(await read).toEqual([sourceRef]);
+		else await expect(read).rejects.toMatchObject({ code: 'execution_node_source_repository_changed' });
+	}
+	vi.mocked(resolveKnowledgeGatewayConnection).mockImplementation(async () => ({ repositoryId: 'repository', client: gateway }) as never);
+});
+
 function nodeRow(id = 'node', decisionId = 'decision') {
 	return {
 		id, team_id: 'team', project_id: projectId, work_item_id: 'implementation',
