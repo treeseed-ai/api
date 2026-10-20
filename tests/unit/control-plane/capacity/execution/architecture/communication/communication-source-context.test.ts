@@ -28,7 +28,7 @@ function communication(tools = ['discussion', 'source.read']) {
 const sourceRef = { store: 'git', model: 'repository', id: 'software', repository: 'example/project', commit };
 
 describe('standalone communication exact source admission', () => {
-	it('reads an attached same-team proposal across topic project streams without granting foreign writes or following later versions', async () => {
+	it('reads an attached same-team proposal across topic project streams with contributor source context and the pinned version', async () => {
 		const bytes = 'exact attached Admin proposal', digest = createHash('sha256').update(bytes).digest('hex');
 		const proposal = readyProposal(), sharedGit = { store: 'git', model: 'repository', id: 'producer', repository: 'example/producer', commit: 'c'.repeat(40) };
 		Object.assign(proposal, { id: 'shared', projectId: 'proposal-project', groupIds: ['portfolio-atlas'] });
