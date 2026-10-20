@@ -85,7 +85,11 @@ function communicationDiscussionReference(candidate: ReadyExecutionNode): ExactE
 }
 
 function projectTreeDxWorkspaceReference(candidate: ReadyExecutionNode, run: DurableCapacityWorkdayRun): ExactEntityReference | undefined {
-	const source = candidate.node.sourceRef.store === 'treedx' ? candidate.node.sourceRef : undefined;
+	const subject = candidate.node.sourceRef.store === 'treedx' ? candidate.node.sourceRef : undefined;
+	// Shared proposal planning reads the proposal in its owning library, while
+	// each contributor writes its Note only in its own project library.
+	const source = candidate.node.kind === 'planning' && subject?.model === 'proposal'
+		&& subject.repository !== candidate.projectContentRepositoryId ? undefined : subject;
 	if (source && source.repository !== candidate.projectContentRepositoryId) throw new CapacityGovernanceError(
 		'assignment_content_project_mismatch', 'Writable TreeDX content must belong to the assignment project library.', 409);
 	if (source) return source;
