@@ -88,7 +88,13 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 		// Closing keeps every original planned identity. Exact completed estimates
 		// can cancel a never-admitted obsolete turn, never an issued attempt.
 		const plannedParticipants = workday.state === 'closing'
-			? workdayParticipants(participation, { includeEstimated: true }) : participants;
+			? [...new Map([
+				...workdayParticipants(participation, { includeEstimated: true }),
+				// The first group candidate compiled unqualified planning IDs. Close
+				// those original unissued turns through the graph; never rewrite its
+				// frozen plan or manufacture an assignment/result to finish a round.
+				...workdayParticipants({ ...participation, groupIds: [] }, { includeEstimated: true }),
+			].map(participant => [participant.id, participant])).values()] : participants;
 		changedSourceRefs.push(reference);
 		const projectIds = array(source.parameters.scheduledProjectIds).map(text).filter(Boolean).sort();
 		const roundNodes = new Map<number, ExecutionNode[]>();
