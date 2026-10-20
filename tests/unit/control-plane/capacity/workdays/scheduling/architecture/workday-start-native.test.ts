@@ -67,21 +67,25 @@ describe('first manual and recurring admission through the same public owning pa
 			expect(await f.snapshot()).toEqual(after); expect(body).toEqual(held);
 		} finally { await f.close(); }
 	});
-	it('real public preflight preserves canonical normalized agent selection and denies malformed mixed members without native authority repair', async () => {
+	it('real public preflight preserves canonical group selection and denies malformed members and individual targets without native authority repair', async () => {
 		const f = await workdayStartDatabase(); try {
-			const slug = f.definition.id;
+			const group = 'portfolio-atlas';
 			for (const value of [' ', null, 1, {}, [], 'é', 'agent?', 'x'.repeat(201)]) {
-				const body = { ...f.intent, agentSelection: { agentSlugs: [slug, value] } }, held = structuredClone(body);
+				const body = { ...f.intent, groupIds: [group, value] }, held = structuredClone(body);
 				const before = await f.snapshot(), calls = structuredClone(f.calls);
 				await expect(f.publicService.preflight(f.principal, 'team', body)).rejects.toMatchObject({ status: 400, code: 'workday_intent_invalid' });
 				expect(await f.snapshot()).toEqual(before); expect(f.calls).toEqual(calls); expect(body).toEqual(held);
 			}
-			const body = { ...f.intent, agentSelection: { agentSlugs: [` ${slug} `, slug] } }, held = structuredClone(body);
+			for (const target of [{ agentSlugs: [f.definition.id] }, { classSlugs: [f.definition.agentClass] }]) {
+				await expect(f.publicService.preflight(f.principal, 'team', { ...f.intent, agentSelection: target }))
+					.rejects.toMatchObject({ status: 400, code: 'workday_intent_invalid' });
+			}
+			const body = { ...f.intent, groupIds: [group] }, held = structuredClone(body);
 			const receipt = await f.publicService.preflight(f.principal, 'team', body), after = await f.snapshot();
 			expect(receipt.id).toBeTruthy(); expect(after.receipts).toHaveLength(1);
 			const row = after.receipts[0]!;
 			const stored = typeof row.response_json === 'string' ? JSON.parse(row.response_json) : row.response_json;
-			expect(stored).toMatchObject({ intent: { agentSelection: { agentSlugs: [slug], mode: 'intersection' } } });
+			expect(stored).toMatchObject({ intent: { groupIds: [group] } });
 			for (const table of ['workdays', 'schedules', 'nodes', 'edges', 'revisions', 'events', 'assignments', 'reservations', 'usage', 'ledger'] as const) expect(after[table]).toEqual([]);
 			expect(body).toEqual(held); expect(await f.snapshot()).toEqual(after);
 		} finally { await f.close(); }
