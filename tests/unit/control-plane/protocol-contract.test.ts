@@ -473,6 +473,8 @@ describe('control-plane protocol contract', () => {
 				const request = input instanceof Request ? input : new Request(input, init);
 				const headers = new Headers(request.headers);
 				headers.set('host', 'localhost');
+				headers.set('Idempotency-Key', 'archive-project-a');
+				headers.set('If-Match', '"revision-1"');
 				return app.fetch(new Request(request, { headers }));
 			},
 		});

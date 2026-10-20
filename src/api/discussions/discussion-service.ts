@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { admitDiscussionInvocations, resolveDiscussionInvocationAgents } from '../capacity/services/capacity/invocations/discussion-invocation-service.ts';
-import { changeDiscussionStatus, commitDiscussionMessage, loadDiscussions, validateDiscussionContextRefs } from './content.ts';
+import { changeDiscussionStatus, commitDiscussionMessage, discussionMessageId, loadDiscussions, validateDiscussionContextRefs } from './content.ts';
 import { discussionHistorySnapshot } from './history-snapshot.ts';
+import { canonicalJson } from '../capacity/security.ts';
 
 type Principal = { id: string; roles?: string[]; permissions?: string[]; metadata?: Record<string, unknown> } | undefined;
 
@@ -130,7 +131,7 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 			if (body.intent === 'act') throw new DiscussionServiceError(409, 'discussion_operation_handoff_required',
 				'Discussion cannot directly create acting authority. Prepare an approval-backed operation handoff instead.');
 			const discussionId = text(body.discussionId, `discussion-${stableId(projectId, idempotencyKey)}`);
-			const messageId = stableId(discussionId, idempotencyKey);
+			const messageId = discussionMessageId(discussionId, idempotencyKey);
 			const parentWorkdayId = text(body.parentWorkdayId) || null;
 			const parentAssignmentId = text(body.parentAssignmentId) || null;
 			let contextRefs: Awaited<ReturnType<typeof validateDiscussionContextRefs>> = [];
@@ -148,8 +149,11 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 				const history = await loadDiscussions({ store, projectId, discussionId, exactMessageIds: [messageId], collection: 'messages' }).catch(() => ({ messages: [] }));
 				const replay = history.messages.find((entry: any) => text(entry.id) === messageId);
 				if (replay) {
-					if (text(replay.body) !== messageBody) throw new DiscussionServiceError(409, 'discussion_idempotency_conflict',
-						'The idempotency key is already bound to another discussion message.');
+						if (text(replay.body) !== messageBody
+							|| canonicalJson(replay.frontmatter?.contextRefs ?? []) !== canonicalJson(body.contextRefs ?? [])) {
+							throw new DiscussionServiceError(409, 'discussion_idempotency_conflict',
+								'The idempotency key is already bound to another discussion message or exact context.');
+						}
 					let invocations = await store.all(`SELECT id,status,execution_id,assignment_id,metadata_json FROM agent_invocation_requests
 						WHERE team_id = ? AND idempotency_key LIKE ? ORDER BY id`, [teamId, `${idempotencyKey}:%`]);
 					const replayMentions = Array.isArray(replay.frontmatter?.mentionedAgents)

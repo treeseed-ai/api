@@ -13,6 +13,9 @@ import { parseCommunicationAddresses } from '@treeseed/sdk/operator-contracts';
 import type { OperationInvocationContext } from '../control-plane/catalog/operation-registry.ts';
 
 type Row = Record<string, unknown>;
+export function discussionMessageId(discussionId: string, idempotencyKey: string): string {
+	return createHash('sha256').update(`${discussionId}:${idempotencyKey}`).digest('hex').slice(0, 32);
+}
 function text(value: unknown, fallback = '') { return typeof value === 'string' && value.trim() ? value.trim() : fallback; }
 function record(value: unknown): Row { if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row; if (typeof value === 'string') try { return record(JSON.parse(value)); } catch { return {}; } return {}; }
 function slug(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 72) || 'discussion'; }
@@ -138,7 +141,16 @@ export async function loadDiscussions(input: {
 	// authorized immutable commits before reading, rather than failing a whole
 	// send receipt with a branch-level 404 before its journal overlay is read.
 	const branchReadPaths = paths.filter((path) => !latestUnpublishedByPath.has(path));
-	const read = branchReadPaths.length ? await connection.client.readRepositoryFiles({ repoId: connection.repositoryId, ref: discussionRef, paths: branchReadPaths, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }) : { files: [] };
+	const read = branchReadPaths.length ? await connection.client.readRepositoryFiles({ repoId: connection.repositoryId, ref: discussionRef, paths: branchReadPaths, encoding: 'utf8', parseFrontmatter: false, allowProtected: true })
+		.catch((error: unknown) => {
+			const failure = record(error);
+			// One exact message lookup also serves first-send admission. Only the
+			// native file-absence response is empty; journal commits stay required.
+			if (input.collection === 'messages' && input.exactMessageIds?.length === 1 && exactPaths.length === 1
+				&& branchReadPaths.length === 1 && failure.status === 404 && failure.code === 'not_found'
+				&& failure.message === 'File not found.') return { files: [] };
+			throw error;
+		}) : { files: [] };
 	const immutableRefs = [...new Set(latestUnpublishedByPath.values())];
 	const immutableConnection = immutableRefs.length ? await resolveKnowledgeGatewayConnection(input.store, {
 		projectId: input.projectId, write: false, communicationPaths: true, readRefs: immutableRefs,

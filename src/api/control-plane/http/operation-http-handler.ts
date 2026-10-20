@@ -3,7 +3,7 @@ import type { AuthInfo } from '@modelcontextprotocol/server';
 import type { Context } from 'hono';
 import { ZodError } from 'zod';
 import { ControlPlaneOperationError, type BoundOperation } from '../catalog/operation-registry.ts';
-import { enforceOperationAuthorization } from '../authorization/invocation-policy.ts';
+import { enforceOperationAuthorization, readOperationPreconditions } from '../authorization/invocation-policy.ts';
 import { decodeConfirmation, type ConfirmationService } from '../confirmation/confirmation-service.ts';
 
 type Authenticate = (request: Request) => Promise<AuthInfo | Response>;
@@ -75,20 +75,13 @@ export function createOperationHttpHandler(
 		const requestId = context.req.header('x-request-id')?.trim() || randomUUID();
 		const descriptor = operation.binding.descriptor;
 		try {
-			const idempotencyKey = context.req.header(descriptor.idempotency.header)
-				?? (descriptor.operationId === 'repositories.github.webhook' ? context.req.header('x-github-delivery') : undefined);
 			const providerAuth = context.get('capacityProviderAccessAuth') as { principal?: { membershipId?: string; capacityProviderId?: string; teamId?: string; scopes?: string[] } } | undefined;
 			const authInfo = descriptor.authentication === 'oauth'
 				|| (descriptor.authentication === 'oauth_or_provider' && !providerAuth?.principal)
 				? await authenticate(context.req.raw) : undefined;
 			if (authInfo instanceof Response) return authInfo;
 			enforceOperationAuthorization(descriptor, authInfo, { providerAuthenticated: Boolean(providerAuth?.principal) });
-			if (descriptor.idempotency.required && !idempotencyKey) {
-				throw new ControlPlaneOperationError(400, 'idempotency_key_required', `${descriptor.idempotency.header} is required.`);
-			}
-			if (descriptor.concurrency.required && !context.req.header(descriptor.concurrency.writeHeader)) {
-				throw new ControlPlaneOperationError(412, 'precondition_required', `${descriptor.concurrency.writeHeader} is required.`);
-			}
+			const preconditions = readOperationPreconditions(descriptor, context.req.raw.headers);
 			const parsed = await operationInput(context, operation);
 			const input = parsed.input;
 			if (descriptor.confirmation === 'input_required') {
@@ -114,8 +107,7 @@ export function createOperationHttpHandler(
 				requestId,
 				requestUrl: context.req.url,
 				traceparent: context.req.header('traceparent'),
-				idempotencyKey,
-				ifMatch: context.req.header(descriptor.concurrency.writeHeader)?.replace(/^"|"$/gu, ''),
+				...preconditions,
 				rawBody: parsed.rawBody,
 				requestHeaders: Object.fromEntries(['content-type', 'content-length', 'referer', 'x-treeseed-feedback-path', 'x-hub-signature-256',
 					'x-github-delivery', 'x-github-event', 'authorization', 'x-treeseed-provider-proof',

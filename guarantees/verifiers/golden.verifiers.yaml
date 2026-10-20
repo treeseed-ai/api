@@ -4251,6 +4251,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-denial-native.test.ts
     testName: "native governance evaluation retains interrupted electorate history and rejects absent readback before a fresh unchanged retry can close the proposal"
+  api.golden.mcp-write-preconditions-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/mcp/authorization-equivalence.test.ts
+    testName: "retains real MCP mutation identity and version headers and denies missing authority before dispatch"
+  api.golden.mcp-write-preconditions-postgres:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/mcp/mutation-postgres.test.ts
+    testName: "native MCP cancels only the inspected queued project discussion and retains its exact request identity in PostgreSQL"
   api.golden.execution-schema-consumer-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -5096,3 +5106,35 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-observation-postgres.test.ts
     testName: "independent native owners settle original diagnostic usage once while preserving expired history and canonical null completion (reservation=consuming)"
+  api.golden.communication-proposal-recovery-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/completion/proposal-replay.test.ts
+    testName: "reuses the committed message context instead of resolving the moved proposal"
+
+  api.golden.communication-proposal-recovery-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/completion/proposal-replay-native.test.ts
+    testName: "keeps the original context and one invocation after real proposal authoring, concurrent retries and interrupted admission"
+
+  api.golden.communication-proposal-race-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/completion/proposal-replay.test.ts
+    testName: "rejects changed exact context when a concurrent writer already committed the message"
+  api.golden.communication-proposal-absence-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/discussions/discussion-targeted-read.test.ts
+    testName: "returns no original message only for an absent branch file while retaining denied and missing immutable authority"
+  api.golden.mcp-schema-dialect-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/mcp/schema-dialect.test.ts
+    testName: "compiles every declared MCP tool input and output with the official client validator"
+  api.golden.mcp-schema-constraints-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/mcp/schema-dialect.test.ts
+    testName: "preserves native numeric nullable tuple and strict object constraints without changing OpenAPI projection"

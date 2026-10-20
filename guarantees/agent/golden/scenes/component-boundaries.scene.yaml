@@ -2418,6 +2418,12 @@ workflow:
   - id: execution-electorate-readback-native
     action: { verifier: api.golden.execution-electorate-readback-native }
     expect: { status: passed }
+  - id: mcp-write-preconditions-unit
+    action: { verifier: api.golden.mcp-write-preconditions-unit }
+    expect: { status: passed }
+  - id: mcp-write-preconditions-postgres
+    action: { verifier: api.golden.mcp-write-preconditions-postgres }
+    expect: { status: passed }
   - id: execution-schema-consumer-unit
     action: { verifier: api.golden.execution-schema-consumer-unit }
     expect: { status: passed }
@@ -3021,4 +3027,25 @@ workflow:
 
   - id: expired-measured-unsettled-postgres-consuming
     action: { verifier: api.golden.expired-measured-unsettled-postgres-consuming }
+    expect: { status: passed }
+
+  - id: communication-proposal-recovery-unit
+    action: { verifier: api.golden.communication-proposal-recovery-unit }
+    expect: { status: passed }
+
+  - id: communication-proposal-recovery-native
+    action: { verifier: api.golden.communication-proposal-recovery-native }
+    expect: { status: passed }
+
+  - id: communication-proposal-race-unit
+    action: { verifier: api.golden.communication-proposal-race-unit }
+    expect: { status: passed }
+  - id: communication-proposal-absence-unit
+    action: { verifier: api.golden.communication-proposal-absence-unit }
+    expect: { status: passed }
+  - id: mcp-schema-dialect-unit
+    action: { verifier: api.golden.mcp-schema-dialect-unit }
+    expect: { status: passed }
+  - id: mcp-schema-constraints-unit
+    action: { verifier: api.golden.mcp-schema-constraints-unit }
     expect: { status: passed }
