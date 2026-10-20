@@ -205,8 +205,10 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 	if (source.store !== 'treedx' || !source.repository || !source.commit || !source.path) {
 		throw new CapacityGovernanceError('execution_node_source_invalid', `Node ${node.id} lacks exact proposal provenance.`, 409);
 	}
+	const owner = node.kind === 'planning' ? await store.getGovernanceProposal(source.id) : null;
+	const sourceProjectId = owner && text(owner.teamId, owner.team_id) === node.teamId ? text(owner.projectId, owner.project_id) : node.projectId;
 	const connection = await resolveKnowledgeGatewayConnection(store, {
-		projectId: node.projectId, write: false, relationPaths: true, readRefs: [source.commit],
+		projectId: sourceProjectId, write: false, relationPaths: true, readRefs: [source.commit],
 	});
 	if (!connection || connection.repositoryId !== source.repository) throw new CapacityGovernanceError(
 		'execution_node_source_repository_changed', `Node ${node.id} proposal repository changed.`, 409);
@@ -221,7 +223,7 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 	if (!validation.ok) throw new CapacityGovernanceError('execution_node_source_invalid', `Node ${node.id} proposal is no longer valid.`, 409);
 	if (!node.workItemId && (node.kind === 'planning' || node.kind === 'estimating')) {
 		const proposal = record(validation.data);
-		return [source, ...await canonicalProposalContextRefs(store, node, [
+		return [source, ...await canonicalProposalContextRefs(store, { ...node, projectId: sourceProjectId }, [
 			...array(proposal.objectiveRefs), ...array(proposal.evidenceRefs),
 			...(proposal.discussionRef ? [proposal.discussionRef] : []),
 			...array(record(proposal.executionPlan).workItems).flatMap((item) => array(record(item).contextRefs)),

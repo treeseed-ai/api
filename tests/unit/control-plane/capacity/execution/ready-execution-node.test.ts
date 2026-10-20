@@ -231,7 +231,7 @@ describe('direct ready-node admission input', () => {
 				acceptanceCriteria: ['Focused tests pass.'],
 			}] },
 		} } });
-		const refs = await workItemContext({ getProjectTreeDxLibrary: vi.fn(async () => ({
+		const refs = await workItemContext({ getGovernanceProposal: async () => ({ projectId, teamId: 'team' }), getProjectTreeDxLibrary: vi.fn(async () => ({
 			repositoryId: 'repository', contentRepositoryUrl: 'https://github.com/treeseed-ai/sdk-library.git',
 		})) } as never, {
 			teamId: 'team', projectId, id: kind, kind, pairRole: null, workItemId: null, sourceRef,
