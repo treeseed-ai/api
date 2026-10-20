@@ -1,5 +1,6 @@
 import type { GovernanceProposalReadiness } from '../../../../governance/proposal-readiness.ts';
 import type { ControlPlaneStore } from '../../../../persistence/store.ts';
+import { estimateSchema } from '@treeseed/sdk/agent-capacity';
 import { hasCompleteExecutablePlan, readExactProposal } from '../../../../governance/executable-proposal.ts';
 import { loadProposalBlockingFeedback } from '../../../../capacity/services/capacity/execution/proposal-planning-source.ts';
 
@@ -18,8 +19,18 @@ export async function governanceProposalReadinessMethod(this: ControlPlaneStore,
 		&& Number(row.evidence.proposalVersion) === proposalVersion);
 	let executionPlanReady = false;
 	let exactSourceProblem: string | null = null;
+	let estimateCount = 0;
+	let missingParticipantEstimates: string[] = [];
+	let missingReviewerClasses: string[] = [];
 	if (proposal.projectId) try {
 		const exact = await readExactProposal(this, proposal as unknown as Row);
+		const plan = record(exact.definition.executionPlan);
+		const workItems = Array.isArray(plan.workItems) ? plan.workItems.map(record) : [];
+		estimateCount = workItems.filter((item) => estimateSchema.safeParse(item.estimate).success).length;
+		missingParticipantEstimates = [...new Set(workItems.filter((item) => !estimateSchema.safeParse(item.estimate).success)
+			.map((item) => text(item.agentClass)).filter(Boolean))].sort((left, right) => left.localeCompare(right));
+		missingReviewerClasses = workItems.some((item) => item.review === 'required'
+			&& !estimateSchema.safeParse(item.reviewEstimate).success) ? ['reviewer'] : [];
 		executionPlanReady = exact.definition.status !== 'withdrawn' && hasCompleteExecutablePlan(exact.definition);
 	} catch (error) {
 		exactSourceProblem = text(record(error).code) || (error instanceof Error ? error.message : 'proposal_exact_source_invalid');
@@ -33,10 +44,10 @@ export async function governanceProposalReadinessMethod(this: ControlPlaneStore,
 		votingReady: missingVoting.length === 0,
 		missingContent, missingVoting,
 		independentReviewCount: reviews.length,
-		estimateCount: executionPlanReady ? 1 : 0,
+		estimateCount,
 		unresolvedBlockerCount: blockers.length,
-		missingParticipantEstimates: [],
-		missingReviewerClasses: [],
+		missingParticipantEstimates,
+		missingReviewerClasses,
 		participationVersionReady: true,
 		authorIndependent: true,
 		executionPlanReady,
