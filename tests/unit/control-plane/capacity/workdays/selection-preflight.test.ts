@@ -9,7 +9,7 @@ vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', async i
 import { parsePublicWorkdayIntent, WorkdayPreflightService } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-preflight-service.ts';
 import { canonicalWorkdayShares } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-scheduling-service.ts';
 
-const input = () => ({ profileId: 'default', projects: ['sdk'], startsAt: new Date().toISOString(), durationSeconds: 600, agentSelection: { agentSlugs: ['reviewer'], activityTypes: ['reviewing'] } });
+const input = () => ({ profileId: 'default', projects: ['sdk'], startsAt: new Date().toISOString(), durationSeconds: 600, groupIds: ['portfolio-atlas'], agentSelection: { activityTypes: ['reviewing'] } });
 const exactDigest = (value: string) => `sha256:${createHash('sha256').update(value).digest('hex')}`;
 const executionNodeRow = (value: { id: string; kind: string; agentClass: string; digest: string; expectedSeconds: number; nodeRevision?: number; decisionRevision?: number }) => ({
 	id: value.id, team_id: 'team', project_id: 'project-sdk', kind: value.kind, pair_role: value.kind === 'reviewing' ? 'reviewer' : value.kind === 'acting' ? 'actor' : null,
@@ -235,10 +235,11 @@ describe('public workday selection custody', () => {
 			const supplied = { ...input(), agentSelection: invalid }, held = structuredClone(supplied);
 			expect(() => parsePublicWorkdayIntent('team', supplied)).toThrow(/invalid/u); expect(supplied).toEqual(held);
 		}
-		expect(parsePublicWorkdayIntent('team', { ...input(), agentSelection: { ...agentSelection, agentSlugs: [' reviewer ', 'reviewer'] } }).agentSelection?.agentSlugs).toEqual(['reviewer']);
+		expect(() => parsePublicWorkdayIntent('team', { ...input(), agentSelection: { ...agentSelection, agentSlugs: [' reviewer ', 'reviewer'] } })).toThrow(/invalid/u);
 		for (const identity of ['A', 'a', 'id._:/-', 'x'.repeat(200)]) {
 			const supplied = { ...input(), agentSelection: { ...agentSelection, agentSlugs: [` ${identity} `, identity] } }, held = structuredClone(supplied);
-			expect(parsePublicWorkdayIntent('team', supplied).agentSelection?.agentSlugs).toEqual([identity]); expect(supplied).toEqual(held);
+			expect(() => parsePublicWorkdayIntent('team', supplied)).toThrow(/invalid/u); expect(supplied).toEqual(held);
+			expect(parsePublicWorkdayIntent('team', { ...input(), groupIds: [identity] }).groupIds).toEqual([identity]);
 		}
 		const canonical = parsePublicWorkdayIntent('team', input());
 		expect(parsePublicWorkdayIntent('team', canonical as unknown as Record<string, unknown>)).toEqual(canonical);
@@ -309,7 +310,7 @@ describe('public workday selection custody', () => {
 			],
 		});
 		const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', { ...input(), planningOnly: true,
-			proposalIds: ['proposal'], agentSelection: { agentSlugs: ['reviewer'], activityTypes: ['estimating'] } }), 'actor');
+			proposalIds: ['proposal'], groupIds: ['portfolio-atlas'], agentSelection: { activityTypes: ['estimating'] } }), 'actor');
 		expect(receipt.selectedDemands.map((demand) => demand.sourceId)).toEqual(['node-estimate']);
 		expect(f.stored().runInput.parameters.planningOnly).toBe(true);
 		expect(f.stored().runInput.parameters.proposalIds).toEqual(['proposal']);
@@ -350,6 +351,7 @@ describe('public workday selection custody', () => {
 		const f = fixture(); const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', input()), 'actor');
 		delete f.stored().runInput.parameters.agentSelection;
 		await f.service.start('team', { preflightId: receipt.id, preflightDigest: receipt.preflightDigest, idempotencyKey: 'start' }, 'actor');
-		expect(f.store.createCapacityWorkdayRun.mock.calls[0]![1].parameters.agentSelection.agentSlugs).toEqual(['reviewer']);
+		expect(f.store.createCapacityWorkdayRun.mock.calls[0]![1].parameters.agentSelection.activityTypes).toEqual(['reviewing']);
+		expect(f.store.createCapacityWorkdayRun.mock.calls[0]![1].parameters.groupIds).toEqual(['portfolio-atlas']);
 	});
 });

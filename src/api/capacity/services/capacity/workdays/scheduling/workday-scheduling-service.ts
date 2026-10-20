@@ -95,7 +95,7 @@ async function resolveCapacityWorkdayPreflight(
 	run: DurableCapacityWorkdayRun,
 ) {
 	await store.ensureInitialized();
-	const parameters = run.parameters;
+	let parameters = run.parameters;
 	const executionMode = run.executionMode;
 	const providerId = text(run.capacityProviderId ?? parameters.providerId);
 	if (!providerId) {
@@ -121,6 +121,15 @@ async function resolveCapacityWorkdayPreflight(
 		const exact = await readExactProposal(store, proposal);
 		return { proposalId, projectId: text(proposal.projectId), ref: exact.ref, definition: exact.definition };
 	}));
+	const proposalGroups = selectedProposals.flatMap(proposal => Array.isArray(proposal.definition.groupIds)
+		? proposal.definition.groupIds.map(value => text(value)).filter(Boolean) : []);
+	const groupIds = [...new Set(Array.isArray(parameters.groupIds) ? parameters.groupIds.map(value => text(value)) : proposalGroups)].sort();
+	for (const proposal of selectedProposals) {
+		const groups = Array.isArray(proposal.definition.groupIds) ? proposal.definition.groupIds.map(value => text(value)) : [];
+		if (!groups.some(id => groupIds.includes(id))) throw new CapacityGovernanceError('capacity_workday_proposal_group_required',
+			'Proposal planning requires shared proposal groups and subscribed project agents.', 409, { proposalId: proposal.proposalId });
+	}
+	if (groupIds.length) parameters = { ...parameters, groupIds };
 	const agentProfiles = new Map<string, Awaited<ReturnType<typeof resolveWorkdayAgentProfileSnapshot>>>();
 	for (const project of projects) {
 		const library = await store.getProjectTreeDxLibrary(project.id);
@@ -136,7 +145,7 @@ async function resolveCapacityWorkdayPreflight(
 		const contentRoot = text(library?.contentPath).replace(/^\/+|\/+$/gu, '');
 		const immutableRef = acceptedLibraryRevision(library ?? {}, project.id);
 		contexts.set(project.id, { contentRoot: contentRoot || capacityWorkdayContentRoot(project), repositoryId, immutableRef });
-		const profileSnapshot=await resolveWorkdayAgentProfileSnapshot(store, project.id, parameters.agentSelection);
+		const profileSnapshot=await resolveWorkdayAgentProfileSnapshot(store, project.id, parameters.agentSelection, groupIds.length ? groupIds : undefined);
 		agentProfiles.set(project.id,profileSnapshot);
 		const projectProposals = selectedProposals.filter((proposal) => proposal.projectId === project.id);
 		for (const proposal of projectProposals) proposalContexts.set(proposal.proposalId, proposal.ref);

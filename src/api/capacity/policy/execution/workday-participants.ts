@@ -45,8 +45,15 @@ export function workdayParticipants(parameters: Row, options: { includeEstimated
 				.filter((activity): activity is 'planning' | 'estimating' => activity === 'planning' || activity === 'estimating');
 			for (const activity of activities) {
 				if (!validation.data.activityProfiles[activity]) continue;
-				if (activity === 'planning') participants.push({ projectId, definition: validation.data,
-					activity, id: `${projectId}/${validation.data.id}:planning` });
+				if (activity === 'planning') {
+					const proposals = array(record(parameters.proposalsByProjectId)[projectId]).map(record);
+					if (array(parameters.groupIds).length && proposals.length) for (const proposal of proposals) {
+						const proposalId = text(proposal.id);
+						if (proposalId) participants.push({ projectId, proposalId, definition: validation.data,
+							activity, id: `${projectId}/${validation.data.id}:planning:${proposalKey(proposalId)}` });
+					} else participants.push({ projectId, definition: validation.data,
+						activity, id: `${projectId}/${validation.data.id}:planning` });
+				}
 				else for (const proposalValue of array(record(parameters.proposalsByProjectId)[projectId])) {
 					const proposal = record(proposalValue);
 					const proposalId = text(proposal.id);
