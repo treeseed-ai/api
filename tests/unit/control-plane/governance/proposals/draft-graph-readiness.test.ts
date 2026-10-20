@@ -16,6 +16,7 @@ vi.mock('../../../../../src/api/control-plane/repositories/capacity/execution/ex
 	() => ({ reconcileExecutionGraph: vi.fn(async () => undefined) }));
 
 import { governanceProposalReadinessMethod } from '../../../../../src/api/store/governance/policy/contracts/governance-proposal-readiness.ts';
+import { ProjectAgentClassRepository } from '../../../../../src/api/capacity/repositories/projects/agents/project-agent-class.ts';
 
 describe('draft proposal graph readiness', () => {
 	it('keeps group approval blocked when subscribed project teams have not contributed', async () => {
@@ -35,12 +36,14 @@ describe('draft proposal graph readiness', () => {
 				status: 'active', handlerRefs: { agents: [agent(`${project}/architect`)] } }], page: { hasMore: false, nextCursor: null } }),
 			all: async () => [],
 		};
+		const classes = vi.spyOn(ProjectAgentClassRepository.prototype, 'listPage')
+			.mockImplementation(async project => store.listProjectAgentClassesPage(project) as never);
 		try {
 			const readiness = await governanceProposalReadinessMethod.call(store as never, 'proposal');
 			expect(readiness).toMatchObject({ executionPlanReady: true, votingReady: false,
 				participationVersionReady: false, authorIndependent: false,
 				missingParticipantEstimates: ['admin/admin/architect', 'ui/ui/architect'] });
-		} finally { read.mockImplementation(original); }
+		} finally { classes.mockRestore(); read.mockImplementation(original); }
 	});
 	it('uses the exact complete draft without requiring a separate feasibility Reviewer', async () => {
 		const store = {

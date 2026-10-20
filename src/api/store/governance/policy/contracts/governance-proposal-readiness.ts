@@ -5,6 +5,7 @@ import { hasCompleteExecutablePlan, proposalApprovalFingerprint, readExactPropos
 import { loadProposalBlockingFeedback } from '../../../../capacity/services/capacity/execution/proposal-planning-source.ts';
 import { resolveWorkdayAgentProfileSnapshot } from '../../../../capacity/services/capacity/workdays/policy/workday-agent-profile-policy.ts';
 import { isDeepStrictEqual } from 'node:util';
+import { ProjectAgentClassRepository } from '../../../../capacity/repositories/projects/agents/project-agent-class.ts';
 
 type Row = Record<string, unknown>;
 function record(value: unknown): Row { if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row; if (typeof value === 'string') try { return record(JSON.parse(value)); } catch { return {}; } return {}; }
@@ -14,9 +15,11 @@ async function groupParticipation(store: ControlPlaneStore, proposal: Row, defin
 	const groups = Array.isArray(definition.groupIds) ? definition.groupIds.map(text) : [];
 	if (!groups.length) return { missing: [] as string[], current: true, independent: true };
 	const projects = await store.listTeamProjects(text(proposal.teamId));
+	const classes = new ProjectAgentClassRepository(store);
 	const members = (await Promise.all(projects.map(async project => {
 		try {
-			const snapshot = await resolveWorkdayAgentProfileSnapshot(store, project.id, undefined, groups);
+			const snapshot = await resolveWorkdayAgentProfileSnapshot({ listProjectAgentClassesPage: (id, page) =>
+				classes.listPage(id, { ...page, cursor: null }) }, project.id, undefined, groups);
 			return snapshot.agents.filter(entry => entry.definition.groupIds?.some(id => groups.includes(id))
 				&& (entry.definition.activityProfiles.planning || entry.definition.activityProfiles.estimating))
 				.map(entry => ({ key: `${project.id}/${entry.definition.id}`, id: entry.definition.id, agentClass: entry.definition.agentClass }));
