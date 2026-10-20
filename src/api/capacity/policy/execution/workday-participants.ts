@@ -29,7 +29,7 @@ export interface WorkdayParticipant {
  * work. Default planning includes estimating only where an exact selected
  * proposal supplies work for that agent; autonomous planning needs no proposal.
  */
-export function workdayParticipants(parameters: Row): WorkdayParticipant[] {
+export function workdayParticipants(parameters: Row, options: { includeEstimated?: boolean } = {}): WorkdayParticipant[] {
 	const snapshots = record(parameters.agentProfilesByProjectId);
 	const selectedActivities = array(record(parameters.agentSelection).activityTypes).map(text).filter(Boolean);
 	const explicitActivitySelection = selectedActivities.length > 0;
@@ -52,9 +52,9 @@ export function workdayParticipants(parameters: Row): WorkdayParticipant[] {
 					const proposalId = text(proposal.id);
 					const items = array(record(proposal.executionPlan).workItems).map(record);
 					const canEstimate = items.some(item => text(item.agentClass) === validation.data!.agentClass
-						&& Object.keys(record(item.estimate)).length === 0)
+						&& (options.includeEstimated || Object.keys(record(item.estimate)).length === 0))
 						|| (validation.data.agentClass === 'reviewer' && items.some(item => item.review === 'required'
-							&& Object.keys(record(item.reviewEstimate)).length === 0));
+							&& (options.includeEstimated || Object.keys(record(item.reviewEstimate)).length === 0)));
 					if (proposalId && canEstimate) participants.push({ projectId, proposalId,
 						definition: validation.data, activity, id: `${projectId}/${validation.data.id}:estimating:${proposalKey(proposalId)}` });
 				}

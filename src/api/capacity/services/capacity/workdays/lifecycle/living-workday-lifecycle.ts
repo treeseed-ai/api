@@ -62,7 +62,6 @@ async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: 
 	const first = plan.planningRounds[0]!;
 	const prefix = `planning:${plan.id}:${first.round}:`;
 	const initialAgentIds = first.assignmentIds.map((id) => id.slice(prefix.length));
-	const planningAgentIds = initialAgentIds.filter((id) => id.endsWith(':planning'));
 	const projectIds = Array.isArray(run.parameters.scheduledProjectIds) ? run.parameters.scheduledProjectIds : [];
 	for (const projectId of projectIds) {
 		if (typeof projectId !== 'string') continue;
@@ -95,8 +94,10 @@ async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: 
 	return { sources, proposalIds: selectedProposalIds.sort(),
 		// Terminal explicit scope is not autonomous proposal discovery. Keep the
 		// initial phase window, but do not repeat already-decided planning work.
+		// Estimators are dynamic: only the current exact proposal can select them;
+		// falling back to the initial estimator IDs creates unmaterializable rounds.
 		agentIds: selected.size && !hasPlanningProposals ? []
-			: [...new Set([...(planningAgentIds.length ? planningAgentIds : initialAgentIds), ...estimators])].sort() };
+			: [...new Set([...initialAgentIds.filter(id => id.endsWith(':planning')), ...estimators])].sort() };
 }
 
 function advanceRounds(plan: AppliedWorkday, states: Map<string, string>, now: string): AppliedWorkday {

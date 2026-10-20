@@ -75,7 +75,7 @@ export async function completionFixture(settled = true) {
 
 /** Original production ordering: native settlement commits, then closeout
  * expires before completion. Measurements and sandbox receipts are inputs. */
-export async function expiredCloseoutFixture(settled = true, canonicalCounters = false, producedAfterTeardown = false) {
+export async function expiredCloseoutFixture(settled = true, canonicalCounters = false, producedAfterTeardown = false, reservationState: 'reserved' | 'consuming' = 'consuming') {
 	const f = await completionFixture(false);
 	try {
 		const runnerId = 'original-runner', nativeUsage = canonicalCounters
@@ -83,6 +83,8 @@ export async function expiredCloseoutFixture(settled = true, canonicalCounters =
 			: { activeSeconds: 1, elapsedSeconds: 2, tokens: 7 };
 		const usageActual = { ...terminalUsage.usageActual, ...(canonicalCounters ? { cachedInputTokens: 3, reasoningTokens: 2 } : {}), nativeUsage };
 		await f.query("UPDATE capacity_provider_assignments SET runner_id=?,metadata_json=jsonb_set(metadata_json::jsonb,'{operationalState}','\"closeout\"'::jsonb)::text WHERE id=?", [runnerId, f.attempt.id]);
+		// Both states are canonical active reservations; admission retains reserved until settlement.
+		await f.query('UPDATE capacity_reservations SET state=? WHERE id=?', [reservationState, f.attempt.reservationId]);
 		const provider=createProviderAssignmentService(f.owner as unknown as Parameters<typeof createProviderAssignmentService>[0]);
 		if(settled) await provider.settle(
 			{ principal: { ...principal, scopes: ['provider:usage:write', 'provider:assignments:write'] } }, f.attempt.id,

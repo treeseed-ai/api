@@ -8,9 +8,9 @@ import {proveNativeTerminalObservation} from '../../../../capacity/execution/adm
 import {createCapacityControlPlane} from '../../../../../../../src/api/capacity/control-plane.ts';
 
 describe('terminal observation through independent native PostgreSQL owners',()=>{
- it('independent native owners settle original diagnostic usage once while preserving expired history and canonical null completion',async()=>{
+ it.each(['reserved', 'consuming'] as const)('independent native owners settle original diagnostic usage once while preserving expired history and canonical null completion (reservation=%s)',async reservationState=>{
   const native=await postgresGraph();try{
-   const supplied=await expiredCloseoutFixture(false,true,true);const {attempt,input}=supplied;
+   const supplied=await expiredCloseoutFixture(false,true,true,reservationState);const {attempt,input}=supplied;
    try{await copyNativeAssignmentCustody(native.left,supplied,['capacity_workday_runs','execution_nodes','capacity_reservations','capacity_provider_assignments','capacity_admission_counters','capacity_reservation_counter_claims','capacity_usage_actuals','capacity_ledger_entries','capacity_workday_events','capacity_audit_events']);}
    finally{await supplied.close();vi.useRealTimers();}
    const stores=[native.left,native.right].map(db=>new ControlPlaneStore({TREESEED_ENVIRONMENT:'test'},db));for(const store of stores)store.initializationPromise=Promise.resolve();const owners=stores.map(store=>createCapacityControlPlane(store));

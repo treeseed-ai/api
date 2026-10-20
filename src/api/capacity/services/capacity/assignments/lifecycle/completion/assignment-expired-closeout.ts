@@ -54,7 +54,7 @@ export async function acknowledgeExpiredCloseout(database: CapacityGovernanceDat
 	// A retained diagnostic is not a settlement. Transfer only the original
 	// provider/attempt's matching native observation through the same exactly-once
 	// accounting service; unknown, conflicting or incremental usage stays held.
-	if(recovery.reasonCode==='expired_lease_side_effect_evidence_present' && reservation?.state==='consuming' && entries.length===0 && usages.length===0){
+	if(recovery.reasonCode==='expired_lease_side_effect_evidence_present' && reservation && ['reserved','consuming'].includes(String(reservation.state)) && entries.length===0 && usages.length===0){
 		if(reservation.settlement_token || reservation.usage_report_token)return deny();
 		const reports=await database.all("SELECT * FROM capacity_usage_actuals WHERE assignment_id=?",[assignment.id]);
 		const report=reports[0], reportedNative=record(report?.native_usage_json);

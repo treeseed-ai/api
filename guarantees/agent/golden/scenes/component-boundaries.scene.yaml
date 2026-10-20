@@ -3013,6 +3013,22 @@ workflow:
     action: { verifier: api.golden.book-body-preservation-native }
     expect: { status: passed }
 
+  - id: expired-measured-unsettled-persistence-reserved
+    action: { verifier: api.golden.expired-measured-unsettled-persistence-reserved }
+    expect: { status: passed }
+
+  - id: expired-measured-unsettled-persistence-consuming
+    action: { verifier: api.golden.expired-measured-unsettled-persistence-consuming }
+    expect: { status: passed }
+
+  - id: expired-measured-unsettled-postgres-reserved
+    action: { verifier: api.golden.expired-measured-unsettled-postgres-reserved }
+    expect: { status: passed }
+
+  - id: expired-measured-unsettled-postgres-consuming
+    action: { verifier: api.golden.expired-measured-unsettled-postgres-consuming }
+    expect: { status: passed }
+
   - id: communication-proposal-recovery-unit
     action: { verifier: api.golden.communication-proposal-recovery-unit }
     expect: { status: passed }

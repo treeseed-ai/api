@@ -1,3 +1,4 @@
+import {proveNativeStoppedReportContext} from './reporting/native-stopped-report-context.ts';
 import {expectWorkdayLifecycleHistory} from '../scheduling/architecture/node-birth-history.ts';
 import {describe,expect,it} from 'vitest';
 import {appliedWorkdaySchema,compileWorkday} from '@treeseed/sdk/agent-capacity';
@@ -6,6 +7,10 @@ import {CapacityWorkdayRunWriteRepository} from '../../../../../../src/api/capac
 import {CapacityWorkdayEventRepository} from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-event.ts';
 
 describe('original Workday lifecycle and public observation custody',()=>{
+ it('reconciles a projected cancelled never-admitted turn through real SQL lifecycle history and the original Reporter guard',async()=>{
+  const f=await settlementDatabase();try{await proveNativeStoppedReportContext(f.owner,{query:(sql,params)=>f.db.query(sql,params)},'workday');}finally{await f.db.close();}
+ });
+
  it('retains initial native applied-plan creation as one null-to-active observation before every later transition and exact replay',async()=>{
   const f=await settlementDatabase();try{
    const original=(await f.reads.get('team','workday'))!,parsed=appliedWorkdaySchema.parse(original.parameters.appliedPlan),plan={...compileWorkday({id:original.id,teamId:original.teamId,executionMode:original.executionMode,policyId:parsed.policyId,policyRevision:parsed.policyRevision,policy:parsed.policySnapshot,startsAt:parsed.startsAt,agentIds:['renamed-native-planner']}),admittedSecondsByProject:parsed.admittedSecondsByProject,admittedSecondsByAgentClass:parsed.admittedSecondsByAgentClass,state:'active' as const,activatedAt:parsed.startsAt};
