@@ -14,6 +14,19 @@ const classes = [
 ];
 
 describe('exact activity selection before living-node admission', () => {
+	it('selects every subscribed project agent across classes while leaving unrelated agents out', () => {
+		const rows = ['architect', 'engineer', 'reviewer', 'researcher'].map((agentClass, index) => ({
+			id: `class-${index}`, slug: agentClass, status: 'active', handlerRefs: { agents: [{
+				...definition(agentClass, agentClass, { planning: profile('writer') }),
+				groupIds: [agentClass === 'researcher' ? 'market-research' : 'ui-snapshot-admin-chart'],
+			}] },
+		}));
+		const held = structuredClone(rows);
+		const result = compileWorkdayAgentProfileSnapshot(rows, undefined, ['ui-snapshot-admin-chart']);
+		expect(result.agents.map(entry => entry.definition.id)).toEqual(['sdk/architect', 'sdk/engineer', 'sdk/reviewer']);
+		expect(() => compileWorkdayAgentProfileSnapshot(rows, undefined, ['unknown-group'])).toThrow(/no eligible/u);
+		expect(rows).toEqual(held);
+	});
 	it('intersects selectors without copying or expanding definitions', () => {
 		const result = compileWorkdayAgentProfileSnapshot(classes, { agentSlugs: ['reviewer'], activityTypes: ['reviewing'] });
 		expect(result.agents).toHaveLength(1);
