@@ -102,6 +102,7 @@ describe('immutable assignment-attempt construction', () => {
 			digest: `sha256:${'2'.repeat(64)}` } as never;
 		if (subject === 'shared-proposal') planning.node.sourceRef = { ...sourceRef, repository: 'ui-library' };
 		planning.node.requestedPermissions = { content: { read: ['proposal', 'objective', 'book'], write: ['note'] }, tools: ['source.read'] } as never;
+		if (subject === 'shared-proposal') planning.node.requestedPermissions.content.write.push('proposal');
 		planning.effectiveProfile.permissionCeiling = planning.node.requestedPermissions;
 		const team = { store: 'treedx', model: 'objective', id: 'team-objective', repository: 'team-library',
 			commit: '8'.repeat(40), path: 'objectives/team.md', revision: 1, digest: `sha256:${'8'.repeat(64)}` };
@@ -115,7 +116,8 @@ describe('immutable assignment-attempt construction', () => {
 			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
 		expect(result.assignment.contextRefs).toContainEqual(team);
 		expect(result.assignment.workspace).toMatchObject({ mode: 'treedx', repository: 'sdk-library', baseCommit: '9'.repeat(40) });
-		expect(result.assignment.grant.contentWrite).toEqual([expect.objectContaining({ repository: 'sdk-library' })]);
+		expect(result.assignment.grant.contentWrite).toEqual(planning.node.requestedPermissions.content.write
+			.map(model => expect.objectContaining({ model, repository: 'sdk-library' })));
 		expect(result.assignment.grant.contentRead).toContainEqual(team);
 		if (subject === 'shared-proposal') expect(result.assignment.grant.contentRead).toContainEqual(planning.node.sourceRef);
 	});
