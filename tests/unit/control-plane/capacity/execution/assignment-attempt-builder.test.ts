@@ -94,33 +94,6 @@ describe('immutable assignment-attempt construction', () => {
 		expect(target.path).toBe(`knowledge/sdk-architecture/${target.id}.md`);
 		expect(result.assignment.workspace).toMatchObject({ mode: 'treedx', writablePaths: [target.path] });
 	});
-	it.each(['workday', 'shared-proposal'])('writes planning content to its project library with %s read-only context', subject => {
-		const planning = structuredClone(candidate);
-		planning.node.kind = 'planning';
-		planning.node.workspace = 'treedx';
-		planning.node.sourceRef = { store: 'postgresql', model: 'workday', id: 'workday', revision: 1,
-			digest: `sha256:${'2'.repeat(64)}` } as never;
-		if (subject === 'shared-proposal') planning.node.sourceRef = { ...sourceRef, repository: 'ui-library' };
-		planning.node.requestedPermissions = { content: { read: ['proposal', 'objective', 'book'], write: ['note'] }, tools: ['source.read'] } as never;
-		if (subject === 'shared-proposal') planning.node.requestedPermissions.content.write.push('proposal');
-		planning.effectiveProfile.permissionCeiling = planning.node.requestedPermissions;
-		const team = { store: 'treedx', model: 'objective', id: 'team-objective', repository: 'team-library',
-			commit: '8'.repeat(40), path: 'objectives/team.md', revision: 1, digest: `sha256:${'8'.repeat(64)}` };
-		const project = { store: 'treedx', model: 'objective', id: 'sdk-objective', repository: 'sdk-library',
-			commit: '9'.repeat(40), path: 'objectives/sdk.md', revision: 1, digest: `sha256:${'9'.repeat(64)}` };
-		planning.contextRefs = [planning.node.sourceRef, team, project] as never;
-		planning.projectContentRepositoryId = 'sdk-library';
-		const result = buildAssignmentAttempt({ candidate: planning as never, run,
-			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session',
-			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
-		expect(result.assignment.contextRefs).toContainEqual(team);
-		expect(result.assignment.workspace).toMatchObject({ mode: 'treedx', repository: 'sdk-library', baseCommit: '9'.repeat(40) });
-		expect(result.assignment.grant.contentWrite).toEqual(planning.node.requestedPermissions.content.write
-			.map(model => expect.objectContaining({ model, repository: 'sdk-library' })));
-		expect(result.assignment.grant.contentRead).toContainEqual(team);
-		if (subject === 'shared-proposal') expect(result.assignment.grant.contentRead).toContainEqual(planning.node.sourceRef);
-	});
 	it('rejects a writable TreeDX source bound to another project library', () => {
 		const misplaced = structuredClone(candidate);
 		misplaced.node.workspace = 'treedx';

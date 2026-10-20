@@ -158,7 +158,7 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string, run: Durable
 					repository: treeDxBase.repository, commit: treeDxBase.commit,
 					path: `knowledge/${bookRef.id}/${knowledgeId(candidate.node.id)}.md` }]
 					: []
-				: [model === candidate.node.sourceRef.model && candidate.node.sourceRef.path
+				: [model === candidate.node.sourceRef.model && candidate.node.sourceRef.repository === treeDxBase.repository && candidate.node.sourceRef.path
 				? candidate.node.sourceRef
 				: ({ store: 'treedx' as const, model, id: `${assignmentId}:${model}`,
 					repository: treeDxBase.repository, commit: treeDxBase.commit,
