@@ -159,6 +159,7 @@ async function resolveCapacityWorkdayPreflight(
 	const frozenProfilesByProjectId = Object.fromEntries(agentProfiles);
 	const agentIds = workdayParticipants({
 		agentSelection: parameters.agentSelection,
+		groupIds,
 		agentProfilesByProjectId: frozenProfilesByProjectId,
 		proposalsByProjectId: Object.fromEntries(projects.map(project => [project.id,
 			selectedProposals.filter(proposal => proposal.projectId === project.id).map(proposal => proposal.definition)])),
