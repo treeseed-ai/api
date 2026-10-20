@@ -22,17 +22,17 @@ it('reads shared planning proposal context through its owning project binding an
 		vi.mocked(resolveKnowledgeGatewayConnection).mockImplementation(async (_store, input) => ({
 			repositoryId: input.projectId === 'ui' ? 'repository' : 'admin-library', client: gateway,
 		}) as never);
-		gateway.readRepositoryFile.mockResolvedValue({ resolvedRef: sourceRef.commit, file: { frontmatter: {
-			schemaVersion: 'treeseed.proposal/v1', id: 'proposal', projectId: 'ui', groupIds: ['portfolio-atlas'],
-			title: 'Complete scoped activity snapshots', request: 'Plan the shared UI contract and Admin integration.', status: 'draft',
-		} } });
+		const proposal = readyProposal(), sharedGit = { store: 'git' as const, model: 'repository', id: 'ui-source', repository: 'treeseed-ai/ui', commit: 'e'.repeat(40) };
+		Object.assign(proposal, { id: 'proposal', projectId: 'ui', groupIds: ['portfolio-atlas'] });
+		Object.assign(proposal.executionPlan.workItems[0]!, { contextRefs: [sharedGit] });
+		gateway.readRepositoryFile.mockResolvedValue({ resolvedRef: sourceRef.commit, file: { frontmatter: proposal } });
 		const fetchImpl = vi.fn(async () => new Response('d'.repeat(40)));
 		const store = { getGovernanceProposal: async () => ({ id: 'proposal', projectId: 'ui', teamId }),
 			getProjectTreeDxLibrary: async () => ({ repositoryId: 'repository' }), config: { fetchImpl }, all: async () => [],
 			listHubRepositories: async () => [{ id: 'admin-source', role: 'software', provider: 'github', owner: 'treeseed-ai', name: 'admin', currentBranch: 'staging' }] };
 		const read = workItemContext(store, { id: 'shared-planning', projectId: 'admin', teamId: 'team',
 			kind: 'planning', workItemId: null, sourceRef, requestedPermissions: permissions } as never);
-		if (teamId === 'team') expect(await read).toEqual([sourceRef, { store: 'git', model: 'repository',
+		if (teamId === 'team') expect(await read).toEqual([sourceRef, sharedGit, { store: 'git', model: 'repository',
 			id: 'admin-source', repository: 'treeseed-ai/admin', commit: 'd'.repeat(40) }]);
 		else await expect(read).rejects.toMatchObject({ code: 'execution_node_source_repository_changed' });
 	}
