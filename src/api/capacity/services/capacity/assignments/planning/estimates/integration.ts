@@ -168,7 +168,7 @@ async function integrateAssignmentEstimateOnce(
 		principal: { id: assignment.agentId, name: assignment.agentId },
 		update: { title: proposal.title, summary: proposal.summary, body: proposal.body,
 			proposalTypes: proposal.proposalTypes, status: allEstimated ? 'ready' : merged.status,
-			objectiveRefs: merged.objectiveRefs, evidenceRefs: merged.evidenceRefs,
+			groupIds: merged.groupIds, objectiveRefs: merged.objectiveRefs, evidenceRefs: merged.evidenceRefs,
 			discussionRef: merged.discussionRef, executionPlan: merged.executionPlan,
 			workdayId: assignment.workDayId, expectedProposalVersion: proposal.activeVersion,
 			changeReason: `Integrate ${attempt.agentClass} estimates from assignment ${assignment.id}.` } });

@@ -17,7 +17,7 @@ import { parseFrontmatterDocument } from '../../content/frontmatter.ts';
 import { validateAgentDefinitionSource } from '../repositories/agents/agent-definition-source.ts';
 import { validateProposalTypeSource } from './proposal-type-source.ts';
 
-const operationalModels=new Map([...Object.entries(AGENT_OPERATIONAL_CONTENT_COLLECTIONS).map(([model,collection])=>[collection,model] as const),['objectives','objective'],['agent-tests','agent_test'],['execution-plans','execution_plan']]);
+const operationalModels=new Map([...Object.entries(AGENT_OPERATIONAL_CONTENT_COLLECTIONS).map(([model,collection])=>[collection,model] as const),['objectives','objective'],['agent-tests','agent_test'],['execution-plans','execution_plan'],['groups','group'],['group-edges','group_edge']]);
 function operationalModel(path:string){const collection=path.split('/').at(-2)??path.split('/')[0]??'';return operationalModels.get(collection)??operationalModels.get(path.split('/')[0]??'')??null;}
 
 export async function additionalPublicationParentRefs(connection: {

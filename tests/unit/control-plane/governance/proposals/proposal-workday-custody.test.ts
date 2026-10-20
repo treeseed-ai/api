@@ -5,11 +5,12 @@ import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowle
 import { CapacityWorkdayRunRepository } from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
 import { recordTreeDxAuthoringState } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { projectTreeDxCommitSignals } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-change-projector.ts';
+import { serializeProposalDocument } from '../../../../../src/api/governance/proposal-document.ts';
 
 vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', async original => ({
 	...await original<typeof import('../../../../../src/api/knowledge/gateway-treedx-connection.ts')>(), resolveKnowledgeGatewayConnection: vi.fn(),
 }));
-vi.mock('../../../../../src/api/governance/proposal-document.ts', () => ({ serializeProposalDocument: () => 'next' }));
+vi.mock('../../../../../src/api/governance/proposal-document.ts', () => ({ serializeProposalDocument: vi.fn(() => 'next') }));
 vi.mock('../../../../../src/api/knowledge/changesets/apply-text-changeset.ts', () => ({ applyTextChangeset: async () => ({
 	files: [{ path: 'proposals/governance/example.mdx', afterSha256: createHash('sha256').update('next').digest('hex') }],
 }) }));
@@ -36,6 +37,17 @@ function fixture(mode = 'simulation') {
 
 describe('workday-scoped proposal authoring', () => {
 	beforeEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); });
+	it('retains proposal groups on partial edits and applies explicit membership revisions', async () => {
+		const { input, client, base } = fixture();
+		client.readRepositoryFile.mockResolvedValue({ resolvedRef: base,
+			file: { content: '---\ngroupIds: [ui-snapshot-admin-chart]\n---\n' } });
+		await commitProposalVersionContent(input);
+		expect(serializeProposalDocument).toHaveBeenLastCalledWith(expect.objectContaining({ groupIds: ['ui-snapshot-admin-chart'] }));
+		await commitProposalVersionContent({ ...input, update: { ...input.update, groupIds: ['service-design'] } });
+		expect(serializeProposalDocument).toHaveBeenLastCalledWith(expect.objectContaining({ groupIds: ['service-design'] }));
+		await commitProposalVersionContent({ ...input, update: { ...input.update, groupIds: [] } });
+		expect(serializeProposalDocument).toHaveBeenLastCalledWith(expect.objectContaining({ groupIds: [] }));
+	});
 	it('revises private proposal bytes using only the original frozen governed contract even after the library moves', async () => {
 		const {input,client,run,path}=fixture(), frozen='c'.repeat(40), source='b'.repeat(40);
 		run.parameters.workdayContextByProjectId['project-1'].commit=frozen;
