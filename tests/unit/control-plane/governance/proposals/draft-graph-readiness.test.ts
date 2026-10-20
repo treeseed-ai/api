@@ -18,6 +18,30 @@ vi.mock('../../../../../src/api/control-plane/repositories/capacity/execution/ex
 import { governanceProposalReadinessMethod } from '../../../../../src/api/store/governance/policy/contracts/governance-proposal-readiness.ts';
 
 describe('draft proposal graph readiness', () => {
+	it('keeps group approval blocked when subscribed project teams have not contributed', async () => {
+		const read = vi.mocked(executableProposal.readExactProposal), original = read.getMockImplementation()!;
+		const exact = await original({} as never, {});
+		read.mockResolvedValue({ ...exact, definition: { ...exact.definition, groupIds: ['portfolio-atlas'] } });
+		const agent = (id: string) => ({ schemaVersion: 'treeseed.agent/v1', id, name: id, agentClass: 'architect',
+			groupIds: ['portfolio-atlas'], purpose: 'Plan real portfolio changes.', responsibilities: ['Discuss the shared proposal.'],
+			capabilities: ['planning'], context: { include: ['assignment-subject'] }, activityProfiles: { planning: {
+				handler: 'writer', prompt: { system: 'Discuss the exact shared proposal and its project impact.' },
+				permissions: { content: { read: ['proposal'], write: ['note'] }, tools: ['source.read'] },
+			} } });
+		const store = {
+			getGovernanceProposal: async () => ({ id: 'proposal', teamId: 'team', projectId: 'ui', activeVersion: 1, createdById: 'author' }),
+			listTeamProjects: async () => [{ id: 'ui' }, { id: 'admin' }],
+			listProjectAgentClassesPage: async (project: string) => ({ items: [{ id: `${project}-class`, slug: 'architect',
+				status: 'active', handlerRefs: { agents: [agent(`${project}/architect`)] } }], page: { hasMore: false, nextCursor: null } }),
+			all: async () => [],
+		};
+		try {
+			const readiness = await governanceProposalReadinessMethod.call(store as never, 'proposal');
+			expect(readiness).toMatchObject({ executionPlanReady: true, votingReady: false,
+				participationVersionReady: false, authorIndependent: false,
+				missingParticipantEstimates: ['admin/admin/architect', 'ui/ui/architect'] });
+		} finally { read.mockImplementation(original); }
+	});
 	it('uses the exact complete draft without requiring a separate feasibility Reviewer', async () => {
 		const store = {
 			getGovernanceProposal: async () => ({ id: 'proposal', projectId: 'project', activeVersion: 1, createdById: 'author' }),
