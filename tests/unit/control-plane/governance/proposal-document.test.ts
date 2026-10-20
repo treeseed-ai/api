@@ -4,6 +4,16 @@ import { parseFrontmatterDocument } from '../../../../src/api/content/frontmatte
 import { validateContentRecord } from '../../../../src/api/content/content-validation.ts';
 
 describe('proposal document contract', () => {
+	it('retains shared proposal groups rather than silently dropping team participation scope', () => {
+		const groupIds = ['portfolio-atlas', 'service-design'];
+		const input = { id: 'complete-activity-snapshots', projectId: 'ui', title: 'Support complete activity snapshots',
+			request: 'Replace complete scoped snapshots and preserve activity deltas.', status: 'draft' as const, groupIds };
+		const held = structuredClone(input);
+		const source = serializeProposalDocument(input);
+		expect(validateContentRecord('proposal', source).ok).toBe(true);
+		expect(parseFrontmatterDocument(source).frontmatter.groupIds).toEqual(groupIds);
+		expect(input).toEqual(held);
+	});
 	it('serializes a minimal draft request for planning without inventing a summary or plan', () => {
 		const source = serializeProposalDocument({ id: 'proposal-1', projectId: 'project-1', title: 'Repair assignment admission',
 			request: 'The real assignment path does not currently admit the requested work.', status: 'draft' });

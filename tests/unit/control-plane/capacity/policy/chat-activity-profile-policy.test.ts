@@ -22,6 +22,15 @@ function configured(): AgentDefinition {
 }
 
 describe('chat activity profile policy', () => {
+	it('projects governed proposal-group membership without replacing class or chat configuration', () => {
+		const definition = Object.assign(configured(), { groupIds: ['portfolio-atlas', 'service-design'] });
+		const held = structuredClone(definition);
+		const agents = projectAgentActivityRefs({ agents: [definition] }, 'chat');
+		expect(agents).toHaveLength(1);
+		expect(agents[0]!.groupIds).toEqual(definition.groupIds);
+		expect(agents[0]!.profile).toEqual(definition.activityProfiles.chat);
+		expect(definition).toEqual(held);
+	});
 	it('uses only governed canonical activity profiles rather than retired default prompts authority presets and assignment intent reconstruction', () => {
 		for (const path of [
 			'src/api/capacity/policy/workdays/chat-activity-profile.ts',
