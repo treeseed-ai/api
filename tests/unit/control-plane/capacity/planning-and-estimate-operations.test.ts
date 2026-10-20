@@ -8,6 +8,11 @@ vi.mock('../../../../src/api/discussions/content.ts', async original => ({
 	loadDiscussions: vi.fn(async () => ({ messages: [] })),
 }));
 
+const exactProposal = vi.hoisted(() => vi.fn());
+vi.mock('../../../../src/api/governance/executable-proposal.ts', async original => ({
+	...await original<typeof import('../../../../src/api/governance/executable-proposal.ts')>(), readExactProposal: exactProposal,
+}));
+
 const principal = { id: 'user-a', roles: [], permissions: [] };
 
 function store(overrides: Record<string, unknown> = {}) {
@@ -102,11 +107,29 @@ describe('communication catalog operations', () => {
 		expect(create.mock.calls.map((call) => call[1].projectId).sort()).toEqual(['project-api', 'project-sdk']);
 	});
 
-	it('fails closed when a communication proposal is outside the addressed project', async () => {
-		const create = vi.fn();
+	it('attaches one owning-project proposal unchanged to another same-team project discussion stream', async () => {
+		const create = vi.fn(async () => ({ invocations: [] }));
+		const ref = { store: 'treedx', model: 'proposal', id: 'proposal-a', repository: 'library-b', commit: 'b'.repeat(40), path: 'proposals/a.mdx', digest: `sha256:${'c'.repeat(64)}` };
+		exactProposal.mockResolvedValue({ ref });
 		const service = createCommunicationService(store({
 			async getProjectDetails() { return { project: { id: 'project-a', slug: 'sdk', teamId: 'team-a' } }; },
 			async getGovernanceProposal() { return { id: 'proposal-a', teamId: 'team-a', projectId: 'project-b', status: 'open' }; },
+			async first(query: string) {
+				if (query.includes('communication_discussion_topics')) return { id: 'topic-a', slug: 'agent-chat', status: 'active' };
+				if (query.includes('communication_discussion_streams')) return { id: 'stream-a', discussion_id: 'agent-chat' };
+				return null;
+			}, async run() {}, async all() { return []; },
+		}), { create });
+		await expect(service.send(principal, 'team-a', 'Agent Chat', { message: '@sdk/architect Review the shared proposal.', proposalId: 'proposal-a' }, 'request-a'))
+			.rejects.toMatchObject({ code: 'communication_send_not_found' });
+		expect(create).toHaveBeenCalledWith(principal, expect.objectContaining({ projectId: 'project-a', contextRefs: [{ kind: 'proposal', id: 'proposal-a', projectId: 'project-b', immutableRef: ref.commit, path: ref.path, digest: ref.digest }] }), 'request-a:project-a');
+	});
+
+	it('fails closed when a communication proposal belongs to another team', async () => {
+		const create = vi.fn();
+		const service = createCommunicationService(store({
+			async getProjectDetails() { return { project: { id: 'project-a', slug: 'sdk', teamId: 'team-a' } }; },
+			async getGovernanceProposal() { return { id: 'proposal-a', teamId: 'foreign-team', projectId: 'project-b', status: 'open' }; },
 			async first(query: string) {
 				if (query.includes('communication_discussion_topics')) return { id: 'topic-a', slug: 'agent-chat', status: 'active' };
 				return null;
