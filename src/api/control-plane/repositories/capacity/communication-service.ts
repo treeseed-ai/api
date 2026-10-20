@@ -317,21 +317,21 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 					if (text(original.body) !== text(body.message)
 						|| text(frontmatter.parentWorkdayId) !== text(body.parentWorkdayId)
 						|| JSON.stringify(recipients) !== JSON.stringify(projectTargets.map(target => target.agentSlug).sort())
-						|| (proposalId ? proposals.length !== 1 || proposals[0]!.id !== proposalId || proposals[0]!.projectId !== projectId : proposals.length !== 0)) {
+						|| (proposalId ? proposals.length !== 1 || proposals[0]!.id !== proposalId || !text(proposals[0]!.projectId) : proposals.length !== 0)) {
 						throw new CapacityOperationError(409, 'discussion_idempotency_conflict', 'The idempotency key is already bound to another discussion request.');
 					}
 					contextRefs.push(...frozen);
 				} else if (proposalId) {
 					const proposal = await store.getGovernanceProposal(proposalId);
 					if (!proposal || text(proposal.teamId, text(proposal.team_id)) !== teamId
-						|| text(proposal.projectId, text(proposal.project_id)) !== projectId) {
-						throw new CapacityOperationError(404, 'communication_proposal_not_found', 'The selected proposal does not belong to this team and project.');
+						|| !text(proposal.projectId, text(proposal.project_id))) {
+						throw new CapacityOperationError(404, 'communication_proposal_not_found', 'The selected proposal does not belong to this team.');
 					}
 					if (!['open', 'discussing'].includes(text(proposal.status))) {
 						throw new CapacityOperationError(409, 'communication_proposal_not_open', 'Discussion context requires an open proposal.');
 					}
 					const exact = await readExactProposal(store, proposal);
-					contextRefs.push({ kind: 'proposal', id: proposalId, projectId,
+					contextRefs.push({ kind: 'proposal', id: proposalId, projectId: text(proposal.projectId, text(proposal.project_id)),
 						immutableRef: exact.ref.commit, path: exact.ref.path, digest: exact.ref.digest });
 				}
 				const streamId = `stream-${stableId(text(topic.id), projectId)}`;

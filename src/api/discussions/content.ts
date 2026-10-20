@@ -320,7 +320,7 @@ export async function validateDiscussionContextRefs(input: { store: any; teamId:
 	const values = Array.isArray(input.values) ? input.values.slice(0, 24) : [];
 	if (values.some((value) => !isAgentAtlasContextReference(value))) throw Object.assign(new Error('Discussion context contains an invalid Atlas reference.'), { status: 422, code: 'discussion_context_invalid' });
 	const references = values as AgentAtlasContextReference[];
-	if (references.some((reference) => reference.projectId !== input.projectId)) throw Object.assign(new Error('Discussion context must belong to the selected project.'), { status: 403, code: 'discussion_context_project_forbidden' });
+	if (references.some((reference) => reference.kind !== 'proposal' && reference.projectId !== input.projectId)) throw Object.assign(new Error('Discussion context must belong to the selected project.'), { status: 403, code: 'discussion_context_project_forbidden' });
 	const workdays = new Map<string, Record<string, unknown>>();
 	for (const reference of references) {
 		if (reference.workdayId) {
@@ -350,7 +350,7 @@ export async function validateDiscussionContextRefs(input: { store: any; teamId:
 			if (!assignment) throw Object.assign(new Error('Discussion context references an unknown assignment.'), { status: 409, code: 'discussion_context_assignment_stale' });
 		}
 		if (reference.kind === 'proposal') {
-			const proposal = await input.store.first('SELECT id FROM governance_proposals WHERE id = ? AND team_id = ? AND project_id = ? LIMIT 1', [reference.id, input.teamId, input.projectId]);
+			const proposal = await input.store.first('SELECT id FROM governance_proposals WHERE id = ? AND team_id = ? AND project_id = ? LIMIT 1', [reference.id, input.teamId, reference.projectId]);
 			if (!proposal) throw Object.assign(new Error('Discussion context references an unknown proposal.'), { status: 409, code: 'discussion_context_proposal_stale' });
 		}
 		if (reference.kind === 'decision') {
