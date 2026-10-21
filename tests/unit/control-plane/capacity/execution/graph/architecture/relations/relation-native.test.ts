@@ -18,12 +18,14 @@ describe('exact dependency intake native HTTP original SQL and public graph read
 			expect(noteCalls[0]!.scope.treedx_capabilities).not.toContain('files:write'); expect(f.sources).toEqual(before);
 		} finally { await f.close(); }
 	});
-	it('discovers a published dependency from the bound library ref when the local authoring branch has no note', async () => {
+	it('pins the published library ref before querying its graph when a moving-ref index is stale', async () => {
 		const publishedRef = 'refs/remotes/origin/staging', f = await relationDatabase({ publishedRef }); try {
 			const links = await f.load(); expect(links).toEqual([f.dependency]);
 			const graphCalls = f.calls.filter(call => call.route.endsWith('/graph/query'));
 			expect(graphCalls).toHaveLength(2);
-			for (const call of graphCalls) { expect(call.body.ref).toBe(publishedRef); expect(call.scope.treedx_refs).toContain(publishedRef); }
+			for (const call of graphCalls) { expect(call.body.ref).toMatch(/^[a-f0-9]{40}$/u); expect(call.scope.treedx_refs).toContain(call.body.ref); }
+			const pathCalls = f.calls.filter(call => call.route.endsWith('/paths/list')); expect(pathCalls).toHaveLength(2);
+			for (const call of pathCalls) { expect(call.body.ref).toBe(publishedRef); expect(call.scope.treedx_refs).toContain(publishedRef); }
 			const p = f.project(links), graph = graphState(p); await f.persist(graph, f.empty(), p.revision);
 			const explanation = await f.service.explain(f.principal, 'team', graphNode(graph, 'first', 'actor', 'dependent').id);
 			expect(explanation.admission.eligible).toBe(false);
@@ -71,7 +73,7 @@ describe('exact dependency intake native HTTP original SQL and public graph read
 		}
 	});
 	it('native graph and note HTTP denial unavailable reset and malformed responses retain original authority and retry without phantom SQL success', async () => {
-		for (const boundary of ['graph', 'note'] as const) for (const fault of ['403', '503', 'reset', 'json'] as const) {
+		for (const boundary of ['paths', 'graph', 'note'] as const) for (const fault of ['403', '503', 'reset', 'json'] as const) {
 			const f = await relationDatabase(); try {
 				const before = await f.snapshot(), sources = structuredClone(f.sources); f.setFault(fault, boundary);
 				await expect(f.load()).rejects.toThrow(); expect(await f.snapshot()).toEqual(before); expect(f.sources).toEqual(sources);
