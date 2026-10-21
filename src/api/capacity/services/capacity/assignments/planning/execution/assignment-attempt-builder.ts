@@ -85,7 +85,11 @@ function communicationDiscussionReference(candidate: ReadyExecutionNode): ExactE
 }
 
 function projectTreeDxWorkspaceReference(candidate: ReadyExecutionNode, run: DurableCapacityWorkdayRun): ExactEntityReference | undefined {
-	const source = candidate.node.sourceRef.store === 'treedx' ? candidate.node.sourceRef : undefined;
+	const subject = candidate.node.sourceRef.store === 'treedx' ? candidate.node.sourceRef : undefined;
+	// Shared proposal planning reads the proposal in its owning library, while
+	// each contributor writes its Note only in its own project library.
+	const source = candidate.node.kind === 'planning' && subject?.model === 'proposal'
+		&& subject.repository !== candidate.projectContentRepositoryId ? undefined : subject;
 	if (source && source.repository !== candidate.projectContentRepositoryId) throw new CapacityGovernanceError(
 		'assignment_content_project_mismatch', 'Writable TreeDX content must belong to the assignment project library.', 409);
 	if (source) return source;
@@ -154,7 +158,7 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string, run: Durable
 					repository: treeDxBase.repository, commit: treeDxBase.commit,
 					path: `knowledge/${bookRef.id}/${knowledgeId(candidate.node.id)}.md` }]
 					: []
-				: [model === candidate.node.sourceRef.model && candidate.node.sourceRef.path
+				: [model === candidate.node.sourceRef.model && candidate.node.sourceRef.repository === treeDxBase.repository && candidate.node.sourceRef.path
 				? candidate.node.sourceRef
 				: ({ store: 'treedx' as const, model, id: `${assignmentId}:${model}`,
 					repository: treeDxBase.repository, commit: treeDxBase.commit,
@@ -266,8 +270,10 @@ export function buildAssignmentAttempt(input: {
 			? remainingCapabilitySeconds({ now: input.now, maximumObservationAgeSeconds: 90, dailyLimitSeconds,
 				observation: value, ledgerActiveSeconds: 0, ledgerReservedSeconds: 0 }).availableSeconds : 0;
 		// Estimates size a maximum attempt; positive available supply may shorten it.
+		// Fixed model turns cover different discussion requests, not comparable
+		// task estimates. Short acknowledgements cannot resize later source work.
 		const allocation = calculateAssignmentAllocation({ estimate: allocationEstimate,
-			measurements: planningTurn ? [] : allocationInputs.measurements,
+			measurements: planningTurn || communication ? [] : allocationInputs.measurements,
 			constraints: [{ id: 'execution-window', remainingSeconds: availableSeconds },
 				{ id: 'utc-day-window', remainingSeconds: Math.max(0, (utcDayEnd - Date.parse(input.now)) / 1000) },
 				{ id: 'model-day', remainingSeconds: remaining(limits.dailyActiveSecondsLimit, observation.modelUsage) },

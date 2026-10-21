@@ -500,7 +500,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
-    testName: "real public preflight preserves canonical normalized agent selection and denies malformed mixed members without native authority repair"
+    testName: "real public preflight preserves canonical group selection and denies malformed members and individual targets without native authority repair"
   api.golden.execution-recurring-numeric-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -3634,8 +3634,8 @@ verifiers:
   api.golden.project-workspace-write:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
-    testFile: tests/unit/control-plane/capacity/execution/assignment-attempt-builder.test.ts
-    testName: writes planning content to its project library while retaining Team Library as read-only context
+    testFile: tests/unit/control-plane/capacity/execution/reporting/assignment-workday-workspace.test.ts
+    testName: writes planning content to its project library with workday read-only context
   api.golden.cross-project-write-denied:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
@@ -3705,7 +3705,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
     testFile: tests/unit/control-plane/capacity/execution/assignment-attempt-builder.test.ts
-    testName: gives planning discussion the policy turn ceiling without changing acting chat allocation
+    testName: preserves fixed discussion turns across phases without borrowing a short reply history
   api.golden.proposal-review-source:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -5110,13 +5110,25 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/communication/completion/proposal-replay.test.ts
-    testName: "reuses the committed message context instead of resolving the moved proposal"
+    testName: "reuses committed project context instead of resolving the moved proposal"
+
+  api.golden.communication-proposal-recovery-producer-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/completion/proposal-replay.test.ts
+    testName: "reuses committed producer-project context instead of resolving the moved proposal"
 
   api.golden.communication-proposal-recovery-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/communication/completion/proposal-replay-native.test.ts
-    testName: "keeps the original context and one invocation after real proposal authoring, concurrent retries and interrupted admission"
+    testName: "keeps the original context and one invocation across project streams=false after proposal edits and interrupted admission"
+
+  api.golden.communication-proposal-recovery-producer-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/completion/proposal-replay-native.test.ts
+    testName: "keeps the original context and one invocation across project streams=true after proposal edits and interrupted admission"
 
   api.golden.communication-proposal-race-unit:
     kind: vitestCase

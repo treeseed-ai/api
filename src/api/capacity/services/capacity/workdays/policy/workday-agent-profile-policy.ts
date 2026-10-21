@@ -24,7 +24,7 @@ export interface WorkdayAgentSelectionSnapshot {
 export interface WorkdayAgentProfileSnapshot { revision: string; agents: WorkdayAgentSelectionSnapshot[] }
 interface Store { listProjectAgentClassesPage(projectId: string, filters: { limit: number }): Promise<CapacityPage<unknown>> }
 
-export function compileWorkdayAgentProfileSnapshot(agentClasses: unknown[], selectionValue?: unknown): WorkdayAgentProfileSnapshot {
+export function compileWorkdayAgentProfileSnapshot(agentClasses: unknown[], selectionValue?: unknown, groupIds?: readonly string[]): WorkdayAgentProfileSnapshot {
 	const selection = normalizeWorkdayAgentSelection(selectionValue);
 	const available: WorkdayAgentSelectionSnapshot[] = [];
 	for (const value of agentClasses) {
@@ -52,7 +52,8 @@ export function compileWorkdayAgentProfileSnapshot(agentClasses: unknown[], sele
 				|| (selection.agentSlugs.length > 0 && agentMatch) || (selection.activityTypes.length > 0 && activityMatch)
 			: classMatch && agentMatch && activityMatch;
 	};
-	const agents = available.map((entry) => ({ ...entry, activities: entry.activities.filter((activity) => selectorMatch(entry, activity)) }))
+	const agents = available.filter(entry => groupIds === undefined || (entry.definition.groupIds ?? []).some(id => groupIds.includes(id)))
+		.map((entry) => ({ ...entry, activities: entry.activities.filter((activity) => selectorMatch(entry, activity)) }))
 		.filter((entry) => entry.activities.length).sort((left, right) => left.definition.id.localeCompare(right.definition.id));
 	const unknown = [
 		...selection.classIds.filter((id) => !available.some((entry) => entry.projectAgentClassId === id)).map((value) => ({ selector: 'classIds', value })),
@@ -76,11 +77,11 @@ export function compileWorkdayAgentProfileSnapshot(agentClasses: unknown[], sele
 	return { revision, agents };
 }
 
-export async function resolveWorkdayAgentProfileSnapshot(store: Store, projectId: string, selection?: unknown) {
+export async function resolveWorkdayAgentProfileSnapshot(store: Store, projectId: string, selection?: unknown, groupIds?: readonly string[]) {
 	const page = await store.listProjectAgentClassesPage(projectId, { limit: MAX_CAPACITY_PAGE_LIMIT });
 	if (page.page.hasMore) throw new CapacityGovernanceError('capacity_internal_collection_bound_exceeded',
 		'Project agent classes exceed the activity-profile snapshot bound.', 409, { projectId });
-	return compileWorkdayAgentProfileSnapshot(page.items, selection);
+	return compileWorkdayAgentProfileSnapshot(page.items, selection, groupIds);
 }
 
 export function decodeWorkdayAgentProfileSnapshot(value: unknown, projectId: string): WorkdayAgentProfileSnapshot {

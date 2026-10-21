@@ -1,18 +1,15 @@
 import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
 const gateway = vi.hoisted(() => ({ readRepositoryFile: vi.fn() }));
 vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({
 	resolveKnowledgeGatewayConnection: vi.fn(async () => ({ repositoryId: 'repository', client: gateway })),
 }));
-
 import { executionNodeRunScope, linearPredecessorSourceCommit, listReadyExecutionNodes, workItemContext } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { replayAttempt } from './architecture/admission-replay-fixture.ts';
 import { candidate as governedCandidate } from './fixtures/assignment-attempt-fixtures.ts';
 import { readyProposal } from '../../governance/proposals/architecture/ready-proposal-fixture.ts';
 import { executionNodeSchema } from '@treeseed/sdk/agent-capacity';
-
 const projectId = 'project';
 const sourceRef = {
 	store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
@@ -20,7 +17,27 @@ const sourceRef = {
 };
 const decisionRef = { store: 'postgresql', model: 'decision', id: 'decision', revision: 1, digest: `sha256:${'c'.repeat(64)}` };
 const permissions = { content: { read: ['proposal', 'decision'], write: [] }, tools: ['source.read'] };
-
+it('reads shared planning proposal context through its owning project binding and refuses a foreign team', async () => {
+	for (const teamId of ['team', 'foreign-team']) {
+		vi.mocked(resolveKnowledgeGatewayConnection).mockImplementation(async (_store, input) => ({
+			repositoryId: input.projectId === 'ui' ? 'repository' : 'admin-library', client: gateway,
+		}) as never);
+		const proposal = readyProposal(), sharedGit = { store: 'git' as const, model: 'repository', id: 'ui-source', repository: 'treeseed-ai/ui', commit: 'e'.repeat(40) };
+		Object.assign(proposal, { id: 'proposal', projectId: 'ui', groupIds: ['portfolio-atlas'] });
+		Object.assign(proposal.executionPlan.workItems[0]!, { contextRefs: [sharedGit] });
+		gateway.readRepositoryFile.mockResolvedValue({ resolvedRef: sourceRef.commit, file: { frontmatter: proposal } });
+		const fetchImpl = vi.fn(async () => new Response('d'.repeat(40)));
+		const store = { getGovernanceProposal: async () => ({ id: 'proposal', projectId: 'ui', teamId }),
+			getProjectTreeDxLibrary: async () => ({ repositoryId: 'repository' }), config: { fetchImpl }, all: async () => [],
+			listHubRepositories: async () => [{ id: 'admin-source', role: 'software', provider: 'github', owner: 'treeseed-ai', name: 'admin', currentBranch: 'staging' }] };
+		const read = workItemContext(store, { id: 'shared-planning', projectId: 'admin', teamId: 'team',
+			kind: 'planning', workItemId: null, sourceRef, requestedPermissions: permissions } as never);
+		if (teamId === 'team') expect(await read).toEqual([sourceRef, sharedGit, { store: 'git', model: 'repository',
+			id: 'admin-source', repository: 'treeseed-ai/admin', commit: 'd'.repeat(40) }]);
+		else await expect(read).rejects.toMatchObject({ code: 'execution_node_source_repository_changed' });
+	}
+	vi.mocked(resolveKnowledgeGatewayConnection).mockImplementation(async () => ({ repositoryId: 'repository', client: gateway }) as never);
+});
 function nodeRow(id = 'node', decisionId = 'decision') {
 	return {
 		id, team_id: 'team', project_id: projectId, work_item_id: 'implementation',
@@ -212,7 +229,7 @@ describe('direct ready-node admission input', () => {
 				acceptanceCriteria: ['Focused tests pass.'],
 			}] },
 		} } });
-		const refs = await workItemContext({ getProjectTreeDxLibrary: vi.fn(async () => ({
+		const refs = await workItemContext({ getGovernanceProposal: async () => ({ projectId, teamId: 'team' }), getProjectTreeDxLibrary: vi.fn(async () => ({
 			repositoryId: 'repository', contentRepositoryUrl: 'https://github.com/treeseed-ai/sdk-library.git',
 		})) } as never, {
 			teamId: 'team', projectId, id: kind, kind, pairRole: null, workItemId: null, sourceRef,

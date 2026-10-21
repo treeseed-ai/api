@@ -1,10 +1,17 @@
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { describe, expect, it, vi } from 'vitest';
 import { agentDefinitionSchema } from '@treeseed/sdk/agent-capacity';
 import { workItemContext } from '../../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import { projectCommunicationInvocations } from '../../../../../../../src/api/capacity/policy/execution/communication-execution-projector.ts';
 import { ControlPlaneStore } from '../../../../../../../src/api/persistence/store.ts';
+import { readyProposal } from '../../../../governance/proposals/architecture/ready-proposal-fixture.ts';
 import { postgresGraph } from '../../graph/architecture/living/living-postgres-fixture.ts';
+
+const gateway = vi.hoisted(() => ({ readRepositoryFile: vi.fn() }));
+vi.mock('../../../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({
+	resolveKnowledgeGatewayConnection: vi.fn(async () => ({ repositoryId: 'proposal-library', client: gateway })),
+}));
 
 const commit = 'a'.repeat(40);
 const repository = { id: 'software', role: 'software', provider: 'github', owner: 'example', name: 'project', currentBranch: 'staging' };
@@ -21,6 +28,30 @@ function communication(tools = ['discussion', 'source.read']) {
 const sourceRef = { store: 'git', model: 'repository', id: 'software', repository: 'example/project', commit };
 
 describe('standalone communication exact source admission', () => {
+	it('reads an attached same-team proposal across topic project streams with contributor source context and the pinned version', async () => {
+		const bytes = 'exact attached Admin proposal', digest = createHash('sha256').update(bytes).digest('hex');
+		const proposal = readyProposal(), sharedGit = { store: 'git', model: 'repository', id: 'producer', repository: 'example/producer', commit: 'c'.repeat(40) };
+		Object.assign(proposal, { id: 'shared', projectId: 'proposal-project', groupIds: ['portfolio-atlas'] });
+		Object.assign(proposal.executionPlan.workItems[0]!, { contextRefs: [sharedGit] });
+		gateway.readRepositoryFile.mockResolvedValue({ resolvedRef: 'b'.repeat(40), file: { content: bytes, frontmatter: proposal } });
+		const frozen = { kind: 'proposal', id: 'shared', projectId: 'proposal-project', immutableRef: 'b'.repeat(40), path: 'proposals/shared.mdx', digest: `sha256:${digest}` };
+		for (const [teamId, owner] of [['team', 'proposal-project'], ['foreign', 'proposal-project'], ['team', 'forged-project']]) {
+			const node = communication(), held = structuredClone(node), ref = structuredClone(frozen);
+			const store = { config: { fetchImpl: vi.fn(async () => new Response(commit)) }, all: async () => [],
+				listHubRepositories: async () => [repository], getProjectTreeDxLibrary: async () => ({ repositoryId: 'proposal-library' }),
+				getGovernanceProposal: async () => ({ id: 'shared', teamId, projectId: owner, activeVersion: 2,
+					metadata: { contentProvenance: { repositoryId: 'proposal-library', commitSha: 'f'.repeat(40), contentPath: frozen.path, digest: 'f'.repeat(64) } } }),
+				first: async (sql: string) => sql.includes('governance_proposal_versions') ? { version: 1 }
+					: { content_refs_json: [frozen], requested_at: '2026-10-20T12:00:00.000Z' } };
+			const read = workItemContext(store, node);
+			if (teamId === 'team' && owner === frozen.projectId) expect(await read).toEqual([
+				expect.objectContaining({ store: 'treedx', model: 'proposal', id: 'shared', repository: 'proposal-library', commit: frozen.immutableRef, revision: 1 }), sharedGit, sourceRef,
+			]);
+			else await expect(read).rejects.toMatchObject({ code: 'communication_proposal_context_stale' });
+			expect(node).toEqual(held); expect(frozen).toEqual(ref);
+		}
+	});
+
 	it('freezes configured source-read Git context before issuing an arbitrary configured chat assignment', async () => {
 		const node = communication(), before = structuredClone(node);
 		const fetchImpl = vi.fn(async () => new Response(commit));

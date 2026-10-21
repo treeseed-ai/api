@@ -24,7 +24,6 @@ import { readExactProposal } from '../../../governance/executable-proposal.ts';
 import { workdayLineageSql } from '../capacity/workdays/scheduling/workday-continuation.ts';
 import { resolveGitHubSourceAuthority } from '../../../../security/provider-credential-authority.ts';
 import { resolveAuthorizedSourceCommit } from '../../../control-plane/repositories/providers/source/source-pin.ts';
-
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {
 	if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row;
@@ -44,13 +43,11 @@ const stable = (value: unknown): string => {
 		.map(([key, item]) => `${JSON.stringify(key)}:${stable(item)}`).join(',')}}`;
 	return JSON.stringify(value);
 };
-
 function repositorySlug(value: unknown): string {
 	const candidate = text(value).replace(/\.git$/u, '');
 	const match = candidate.match(/(?:github\.com[/:])([^/]+\/[^/]+)$/u);
 	return match?.[1] ?? candidate;
 }
-
 async function canonicalProposalContextRefs(store: any, node: ExecutionNode, values: unknown[]): Promise<ExactEntityReference[]> {
 	const binding = await store.getProjectTreeDxLibrary(node.projectId);
 	const repositoryId = text(binding?.repositoryId,
@@ -66,7 +63,6 @@ async function canonicalProposalContextRefs(store: any, node: ExecutionNode, val
 		return { ...reference, repository: repositoryId };
 	});
 }
-
 export interface ReadyExecutionNode {
 	node: ExecutionNode;
 	graphRevision: number;
@@ -130,6 +126,20 @@ export async function runtimeWorkdayPhase(store: any, run: DurableCapacityWorkda
 	return workdayPhase(plan, now, Boolean(ready));
 }
 
+async function projectSourceContext(store: any, node: ExecutionNode, resolved: ExactEntityReference[]) {
+	if (!node.requestedPermissions?.tools.includes('source.read')) return resolved;
+	const repository = selectAssignmentSourceRepository(await store.listHubRepositories(node.projectId));
+	const slug = `${repository.owner}/${repository.name}`;
+	if (!resolved.some(reference => reference.store === 'git' && [repository.id, slug].includes(reference.repository ?? ''))) {
+		const fetchImpl: typeof fetch | undefined = store.config?.fetchImpl;
+		const credential = await resolveGitHubSourceAuthority({ store, teamId: node.teamId, owner: repository.owner,
+			repository: repository.name, required: false, fetchImpl });
+		const commit = await resolveAuthorizedSourceCommit(repository, credential?.token, fetchImpl);
+		resolved.push({ store: 'git', model: 'repository', id: repository.id, repository: slug, commit });
+	}
+	return resolved;
+}
+
 export async function workItemContext(store: any, node: ExecutionNode): Promise<ExactEntityReference[]> {
 	const source = node.sourceRef;
 	if (node.kind === 'communication' && source.store === 'treedx' && source.repository && source.commit) {
@@ -144,12 +154,12 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 				continue;
 			}
 			const reference = record(value);
-			if (reference.kind !== 'proposal' || text(reference.projectId) !== node.projectId || !text(reference.id)) {
+			if (reference.kind !== 'proposal' || !text(reference.projectId) || !text(reference.id)) {
 				throw new CapacityGovernanceError('communication_context_reference_invalid', `Communication node ${node.id} contains an unsupported context reference.`, 409);
 			}
 			const proposal = await store.getGovernanceProposal(text(reference.id));
 			if (!proposal || text(proposal.teamId ?? proposal.team_id) !== node.teamId
-				|| text(proposal.projectId ?? proposal.project_id) !== node.projectId) {
+				|| text(proposal.projectId ?? proposal.project_id) !== text(reference.projectId)) {
 				throw new CapacityGovernanceError('communication_proposal_context_stale', `Communication node ${node.id} references an unavailable proposal.`, 409);
 			}
 			const digest = text(reference.digest).replace(/^sha256:/u, '');
@@ -163,24 +173,15 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 			// invalidating already-admitted planning conversation.
 			const exact = await readExactProposal(store, proposal, {
 				store: 'treedx', model: 'proposal', id: text(reference.id), revision: Number(version.version),
-				repository: source.repository, commit: text(reference.immutableRef),
+				repository: text(record(record(proposal.metadata ?? proposal.metadata_json).contentProvenance).repositoryId, source.repository), commit: text(reference.immutableRef),
 				path: text(reference.path), digest: text(reference.digest),
 			});
 			const workItemRefs = array(record(exact.definition.executionPlan).workItems)
 				.flatMap((workItem) => array(record(workItem).contextRefs));
-			resolved.push(exact.ref, ...await canonicalProposalContextRefs(store, node, workItemRefs));
+			resolved.push(exact.ref, ...await canonicalProposalContextRefs(store, { ...node, projectId: text(reference.projectId) }, workItemRefs));
 		}
-		// A standalone conversation has no Proposal to supply its source revision.
-		// Freeze the configured source before issuance, never in the provider grant.
-		if (node.requestedPermissions?.tools.includes('source.read') && !resolved.some(reference => reference.store === 'git')) {
-			const repository = selectAssignmentSourceRepository(await store.listHubRepositories(node.projectId));
-			const fetchImpl: typeof fetch | undefined = store.config?.fetchImpl;
-			const credential = await resolveGitHubSourceAuthority({ store, teamId: node.teamId, owner: repository.owner,
-				repository: repository.name, required: false, fetchImpl });
-			const commit = await resolveAuthorizedSourceCommit(repository, credential?.token, fetchImpl);
-			resolved.push({ store: 'git', model: 'repository', id: repository.id, repository: `${repository.owner}/${repository.name}`, commit });
-		}
-		return resolved;
+
+		return projectSourceContext(store, node, resolved);
 	}
 	if (node.workdayId && source.store === 'postgresql' && source.model === 'workday') {
 		const row = await store.first('SELECT parameters_json FROM capacity_workday_runs WHERE team_id=? AND id=? LIMIT 1',
@@ -205,8 +206,10 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 	if (source.store !== 'treedx' || !source.repository || !source.commit || !source.path) {
 		throw new CapacityGovernanceError('execution_node_source_invalid', `Node ${node.id} lacks exact proposal provenance.`, 409);
 	}
+	const owner = node.kind === 'planning' ? await store.getGovernanceProposal(source.id) : null;
+	const sourceProjectId = owner && text(owner.teamId, owner.team_id) === node.teamId ? text(owner.projectId, owner.project_id) : node.projectId;
 	const connection = await resolveKnowledgeGatewayConnection(store, {
-		projectId: node.projectId, write: false, relationPaths: true, readRefs: [source.commit],
+		projectId: sourceProjectId, write: false, relationPaths: true, readRefs: [source.commit],
 	});
 	if (!connection || connection.repositoryId !== source.repository) throw new CapacityGovernanceError(
 		'execution_node_source_repository_changed', `Node ${node.id} proposal repository changed.`, 409);
@@ -221,11 +224,12 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 	if (!validation.ok) throw new CapacityGovernanceError('execution_node_source_invalid', `Node ${node.id} proposal is no longer valid.`, 409);
 	if (!node.workItemId && (node.kind === 'planning' || node.kind === 'estimating')) {
 		const proposal = record(validation.data);
-		return [source, ...await canonicalProposalContextRefs(store, node, [
+		const refs = [source, ...await canonicalProposalContextRefs(store, { ...node, projectId: sourceProjectId }, [
 			...array(proposal.objectiveRefs), ...array(proposal.evidenceRefs),
 			...(proposal.discussionRef ? [proposal.discussionRef] : []),
 			...array(record(proposal.executionPlan).workItems).flatMap((item) => array(record(item).contextRefs)),
 		])];
+		return sourceProjectId !== node.projectId ? projectSourceContext(store, node, refs) : refs;
 	}
 	const workItems = array(record(record(validation.data).executionPlan).workItems).map(record);
 	const workItem = workItems.find((candidate) => text(candidate.id) === node.workItemId);

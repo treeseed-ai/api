@@ -49,7 +49,7 @@ export function projectAgentActivityRefs(handlerRefs: unknown, activityType: str
 		return agentId && handlerId ? [{
 			agentId,
 			agentName: agent.name,
-			groupIds: [], contentPath: null, activityType, handlerId, profile,
+				groupIds: [...(agent.groupIds ?? [])], contentPath: null, activityType, handlerId, profile,
 			identity: { purpose: agent.purpose, responsibilities: agent.responsibilities }, summary: agent.purpose,
 			contextQueryRefs:revisionRefs(agentQueryRefs,activityQueryRefs),
 			contextQuerySetRefs:revisionRefs(agentQuerySetRefs,activityQuerySetRefs),

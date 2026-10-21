@@ -3033,8 +3033,16 @@ workflow:
     action: { verifier: api.golden.communication-proposal-recovery-unit }
     expect: { status: passed }
 
+  - id: communication-proposal-recovery-producer-unit
+    action: { verifier: api.golden.communication-proposal-recovery-producer-unit }
+    expect: { status: passed }
+
   - id: communication-proposal-recovery-native
     action: { verifier: api.golden.communication-proposal-recovery-native }
+    expect: { status: passed }
+
+  - id: communication-proposal-recovery-producer-native
+    action: { verifier: api.golden.communication-proposal-recovery-producer-native }
     expect: { status: passed }
 
   - id: communication-proposal-race-unit

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { compileWorkdayAgentProfileSnapshot } from '../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-profile-policy.ts';
+import { workdayParticipants } from '../../../../../src/api/capacity/policy/execution/workday-participants.ts';
 
 const permissions = { content: { read: ['book'], write: [] }, tools: ['discussion'] };
 const profile = (handler: string) => ({ handler, permissions, prompt: { system: 'Perform this exact bounded activity for the selected project.' } });
@@ -14,6 +15,36 @@ const classes = [
 ];
 
 describe('exact activity selection before living-node admission', () => {
+	it('brings subscribed project teams to the same proposal while estimates stay with its owning project', () => {
+		const agents = (project: string, agentClass: string, group = 'portfolio-atlas') => ({ agents: [{
+			definition: { ...definition(agentClass, agentClass, { planning: profile('writer'), estimating: profile('estimate') }),
+				id: `${project}/${agentClass}`, groupIds: [group] }, activities: ['planning', 'estimating'],
+		}] });
+		const parameters = { groupIds: ['portfolio-atlas'], agentProfilesByProjectId: {
+			ui: agents('ui', 'engineer'), admin: agents('admin', 'engineer'), platform: agents('platform', 'architect'),
+			market: agents('market', 'researcher', 'market-research'),
+		}, proposalsByProjectId: { ui: [{ id: 'complete-snapshots', groupIds: ['portfolio-atlas'],
+			executionPlan: { workItems: [{ id: 'snapshot-replacement', agentClass: 'engineer', review: 'required' }] } }] } };
+		const before = structuredClone(parameters), result = workdayParticipants(parameters);
+		expect(result.filter(item => item.activity === 'planning').map(item => item.definition.id))
+			.toEqual(['admin/engineer', 'platform/architect', 'ui/engineer']);
+		expect(result.filter(item => item.activity === 'estimating').map(item => item.definition.id)).toEqual(['ui/engineer']);
+		expect(result.every(item => item.proposalId === 'complete-snapshots')).toBe(true);
+		expect(parameters).toEqual(before);
+	});
+	it('selects every subscribed project agent across classes while leaving unrelated agents out', () => {
+		const rows = ['architect', 'engineer', 'reviewer', 'researcher'].map((agentClass, index) => ({
+			id: `class-${index}`, slug: agentClass, status: 'active', handlerRefs: { agents: [{
+				...definition(agentClass, agentClass, { planning: profile('writer') }),
+				groupIds: [agentClass === 'researcher' ? 'market-research' : 'ui-snapshot-admin-chart'],
+			}] },
+		}));
+		const held = structuredClone(rows);
+		const result = compileWorkdayAgentProfileSnapshot(rows, undefined, ['ui-snapshot-admin-chart']);
+		expect(result.agents.map(entry => entry.definition.id)).toEqual(['sdk/architect', 'sdk/engineer', 'sdk/reviewer']);
+		expect(() => compileWorkdayAgentProfileSnapshot(rows, undefined, ['unknown-group'])).toThrow(/no eligible/u);
+		expect(rows).toEqual(held);
+	});
 	it('intersects selectors without copying or expanding definitions', () => {
 		const result = compileWorkdayAgentProfileSnapshot(classes, { agentSlugs: ['reviewer'], activityTypes: ['reviewing'] });
 		expect(result.agents).toHaveLength(1);

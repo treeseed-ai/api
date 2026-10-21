@@ -85,4 +85,17 @@ describe('objective TreeDX workspace authority', () => {
 		})).rejects.toMatchObject({ code: 'operational_content_invalid' });
 		expect(client.applyChangeset).not.toHaveBeenCalled();
 	});
+
+	it('authors shared proposal groups through the existing governed operational workspace', async () => {
+		const { client, service, workspace } = fixture();
+		workspace.allowedPaths = ['groups/**'];
+		const content = '---\ncontract: treeseed.group/v1\nid: portfolio-atlas\nslug: portfolio-atlas\nname: Portfolio Atlas Team\ndescription: Deliver shared UI snapshots and the Admin activity chart.\nclassification: team\nstatus: active\n---\n';
+		const result = await service.updateContent({ id: 'author' }, workspace.id, {
+			kind: 'operational-content', version: 1, create: true, sourcePath: 'groups/portfolio-atlas.mdx', content,
+		});
+		expect(result).toMatchObject({ workspace: { version: 2 } });
+		expect(client.applyChangeset).toHaveBeenCalledWith(expect.objectContaining({
+			workspaceId: 'remote', patch: expect.stringContaining('groups/portfolio-atlas.mdx'),
+		}));
+	});
 });

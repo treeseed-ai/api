@@ -8,6 +8,7 @@ import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repos
 import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
 import { treeDxWorkspaceId } from '../../knowledge/workspaces/identity.ts';
 import { CapacityWorkdayRunRepository } from '../../capacity/repositories/capacity/workdays/workday-run.ts';
+import { parseFrontmatterDocument } from '../../content/frontmatter.ts';
 
 type Row = Record<string, unknown>;
 function object(value: unknown): Row { if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row; if (typeof value === 'string') try { return object(JSON.parse(value)); } catch { return {}; } return {}; }
@@ -95,17 +96,9 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 	const nextMetadata: Row = { ...metadata, ...(object(input.update.metadata)), proposalTypes: types };
 	delete nextMetadata.plan;
 	delete nextMetadata.executionPlan;
-	let source: string;
 	const currentStatus = text(input.proposal.status);
 	const status = text(input.update.status) || (input.initial === true ? 'draft'
 		: currentStatus === 'voting' ? 'ready' : currentStatus === 'accepted' ? 'decided' : currentStatus === 'open' ? 'discussing' : 'draft');
-	try { source = serializeProposalDocument({
-		id: text(input.proposal.id), projectId, title, request: body, ...(summary ? { summary } : {}),
-		status: status as 'draft' | 'discussing' | 'ready' | 'decided' | 'withdrawn',
-		objectiveRefs: input.update.objectiveRefs, evidenceRefs: input.update.evidenceRefs,
-		discussionRef: input.update.discussionRef, executionPlan: input.update.executionPlan,
-	}); }
-	catch (error) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw error; }
 	try {
 		const existing = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: baseRef, path, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }).catch((error) => { if (Number(object(error).status) === 404) return null; throw error; });
 		if (input.initial === true && existing !== null) throw Object.assign(new Error('The proposal source path already exists; choose a distinct proposal slug.'), {
@@ -113,6 +106,14 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 		});
 		if (existing && text(object(existing).resolvedRef) !== workspace.baseCommitSha) throw Object.assign(new Error('The proposal content branch changed while its current version was read.'), { status: 409, code: 'proposal_content_base_stale' });
 		const before = existing === null ? null : repositorySource(existing);
+		const priorGroups = before === null ? undefined : parseFrontmatterDocument(before).frontmatter.groupIds;
+		const source = serializeProposalDocument({
+			id: text(input.proposal.id), projectId, title, request: body, ...(summary ? { summary } : {}),
+			status: status as 'draft' | 'discussing' | 'ready' | 'decided' | 'withdrawn',
+			groupIds: Object.hasOwn(input.update, 'groupIds') ? input.update.groupIds : priorGroups,
+			objectiveRefs: input.update.objectiveRefs, evidenceRefs: input.update.evidenceRefs,
+			discussionRef: input.update.discussionRef, executionPlan: input.update.executionPlan,
+		});
 		const expectedDigest = createHash('sha256').update(source).digest('hex');
 		if (before === source) {
 			await connection.client.closeWorkspace(workspace.workspaceId);

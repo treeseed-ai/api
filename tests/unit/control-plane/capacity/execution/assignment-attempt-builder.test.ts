@@ -22,7 +22,7 @@ describe('immutable assignment-attempt construction', () => {
 			expect(() => build(item, [{ id: 'controlled-supply', remainingSeconds: 0 }])).toThrow('No positive active-time allocation remains');
 		} expect({ review, measurements, run, provider }).toEqual(original);
 	});
-	it('gives planning discussion the policy turn ceiling without changing acting chat allocation', () => {
+	it('preserves fixed discussion turns across phases without borrowing a short reply history', () => {
 		const discussion = structuredClone(candidate);
 		discussion.node.kind = 'communication'; discussion.node.pairRole = null as never;
 		discussion.node.estimate = { expectedSeconds: 180, maximumSeconds: 180 };
@@ -37,23 +37,28 @@ describe('immutable assignment-attempt construction', () => {
 				capabilityUsage: { [conversationCapability]: provider.accountingObservation.modelUsage } },
 			lanes: [{ ...provider.lanes[0]!, purpose: 'communication', capabilities: [conversationCapability] }],
 			offers: [suppliedCapabilityOffer('2026-09-13T12:00:00.000Z', conversationCapability, 'codex-conversation')] };
-		const measurements = [{ id: 'successful-short-chat', completedAt: '2026-09-13T11:59:00.000Z',
-			expectedSeconds: 180, allocatedSeconds: 90, activeSeconds: 45, outcome: 'completed' }];
+		const measurements = Array.from({ length: 20 }, (_, index) => ({ id: `successful-short-chat-${index}`,
+			completedAt: new Date(Date.parse('2026-09-13T11:58:00.000Z') + index * 1000).toISOString(),
+			expectedSeconds: 180, allocatedSeconds: 90, activeSeconds: 20, outcome: 'completed' as const }));
 		const chatRun = structuredClone(run);
 		chatRun.parameters.appliedPlan.policySnapshot.planningTurnMaximumSeconds = 180;
-		const build = (now: string) => buildAssignmentAttempt({ candidate: discussion as never, run: chatRun as never,
+		const build = (now: string, remainingSeconds = 1000) => buildAssignmentAttempt({ candidate: discussion as never, run: chatRun as never,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { opportunity, measurements, constraints: [] } } as never, providerSessionId: 'session',
+			allocationInputs: { codex: { opportunity, measurements, constraints: [{ id: 'controlled-supply', remainingSeconds }] } } as never, providerSessionId: 'session',
 			providers: [{ ...offered, accountingObservation: { ...offered.accountingObservation,
 				modelUsage: { ...offered.accountingObservation.modelUsage, observedAt: now },
 				capabilityUsage: { [conversationCapability]: { ...offered.accountingObservation.modelUsage, observedAt: now } } } }] as never,
 			attempt: 1, now });
+		const held = structuredClone({ discussion, chatRun, measurements });
 		const planning = build('2026-09-13T12:01:00.000Z');
 		expect(planning.assignment.limits.maximumSeconds).toBe(180); expect(planning.allocation.calibration.measurementIds).toEqual([]);
 		expect(build('2026-09-13T12:11:30.000Z').assignment.limits.maximumSeconds).toBe(30);
 		const acting = build('2026-09-13T12:30:00.000Z');
-		expect(acting.allocation.calibration.measurementIds).toEqual(['successful-short-chat']);
-		expect(acting.assignment.limits.maximumSeconds).toBe(162);
+		expect(acting.allocation.calibration.measurementIds).toEqual([]);
+		expect(acting.assignment.limits.maximumSeconds).toBe(180);
+		expect(build('2026-09-13T12:30:00.000Z', 3).assignment.limits.maximumSeconds).toBe(3);
+		expect(() => build('2026-09-13T12:30:00.000Z', 0)).toThrow('No positive active-time allocation remains');
+		expect({ discussion, chatRun, measurements }).toEqual(held);
 	});
 	it('uses the total five-slot ceiling rather than remaining headroom for atomic admission', () => {
 		for (const remaining of [5, 3, 1]) {
@@ -93,29 +98,6 @@ describe('immutable assignment-attempt construction', () => {
 		expect(target.id).toMatch(/^knowledge-[a-f0-9]+$/u);
 		expect(target.path).toBe(`knowledge/sdk-architecture/${target.id}.md`);
 		expect(result.assignment.workspace).toMatchObject({ mode: 'treedx', writablePaths: [target.path] });
-	});
-	it('writes planning content to its project library while retaining Team Library as read-only context', () => {
-		const planning = structuredClone(candidate);
-		planning.node.kind = 'planning';
-		planning.node.workspace = 'treedx';
-		planning.node.sourceRef = { store: 'postgresql', model: 'workday', id: 'workday', revision: 1,
-			digest: `sha256:${'2'.repeat(64)}` } as never;
-		planning.node.requestedPermissions = { content: { read: ['objective', 'book'], write: ['note'] }, tools: ['source.read'] } as never;
-		planning.effectiveProfile.permissionCeiling = planning.node.requestedPermissions;
-		const team = { store: 'treedx', model: 'objective', id: 'team-objective', repository: 'team-library',
-			commit: '8'.repeat(40), path: 'objectives/team.md', revision: 1, digest: `sha256:${'8'.repeat(64)}` };
-		const project = { store: 'treedx', model: 'objective', id: 'sdk-objective', repository: 'sdk-library',
-			commit: '9'.repeat(40), path: 'objectives/sdk.md', revision: 1, digest: `sha256:${'9'.repeat(64)}` };
-		planning.contextRefs = [team, project] as never;
-		planning.projectContentRepositoryId = 'sdk-library';
-		const result = buildAssignmentAttempt({ candidate: planning as never, run,
-			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session',
-			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
-		expect(result.assignment.contextRefs).toContainEqual(team);
-		expect(result.assignment.workspace).toMatchObject({ mode: 'treedx', repository: 'sdk-library', baseCommit: '9'.repeat(40) });
-		expect(result.assignment.grant.contentWrite).toEqual([expect.objectContaining({ repository: 'sdk-library' })]);
-		expect(result.assignment.grant.contentRead).toContainEqual(team);
 	});
 	it('rejects a writable TreeDX source bound to another project library', () => {
 		const misplaced = structuredClone(candidate);

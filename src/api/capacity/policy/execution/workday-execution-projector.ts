@@ -88,7 +88,13 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 		// Closing keeps every original planned identity. Exact completed estimates
 		// can cancel a never-admitted obsolete turn, never an issued attempt.
 		const plannedParticipants = workday.state === 'closing'
-			? workdayParticipants(participation, { includeEstimated: true }) : participants;
+			? [...new Map([
+				...workdayParticipants(participation, { includeEstimated: true }),
+				// The first group candidate compiled unqualified planning IDs. Close
+				// those original unissued turns through the graph; never rewrite its
+				// frozen plan or manufacture an assignment/result to finish a round.
+				...workdayParticipants({ ...participation, groupIds: [] }, { includeEstimated: true }),
+			].map(participant => [participant.id, participant])).values()] : participants;
 		changedSourceRefs.push(reference);
 		const projectIds = array(source.parameters.scheduledProjectIds).map(text).filter(Boolean).sort();
 		const roundNodes = new Map<number, ExecutionNode[]>();
@@ -98,7 +104,7 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 			for (const participant of plannedParticipants.filter((candidate) => projectIds.includes(candidate.projectId))) {
 				const { projectId, definition, activity } = participant;
 				const planningSource = record(planningSources[participant.proposalId ?? '']);
-				const nodeSource = activity === 'estimating' && planningSource.store === 'treedx'
+					const nodeSource = participant.proposalId && planningSource.store === 'treedx'
 					&& planningSource.model === 'proposal' ? planningSource as ExactEntityReference : reference;
 				const plannedId = `planning:${workday.id}:${round}:${participant.id}`;
 				if (!plannedIds.has(plannedId)) continue;
@@ -141,8 +147,8 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 						? 'cancelled' : 'blocked',
 					estimate: modelTurnEstimate(workday.policySnapshot.planningTurnMaximumSeconds),
 					requiredCapabilities: [capability(activity)], requestedPermissions: profile.permissions,
-					workspace: 'treedx', acceptanceCriteria: activity === 'estimating' ? estimatingCriteria
-						: [`Return the governed ${activity} contribution within the assigned round.`],
+						workspace: 'treedx', acceptanceCriteria: activity === 'estimating' ? estimatingCriteria
+							: [`Return a useful governed ${activity} contribution${participant.proposalId ? ` to proposal ${participant.proposalId}` : ''} within the assigned round.`],
 					graphRevisionCreated: input.revision, graphRevisionUpdated: input.revision });
 				lifecycleDependencies(node, profile.dependsOn?.events);
 				current.push(node); nodes.push(node);
@@ -155,8 +161,10 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 				// turns are independent; their explicit profile dependencies still apply.
 				const participant = participants.find(value => value.activity === 'estimating'
 					&& estimator.id === `planning:${workday.id}:${round}:${value.id}`);
-				const ownContribution = participant && current.find(node =>
-					node.id === `planning:${workday.id}:${round}:${participant.projectId}/${participant.definition.id}:planning`);
+					const contribution = participant && participants.find(value => value.activity === 'planning'
+						&& value.projectId === participant.projectId && value.definition.id === participant.definition.id
+						&& (value.proposalId === participant.proposalId || value.proposalId === undefined));
+					const ownContribution = contribution && current.find(node => node.id === `planning:${workday.id}:${round}:${contribution.id}`);
 				if (ownContribution) edges.push(edge(input.teamId, ownContribution.id, estimator.id, 'work-item', reference, input.revision));
 				if (estimator.agentClass === 'reviewer') for (const owner of current.filter(node => node.kind === 'estimating'
 					&& node.projectId === estimator.projectId && node.sourceRef.id === estimator.sourceRef.id

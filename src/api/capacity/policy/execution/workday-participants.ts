@@ -33,6 +33,8 @@ export function workdayParticipants(parameters: Row, options: { includeEstimated
 	const snapshots = record(parameters.agentProfilesByProjectId);
 	const selectedActivities = array(record(parameters.agentSelection).activityTypes).map(text).filter(Boolean);
 	const explicitActivitySelection = selectedActivities.length > 0;
+	const groups = array(parameters.groupIds).map(text);
+	const proposalsByProject = record(parameters.proposalsByProjectId);
 	const participants: WorkdayParticipant[] = [];
 	for (const [projectId, snapshotValue] of Object.entries(snapshots)) {
 		for (const entryValue of array(record(snapshotValue).agents)) {
@@ -45,8 +47,18 @@ export function workdayParticipants(parameters: Row, options: { includeEstimated
 				.filter((activity): activity is 'planning' | 'estimating' => activity === 'planning' || activity === 'estimating');
 			for (const activity of activities) {
 				if (!validation.data.activityProfiles[activity]) continue;
-				if (activity === 'planning') participants.push({ projectId, definition: validation.data,
-					activity, id: `${projectId}/${validation.data.id}:planning` });
+				if (activity === 'planning') {
+						const proposals = (groups.length ? Object.values(proposalsByProject).flatMap(array)
+							: array(proposalsByProject[projectId])).map(record);
+						if (groups.length && proposals.length) for (const proposal of proposals) {
+							if (!array(proposal.groupIds).some(id => groups.includes(text(id))
+								&& validation.data!.groupIds?.includes(text(id)))) continue;
+						const proposalId = text(proposal.id);
+						if (proposalId) participants.push({ projectId, proposalId, definition: validation.data,
+							activity, id: `${projectId}/${validation.data.id}:planning:${proposalKey(proposalId)}` });
+					} else participants.push({ projectId, definition: validation.data,
+						activity, id: `${projectId}/${validation.data.id}:planning` });
+				}
 				else for (const proposalValue of array(record(parameters.proposalsByProjectId)[projectId])) {
 					const proposal = record(proposalValue);
 					const proposalId = text(proposal.id);

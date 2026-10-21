@@ -56,6 +56,7 @@ schemaVersion: treeseed.agent/v1
 id: configured/renamed-planner
 name: Renamed governed planner
 agentClass: boundary-planner
+groupIds: [portfolio-atlas]
 purpose: Produce governed planning content within the original window.
 responsibilities: [Preserve exact authority and report unfinished work.]
 capabilities: [planning]
