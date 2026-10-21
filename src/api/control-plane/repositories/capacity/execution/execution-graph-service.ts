@@ -201,6 +201,7 @@ function visibleGraph(graph: TeamGraph, query: Row): TeamGraph {
 async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row = {}, scope: 'team' | 'communication' = 'team') {
 	const current = await loadGraphSource('projection', () => readGraph(store, teamId));
 	const frozenInvalid = new Set<string>();
+	const assignmentScope = scope === 'communication' ? " AND execution_kind='conversation'" : '';
 	const [sources, profiles, workdays, communications, activeAssignmentRows, terminalAssignmentRows, reviewCycleRows] = await Promise.all([
 		scope === 'communication' ? Promise.resolve([]) : loadGraphSource('governance', () =>
 			loadTeamExecutableProposalSources(store, teamId, undefined, (source) => frozenInvalid.add(`${source.id}\u0000${source.digest}`))),
@@ -208,16 +209,16 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 		scope === 'communication' ? Promise.resolve([]) : loadGraphSource('workdays', () => loadActiveWorkdays(store, teamId)),
 		loadGraphSource('communications', () => loadCommunicationInvocations(store, teamId)),
 		loadGraphSource<Row[]>('assignments', () => store.all(`SELECT DISTINCT execution_node_id,work_day_id FROM capacity_provider_assignments
-			WHERE team_id=? AND execution_node_id IS NOT NULL AND status IN ('pending','leased','running','returned')`, [teamId])),
+			WHERE team_id=?${assignmentScope} AND execution_node_id IS NOT NULL AND status IN ('pending','leased','running','returned')`, [teamId])),
 		loadGraphSource<Row[]>('assignment_history', () => store.all(`SELECT
 			execution_node_id,execution_node_revision,work_day_id,status,lifecycle_output_json,metadata_json,assignment_attempt_json,
 			COALESCE(completed_at,failed_at,updated_at) AS terminal_at FROM capacity_provider_assignments
-			WHERE team_id=? AND execution_node_id IS NOT NULL AND status IN ('completed','failed','expired','cancelled')
+			WHERE team_id=?${assignmentScope} AND execution_node_id IS NOT NULL AND status IN ('completed','failed','expired','cancelled')
 			ORDER BY execution_node_id,execution_node_revision DESC,
 				CASE WHEN status='completed' THEN 0 ELSE 1 END,
 				COALESCE(completed_at,failed_at,updated_at) DESC,id DESC`, [teamId])),
 		loadGraphSource('review_cycle_history', () => store.all(`SELECT execution_node_id,work_day_id,assignment_attempt_json,1 AS count
-			FROM capacity_provider_assignments WHERE team_id=? AND status='completed'
+			FROM capacity_provider_assignments WHERE team_id=?${assignmentScope} AND status='completed'
 			AND assignment_result_json IS NOT NULL
 			AND lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='request-changes'
 			AND execution_node_id IS NOT NULL`, [teamId])),
@@ -326,14 +327,26 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 			nodeRevision: integer(row.execution_node_revision),
 		}]];
 	}));
-	const desired = applyOperationalState(current, base, current.revision + 1,
+	// Discussion refreshes own communication state only. Workday history needs
+	// the full run/continuation authority deliberately absent from this scope.
+	const communicationGraph = (graph: TeamGraph): TeamGraph => ({ ...graph,
+		nodes: graph.nodes.filter(node => node.kind === 'communication'),
+		edges: graph.edges.filter(edge => graph.nodes.some(node => node.id === edge.fromNodeId && node.kind === 'communication')
+			&& graph.nodes.some(node => node.id === edge.toNodeId && node.kind === 'communication')) });
+	const desired = applyOperationalState(scope === 'communication' ? communicationGraph(current) : current,
+		scope === 'communication' ? communicationGraph(base) : base, current.revision + 1,
 		new Set((activeAssignmentRows as Row[]).filter(belongsToCurrentAttempt).map((row: Row) => text(row.execution_node_id)).filter(Boolean)), terminalStatuses, continuationByRun);
+	if (scope === 'communication') {
+		desired.nodes = [...current.nodes.filter(node => node.kind !== 'communication'), ...desired.nodes].sort((a, b) => a.id.localeCompare(b.id));
+		desired.edges = base.edges;
+		desired.digest = digest({ teamId, nodes: desired.nodes, edges: desired.edges });
+	}
 	const recoverableReviewers = desired.nodes.filter((node) => node.pairRole === 'reviewer' && node.status === 'failed');
-	if (recoverableReviewers.length) {
+	if (scope === 'team' && recoverableReviewers.length) {
 		recoverIncompleteReviewCycles(desired, completedReviewCycles, latestRequestChangesReviewers, revision);
 	}
 	const interruptedReviews = desired.nodes.filter((node) => node.kind === 'reviewing' && node.status === 'failed');
-	if (interruptedReviews.length) {
+	if (scope === 'team' && interruptedReviews.length) {
 		const attempts = await store.all(`SELECT execution_node_id,status,lifecycle_code,lifecycle_reason,assignment_result_json
 			FROM capacity_provider_assignments WHERE team_id=? AND execution_node_id IN (${interruptedReviews.map(() => '?').join(',')})`,
 			[teamId, ...interruptedReviews.map((node) => node.id)]);
