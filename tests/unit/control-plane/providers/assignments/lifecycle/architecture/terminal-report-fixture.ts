@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import { assignmentResultSchema, type AssignmentCompletionEvidence } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, assignmentResultSchema, type AssignmentCompletionEvidence } from '@treeseed/sdk/agent-capacity';
 import { ProviderAssignmentLifecycleService } from '../../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-lifecycle-service.ts';
 import { ProviderAssignmentRepository } from '../../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { CapacityRuntimeEvidenceRepository } from '../../../../../../../src/api/capacity/repositories/runtime/runtime-evidence.ts';
@@ -97,4 +97,25 @@ export async function expiredCloseoutFixture(settled = true, canonicalCounters =
 		await recoverExpiredProviderAssignments(f.owner, { teamId: 'team' });
 		return { ...f, output, input: { leaseToken: 'lease-token', runnerId, code: 'assignment_timeout', retryable: false, output } };
 	} catch (error) { await f.close(); throw error; }
+}
+
+/** Native Kernel report: public settlement precedes expiration; no sandbox was acquired.
+ * Source/content bytes and native clock are controlled test inputs, not live TreeDX proof. */
+export async function expiredNativeReportFixture() {
+ const f=await completionFixture(false);try{
+  const path='notes/original-native-report.mdx',workspace={mode:'treedx' as const,workspaceId:'original-native-workspace',repository:'original-native-library',baseCommit:'a'.repeat(40),writablePaths:[path]};
+  const attempt=assignmentAttemptSchema.parse({...f.attempt,effectiveProfile:{...f.attempt.effectiveProfile,handler:'reporter',handlerOrigin:'agent-package',activity:'reporting'},workspace,
+   grant:{...f.attempt.grant,sourceWrite:[],contentWrite:[{store:'treedx',model:'note',id:'original-native-report',repository:workspace.repository,commit:workspace.baseCommit,path}]}});
+  await f.query('UPDATE capacity_provider_assignments SET assignment_attempt_json=?,runner_id=?,metadata_json=? WHERE id=?',
+   [JSON.stringify(attempt),'original-native-runner',JSON.stringify({...f.assignment.metadata,operationalState:'closeout'}),attempt.id]);
+  const result=assignmentResultSchema.parse({...f.result,references:[{kind:'treedx',projectId:attempt.projectId,repository:workspace.repository,commit:'b'.repeat(40),path,workspaceId:workspace.workspaceId}],
+   usage:{elapsedSeconds:2,native:{activeSeconds:0.7}}});
+  await createProviderAssignmentService(f.owner as Parameters<typeof createProviderAssignmentService>[0]).settle(
+   {principal:{...principal,scopes:['provider:usage:write','provider:assignments:write']}},attempt.id,
+   {...terminalUsage,activeSeconds:1,elapsedSeconds:2,usageActual:{inputTokens:0,outputTokens:0,cachedInputTokens:0,reasoningTokens:0,nativeUsage:{}}},
+   `assignment-settlement:${attempt.id}:original-native-runner`);
+  const output={assignmentResult:result,teardown:{verified:true,completedAt:result.completedAt},artifacts:[]};
+  vi.setSystemTime(new Date(Date.parse(attempt.deadline)+1));await recoverExpiredProviderAssignments(f.owner,{teamId:'team'});
+  return {...f,attempt,result,output,input:{leaseToken:'lease-token',runnerId:'original-native-runner',code:'assignment_timeout',retryable:false,output}};
+ }catch(error){await f.close();throw error;}
 }
