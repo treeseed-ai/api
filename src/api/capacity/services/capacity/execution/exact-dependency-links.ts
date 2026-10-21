@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { exactDependencyLinkSchema, validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
+import { projectLibraryPath, resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
 import type { ExecutableProposalSource, VerifiedDependencyLink } from '../../../policy/execution/execution-graph-projector.ts';
 
 type Row = Record<string, unknown>;
@@ -34,15 +34,18 @@ export async function loadTeamExactDependencyLinks(store: any, sources: Executab
 			projectId: project.projectId, write: false, relationPaths: true, authoringPaths: true,
 		});
 		if (!connection || connection.repositoryId !== project.repository) throw new Error(`TreeDX read grant is missing for project ${project.projectId}.`);
-		const response = record(await connection.client.queryGraph({ repoId: connection.repositoryId,
-			ref: connection.baseRef, seeds: [{ kind: 'type', value: 'ExactEntityReference' }],
-			relations: ['depends_on'], options: { direction: 'both', depth: 1, maxNodes: 50 } }));
-		const commit = text(response.resolvedRef);
+		const listing = record(await connection.client.listRepositoryPaths({ repoId: connection.repositoryId,
+			ref: connection.baseRef, paths: [projectLibraryPath(connection.contentPath, 'notes/**')], kinds: ['blob'], limit: 1 }));
+		const commit = text(listing.resolvedRef);
 		if (!exactCommit.test(commit)) throw new Error('TreeDX did not pin the dependency graph to an exact commit.');
 		const pinned = await resolveKnowledgeGatewayConnection(store, {
 			projectId: project.projectId, write: false, relationPaths: true, readRefs: [commit],
 		});
 		if (!pinned || pinned.repositoryId !== project.repository) throw new Error(`TreeDX exact dependency read grant is missing for project ${project.projectId}.`);
+		const response = record(await pinned.client.queryGraph({ repoId: pinned.repositoryId,
+			ref: commit, seeds: [{ kind: 'type', value: 'ExactEntityReference' }],
+			relations: ['depends_on'], options: { direction: 'both', depth: 1, maxNodes: 50 } }));
+		if (text(response.resolvedRef) !== commit) throw new Error('TreeDX dependency graph moved during read.');
 		const nodes = response.nodes;
 		if (!Array.isArray(nodes) || nodes.length >= 50 || !Array.isArray(response.edges)) {
 			throw new Error('TreeDX dependency graph was invalid or truncated.');

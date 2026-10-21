@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { resolve } = vi.hoisted(() => ({ resolve: vi.fn() }));
-vi.mock('../../../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({
+vi.mock('../../../../../../../src/api/knowledge/gateway-treedx-connection.ts', async (original) => ({
+	...await original<typeof import('../../../../../../../src/api/knowledge/gateway-treedx-connection.ts')>(),
 	resolveKnowledgeGatewayConnection: resolve,
 }));
 import { loadTeamExactDependencyLinks } from '../../../../../../../src/api/capacity/services/capacity/execution/exact-dependency-links.ts';
@@ -31,12 +32,12 @@ beforeEach(() => { resolve.mockReset(); });
 
 describe('exact TreeDX dependency intake', () => {
 	it('requires a scoped grant, exact graph commit, and matching note bytes', async () => {
-		const client = { queryGraph: vi.fn(async () => graph),
+		const client = { listRepositoryPaths: vi.fn(async () => ({ resolvedRef: 'c'.repeat(40) })), queryGraph: vi.fn(async () => graph),
 			readRepositoryFile: vi.fn(async () => ({ resolvedRef: 'c'.repeat(40),
 				file: { path: 'notes/dependency.md', content: noteBytes, frontmatter: note } })) };
 		resolve.mockImplementation(async (_store, input) => ({ repositoryId: `${input.projectId}-library`,
-			publicationRef: 'refs/heads/staging', allowedPaths: ['proposals/**', 'notes/**'], client: input.projectId === 'sdk' ? client : {
-				queryGraph: async () => ({ resolvedRef: 'd'.repeat(40), nodes: [], edges: [] }) } }));
+			contentPath: '.', baseRef: 'refs/remotes/origin/staging', allowedPaths: ['proposals/**', 'notes/**'], client: input.projectId === 'sdk' ? client : {
+				listRepositoryPaths: async () => ({ resolvedRef: 'd'.repeat(40) }), queryGraph: async () => ({ resolvedRef: 'd'.repeat(40), nodes: [], edges: [] }) } }));
 		const result = await loadTeamExactDependencyLinks({}, [sdk, api] as never);
 		expect(result).toHaveLength(1);
 		expect(result[0]).toMatchObject({ from: link.from, to: link.to,
@@ -45,27 +46,27 @@ describe('exact TreeDX dependency intake', () => {
 		expect(client.readRepositoryFile).toHaveBeenCalledWith(expect.objectContaining({ ref: 'c'.repeat(40) }));
 		expect(resolve).toHaveBeenCalledWith({}, expect.objectContaining({ projectId: 'sdk', readRefs: ['c'.repeat(40)] }));
 		expect(resolve).toHaveBeenCalledWith({}, expect.objectContaining({ projectId: 'api', readRefs: ['a'.repeat(40)] }));
-		expect(client.queryGraph).toHaveBeenCalledWith(expect.objectContaining({ relations: ['depends_on'],
+		expect(client.queryGraph).toHaveBeenCalledWith(expect.objectContaining({ ref: 'c'.repeat(40), relations: ['depends_on'],
 			seeds: [{ kind: 'type', value: 'ExactEntityReference' }] }));
 	});
 
 	it('rejects a moved note snapshot', async () => {
-		resolve.mockImplementation(async (_store, input) => ({ repositoryId: `${input.projectId}-library`, publicationRef: 'refs/heads/staging', allowedPaths: ['proposals/**', 'notes/**'],
-			client: { queryGraph: async () => graph,
+		resolve.mockImplementation(async (_store, input) => ({ repositoryId: `${input.projectId}-library`, contentPath: '.', baseRef: 'refs/remotes/origin/staging', allowedPaths: ['proposals/**', 'notes/**'],
+			client: { listRepositoryPaths: async () => ({ resolvedRef: 'c'.repeat(40) }), queryGraph: async () => graph,
 				readRepositoryFile: async () => ({ resolvedRef: 'd'.repeat(40), file: { content: 'content', frontmatter: note } }) } }));
 		await expect(loadTeamExactDependencyLinks({}, [sdk, api] as never)).rejects.toThrow('moved during read');
 	});
 
 	it('fails closed when the pinned commit is not in the read grant', async () => {
-		resolve.mockResolvedValueOnce({ repositoryId: 'sdk-library', publicationRef: 'refs/heads/staging',
-			client: { queryGraph: async () => graph } }).mockResolvedValueOnce(null);
+		resolve.mockResolvedValueOnce({ repositoryId: 'sdk-library', contentPath: '.', baseRef: 'refs/remotes/origin/staging',
+			client: { listRepositoryPaths: async () => ({ resolvedRef: 'c'.repeat(40) }), queryGraph: async () => graph } }).mockResolvedValueOnce(null);
 		await expect(loadTeamExactDependencyLinks({}, [sdk, api] as never)).rejects.toThrow('exact dependency read grant is missing');
 	});
 
 	it('rejects a cross-project relation without a path-scoped endpoint grant', async () => {
 		resolve.mockImplementation(async (_store, input) => ({ repositoryId: `${input.projectId}-library`,
-			publicationRef: 'refs/heads/staging', allowedPaths: input.projectId === 'api' ? ['knowledge/**'] : ['proposals/**', 'notes/**'],
-			client: { queryGraph: async () => graph,
+			contentPath: '.', baseRef: 'refs/remotes/origin/staging', allowedPaths: input.projectId === 'api' ? ['knowledge/**'] : ['proposals/**', 'notes/**'],
+			client: { listRepositoryPaths: async () => ({ resolvedRef: 'c'.repeat(40) }), queryGraph: async () => graph,
 				readRepositoryFile: async () => ({ resolvedRef: 'c'.repeat(40), file: { content: 'content', frontmatter: note } }) } }));
 		await expect(loadTeamExactDependencyLinks({}, [sdk, api] as never)).rejects.toThrow('endpoint read grant is missing for project api');
 	});
