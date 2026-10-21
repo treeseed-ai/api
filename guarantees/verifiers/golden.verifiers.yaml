@@ -3705,7 +3705,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
     testFile: tests/unit/control-plane/capacity/execution/assignment-attempt-builder.test.ts
-    testName: gives planning discussion the policy turn ceiling without changing acting chat allocation
+    testName: preserves fixed discussion turns across phases without borrowing a short reply history
   api.golden.proposal-review-source:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

@@ -154,12 +154,12 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 				continue;
 			}
 			const reference = record(value);
-			if (reference.kind !== 'proposal' || text(reference.projectId) !== node.projectId || !text(reference.id)) {
+			if (reference.kind !== 'proposal' || !text(reference.projectId) || !text(reference.id)) {
 				throw new CapacityGovernanceError('communication_context_reference_invalid', `Communication node ${node.id} contains an unsupported context reference.`, 409);
 			}
 			const proposal = await store.getGovernanceProposal(text(reference.id));
 			if (!proposal || text(proposal.teamId ?? proposal.team_id) !== node.teamId
-				|| text(proposal.projectId ?? proposal.project_id) !== node.projectId) {
+				|| text(proposal.projectId ?? proposal.project_id) !== text(reference.projectId)) {
 				throw new CapacityGovernanceError('communication_proposal_context_stale', `Communication node ${node.id} references an unavailable proposal.`, 409);
 			}
 			const digest = text(reference.digest).replace(/^sha256:/u, '');
@@ -173,12 +173,12 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 			// invalidating already-admitted planning conversation.
 			const exact = await readExactProposal(store, proposal, {
 				store: 'treedx', model: 'proposal', id: text(reference.id), revision: Number(version.version),
-				repository: source.repository, commit: text(reference.immutableRef),
+				repository: text(record(record(proposal.metadata ?? proposal.metadata_json).contentProvenance).repositoryId, source.repository), commit: text(reference.immutableRef),
 				path: text(reference.path), digest: text(reference.digest),
 			});
 			const workItemRefs = array(record(exact.definition.executionPlan).workItems)
 				.flatMap((workItem) => array(record(workItem).contextRefs));
-			resolved.push(exact.ref, ...await canonicalProposalContextRefs(store, node, workItemRefs));
+			resolved.push(exact.ref, ...await canonicalProposalContextRefs(store, { ...node, projectId: text(reference.projectId) }, workItemRefs));
 		}
 
 		return projectSourceContext(store, node, resolved);

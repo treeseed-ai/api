@@ -270,8 +270,10 @@ export function buildAssignmentAttempt(input: {
 			? remainingCapabilitySeconds({ now: input.now, maximumObservationAgeSeconds: 90, dailyLimitSeconds,
 				observation: value, ledgerActiveSeconds: 0, ledgerReservedSeconds: 0 }).availableSeconds : 0;
 		// Estimates size a maximum attempt; positive available supply may shorten it.
+		// Fixed model turns cover different discussion requests, not comparable
+		// task estimates. Short acknowledgements cannot resize later source work.
 		const allocation = calculateAssignmentAllocation({ estimate: allocationEstimate,
-			measurements: planningTurn ? [] : allocationInputs.measurements,
+			measurements: planningTurn || communication ? [] : allocationInputs.measurements,
 			constraints: [{ id: 'execution-window', remainingSeconds: availableSeconds },
 				{ id: 'utc-day-window', remainingSeconds: Math.max(0, (utcDayEnd - Date.parse(input.now)) / 1000) },
 				{ id: 'model-day', remainingSeconds: remaining(limits.dailyActiveSecondsLimit, observation.modelUsage) },

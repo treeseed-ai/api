@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { validateDiscussionContextRefs } from '../../../../../../src/api/discussions/content.ts';
 import { createCommunicationService } from '../../../../../../src/api/control-plane/repositories/capacity/communication-service.ts';
 
 const mocks = vi.hoisted(() => ({ history: vi.fn(), exact: vi.fn(), targets: vi.fn() }));
@@ -41,11 +42,12 @@ beforeEach(() => {
 });
 
 describe('communication recovery after a proposal edit', () => {
-	it('reuses the committed message context instead of resolving the moved proposal', async () => {
-		const f = fixture();
+	it.each(['project', 'producer-project'])('reuses committed %s context instead of resolving the moved proposal', async owner => {
+		const f = fixture(), heldRef = { ...originalRef, projectId: owner };
+		mocks.history.mockResolvedValue({ messages: [{ ...source, frontmatter: { ...source.frontmatter, contextRefs: [heldRef] } }] });
 		const result = await f.service.send(principal, 'team', 'mcp-coordination', { message, proposalId: 'proposal' }, key);
 		expect(result.replayed).toBe(true);
-		expect(f.created).toHaveBeenCalledWith(principal, expect.objectContaining({ contextRefs: [originalRef] }), `${key}:project`);
+		expect(f.created).toHaveBeenCalledWith(principal, expect.objectContaining({ contextRefs: [heldRef] }), `${key}:project`);
 		expect(f.store.getGovernanceProposal).not.toHaveBeenCalled();
 		expect(mocks.exact).not.toHaveBeenCalled();
 		expect(mocks.history).toHaveBeenCalledWith(expect.objectContaining({ exactMessageIds: [messageId] }));
@@ -64,6 +66,19 @@ describe('communication recovery after a proposal edit', () => {
 });
 
 describe('discussion replay before invocation admission', () => {
+	it('validates a shared proposal by its owning project and team while other foreign context remains denied', async () => {
+		const ref = { ...originalRef, projectId: 'producer-project' };
+		for (const visible of [true, false]) {
+			const store = { first: vi.fn(async () => visible ? { id: 'proposal' } : null) };
+			const read = validateDiscussionContextRefs({ store, teamId: 'team', projectId: 'project', values: [ref] });
+			if (visible) expect(await read).toEqual([ref]);
+			else await expect(read).rejects.toMatchObject({ code: 'discussion_context_proposal_stale' });
+			expect(store.first).toHaveBeenCalledWith(expect.stringContaining('team_id = ? AND project_id = ?'), ['proposal', 'team', 'producer-project']);
+			await expect(validateDiscussionContextRefs({ store, teamId: 'team', projectId: 'project', values: [{ ...ref, kind: 'assignment' }] }))
+				.rejects.toMatchObject({ code: 'discussion_context_project_forbidden' });
+		}
+	});
+
 	it('rejects changed exact context when a concurrent writer already committed the message', async () => {
 		const { createDiscussionService } = await import('../../../../../../src/api/discussions/discussion-service.ts');
 		const f = fixture();

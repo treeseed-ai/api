@@ -17,19 +17,20 @@ import { OperationRegistry } from '../../../../../../src/api/control-plane/catal
 import { installControlPlaneProtocolRoutes } from '../../../../../../src/api/control-plane/http/protocol-routes.ts';
 
 describe('native communication proposal recovery', () => {
-	it('keeps the original context and one invocation after real proposal authoring, concurrent retries and interrupted admission', async () => {
+	it.each([false, true])('keeps the original context and one invocation across project streams=%s after proposal edits and interrupted admission', async crossProject => {
 		// Original owning services, PostgreSQL pools and disposable signed TreeDX.
 		// The principal/profile/proposal are controlled inputs, not agent results,
 		// OAuth, provider execution or a full objective workflow acceptance claim.
 		const f = await relationAuthoringDatabase(true), owned = new Set<string>();
 		try {
 			const projectId = f.sources[0]!.projectId, repository = f.sources[0]!.repository;
+			const discussionProjectId = f.sources[crossProject ? 1 : 0]!.projectId;
 			const now = new Date().toISOString();
-			const agent = { schemaVersion: 'treeseed.agent/v1', id: `${projectId}/researcher`, name: 'Researcher', agentClass: 'researcher',
+			const agent = { schemaVersion: 'treeseed.agent/v1', id: `${discussionProjectId}/researcher`, name: 'Researcher', agentClass: 'researcher',
 				purpose: 'Inspect the retry boundary.', responsibilities: ['Inspect the retry boundary.'], capabilities: ['repository-analysis'], context: { include: ['project-objectives'] },
 				activityProfiles: { chat: { handler: 'writer', permissions: { content: { read: ['knowledge', 'discussion'], write: ['discussion'] }, tools: ['discussion', 'source.read'] }, prompt: { system: 'Answer with exact source evidence.' } } } };
 			await f.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,handler_refs_json,metadata_json,created_at,updated_at)
-				VALUES (?,?,?,?,?,?,?,?,?)`, ['recovery-researcher', 'team', projectId, 'researcher', 'Researcher', JSON.stringify({ agents: [agent] }), '{}', now, now]);
+				VALUES (?,?,?,?,?,?,?,?,?)`, ['recovery-researcher', 'team', discussionProjectId, 'researcher', 'Researcher', JSON.stringify({ agents: [agent] }), '{}', now, now]);
 			const declaration = { schemaVersion: 'treeseed.proposal/v1', id: 'recover-mcp', projectId, title: 'Recover meaningful MCP work',
 				request: 'Keep the original invocation when retrying project work after proposal edits.', summary: 'Repair the observed retry-context drift.', status: 'draft' };
 			const path = 'proposals/governance/recover-mcp.mdx', source = `---\n${stringify(declaration)}---\n`;
@@ -59,7 +60,7 @@ describe('native communication proposal recovery', () => {
 				const id = String(result.authoringReceipt.changeset.workspaceId ?? ''); assert.ok(id); owned.add(id);
 				await f.client.workspaces.close(id); expect(object(await f.client.workspaces.get(id)).status).toBe('closed'); owned.delete(id);
 			};
-			const body = { message: `@${projectId}/researcher Trace the MCP retry-context boundary.`, proposalId: declaration.id };
+			const body = { message: `@${discussionProjectId}/researcher Trace the MCP retry-context boundary.`, proposalId: declaration.id };
 			const send = (key = 'same-project-work', input = body) => communication.send(f.principal, 'team', 'mcp-recovery', input, key);
 			// The original official client must compile the actual receipt schema and
 			// validate real owning-service output; no relaxed validator or fake receipt.
@@ -79,7 +80,8 @@ describe('native communication proposal recovery', () => {
 					path: { teamId: 'team', channel: 'mcp-recovery' }, body, headers: { 'Idempotency-Key': 'same-project-work' } } });
 				expect(result.isError).not.toBe(true); first = binding.schema.output.parse(result.structuredContent);
 			} finally { await client.close(); }
-			expect(first.targets).toHaveLength(1);
+			expect(first.targets).toHaveLength(1); expect(first.targets[0]!.projectId).toBe(discussionProjectId);
+			if (crossProject) expect((await loadDiscussions({ store: f.store, projectId, discussionId: 'mcp-recovery', collection: 'messages' })).messages).toHaveLength(0);
 			const snapshots = async () => ({ invocations: await f.store.all('SELECT * FROM agent_invocation_requests ORDER BY id'),
 				assignments: await f.store.all('SELECT * FROM capacity_provider_assignments ORDER BY id'), ledger: await f.store.all('SELECT * FROM capacity_ledger_entries ORDER BY id'),
 				events: await f.store.all('SELECT * FROM communication_topic_events ORDER BY sequence') });
@@ -104,16 +106,16 @@ describe('native communication proposal recovery', () => {
 				CREATE TRIGGER reject_recovery_admission BEFORE INSERT ON agent_invocation_requests FOR EACH ROW EXECUTE FUNCTION reject_recovery_admission();`);
 			try { await expect(send('interrupted-project-work')).rejects.toMatchObject({ status: 409, code: 'P0001' }); }
 			finally { await f.db.exec('DROP TRIGGER reject_recovery_admission ON agent_invocation_requests; DROP FUNCTION reject_recovery_admission();'); }
-			const interrupted = await loadDiscussions({ store: f.store, projectId, discussionId: 'mcp-recovery', collection: 'messages' });
+			const interrupted = await loadDiscussions({ store: f.store, projectId: discussionProjectId, discussionId: 'mcp-recovery', collection: 'messages' });
 			const frozen = interrupted.messages.find(message => message.id !== first.projectStreams[0]!.messageRef.split('/').at(-1)?.replace('.mdx','')); assert.ok(frozen);
 			await edit('Recover the interrupted admission against its original proposal.', 'Exercise the observed authoring-before-admission interruption.', '2');
 			const moved = await f.store.getGovernanceProposal(declaration.id); assert.ok(moved);
 			const exact = await readExactProposal(f.store, moved), interruptedState = await snapshots();
 			// This is the state a racing caller reaches after its first lookup missed
 			// the message but another writer committed before its own create call.
-			await expect(discussion.create(f.principal, { teamId: 'team', projectId, discussionId: 'mcp-recovery', body: body.message,
+			await expect(discussion.create(f.principal, { teamId: 'team', projectId: discussionProjectId, discussionId: 'mcp-recovery', body: body.message,
 				contextRefs: [{ kind: 'proposal', id: declaration.id, projectId, immutableRef: exact.ref.commit, path: exact.ref.path, digest: exact.ref.digest }],
-				recipients: ['researcher'] }, `interrupted-project-work:${projectId}`))
+				recipients: ['researcher'] }, `interrupted-project-work:${discussionProjectId}`))
 				.rejects.toMatchObject({ status: 409, code: 'discussion_idempotency_conflict' });
 			expect(await snapshots()).toEqual(interruptedState);
 			const recovered = await send('interrupted-project-work'); expect(recovered.replayed).toBe(true);
