@@ -1,7 +1,7 @@
 import type{PoolClient}from'pg';
 import { readFileSync } from 'node:fs';
 import { expect } from 'vitest';
-import { PGlite } from '@electric-sql/pglite';
+import { isolatedPostgres } from '../../../../../fixtures/isolated-postgres.ts';
 import { parse } from 'yaml';
 import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
 import { readyProposal, readyWorkItem } from '../../../../../governance/proposals/architecture/ready-proposal-fixture.ts';
@@ -100,7 +100,7 @@ export function graphNode(graph: TeamGraph, workItemId: string, pairRole: 'actor
 	return node;
 }
 export async function livingGraphDatabase() {
-	const db = new PGlite();
+	const db = await isolatedPostgres();
 	try {
 		// Minimal team/assignment host tables; original owning graph migrations.
 		await db.exec("CREATE TABLE teams (id text PRIMARY KEY); INSERT INTO teams VALUES ('team'),('other-team'); CREATE TABLE capacity_provider_assignments (id text PRIMARY KEY, team_id text, status text);");

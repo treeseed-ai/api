@@ -1,7 +1,7 @@
 import {appliedWorkdaySchema} from '@treeseed/sdk/agent-capacity';
 import {executePostgresBatch} from '../../../../../../../src/api/support/control-plane-postgres.ts';
 import { readFileSync } from 'node:fs';
-import { PGlite } from '@electric-sql/pglite';
+import { isolatedPostgres } from '../../../../fixtures/isolated-postgres.ts';
 import { DEFAULT_WORKDAY_POLICY, compileWorkday } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../../../../src/api/capacity/database.ts';
 import { CapacityWorkdayRunRepository } from '../../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
@@ -18,7 +18,7 @@ export const reportResult = { schemaVersion: 'treeseed.assignment-result/v1', id
 
 /** Original owning DDL and real repositories; no lifecycle query or write is mocked. */
 export async function closeoutDatabase() {
-	const db = new PGlite();
+	const db = await isolatedPostgres();
 	try {
 		const tables = ['capacity_workday_runs', 'capacity_provider_assignments', 'capacity_reservations', 'audit_events', 'capacity_workday_events'];
 		const initial = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));

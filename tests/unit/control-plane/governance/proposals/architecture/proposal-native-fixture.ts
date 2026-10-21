@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PGlite } from '@electric-sql/pglite';
+import { isolatedPostgres } from '../../../fixtures/isolated-postgres.ts';
 import { parse, stringify } from 'yaml';
 import { splitPostgresSqlStatements } from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
 
@@ -13,7 +13,7 @@ import { splitPostgresSqlStatements } from '../../../../../../src/api/persistenc
  * NOT a TreeDX server, protected manager, or production permission proof. */
 export async function proposalNativeFixture() {
 	const root = mkdtempSync(join(tmpdir(), 'api-proposal-readiness-'));
-	const db = new PGlite();
+	const db = await isolatedPostgres();
 	const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 	let fault: 'none' | 'moved' | 'denied' = 'none';
 	const requests: Array<{ ref: string; path: string }> = [];
