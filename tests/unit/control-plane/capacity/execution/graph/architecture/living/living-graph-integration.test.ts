@@ -5,6 +5,19 @@ import { emptyLivingGraph, graphNode, graphProjection, graphSource, graphState, 
 // Authoring only until the complete architecture/assignment test contract is
 // present. Embedded SQL transactions are not separate-server concurrency proof.
 describe('living graph original SQL and public service integration', () => {
+	it('retains the exact completed product revision through real picker continuation churn', () => {
+		const current = graphState(graphProjection()); current.revision = 121;
+		const actor = graphNode(current, 'first', 'actor');
+		Object.assign(actor, { status: 'completed', nodeRevision: 121, workdayId: 'original' });
+		const projected = structuredClone(current);
+		Object.assign(graphNode(projected, 'first', 'actor'), { status: 'ready', nodeRevision: 1, workdayId: 'continuation' });
+		const terminal = new Map([[actor.id, { status: 'completed' as const, nodeRevision: 98 }]]);
+		const retained = applyOperationalState(current, projected, 122, new Set(), terminal,
+			new Map([['continuation', new Set(['original'])]]));
+		expect(graphNode(retained, 'first', 'actor')).toMatchObject({ status: 'completed', nodeRevision: 98, workdayId: 'continuation' });
+		const replay = applyOperationalState(retained, projected, 123, new Set(), terminal);
+		expect(graphNode(replay, 'first', 'actor')).toMatchObject({ status: 'completed', nodeRevision: 98, workdayId: 'continuation' });
+	});
 	it('native graph cutover removes output selector storage and denies represented selector inputs without writes before exact replay', async () => {
 		const f = await livingGraphDatabase(); try {
 			expect((await f.query("SELECT column_name FROM information_schema.columns WHERE table_name='execution_nodes' AND column_name='output_json'")).rows).toEqual([]);

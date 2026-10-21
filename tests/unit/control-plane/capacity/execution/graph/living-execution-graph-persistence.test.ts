@@ -80,17 +80,6 @@ it('preserves exact completed history only for explicit continuation, never fres
 	expect(applyOperationalState(retained, graph(desired), 3, new Set(), terminal).nodes[0]?.status).toBe('completed');
 });
 
-it('retains the exact completed Engineer revision through real-shaped continuation churn', () => {
-	const prior = { ...node('completed'), nodeRevision: 121, workdayId: 'original' };
-	const projected = { ...node('ready'), workdayId: 'continuation' };
-	const terminal = new Map([[prior.id, { status: 'completed' as const, nodeRevision: 98 }]]);
-	const retained = applyOperationalState(graph(121, [prior]), graph(122, [projected]), 122,
-		new Set(), terminal, new Map([['continuation', new Set(['original'])]]));
-	expect(retained.nodes[0]).toMatchObject({ status: 'completed', nodeRevision: 98, workdayId: 'continuation' });
-	expect(applyOperationalState(retained, graph(123, [projected]), 123, new Set(), terminal).nodes[0])
-		.toMatchObject({ status: 'completed', nodeRevision: 98, workdayId: 'continuation' });
-});
-
 it('binds each accepted decision to at most one active simulation workday', () => {
 	expect(simulationRunByDecision([{ id: 'fresh', executionMode: 'simulation', parameters: { decisionIds: ['decision'] } }]).get('decision')).toBe('fresh');
 	expect(simulationRunByDecision([{ id: 'production', executionMode: 'production', parameters: { decisionIds: ['decision'] } }]).size).toBe(0);
