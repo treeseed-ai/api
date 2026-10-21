@@ -45,7 +45,7 @@ export async function relationDatabase(options: { publishedRef?: string } = {}) 
 	const calls: Captured[] = [];
 	let graphReply: unknown = input.graph, noteReply: unknown = { resolvedRef: relationCommit,
 		files: [{ path: relationPath, content: input.content, frontmatter: input.note }] };
-	let fault: Fault = 'none', faultBoundary: 'graph' | 'note' = 'graph';
+	let fault: Fault = 'none', faultBoundary: 'graph' | 'note' | 'paths' = 'graph';
 	let publicKey: ReturnType<typeof createPublicKey> | undefined;
 	const server = createServer(async (request, response) => {
 		try {
@@ -58,16 +58,16 @@ export async function relationDatabase(options: { publishedRef?: string } = {}) 
 			const claims = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf8')) as Record<string, unknown>;
 			const scope = Object.fromEntries(['treedx_repo_ids', 'treedx_refs', 'treedx_paths', 'treedx_capabilities', 'treeseed_project_id', 'treeseed_connection_id'].map(key => [key, claims[key]]));
 			const route = request.url ?? ''; calls.push({ route, body, scope });
-			const graph = route.endsWith('/graph/query'), note = route.endsWith('/files/read');
-			if (request.method !== 'POST' || ![...input.sources.map(source => `/api/v1/repos/${source.repository}/graph/query`),
+			const graph = route.endsWith('/graph/query'), note = route.endsWith('/files/read'), paths = route.endsWith('/paths/list');
+			if (request.method !== 'POST' || ![...input.sources.flatMap(source => [`/api/v1/repos/${source.repository}/graph/query`, `/api/v1/repos/${source.repository}/paths/list`]),
 				`/api/v1/repos/${input.sources[0]!.repository}/files/read`].includes(route)) { response.writeHead(403); response.end(); return; }
-			if ((faultBoundary === 'graph' && graph) || (faultBoundary === 'note' && note)) {
+			if ((faultBoundary === 'graph' && graph) || (faultBoundary === 'note' && note) || (faultBoundary === 'paths' && paths)) {
 				if (fault === 'reset') { request.socket.destroy(); return; }
 				if (fault === '403' || fault === '503') { response.writeHead(Number(fault)); response.end(JSON.stringify({ error: { code: 'controlled_failure', message: 'Controlled relation read failure.' } })); return; }
 				if (fault === 'json') { response.end('{invalid'); return; }
 			}
 			response.setHeader('content-type', 'application/json');
-			response.end(JSON.stringify(note ? noteReply : route.includes('/precursor-library/') && (!options.publishedRef || body.ref === options.publishedRef) ? graphReply : { resolvedRef: 'e'.repeat(40), nodes: [], edges: [] }));
+			response.end(JSON.stringify(paths ? { resolvedRef: route.includes('/precursor-library/') ? relationCommit : 'e'.repeat(40), entries: [], page: { hasMore: false } } : note ? noteReply : route.includes('/precursor-library/') && (!options.publishedRef || body.ref === relationCommit) ? graphReply : { resolvedRef: 'e'.repeat(40), nodes: [], edges: [] }));
 		} catch { response.writeHead(400); response.end(); }
 	});
 	const close = async () => {
@@ -92,6 +92,6 @@ export async function relationDatabase(options: { publishedRef?: string } = {}) 
 		const snapshot = async () => ({ ...await f.snapshot(), libraries: await f.store.all('SELECT * FROM treedx_project_libraries ORDER BY id') });
 		return { ...f, ...input, calls, load, snapshot, close, empty: emptyLivingGraph,
 			setGraph: (value: unknown) => { graphReply = value; }, setNote: (value: unknown) => { noteReply = value; },
-			setFault: (value: Fault, boundary: 'graph' | 'note' = 'graph') => { fault = value; faultBoundary = boundary; } };
+			setFault: (value: Fault, boundary: 'graph' | 'note' | 'paths' = 'graph') => { fault = value; faultBoundary = boundary; } };
 	} catch (error) { await close(); throw error; }
 }

@@ -7,6 +7,7 @@ import { CapacityWorkdayEventRepository, type CapacityWorkdayEventWrite } from '
 import type { ProviderLeasePrincipal } from '../../../../accounts/lease-authority-service.ts';
 import { record, terminalPerformance, type ExtendedProviderAssignmentLifecycleRequest } from './assignment-terminal-performance.ts';
 import { composeAssignmentLifecycleOutput } from '../assignment-lifecycle-output.ts';
+import { validateAssignmentResultCompletion } from '../../context/assignment-result-completion.ts';
 
 /** Nonproductive acknowledgement through the existing failure operation. The
  * original expiration, immutable attempt and native measurement remain authority.
@@ -30,17 +31,30 @@ export async function acknowledgeExpiredCloseout(database: CapacityGovernanceDat
 		|| input.completion != null || record(input).assignmentResult != null || input.performance != null || input.fallbackOutput != null) return deny();
 	const output = record(input.output), teardown = record(output.teardown), parsed = assignmentResultSchema.safeParse(output.assignmentResult);
 	if (!parsed.success || !isDeepStrictEqual(parsed.data, output.assignmentResult) || parsed.data.assignmentId !== assignment.id
-		|| teardown.verified !== true || typeof output.sandboxId !== 'string' || !output.sandboxId.trim()) return deny();
+			|| teardown.verified !== true) return deny();
+		const nativeContent = !Object.hasOwn(output, 'sandboxId') && attempt.workspace.mode === 'treedx';
+		if (nativeContent) {
+			if (Object.keys(output).some(key => !['assignmentResult', 'teardown', 'artifacts'].includes(key))
+				|| !Array.isArray(output.artifacts) || output.artifacts.length) return deny();
+			// Validate original committed workspace custody through the same general
+			// result contract, without installing it as a successful canonical result.
+			try { validateAssignmentResultCompletion(assignment, { output }, now); } catch { return deny(); }
+		} else if (typeof output.sandboxId !== 'string' || !output.sandboxId.trim()) return deny();
 	const produced = Date.parse(parsed.data.completedAt), closed = Date.parse(String(teardown.completedAt ?? ''));
 		// The owning host may assemble its final report after physical teardown.
 		// Bound both original observations without promoting the expired result.
 	if (!Number.isFinite(produced) || !Number.isFinite(closed) || produced < Date.parse(attempt.createdAt)
 			|| produced > Date.parse(attempt.deadline) || produced > Date.parse(now)
 			|| closed < Date.parse(attempt.createdAt) || closed > Date.parse(now)) return deny();
+		if (nativeContent && produced > closed) return deny();
 	const native = record(parsed.data.usage.native), positive = (value: unknown): value is number =>
 		typeof value === 'number' && Number.isFinite(value) && value > 0;
-	if (!positive(native.activeSeconds) || !positive(native.elapsedSeconds) || native.activeSeconds > native.elapsedSeconds
-		|| Math.ceil(native.elapsedSeconds) !== parsed.data.usage.elapsedSeconds) return deny();
+		if (nativeContent) {
+			if (!positive(native.activeSeconds) || native.activeSeconds > parsed.data.usage.elapsedSeconds
+				|| Object.keys(native).some(key => key !== 'activeSeconds')
+				|| parsed.data.usage.modelInputTokens !== undefined || parsed.data.usage.modelOutputTokens !== undefined) return deny();
+		} else if (!positive(native.activeSeconds) || !positive(native.elapsedSeconds) || native.activeSeconds > native.elapsedSeconds
+			|| Math.ceil(native.elapsedSeconds) !== parsed.data.usage.elapsedSeconds) return deny();
 	const count=(value:unknown):number=>{if(typeof value!=='number'||!Number.isSafeInteger(value)||value<0)return deny();return value;};
 	const expected = { active_seconds: Math.ceil(native.activeSeconds), elapsed_seconds: parsed.data.usage.elapsedSeconds,
 		input_tokens: parsed.data.usage.modelInputTokens ?? 0, output_tokens: parsed.data.usage.modelOutputTokens ?? 0,
@@ -50,6 +64,9 @@ export async function acknowledgeExpiredCloseout(database: CapacityGovernanceDat
 	let entries = await database.all("SELECT * FROM capacity_ledger_entries WHERE reservation_id=? AND phase='task_completed_actual_settlement'",
 		[assignment.reservationId]);
 	let usages = await database.all("SELECT * FROM capacity_usage_actuals WHERE assignment_id=? AND accounting_mode='aggregate'", [assignment.id]);
+		// Native closeout acknowledges only already committed accounting. It never
+		// derives a new charge or invents a missing native elapsed measurement.
+		if (nativeContent && reservation?.state !== 'consumed') return deny();
 
 	// A retained diagnostic is not a settlement. Transfer only the original
 	// provider/attempt's matching native observation through the same exactly-once

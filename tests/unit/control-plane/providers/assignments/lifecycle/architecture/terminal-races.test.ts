@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { recoverExpiredProviderAssignments } from '../../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-recovery-service.ts';
 import { OperatorAssignmentService } from '../../../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
-import { principal, returnedCompletion, completionFixture, expiredCloseoutFixture } from './terminal-report-fixture.ts';
+import { principal, returnedCompletion, completionFixture, expiredCloseoutFixture, expiredNativeReportFixture } from './terminal-report-fixture.ts';
 import { assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 
 // Real original-DDL owning transactions and public service methods. The
@@ -270,4 +270,24 @@ describe('terminal races preserve one immutable attempt and prior measured truth
 			expect(await f.service.complete(principal, f.attempt.id, input)).toBeNull(); expect(await f.snapshot()).toEqual(before); expect(input).toEqual(original);
 		} finally { await f.close(); }
 	});
+});
+
+it('acknowledges an already-settled native TreeDX report without a sandbox or a second financial transition',async()=>{
+ const f=await expiredNativeReportFixture();try{
+  const original=(await f.repository.get('team',f.attempt.id))!,finance=await financialTruth(f),held=structuredClone(f.input);
+  expect(finance.ledger).toHaveLength(1);expect(finance.usage.filter(row=>row.accounting_mode==='aggregate')).toHaveLength(1);
+  const snapshot=await f.snapshot();
+  for(const output of [
+   {...f.output,environmentReceipt:{}}, {...f.output,sandboxId:'substituted'}, {...f.output,artifacts:[{id:'guest'}]},
+   {...f.output,teardown:{...f.output.teardown,verified:false}},
+   {...f.output,assignmentResult:{...f.result,references:[{...f.result.references[0],workspaceId:'foreign'}]}},
+   {...f.output,assignmentResult:{...f.result,usage:{...f.result.usage,modelInputTokens:1}}},
+   {...f.output,assignmentResult:{...f.result,usage:{...f.result.usage,native:{activeSeconds:1.7}}}},
+  ]){await expect(f.service.fail(principal,f.attempt.id,{...f.input,output})).rejects.toMatchObject({code:'provider_expired_closeout_conflict'});expect(await f.snapshot()).toEqual(snapshot);expect(await financialTruth(f)).toEqual(finance);}
+  const result=await f.service.fail(principal,f.attempt.id,f.input);
+  expect(result?.assignment).toMatchObject({status:'expired',leaseState:'released',assignmentResult:null,assignmentAttempt:original.assignmentAttempt,
+   metadata:original.metadata,lifecycleOutput:{...f.output,completion:null,performance:{disposition:'failed',actual:{activeSeconds:1,elapsedSeconds:2}}}});
+  expect(await financialTruth(f)).toEqual(finance);expect(f.input).toEqual(held);
+  const once=await f.snapshot();expect((await f.service.fail(principal,f.attempt.id,f.input))?.assignment).toEqual(result?.assignment);expect(await f.snapshot()).toEqual(once);
+ }finally{await f.close();}
 });
