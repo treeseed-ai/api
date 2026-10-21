@@ -171,10 +171,10 @@ export async function relationAuthoringDatabase(nativePostgres = false) {
 			assert.equal(file.resolvedRef, commit); const nativeFile = object(file.file ?? (Array.isArray(file.files) ? file.files[0] : undefined));
 			assert.equal(nativeFile.path, relationPath); assert.equal(nativeFile.content, content);
 			await completedGraphRefresh(read.client, { repoId: read.repositoryId, ref: read.publicationRef, paths: ['notes/**'] });
-			// Loader queries every selected project's publication branch. Build the
+			// Loader queries every selected project's authoritative binding. Build the
 			// original native index for the other disposable selected library too.
 			const secondary = await resolveKnowledgeGatewayConnection(store, { projectId: 'dependent', write: true }); assert.ok(secondary);
-			await completedGraphRefresh(secondary.client, { repoId: secondary.repositoryId, ref: 'refs/heads/staging', paths: ['notes/**'] });
+			await completedGraphRefresh(secondary.client, { repoId: secondary.repositoryId, ref: secondary.baseRef, paths: ['notes/**'] });
 			const loaded = await loadTeamExactDependencyLinks(store, input.sources);
 			return { commit, graph, search, file, loaded, read };
 		};

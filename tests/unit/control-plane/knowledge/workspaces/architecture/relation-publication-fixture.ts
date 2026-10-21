@@ -35,7 +35,7 @@ export async function relationPublicationDatabase() {
 			// The unchanged selected secondary library also needs its real empty index;
 			// never supply a graph response to the owning loader.
 			const secondary = await resolveKnowledgeGatewayConnection(f.store, { projectId: 'dependent', write: true }); assert.ok(secondary);
-			await completedGraphRefresh(secondary.client, { repoId: secondary.repositoryId, ref: secondary.publicationRef, paths: ['notes/**'] });
+			await completedGraphRefresh(secondary.client, { repoId: secondary.repositoryId, ref: secondary.baseRef, paths: ['notes/**'] });
 			return loadTeamExactDependencyLinks(f.store, f.sources);
 		};
 		const close = async () => {
