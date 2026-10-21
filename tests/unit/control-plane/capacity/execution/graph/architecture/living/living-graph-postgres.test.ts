@@ -87,9 +87,12 @@ describe('independent PostgreSQL connection graph custody', () => {
 		try {
 			const input = graphProjection(), initial = graphState(input);
 			const actor = graphNode(initial, 'first', 'actor'), reviewer = graphNode(initial, 'first', 'reviewer');
-			const terminal = new Map([[actor.id, { status: 'completed' as const, nodeRevision: actor.nodeRevision }],
+			// Real picker continuation: projection churn reached 121, completed product is 98.
+			actor.nodeRevision = 121;
+			const terminal = new Map([[actor.id, { status: 'completed' as const, nodeRevision: 98 }],
 				[reviewer.id, { status: 'completed' as const, nodeRevision: reviewer.nodeRevision }]]);
 			let current = applyOperationalState(initial, { ...initial, nodes: input.nodes, edges: input.edges }, 1, new Set(), terminal);
+			expect(graphNode(current, 'first', 'actor')).toMatchObject({ status: 'completed', nodeRevision: 98 });
 			await persistExecutionGraph(f.stores[0], current, emptyLivingGraph(), { ...input.revision, graphDigest: current.digest });
 			const historical = await f.snapshot(), held = structuredClone({ input, initial, terminal });
 			const frozen = new Map(current.nodes.map(node => [node.id, structuredClone(node)]));

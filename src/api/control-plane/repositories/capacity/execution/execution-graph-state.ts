@@ -62,7 +62,10 @@ export function applyOperationalState(current: TeamGraph, projected: TeamGraph, 
 			// A terminal assignment is evidence for an existing node revision, not a
 			// new semantic revision. Repeated reconciliation must converge instead of
 			// manufacturing fresh ready Actor revisions that can be leased again.
-			nodeRevision: Math.max(prior.nodeRevision, applicableTerminal!.nodeRevision), graphRevisionUpdated: revision };
+			// Completed predecessors must match their immutable result revision;
+			// carrying a projection-only bump would make exact review admission fail.
+			nodeRevision: recoveredTerminalStatus === 'completed' ? applicableTerminal!.nodeRevision
+				: Math.max(prior.nodeRevision, applicableTerminal!.nodeRevision), graphRevisionUpdated: revision };
 		}
 		const operational = prior && !freshSimulationAttempt && node.kind !== 'condition'
 			&& ((['completed', 'failed', 'cancelled'].includes(prior.status))

@@ -80,6 +80,17 @@ it('preserves exact completed history only for explicit continuation, never fres
 	expect(applyOperationalState(retained, graph(desired), 3, new Set(), terminal).nodes[0]?.status).toBe('completed');
 });
 
+it('retains the exact completed Engineer revision through real-shaped continuation churn', () => {
+	const prior = { ...node('completed'), nodeRevision: 121, workdayId: 'original' };
+	const projected = { ...node('ready'), workdayId: 'continuation' };
+	const terminal = new Map([[prior.id, { status: 'completed' as const, nodeRevision: 98 }]]);
+	const retained = applyOperationalState(graph(121, [prior]), graph(122, [projected]), 122,
+		new Set(), terminal, new Map([['continuation', new Set(['original'])]]));
+	expect(retained.nodes[0]).toMatchObject({ status: 'completed', nodeRevision: 98, workdayId: 'continuation' });
+	expect(applyOperationalState(retained, graph(123, [projected]), 123, new Set(), terminal).nodes[0])
+		.toMatchObject({ status: 'completed', nodeRevision: 98, workdayId: 'continuation' });
+});
+
 it('binds each accepted decision to at most one active simulation workday', () => {
 	expect(simulationRunByDecision([{ id: 'fresh', executionMode: 'simulation', parameters: { decisionIds: ['decision'] } }]).get('decision')).toBe('fresh');
 	expect(simulationRunByDecision([{ id: 'production', executionMode: 'production', parameters: { decisionIds: ['decision'] } }]).size).toBe(0);
@@ -306,7 +317,7 @@ describe('normalized living execution graph persistence', () => {
 		const projected = { ...node('ready'), graphRevisionCreated: 3, graphRevisionUpdated: 3 };
 		expect(applyOperationalState(graph(2, [stale]), graph(3, [projected]), 3, new Set(),
 			new Map([['node', { status: 'completed' as const, nodeRevision: 1 }]])).nodes).toEqual([
-			expect.objectContaining({ id: 'node', status: 'completed', nodeRevision: 2,
+			expect.objectContaining({ id: 'node', status: 'completed', nodeRevision: 1,
 				graphRevisionCreated: 1, graphRevisionUpdated: 3 }),
 		]);
 	});
@@ -315,7 +326,7 @@ describe('normalized living execution graph persistence', () => {
 		const reactivated = { ...node('ready'), nodeRevision: 3, graphRevisionUpdated: 3 };
 		expect(applyOperationalState(graph(3, [reactivated]), graph(4, [node('ready')]), 4, new Set(),
 			new Map([['node', { status: 'completed' as const, nodeRevision: 1 }]])).nodes).toEqual([
-			expect.objectContaining({ id: 'node', status: 'completed', nodeRevision: 3, graphRevisionUpdated: 4 }),
+			expect.objectContaining({ id: 'node', status: 'completed', nodeRevision: 1, graphRevisionUpdated: 4 }),
 		]);
 	});
 
@@ -335,10 +346,10 @@ describe('normalized living execution graph persistence', () => {
 		const terminal = new Map([['reviewer', { status: 'completed' as const, nodeRevision: 2 }]]);
 		const reconciled = applyOperationalState(graph(3, [reviewer]), graph(4, [projected]), 4, new Set(), terminal);
 		expect(reconciled.nodes).toEqual([
-			expect.objectContaining({ id: 'reviewer', status: 'completed', nodeRevision: 3 }),
+			expect.objectContaining({ id: 'reviewer', status: 'completed', nodeRevision: 2 }),
 		]);
 		expect(applyOperationalState(reconciled, graph(5, [projected]), 5, new Set(), terminal).nodes[0])
-			.toMatchObject({ status: 'completed', nodeRevision: 3 });
+			.toMatchObject({ status: 'completed', nodeRevision: 2 });
 	});
 
 	it('readies a request-changes Reviewer after the revised Actor completes', () => {
