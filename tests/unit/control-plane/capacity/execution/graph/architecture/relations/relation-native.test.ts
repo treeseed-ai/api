@@ -18,6 +18,18 @@ describe('exact dependency intake native HTTP original SQL and public graph read
 			expect(noteCalls[0]!.scope.treedx_capabilities).not.toContain('files:write'); expect(f.sources).toEqual(before);
 		} finally { await f.close(); }
 	});
+	it('discovers a published dependency from the bound library ref when the local authoring branch has no note', async () => {
+		const publishedRef = 'refs/remotes/origin/staging', f = await relationDatabase({ publishedRef }); try {
+			const links = await f.load(); expect(links).toEqual([f.dependency]);
+			const graphCalls = f.calls.filter(call => call.route.endsWith('/graph/query'));
+			expect(graphCalls).toHaveLength(2);
+			for (const call of graphCalls) { expect(call.body.ref).toBe(publishedRef); expect(call.scope.treedx_refs).toContain(publishedRef); }
+			const p = f.project(links), graph = graphState(p); await f.persist(graph, f.empty(), p.revision);
+			const explanation = await f.service.explain(f.principal, 'team', graphNode(graph, 'first', 'actor', 'dependent').id);
+			expect(explanation.admission.eligible).toBe(false);
+			expect(explanation.predecessors).toContainEqual(expect.objectContaining({ edge: expect.objectContaining({ provenance: 'treedx-link' }), satisfied: false }));
+		} finally { await f.close(); }
+	});
 	it('retains the digest of exact untrimmed note bytes and denies mismatched returned note path rather than inventing content custody', async () => {
 		const f = await relationDatabase(); try {
 			expect((await f.load())[0]!.sourceRef.digest).toBe(f.dependency.sourceRef.digest);

@@ -35,7 +35,7 @@ export async function loadTeamExactDependencyLinks(store: any, sources: Executab
 		});
 		if (!connection || connection.repositoryId !== project.repository) throw new Error(`TreeDX read grant is missing for project ${project.projectId}.`);
 		const response = record(await connection.client.queryGraph({ repoId: connection.repositoryId,
-			ref: connection.publicationRef, seeds: [{ kind: 'type', value: 'ExactEntityReference' }],
+			ref: connection.baseRef, seeds: [{ kind: 'type', value: 'ExactEntityReference' }],
 			relations: ['depends_on'], options: { direction: 'both', depth: 1, maxNodes: 50 } }));
 		const commit = text(response.resolvedRef);
 		if (!exactCommit.test(commit)) throw new Error('TreeDX did not pin the dependency graph to an exact commit.');

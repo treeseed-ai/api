@@ -38,7 +38,7 @@ type Fault = 'none' | '403' | '503' | 'reset' | 'json';
 // graph SQL/read service. Source proposals, decisions, endpoint replies and library
 // bindings are controlled INPUTS, not native relation creation, API authentication,
 // provider dispatch/charge, TreeDX server, Kata or physical resource closure.
-export async function relationDatabase() {
+export async function relationDatabase(options: { publishedRef?: string } = {}) {
 	if (process.env.TREESEED_TREEDX_URL || process.env.TREESEED_TREEDX_BASE_URL) throw new Error('Isolated relation fixture requires no external TreeDX URL override');
 	if (process.env.NODE_ENV !== 'test' && process.env.TREESEED_ENVIRONMENT !== 'test') throw new Error('Disposable test delegation authority required');
 	const input = relationInputs(), f = await livingGraphDatabase();
@@ -67,7 +67,7 @@ export async function relationDatabase() {
 				if (fault === 'json') { response.end('{invalid'); return; }
 			}
 			response.setHeader('content-type', 'application/json');
-			response.end(JSON.stringify(note ? noteReply : route.includes('/precursor-library/') ? graphReply : { resolvedRef: 'e'.repeat(40), nodes: [], edges: [] }));
+			response.end(JSON.stringify(note ? noteReply : route.includes('/precursor-library/') && (!options.publishedRef || body.ref === options.publishedRef) ? graphReply : { resolvedRef: 'e'.repeat(40), nodes: [], edges: [] }));
 		} catch { response.writeHead(400); response.end(); }
 	});
 	const close = async () => {
@@ -82,7 +82,7 @@ export async function relationDatabase() {
 		for (const source of input.sources) await f.query(`INSERT INTO treedx_project_libraries
 			(id,team_id,project_id,instance_id,library_id,repository_id,content_path,content_repository_ref,created_at,updated_at)
 			VALUES (?,?,?,?,?,?,?,?,?,?)`, [`binding-${source.projectId}`, 'team', source.projectId, 'isolated-connection',
-				source.projectId, source.repository, '.', source.commit, '2026-10-03T00:00:00Z', '2026-10-03T00:00:00Z']);
+				source.projectId, source.repository, '.', options.publishedRef ?? source.commit, '2026-10-03T00:00:00Z', '2026-10-03T00:00:00Z']);
 		await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
 		const address = server.address(); if (!address || typeof address === 'string') throw new Error('Native HTTP endpoint required');
 		const store = { ...f.store, config: { TREESEED_TREEDX_URL: `http://127.0.0.1:${address.port}` },
