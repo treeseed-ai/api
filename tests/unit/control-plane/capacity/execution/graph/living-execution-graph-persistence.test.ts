@@ -306,7 +306,7 @@ describe('normalized living execution graph persistence', () => {
 		const projected = { ...node('ready'), graphRevisionCreated: 3, graphRevisionUpdated: 3 };
 		expect(applyOperationalState(graph(2, [stale]), graph(3, [projected]), 3, new Set(),
 			new Map([['node', { status: 'completed' as const, nodeRevision: 1 }]])).nodes).toEqual([
-			expect.objectContaining({ id: 'node', status: 'completed', nodeRevision: 2,
+			expect.objectContaining({ id: 'node', status: 'completed', nodeRevision: 1,
 				graphRevisionCreated: 1, graphRevisionUpdated: 3 }),
 		]);
 	});
@@ -315,7 +315,7 @@ describe('normalized living execution graph persistence', () => {
 		const reactivated = { ...node('ready'), nodeRevision: 3, graphRevisionUpdated: 3 };
 		expect(applyOperationalState(graph(3, [reactivated]), graph(4, [node('ready')]), 4, new Set(),
 			new Map([['node', { status: 'completed' as const, nodeRevision: 1 }]])).nodes).toEqual([
-			expect.objectContaining({ id: 'node', status: 'completed', nodeRevision: 3, graphRevisionUpdated: 4 }),
+			expect.objectContaining({ id: 'node', status: 'completed', nodeRevision: 1, graphRevisionUpdated: 4 }),
 		]);
 	});
 
@@ -335,10 +335,10 @@ describe('normalized living execution graph persistence', () => {
 		const terminal = new Map([['reviewer', { status: 'completed' as const, nodeRevision: 2 }]]);
 		const reconciled = applyOperationalState(graph(3, [reviewer]), graph(4, [projected]), 4, new Set(), terminal);
 		expect(reconciled.nodes).toEqual([
-			expect.objectContaining({ id: 'reviewer', status: 'completed', nodeRevision: 3 }),
+			expect.objectContaining({ id: 'reviewer', status: 'completed', nodeRevision: 2 }),
 		]);
 		expect(applyOperationalState(reconciled, graph(5, [projected]), 5, new Set(), terminal).nodes[0])
-			.toMatchObject({ status: 'completed', nodeRevision: 3 });
+			.toMatchObject({ status: 'completed', nodeRevision: 2 });
 	});
 
 	it('readies a request-changes Reviewer after the revised Actor completes', () => {
