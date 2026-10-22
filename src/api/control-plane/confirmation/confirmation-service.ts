@@ -1,6 +1,8 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { ConfirmationState, InputRequired } from '@treeseed/sdk/operator-contracts';
 
+export const CONFIRMATION_HEADER = 'x-treeseed-confirmation';
+
 interface ConfirmationClaims {
 	schemaVersion: 'treeseed.confirmation-state/v1';
 	principalId: string;

@@ -327,9 +327,9 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 						|| !text(proposal.projectId, text(proposal.project_id))) {
 						throw new CapacityOperationError(404, 'communication_proposal_not_found', 'The selected proposal does not belong to this team.');
 					}
-					if (!['open', 'discussing'].includes(text(proposal.status))) {
-						throw new CapacityOperationError(409, 'communication_proposal_not_open', 'Discussion context requires an open proposal.');
-					}
+					// Context is read-only evidence, including planning drafts and
+					// accepted/rejected work discussed during execution or recovery.
+					// It never substitutes for a Decision's acting authority.
 					const exact = await readExactProposal(store, proposal);
 					contextRefs.push({ kind: 'proposal', id: proposalId, projectId: text(proposal.projectId, text(proposal.project_id)),
 						immutableRef: exact.ref.commit, path: exact.ref.path, digest: exact.ref.digest });

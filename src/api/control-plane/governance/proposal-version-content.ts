@@ -9,6 +9,7 @@ import { applyTextChangeset } from '../../knowledge/changesets/apply-text-change
 import { treeDxWorkspaceId } from '../../knowledge/workspaces/identity.ts';
 import { CapacityWorkdayRunRepository } from '../../capacity/repositories/capacity/workdays/workday-run.ts';
 import { parseFrontmatterDocument } from '../../content/frontmatter.ts';
+import { readExactProposal } from '../../governance/executable-proposal.ts';
 
 type Row = Record<string, unknown>;
 function object(value: unknown): Row { if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row; if (typeof value === 'string') try { return object(JSON.parse(value)); } catch { return {}; } return {}; }
@@ -106,13 +107,18 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 		});
 		if (existing && text(object(existing).resolvedRef) !== workspace.baseCommitSha) throw Object.assign(new Error('The proposal content branch changed while its current version was read.'), { status: 409, code: 'proposal_content_base_stale' });
 		const before = existing === null ? null : repositorySource(existing);
-		const priorGroups = before === null ? undefined : parseFrontmatterDocument(before).frontmatter.groupIds;
+		// Inbox edits carry only changed prose. Preserve authored fields from the
+		// active proposal, including estimates on a private simulation commit.
+		const prior = input.initial === true || before === null ? {}
+			: sourceCommit && sourceCommit !== workspace.baseCommitSha
+				? (await readExactProposal(input.store, input.proposal)).definition
+				: parseFrontmatterDocument(before).frontmatter;
+		const field = (key: string) => Object.hasOwn(input.update, key) ? input.update[key] : prior[key];
 		const source = serializeProposalDocument({
 			id: text(input.proposal.id), projectId, title, request: body, ...(summary ? { summary } : {}),
 			status: status as 'draft' | 'discussing' | 'ready' | 'decided' | 'withdrawn',
-			groupIds: Object.hasOwn(input.update, 'groupIds') ? input.update.groupIds : priorGroups,
-			objectiveRefs: input.update.objectiveRefs, evidenceRefs: input.update.evidenceRefs,
-			discussionRef: input.update.discussionRef, executionPlan: input.update.executionPlan,
+			groupIds: field('groupIds'), objectiveRefs: field('objectiveRefs'), evidenceRefs: field('evidenceRefs'),
+			discussionRef: field('discussionRef'), executionPlan: field('executionPlan'),
 		});
 		const expectedDigest = createHash('sha256').update(source).digest('hex');
 		if (before === source) {

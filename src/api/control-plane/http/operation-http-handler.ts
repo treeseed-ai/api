@@ -4,7 +4,7 @@ import type { Context } from 'hono';
 import { ZodError } from 'zod';
 import { ControlPlaneOperationError, type BoundOperation } from '../catalog/operation-registry.ts';
 import { enforceOperationAuthorization, readOperationPreconditions } from '../authorization/invocation-policy.ts';
-import { decodeConfirmation, type ConfirmationService } from '../confirmation/confirmation-service.ts';
+import { CONFIRMATION_HEADER, decodeConfirmation, type ConfirmationService } from '../confirmation/confirmation-service.ts';
 
 type Authenticate = (request: Request) => Promise<AuthInfo | Response>;
 
@@ -90,7 +90,7 @@ export function createOperationHttpHandler(
 				}
 				const identity = { principalId: String((authInfo.extra.principal as any).id), clientId: authInfo.clientId,
 					operationId: descriptor.operationId, arguments: input };
-				const supplied = decodeConfirmation(context.req.header('x-treeseed-confirmation'));
+				const supplied = decodeConfirmation(context.req.header(CONFIRMATION_HEADER));
 				if (!supplied) {
 					const required = confirmations.request({ ...identity, requestId });
 					return context.json({ type: 'https://treeseed.dev/problems/confirmation_required', title: 'Confirmation required',
