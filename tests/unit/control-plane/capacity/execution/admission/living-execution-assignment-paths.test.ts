@@ -58,7 +58,8 @@ describe('living execution TreeDX path authority', () => {
 		host.listTeamProjects = vi.fn().mockResolvedValue([{ id: 'project-a', slug: 'a' }, { id: 'project-b', slug: 'b' }]);
 		host.getProjectByTeamAndSlug = vi.fn().mockResolvedValue(null); host.getProjectTreeDxLibrary = vi.fn().mockResolvedValue(null);
 		boundary.runs.mockResolvedValue([{ ...input.run, parameters: { ...input.run.parameters, projects: ['project-a', 'project-b'], scheduledProjectIds: ['project-a', 'project-b'] } }]);
-		boundary.ready.mockResolvedValue([rejected, healthy]); boundary.allocation.mockResolvedValue(input.allocationInputs);
+		boundary.ready.mockImplementation(async (_store, _run, project) => [rejected, healthy].filter(candidate => candidate.node.projectId === project.id));
+		boundary.allocation.mockResolvedValue(input.allocationInputs);
 		boundary.admit.mockImplementation(async (_store, value) => {
 			if (value.assignment.nodeId === rejected.node.id) throw new CapacityGovernanceError(
 				'assignment_predecessor_authority_mismatch', 'Every predecessor artifact requires its exact context and read grant.', 409,
