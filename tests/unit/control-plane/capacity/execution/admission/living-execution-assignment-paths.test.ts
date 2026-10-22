@@ -72,7 +72,12 @@ describe('living execution TreeDX path authority', () => {
 			runId: input.run.id, nodeId: rejected.node.id, code: 'assignment_predecessor_authority_mismatch',
 			reason: 'Every predecessor artifact requires its exact context and read grant.', details: { predecessorId: 'prior-result' },
 		}]);
-		expect(boundary.admit).toHaveBeenCalledTimes(2);
+		boundary.allocation.mockRejectedValue(new CapacityGovernanceError(
+			'execution_assignment_authority_mismatch', 'Shared authority context is invalid.', 403));
+		await expect(assignNextReadyExecutionNode(createCapacityControlPlane(host), input.principal,
+			input.providerSessionId, input.providers, input.now)).rejects.toMatchObject({
+			code: 'execution_assignment_authority_mismatch', message: 'Shared authority context is invalid.',
+		});
 	});
 	it('keeps communication admission independent of the ordinary workday slot', () => {
 		const policy = { maximumConcurrency: 1, communicationConcurrency: 2 };
