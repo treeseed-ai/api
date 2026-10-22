@@ -51,7 +51,6 @@ describe('native communication proposal recovery', () => {
 			await f.query('UPDATE governance_proposals SET active_content_hash=? WHERE id=?', [digest, declaration.id]);
 			await f.query('UPDATE governance_proposal_versions SET content_hash=? WHERE proposal_id=?', [digest, declaration.id]);
 			await f.query('UPDATE treedx_project_libraries SET content_repository_ref=? WHERE project_id=?', [commit, projectId]);
-			await f.store.openGovernanceProposal(f.principal, declaration.id, { expectedProposalVersion: 1 });
 			const discussion = createDiscussionService({ store: f.store, capacity: f.store, sessionEvents: new SessionEventService(f.store) });
 			const communication = createCommunicationService(f.store, discussion);
 			const governance = createGovernanceService(f.store, discussion);
@@ -81,6 +80,10 @@ describe('native communication proposal recovery', () => {
 				expect(result.isError).not.toBe(true); first = binding.schema.output.parse(result.structuredContent);
 			} finally { await client.close(); }
 			expect(first.targets).toHaveLength(1); expect(first.targets[0]!.projectId).toBe(discussionProjectId);
+			// Draft discussion uses the exact source without opening voting or
+			// granting acting authority. Later edits still freeze replay context.
+			expect((await f.store.getGovernanceProposal(declaration.id))?.status).toBe('draft');
+			await f.store.openGovernanceProposal(f.principal, declaration.id, { expectedProposalVersion: 1 });
 			if (crossProject) expect((await loadDiscussions({ store: f.store, projectId, discussionId: 'mcp-recovery', collection: 'messages' })).messages).toHaveLength(0);
 			const snapshots = async () => ({ invocations: await f.store.all('SELECT * FROM agent_invocation_requests ORDER BY id'),
 				assignments: await f.store.all('SELECT * FROM capacity_provider_assignments ORDER BY id'), ledger: await f.store.all('SELECT * FROM capacity_ledger_entries ORDER BY id'),

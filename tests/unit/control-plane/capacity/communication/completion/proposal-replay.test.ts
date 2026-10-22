@@ -24,7 +24,7 @@ function fixture() {
 		principalCanAccessTeam: async () => true,
 		getTeamAccessSummary: async () => ({ permissions: ['projects:manage:team'] }),
 		getProjectDetails: async () => ({ project: { id: 'project', slug: 'api', teamId: 'team' } }),
-		getGovernanceProposal: vi.fn(async () => ({ id: 'proposal', teamId: 'team', projectId: 'project', status: 'open' })),
+		getGovernanceProposal: vi.fn(async (): Promise<Record<string, unknown> | null> => ({ id: 'proposal', teamId: 'team', projectId: 'project', status: 'open' })),
 		run: vi.fn(async () => ({ meta: { changes: 0 } })),
 		first: async (sql: string) => sql.includes('communication_discussion_topics') ? { id: 'topic', slug: 'mcp-coordination', status: 'active' }
 			: sql.includes('communication_discussion_streams') ? { id: 'stream', project_id: 'project', discussion_id: 'mcp-coordination' } : null,
@@ -62,6 +62,26 @@ describe('communication recovery after a proposal edit', () => {
 		const f = fixture(); mocks.history.mockResolvedValueOnce({ messages: [] });
 		await f.service.send(principal, 'team', 'mcp-coordination', { message, proposalId: 'proposal' }, key);
 		expect(f.created).toHaveBeenCalledWith(principal, expect.objectContaining({ contextRefs: [{ ...originalRef, immutableRef: 'c'.repeat(40), digest: `sha256:${'d'.repeat(64)}` }] }), `${key}:project`);
+	});
+	it.each(['draft', 'accepted', 'rejected', 'superseded', 'withdrawn'])('keeps authorized %s proposal context available for coordinator discussion', async status => {
+		const f = fixture(); mocks.history.mockResolvedValueOnce({ messages: [] });
+		f.store.getGovernanceProposal.mockResolvedValue({ id: 'proposal', teamId: 'team', projectId: 'project', status });
+		await f.service.send(principal, 'team', 'mcp-coordination', { message, proposalId: 'proposal' }, key);
+		expect(mocks.exact).toHaveBeenCalledOnce();
+		expect(f.created).toHaveBeenCalledWith(principal, expect.objectContaining({ contextRefs: [{ ...originalRef, immutableRef: 'c'.repeat(40), digest: `sha256:${'d'.repeat(64)}` }] }), `${key}:project`);
+	});
+	it.each([null, { id: 'proposal', teamId: 'foreign', projectId: 'project' }, { id: 'proposal', teamId: 'team' }])('denies unavailable or foreign proposal context %j', async proposal => {
+		const f = fixture(); mocks.history.mockResolvedValueOnce({ messages: [] });
+		f.store.getGovernanceProposal.mockResolvedValue(proposal);
+		await expect(f.service.send(principal, 'team', 'mcp-coordination', { message, proposalId: 'proposal' }, key))
+			.rejects.toMatchObject({ code: 'communication_proposal_not_found' });
+		expect(mocks.exact).not.toHaveBeenCalled(); expect(f.created).not.toHaveBeenCalled();
+	});
+	it('does not admit discussion when exact retained proposal content cannot be verified', async () => {
+		const f = fixture(); mocks.history.mockResolvedValueOnce({ messages: [] });
+		mocks.exact.mockRejectedValueOnce(new Error('Exact source unavailable'));
+		await expect(f.service.send(principal, 'team', 'mcp-coordination', { message, proposalId: 'proposal' }, key)).rejects.toThrow('Exact source unavailable');
+		expect(f.created).not.toHaveBeenCalled();
 	});
 });
 
