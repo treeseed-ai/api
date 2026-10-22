@@ -127,6 +127,29 @@ describe('proposal-owned living execution graph projection', () => {
 		}));
 	});
 
+	it('selects same-class execution profiles by proposal group without replacing legacy identities', () => {
+		const legacyEngineer = agent('engineer');
+		const operatorEngineer = { ...agent('engineer'), id: 'sdk/operator-engineer', groupIds: ['operator-recovery'] };
+		const legacyReviewer = agent('reviewer');
+		const operatorReviewer = { ...agent('reviewer'), id: 'sdk/operator-reviewer', groupIds: ['operator-recovery'],
+			activityProfiles: { reviewing: { ...legacyReviewer.activityProfiles.reviewing!, permissions: {
+				content: { read: ['proposal', 'decision', 'knowledge'], write: ['proposal'] }, tools: ['source.read'],
+			} } } };
+		const operatorSource = source([workItem({ id: 'implementation', agentClass: 'engineer', expectedSeconds: 240, maximumSeconds: 480 })]);
+		const graph = projectTeamExecutionGraph({ teamId: 'team', revision: 1, sources: [{ ...operatorSource, frontmatter: {
+			...operatorSource.frontmatter, groupIds: ['operator-recovery'],
+		} }], profiles: {
+			'project:researcher': profiles['project:researcher'], 'project:architect': profiles['project:architect'],
+			'project:tester': profiles['project:tester'], 'project:technical-writer': profiles['project:technical-writer'],
+			'project:releaser': profiles['project:releaser'], 'project:sdk/engineer': legacyEngineer,
+			'project:sdk/operator-engineer': operatorEngineer, 'project:sdk/reviewer': legacyReviewer,
+			'project:sdk/operator-reviewer': operatorReviewer,
+		} });
+		expect(graph.nodes.filter((node) => node.pairRole === 'reviewer').every((node) => node.requestedPermissions?.content.write.includes('proposal'))).toBe(true);
+		expect(operatorEngineer.id).toBe('sdk/operator-engineer');
+		expect(legacyEngineer.id).toBe('agent:engineer');
+	});
+
 	it('keeps reviewed Research parallel to the immediate engineering chain', () => {
 		const graph = projectTeamExecutionGraph({ teamId: 'team', revision: 1, profiles, sources: [source([
 			workItem({ id: 'research', agentClass: 'researcher', expectedSeconds: 60, maximumSeconds: 90 }),

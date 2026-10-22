@@ -42,6 +42,7 @@ const RULE_REVISION = 3;
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
 const text = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const rows = (value: unknown): Row[] => Array.isArray(value) ? value.map(record) : [];
+const groupIds = (value: unknown): string[] => Array.isArray(value) ? value.map(text).filter(Boolean) : [];
 
 function stable(value: unknown): string {
 	if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
@@ -79,12 +80,18 @@ function decisionRef(source: ExecutableProposalSource): ExactEntityReference | n
 	};
 }
 
-function profileFor(profiles: Record<string, AgentDefinition>, projectId: string, agentClass: string, activity: 'acting' | 'reviewing') {
-	const profile = profiles[`${projectId}:${agentClass}`]?.activityProfiles[activity];
-	if (!profile) throw Object.assign(new Error(`Agent class ${agentClass} has no ${activity} profile.`), {
-		code: 'execution_profile_missing', agentClass, activity,
+function profileFor(profiles: Record<string, AgentDefinition>, projectId: string, agentClass: string,
+	activity: 'acting' | 'reviewing', selectedGroups: string[] = []) {
+	const candidates = Object.entries(profiles).filter(([key, definition]) => key.startsWith(`${projectId}:`)
+		&& definition.agentClass === agentClass && definition.activityProfiles[activity]);
+	const matches = selectedGroups.length
+		? candidates.filter(([, definition]) => (definition.groupIds ?? []).some((group) => selectedGroups.includes(group)))
+		: candidates.length === 1 ? candidates : candidates.filter(([, definition]) => !definition.groupIds?.length);
+	if (matches.length !== 1) throw Object.assign(new Error(
+		`Agent class ${agentClass} has no unique ${activity} profile for groups ${selectedGroups.join(', ') || '(default)'}.`), {
+		code: matches.length ? 'execution_profile_ambiguous' : 'execution_profile_missing', agentClass, activity, groupIds: selectedGroups,
 	});
-	return profile;
+	return matches[0]![1].activityProfiles[activity]!;
 }
 
 function requestedPermissions(workItem: Row, profile: ReturnType<typeof profileFor>, pairRole: 'actor' | 'reviewer') {
@@ -223,7 +230,7 @@ export function projectTeamExecutionGraph(input: {
 
 		for (const workItem of workItems) {
 			const actor = workNode({ source: exactSource, workItem,
-				profile: profileFor(input.profiles, source.projectId, text(workItem.agentClass), 'acting'),
+				profile: profileFor(input.profiles, source.projectId, text(workItem.agentClass), 'acting', groupIds(source.frontmatter.groupIds)),
 				revision: input.revision, pairRole: 'actor' });
 			nodes.push(actor);
 			edges.push(edge({ teamId: source.teamId, fromNodeId: authority.id, toNodeId: actor.id,
@@ -231,7 +238,7 @@ export function projectTeamExecutionGraph(input: {
 			actorByItem.set(text(workItem.id), actor);
 			if (text(workItem.review) === 'required') {
 				const reviewer = workNode({ source: exactSource, workItem,
-					profile: profileFor(input.profiles, source.projectId, 'reviewer', 'reviewing'),
+					profile: profileFor(input.profiles, source.projectId, 'reviewer', 'reviewing', groupIds(source.frontmatter.groupIds)),
 					revision: input.revision, pairRole: 'reviewer' });
 				nodes.push(reviewer);
 				completionByItem.set(text(workItem.id), reviewer);
@@ -251,7 +258,7 @@ export function projectTeamExecutionGraph(input: {
 				edges.push(edge({ teamId: source.teamId, fromNodeId: predecessor.id, toNodeId: actor.id,
 					provenance: 'work-item', sourceRef }, input.revision));
 			}
-			const profile = profileFor(input.profiles, source.projectId, text(workItem.agentClass), 'acting');
+			const profile = profileFor(input.profiles, source.projectId, text(workItem.agentClass), 'acting', groupIds(source.frontmatter.groupIds));
 			for (const dependencyClass of profile.dependsOn?.agents ?? []) {
 				const dependencyItems = workItems.filter((candidate) => text(candidate.agentClass) === dependencyClass);
 				for (const dependencyItem of dependencyItems) {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { serializeFrontmatterDocument } from '../../../../../src/api/content/frontmatter.ts';
 import { snapshotAgents } from '../../../../../src/api/capacity/services/capacity/agents/team-clone/agent-team-clone-service.ts';
 import { validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
+import { stringify } from 'yaml';
 
 const commit = 'a'.repeat(40);
 const definition = {
@@ -43,9 +44,22 @@ describe('exact TreeDX agent-team source snapshot', () => {
 				details: { path: 'agents/invalid.mdx', diagnostics: validateAgentDefinitionModel({ id: 'invalid' }).diagnostics } });
 	});
 
-	it('rejects two definitions that would overwrite the same target agent class', async () => {
+	it('reads raw YAML definitions alongside markdown and keeps shared allocation classes', async () => {
+		const yaml = { path: 'agents/operator-engineer.yaml', content: stringify({ ...definition,
+			id: 'sdk/operator-engineer', agentClass: 'engineer' }) };
+		const markdown = { path: 'agents/engineer.mdx', content: serializeFrontmatterDocument({ ...definition,
+			id: 'sdk/engineer', agentClass: 'engineer' }) };
+		const source = connection([yaml, markdown]);
+		const result = await snapshotAgents(source);
+		expect(result.files.map((file) => file.definition.id)).toEqual(['sdk/operator-engineer', 'sdk/engineer']);
+		expect(source.client.listRepositoryPaths).toHaveBeenCalledWith(expect.objectContaining({
+			extensions: ['.md', '.mdx', '.yaml', '.yml'],
+		}));
+	});
+
+	it('rejects duplicate identities before activation', async () => {
 		const files = ['first', 'second'].map((name) => ({ path: `agents/${name}.mdx`,
-			content: serializeFrontmatterDocument({ ...definition, id: `sdk/${name}` }) }));
-		await expect(snapshotAgents(connection(files))).rejects.toMatchObject({ code: 'agent_team_class_ambiguous' });
+			content: serializeFrontmatterDocument({ ...definition, id: 'sdk/duplicate' }) }));
+		await expect(snapshotAgents(connection(files))).rejects.toMatchObject({ code: 'agent_team_definition_duplicate' });
 	});
 });

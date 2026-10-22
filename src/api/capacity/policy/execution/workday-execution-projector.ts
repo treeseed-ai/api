@@ -208,7 +208,7 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 			}
 		}
 		const selectedReporter = selectWorkdayReportingAgent(Object.entries(input.profiles).flatMap(([key, definition]) =>
-			projectIds.filter(projectId => key === `${projectId}:${definition.agentClass}`).map(projectId => ({ projectId, definition }))), workday.reportingAgentId);
+			projectIds.filter(projectId => key.startsWith(`${projectId}:`)).map(projectId => ({ projectId, definition }))), workday.reportingAgentId);
 		if (selectedReporter) {
 			const { projectId, definition: reporter } = selectedReporter;
 			if (workday.reportingAgentId !== undefined) {
