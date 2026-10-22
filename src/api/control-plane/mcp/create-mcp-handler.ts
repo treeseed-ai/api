@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { OperationRegistry } from '../catalog/operation-registry.ts';
 import { sdkOperationInputStandardSchema, sdkStandardSchema } from '../catalog/sdk-standard-schema.ts';
 import { createMcpCatalog } from './mcp-catalog.ts';
-import { decodeConfirmation, encodeConfirmation, type ConfirmationService } from '../confirmation/confirmation-service.ts';
+import { CONFIRMATION_HEADER, decodeConfirmation, encodeConfirmation, type ConfirmationService } from '../confirmation/confirmation-service.ts';
 import { completePromptObjective, completeResourceVariable } from './completion-source.ts';
 import { enforceOperationAuthorization, readOperationPreconditions } from '../authorization/invocation-policy.ts';
 
@@ -34,11 +34,15 @@ export function createControlPlaneMcpHandler(registry: OperationRegistry, confir
 					const principalId = String((requestContext.authInfo?.extra?.principal as any)?.id ?? '');
 					const clientId = String(requestContext.authInfo?.clientId ?? '');
 					if (!confirmations || !principalId || !clientId) return { content: [{ type: 'text', text: 'Confirmation is unavailable.' }], isError: true };
-					const identity = { principalId, clientId, operationId: descriptor.operationId, arguments: input };
-					const requestState = context.mcpReq.requestState<string>();
+					const { [CONFIRMATION_HEADER]: supplied, ...operationHeaders } = headers ?? {};
+					const identity = { principalId, clientId, operationId: descriptor.operationId,
+						arguments: headers ? { ...operationInput, headers: operationHeaders } : operationInput };
+					const requestState = supplied ?? context.mcpReq.requestState<string>();
 					const accepted = acceptedContent<{ confirm: boolean }>(context.mcpReq.inputResponses, 'confirm');
-					if (!requestState || accepted?.confirm !== true) {
+					if (!requestState || (supplied === undefined && accepted?.confirm !== true)) {
 						const required = confirmations.request({ ...identity, requestId: String(context.mcpReq.id) });
+						if (requestContext.era === 'legacy') return { isError: true,
+							content: [{ type: 'text', text: JSON.stringify(required) }] };
 						return inputRequired({ requestState: encodeConfirmation(required.confirmation), inputRequests: {
 							confirm: inputRequired.elicit({ message: required.prompt, requestedSchema: {
 								type: 'object', properties: { confirm: { type: 'boolean' } }, required: ['confirm'], additionalProperties: false,

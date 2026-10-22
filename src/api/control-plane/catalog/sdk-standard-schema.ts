@@ -1,5 +1,6 @@
 import { controlPlaneSchemaJson, type ControlPlaneOperationBinding } from '@treeseed/sdk/operator-contracts';
 import { z } from 'zod';
+import { CONFIRMATION_HEADER } from '../confirmation/confirmation-service.ts';
 
 type SdkSchema = ControlPlaneOperationBinding<unknown, unknown, unknown, unknown>['schema']['output'];
 
@@ -32,7 +33,7 @@ export function sdkStandardSchema(schema: SdkSchema) {
 }
 
 export function sdkOperationInputStandardSchema(binding: {
-	descriptor: Pick<ControlPlaneOperationBinding['descriptor'], 'kind' | 'idempotency' | 'concurrency' | 'rest'>;
+	descriptor: Pick<ControlPlaneOperationBinding['descriptor'], 'kind' | 'idempotency' | 'concurrency' | 'rest' | 'confirmation'>;
 	schema: { path: SdkSchema; query: SdkSchema; body: SdkSchema };
 }) {
 	const acceptsBody = Boolean(binding.descriptor.rest && binding.descriptor.rest.method !== 'GET');
@@ -41,7 +42,10 @@ export function sdkOperationInputStandardSchema(binding: {
 	const headersSchema = headerNames.length ? z.object(Object.fromEntries(headerNames.map(name => [name,
 		z.string().min(1).regex(/^(?=.*\S)[^\r\n\u0000]+$/u).describe(name === binding.descriptor.idempotency.header
 			? 'Reuse this key for retries of the unchanged request.' : 'Exact current resource version read before this mutation.'),
-	]))).strict() : undefined;
+	]))).extend(binding.descriptor.confirmation === 'input_required' ? {
+		[CONFIRMATION_HEADER]: z.string().min(1).regex(/^(?=.*\S)[^\r\n\u0000]+$/u)
+			.describe('Encoded signed confirmation returned by a previous call with these exact arguments; supply only when approval is authorized.').optional(),
+	} : {}).strict() : undefined;
 	const document = {
 		$schema: 'http://json-schema.org/draft-07/schema#',
 		type: 'object',
