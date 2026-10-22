@@ -6,6 +6,8 @@ import { CapacityWorkdayRunRepository } from '../../../../../src/api/capacity/re
 import { recordTreeDxAuthoringState } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { projectTreeDxCommitSignals } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-change-projector.ts';
 import { serializeProposalDocument } from '../../../../../src/api/governance/proposal-document.ts';
+import { serializeFrontmatterDocument } from '../../../../../src/api/content/frontmatter.ts';
+import { readyProposal } from './architecture/ready-proposal-fixture.ts';
 
 vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', async original => ({
 	...await original<typeof import('../../../../../src/api/knowledge/gateway-treedx-connection.ts')>(), resolveKnowledgeGatewayConnection: vi.fn(),
@@ -37,6 +39,32 @@ function fixture(mode = 'simulation') {
 
 describe('workday-scoped proposal authoring', () => {
 	beforeEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); });
+	it('retains the exact active private plan and links on a body-only Inbox revision', async () => {
+		const { input, client, base, path } = fixture('production'), active = 'c'.repeat(40);
+		const definition = { ...readyProposal(), id: input.proposal.id, projectId: input.proposal.projectId,
+			groupIds: ['provider-runtime'], objectiveRefs: [{ store: 'treedx', model: 'objective', id: 'real-objective', commit: base }],
+			evidenceRefs: [{ store: 'git', model: 'repository', id: 'source', repository: 'treeseed-ai/agent', commit: base }],
+			discussionRef: { store: 'treedx', model: 'discussion', id: 'planning', commit: base } };
+		const source = serializeFrontmatterDocument(definition, '');
+		const proposal = { ...input.proposal, activeContentHash: createHash('sha256').update(source).digest('hex'),
+			metadata: { contentProvenance: { repositoryId: 'repository-1', contentPath: path,
+				commitSha: active, digest: createHash('sha256').update(source).digest('hex') } } };
+		client.readRepositoryFile.mockImplementation(async request => request.ref === active
+			? { resolvedRef: active, file: { content: source, frontmatter: definition } }
+			: { resolvedRef: base, file: { content: '---\ngroupIds: [older-group]\n---\n' } });
+		await commitProposalVersionContent({ ...input, proposal, update: { body: 'Reviewer supplied corrected own estimate.' } });
+		expect(serializeProposalDocument).toHaveBeenLastCalledWith(expect.objectContaining({
+			request: 'Reviewer supplied corrected own estimate.', executionPlan: definition.executionPlan,
+			groupIds: definition.groupIds, objectiveRefs: definition.objectiveRefs,
+			evidenceRefs: definition.evidenceRefs, discussionRef: definition.discussionRef,
+		}));
+		const replacement = { workItems: definition.executionPlan.workItems.map(item => ({ ...item, objective: 'Revised scope.' })) };
+		await commitProposalVersionContent({ ...input, proposal, update: { executionPlan: replacement,
+			groupIds: [], objectiveRefs: [], evidenceRefs: [], discussionRef: null } });
+		expect(serializeProposalDocument).toHaveBeenLastCalledWith(expect.objectContaining({
+			executionPlan: replacement, groupIds: [], objectiveRefs: [], evidenceRefs: [], discussionRef: null,
+		}));
+	});
 	it('retains proposal groups on partial edits and applies explicit membership revisions', async () => {
 		const { input, client, base } = fixture();
 		client.readRepositoryFile.mockResolvedValue({ resolvedRef: base,

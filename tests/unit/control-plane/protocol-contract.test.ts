@@ -401,19 +401,6 @@ describe('control-plane protocol contract', () => {
 			expect(registry.require(operationId).binding).toBe(Object.values(CONTROL_PLANE_OPERATIONS.teams).find((binding) => binding.descriptor.operationId === operationId));
 		}
 	});
-	it('rejects legacy MCP initialization traffic', async () => {
-		const app = new Hono();
-		installControlPlaneProtocolRoutes(app, authenticate);
-		const response = await app.request('/mcp', {
-			method: 'POST',
-			headers: { authorization: 'Bearer test-token', 'content-type': 'application/json', host: 'localhost' },
-			body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'legacy', version: '1' } } }),
-		});
-		const body = await response.text();
-		expect(body).toContain('Unsupported protocol version');
-		expect(body).toContain('2026-07-28');
-	});
-
 	it('serves discovery and tools through the official modern client', async () => {
 		const app = new Hono();
 		const registry = createApiControlPlaneOperations(apiDependencies());
@@ -462,9 +449,12 @@ describe('control-plane protocol contract', () => {
 
 	it('completes signed high-risk confirmation through official MCP multi-round input', async () => {
 		const app = new Hono();
-		const registry = createApiControlPlaneOperations(apiDependencies());
+		const observed: unknown[] = [];
+		const registry = new OperationRegistry([{ binding: CONTROL_PLANE_OPERATIONS.workdays.stop, async handler(input) {
+			observed.push(input); return { id: input.path.runId };
+		} }]);
 		installControlPlaneProtocolRoutes(app, async () => ({
-			principal: { id: 'user_1', scopes: ['treeseed:read', 'treeseed:projects:write'], roles: ['admin'], permissions: [] },
+			principal: { id: 'user_1', scopes: ['treeseed:execution'], roles: [], permissions: [] },
 			credential: { id: 'client_1' },
 		}), oauthProvider, registry, confirmationService());
 		const transport = new StreamableHTTPClientTransport(new URL('http://localhost/mcp'), {
@@ -473,8 +463,7 @@ describe('control-plane protocol contract', () => {
 				const request = input instanceof Request ? input : new Request(input, init);
 				const headers = new Headers(request.headers);
 				headers.set('host', 'localhost');
-				headers.set('Idempotency-Key', 'archive-project-a');
-				headers.set('If-Match', '"revision-1"');
+				headers.set('Idempotency-Key', 'stop-workday-a');
 				return app.fetch(new Request(request, { headers }));
 			},
 		});
@@ -486,11 +475,12 @@ describe('control-plane protocol contract', () => {
 		client.setRequestHandler('elicitation/create', async () => ({ action: 'accept', content: { confirm: true } }));
 		await client.connect(transport);
 		try {
-			const result = await client.callTool({ name: 'projects.archive', arguments: {
-				path: { projectId: 'project-a' }, query: {}, body: {},
+			const result = await client.callTool({ name: 'workdays.stop', arguments: {
+				path: { teamId: 'team-a', runId: 'workday-a' }, query: {}, body: {},
 			} });
 			expect(result.isError).not.toBe(true);
-			expect(result.structuredContent).toMatchObject({ id: 'project-a' });
+			expect(result.structuredContent).toMatchObject({ id: 'workday-a' });
+			expect(observed).toEqual([{ path: { teamId: 'team-a', runId: 'workday-a' }, query: {}, body: {} }]);
 		} finally {
 			await client.close();
 		}

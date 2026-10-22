@@ -2,13 +2,14 @@ import { Hono } from 'hono';
 import { expect, it, vi } from 'vitest';
 import { decodeJwt, generateKeyPair, SignJWT } from 'jose';
 import { BROWSER_SESSION_BRIDGE_PATH } from '@treeseed/sdk/identity';
+import { CONTROL_PLANE_OPERATION_LIST } from '@treeseed/sdk/operator-contracts';
 import { installApiIdentityRoutes } from '../../../../../src/api/auth/browser/api-routes.ts';
 import { createIdentityAuthenticator } from '../../../../../src/api/auth/identity-authenticator.ts';
 import { controlPlaneOperations } from '../../../../../src/api/control-plane/catalog/index.ts';
 import { OperationRegistry } from '../../../../../src/api/control-plane/catalog/operation-registry.ts';
 
 const issuer = 'https://identity.example/realms/treeseed', resource = 'https://api.example';
-async function fixture() {
+async function fixture(scopes = ['treeseed:read'], includeCommunication = false) {
   const keys = await generateKeyPair('RS256');
   const first = vi.fn(async (sql: string) => sql.includes('identity_workloads') ? null
     : sql.includes('user_identities') ? { user_id: 'preserved-user', status: 'active' } : { id: 'preserved-user' });
@@ -20,11 +21,12 @@ async function fixture() {
   const observed: Array<{ clientId: string; expiresAt: number | undefined }> = [];
   const status = controlPlaneOperations.require('status.show');
   installApiIdentityRoutes(app, { authenticate, services: new Map(), metadata: {
-    resource, authorization_servers: [issuer], bearer_methods_supported: ['header'], scopes_supported: ['treeseed:read'],
+    resource, authorization_servers: [issuer], bearer_methods_supported: ['header'], scopes_supported: scopes,
   } }, { registry: new OperationRegistry([{ ...status, handler: async (input, context) => {
     if (context.authInfo) observed.push({ clientId: context.authInfo.clientId, expiresAt: context.authInfo.expiresAt });
     return status.handler(input, context);
-  } }]) });
+  } }, ...(includeCommunication ? [{ binding: CONTROL_PLANE_OPERATION_LIST.find(operation => operation.descriptor.operationId === 'communications.send')!,
+    handler: async () => { throw new Error('Metadata reads must not invoke a mutation.'); } }] : [])]) });
   const token = (audience = resource, scope = 'treeseed:read', clientId: unknown = 'admin') => new SignJWT({ typ: 'Bearer', azp: clientId, scope })
     .setProtectedHeader({ alg: 'RS256' }).setIssuer(issuer).setAudience(audience).setSubject('exact-subject')
     .setIssuedAt().setExpirationTime('47s').sign(keys.privateKey);
@@ -41,6 +43,46 @@ it('publishes configured resource metadata, never the incoming Host or an API-lo
   for (const path of ['/.well-known/oauth-authorization-server', '/oauth/token', '/oauth/device_authorization', '/oauth/authorize', '/oauth/revoke']) {
     for (const method of ['GET', 'POST']) expect((await app.request(path, { method })).status).toBe(404);
   }
+});
+
+it('advertises only configured scopes of exposed MCP operations, preserving the general API metadata', async () => {
+  const scopes = ['treeseed:read', 'treeseed:admin', 'treeseed:execution', 'treeseed:projects:write'];
+  const { app } = await fixture(scopes, true);
+  const api = await (await app.request('/.well-known/oauth-protected-resource')).json();
+  const mcp = await (await app.request('/.well-known/oauth-protected-resource/mcp')).json();
+  expect(api).toMatchObject({ resource, scopes_supported: scopes });
+  expect(mcp).toMatchObject({ resource, authorization_servers: [issuer], scopes_supported: ['treeseed:read', 'treeseed:execution'] });
+});
+
+it('serves the native coordinator 2025 handshake, discovery and shared backend read with verified Identity tokens', async () => {
+  const { app, token, observed } = await fixture();
+  const bearer = await token(resource, 'treeseed:read', 'native-coordinator');
+  const request = (message: unknown, authorization = `Bearer ${bearer}`) => app.request('https://api.example/mcp', {
+    method: 'POST', headers: { host: 'api.example', authorization, 'content-type': 'application/json',
+      accept: 'application/json, text/event-stream', 'mcp-protocol-version': '2025-06-18' }, body: JSON.stringify(message),
+  });
+  const payload = async (response: Response) => {
+    if (response.headers.get('content-type')?.includes('application/json')) return response.json();
+    expect(response.headers.get('content-type')).toContain('text/event-stream');
+    return JSON.parse((await response.text()).split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n'));
+  };
+  const initialize = { jsonrpc: '2.0', id: 1, method: 'initialize', params: {
+    protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'native-coordinator', version: '1.0.0' },
+  } };
+  const initialized = await request(initialize);
+  expect(initialized.status).toBe(200);
+  expect(await payload(initialized)).toMatchObject({ id: 1, result: { protocolVersion: '2025-06-18',
+    serverInfo: { name: 'treeseed-control-plane' } } });
+  const listed = await request({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
+  expect(listed.status).toBe(200);
+  expect(await payload(listed)).toMatchObject({ id: 2, result: { tools: [expect.objectContaining({ name: 'status.show' })] } });
+  const called = await request({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: {
+    name: 'status.show', arguments: { path: {}, query: {} },
+  } });
+  expect(called.status).toBe(200);
+  expect(await payload(called)).toMatchObject({ id: 3, result: { structuredContent: expect.any(Object) } });
+  expect(observed).toEqual([{ clientId: 'native-coordinator', expiresAt: expect.any(Number) }]);
+  expect((await request(initialize, 'Bearer invalid')).status).toBe(401);
 });
 
 it('uses verified Identity tokens for existing resource operations and denies wrong audiences without database reads', async () => {
