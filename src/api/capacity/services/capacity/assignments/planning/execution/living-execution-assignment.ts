@@ -156,10 +156,10 @@ export async function assignNextReadyExecutionNode(
 	now = new Date().toISOString(),
 ) {
 	const runs = await new CapacityWorkdayRunRepository(store).listActiveForSupply(principal.teamId, principal.capacityProviderId);
-	const deferred: Array<{ runId: string; nodeId: string; code: string; details: unknown }> = [];
+	const deferred: Array<{ runId: string; nodeId: string; code: string; reason: string; details: unknown }> = [];
 	const selection = { activeRuns: runs.length, readyNodes: 0, phaseEligible: 0, concurrencyEligible: 0,
 		windowEligible: 0, attemptedNodes: 0, claimLost: 0, claimStale: 0, providerUnavailable: 0, allocationDeferred: 0,
-		claimLoss: null as unknown };
+		claimLoss: null as unknown, deferredCandidates: deferred };
 	for (const run of runs) {
 		const parsedPlan = appliedWorkdaySchema.safeParse(run.parameters.appliedPlan);
 		if (!parsedPlan.success) continue;
@@ -186,12 +186,15 @@ export async function assignNextReadyExecutionNode(
 			if (!(error instanceof CapacityGovernanceError) || ![
 				'execution_node_claim_lost', 'execution_node_claim_stale',
 				'capacity_execution_provider_unavailable', 'capacity_assignment_allocation_deferred',
+				'assignment_predecessor_authority_mismatch',
 			].includes(error.code)) throw error;
 			if (error.code === 'execution_node_claim_lost') { selection.claimLost += 1; selection.claimLoss = error.details; }
 			if (error.code === 'execution_node_claim_stale') selection.claimStale += 1;
 			if (error.code === 'capacity_execution_provider_unavailable') selection.providerUnavailable += 1;
 			if (error.code === 'capacity_assignment_allocation_deferred') selection.allocationDeferred += 1;
-			if (error.code.startsWith('capacity_')) deferred.push({ runId: run.id, nodeId, code: error.code, details: error.details });
+			if (error.code.startsWith('capacity_') || error.code === 'assignment_predecessor_authority_mismatch') {
+				deferred.push({ runId: run.id, nodeId, code: error.code, reason: error.message, details: error.details });
+			}
 		};
 		const qualified: Array<(typeof withinWindow)[number] & { selected: ReturnType<typeof buildAssignmentAttempt> }> = [];
 		for (const candidate of withinWindow) {
