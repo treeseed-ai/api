@@ -135,8 +135,9 @@ describe('proposal-owned living execution graph projection', () => {
 			activityProfiles: { reviewing: { ...legacyReviewer.activityProfiles.reviewing!, permissions: {
 				content: { read: ['proposal', 'decision', 'knowledge'], write: ['proposal'] }, tools: ['source.read'],
 			} } } };
-		const graph = projectTeamExecutionGraph({ teamId: 'team', revision: 1, sources: [{ ...source(), frontmatter: {
-			...source().frontmatter, groupIds: ['operator-recovery'],
+		const operatorSource = source([workItem({ id: 'implementation', agentClass: 'engineer', expectedSeconds: 240, maximumSeconds: 480 })]);
+		const graph = projectTeamExecutionGraph({ teamId: 'team', revision: 1, sources: [{ ...operatorSource, frontmatter: {
+			...operatorSource.frontmatter, groupIds: ['operator-recovery'],
 		} }], profiles: {
 			'project:researcher': profiles['project:researcher'], 'project:architect': profiles['project:architect'],
 			'project:tester': profiles['project:tester'], 'project:technical-writer': profiles['project:technical-writer'],
