@@ -46,7 +46,9 @@ export async function snapshotAgentDefinitions(value: KnowledgeGatewayConnection
 		return { path, content, definition: validation.data,
 			sourceDigest: `sha256:${createHash('sha256').update(content).digest('hex')}` };
 	});
-	if (new Set(files.map((file) => file.definition.id)).size !== files.length) throw new CapacityOperationError(409,
+	const identities = files.map((file) => file.definition.id);
+	const slugs = identities.map((identity) => identity.split('/').at(-1));
+	if (new Set(identities).size !== files.length || new Set(slugs).size !== files.length) throw new CapacityOperationError(409,
 		'agent_team_definition_duplicate', 'Multiple agent definitions use the same identity.');
 	return { commit, files };
 }

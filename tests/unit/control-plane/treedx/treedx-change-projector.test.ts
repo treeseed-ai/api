@@ -67,6 +67,7 @@ describe('TreeDX change projection', () => {
 
 	it('activates same-class profiles together with per-agent source custody', async () => {
 		const store = database();
+		store.all.mockResolvedValue([{ id: 'class-engineer', slug: 'engineer', status: 'active', metadata_json: '{}' }]);
 		resolveKnowledgeGatewayConnection.mockResolvedValue({ baseRef: 'refs/heads/staging' });
 		const definition = (id: string, name: string) => ({ schemaVersion: 'treeseed.agent/v1', id, name,
 			agentClass: 'engineer', purpose: 'Operate recovery.', responsibilities: ['Recover.'], capabilities: ['engineering'],
