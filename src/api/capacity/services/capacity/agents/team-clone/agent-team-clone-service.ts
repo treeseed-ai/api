@@ -31,6 +31,14 @@ const branch=(connection:KnowledgeGatewayConnection)=>`refs/heads/${connection.a
 function fileRows(value:unknown):Row[]{const row=record(value);return (Array.isArray(row.files)?row.files:Array.isArray(row.results)?row.results:[]).map(record);}
 function selectProject(projects:Project[],selector:string):Project|null{return projects.find((project)=>project.id===selector||project.slug===selector)??null;}
 function classAgents(value:unknown):unknown[]{const agents=record(record(value).handlerRefs).agents;return Array.isArray(agents)?agents:[];}
+function rejectLossyMultiProfileClone(files:SourceFile[]){
+	const byClass=new Map<string,SourceFile[]>();
+	for(const file of files)byClass.set(file.definition.agentClass,[...(byClass.get(file.definition.agentClass)??[]),file]);
+	const conflict=[...byClass].find(([,members])=>members.length>1);
+	if(conflict)throw new CapacityOperationError(409,'agent_team_multi_profile_unsupported',
+		`Team cloning cannot preserve multiple profiles in allocation class ${conflict[0]}; clone each profile through a multi-profile capable workflow.`,
+		{agentClass:conflict[0],agentIds:conflict[1].map((file)=>file.definition.id)});
+}
 function replaceIdentityText(value:string,source:Project,target:Project):string{return value
 		.replace(new RegExp(`\\b${source.name.replace(/[.*+?^${}()|[\]\\]/gu,'\\$&')}\\b`,'gu'),target.name)
 		.replace(new RegExp(`\\b${source.slug.replace(/[.*+?^${}()|[\]\\]/gu,'\\$&')}\\b`,'gu'),target.slug);}
@@ -114,6 +122,7 @@ export class AgentTeamCloneService{
 		const sourceCommit=await acceptedSourceCommit(this.store,source.id),sourceConnection=await connection(this.store,source.id,false,[sourceCommit]);
 		const sourceSnapshot=await snapshotAgents(sourceConnection,sourceCommit).catch((error)=>failed('source_read',source.id,error));
 		if(!sourceSnapshot.files.length)throw new CapacityOperationError(409,'agent_team_source_empty','The source project has no valid agent definitions.');
+		rejectLossyMultiProfileClone(sourceSnapshot.files);
 		const targetPlans:AgentTeamClonePlan['targets']=[];
 		for(const target of targets){
 			const targetState=await resolveTargetSnapshot(this.store,target.id),targetConnection=targetState.connection,targetSnapshotData=targetState.snapshot,definitions=sourceSnapshot.files.map((file)=>({source:file,...adapt(file,source,target)}));
@@ -133,6 +142,7 @@ export class AgentTeamCloneService{
 		if(!source||source.slug!==plan.source.slug)throw new CapacityOperationError(409,'agent_team_source_changed','The planned source project identity changed.');
 		const sourceConnection=await connection(this.store,source.id,false,[plan.source.commit]);if(sourceConnection.repositoryId!==plan.source.repository)throw new CapacityOperationError(409,'agent_team_source_changed','The planned source repository changed.');
 		const sourceSnapshot=await snapshotAgents(sourceConnection,plan.source.commit);if(sourceSnapshot.commit!==plan.source.commit)throw new CapacityOperationError(409,'agent_team_source_changed','The planned source commit changed.');
+		rejectLossyMultiProfileClone(sourceSnapshot.files);
 		const results=[];
 		for(const targetPlan of plan.targets){
 			const target=selectProject(projects,targetPlan.projectId);if(!target||target.slug!==targetPlan.slug)throw new CapacityOperationError(409,'agent_team_target_changed','A planned target project identity changed.',{projectId:targetPlan.projectId});

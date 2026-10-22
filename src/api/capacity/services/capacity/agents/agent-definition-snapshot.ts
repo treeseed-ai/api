@@ -18,7 +18,7 @@ export interface AgentDefinitionSourceFile {
 /** Read and validate one exact governed agent-definition collection. */
 export async function snapshotAgentDefinitions(value: KnowledgeGatewayConnection, ref = value.baseRef) {
 	const listed = await value.client.listRepositoryPaths({ repoId: value.repositoryId, ref,
-		paths: [projectLibraryPath(value.contentPath, 'agents/**')], kinds: ['blob'], extensions: ['.md', '.mdx'], limit: 200, allowProtected: true });
+		paths: [projectLibraryPath(value.contentPath, 'agents/**')], kinds: ['blob'], extensions: ['.md', '.mdx', '.yaml', '.yml'], limit: 200, allowProtected: true });
 	const commit = text(listed.resolvedRef);
 	if (!/^[0-9a-f]{40}$/u.test(commit)) throw new CapacityOperationError(409, 'agent_team_snapshot_invalid',
 		'TreeDX did not resolve the agent collection to an exact commit.');
@@ -46,7 +46,7 @@ export async function snapshotAgentDefinitions(value: KnowledgeGatewayConnection
 		return { path, content, definition: validation.data,
 			sourceDigest: `sha256:${createHash('sha256').update(content).digest('hex')}` };
 	});
-	if (new Set(files.map((file) => file.definition.agentClass)).size !== files.length) throw new CapacityOperationError(409,
-		'agent_team_class_ambiguous', 'Multiple agent definitions select the same class.');
+	if (new Set(files.map((file) => file.definition.id)).size !== files.length) throw new CapacityOperationError(409,
+		'agent_team_definition_duplicate', 'Multiple agent definitions use the same identity.');
 	return { commit, files };
 }

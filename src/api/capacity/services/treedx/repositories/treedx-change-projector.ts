@@ -25,21 +25,24 @@ async function projectAgentDefinitions(database: CapacityGovernanceDatabase, inp
 	const project = await database.first('SELECT team_id FROM projects WHERE id=? LIMIT 1', [input.projectId]);
 	if (!project?.team_id) throw new CapacityGovernanceError('agent_profile_project_missing',
 		'Published agent definitions require an active project.', 409, { projectId: input.projectId });
-	for (const file of snapshot.files) {
-		const slug = file.definition.agentClass;
+	const grouped = new Map<string, typeof snapshot.files>();
+	for (const file of snapshot.files) grouped.set(file.definition.agentClass, [...(grouped.get(file.definition.agentClass) ?? []), file]);
+	for (const [slug, files] of grouped) {
 		const existing = classes.find((entry) => String(entry.slug ?? '') === slug && entry.status === 'active')
 			?? classes.find((entry) => String(entry.slug ?? '') === slug);
+		const definitionSources = files.map((file) => ({ agentId: file.definition.id, path: file.path, digest: file.sourceDigest }));
 		const metadata = { ...record(existing?.metadata_json ?? existing?.metadata), source: 'project-library', immutableRef: input.commitSha,
-				libraryRef: input.immutableRef ?? connection.baseRef, definitionPaths: [file.path],
-				definitionDigest: file.sourceDigest.replace(/^sha256:/u, '') };
+				libraryRef: input.immutableRef ?? connection.baseRef, definitionPaths: files.map((file) => file.path), definitionSources,
+				definitionDigest: files[0]!.sourceDigest.replace(/^sha256:/u, '') };
 		const now = new Date().toISOString();
-		if (existing) await database.run(`UPDATE project_agent_classes SET name=?,status='active',handler_refs_json=?,metadata_json=?,updated_at=?
-			WHERE id=? AND project_id=?`, [file.definition.name, JSON.stringify({ agents: [file.definition] }), JSON.stringify(metadata), now,
+		const handlerRefs = { ...record(existing?.handler_refs_json ?? existing?.handlerRefs), agents: files.map((file) => file.definition) };
+		if (existing) await database.run(`UPDATE project_agent_classes SET status='active',handler_refs_json=?,metadata_json=?,updated_at=?
+			WHERE id=? AND project_id=?`, [JSON.stringify(handlerRefs), JSON.stringify(metadata), now,
 			String(existing.id), input.projectId]);
 		else await database.run(`INSERT INTO project_agent_classes
 			(id,team_id,project_id,slug,name,status,handler_refs_json,metadata_json,created_at,updated_at)
 			VALUES (?,?,?,?,?,'active',?,?,?,?)`, [`${input.projectId}:${slug}`, String(project.team_id), input.projectId, slug,
-			file.definition.name, JSON.stringify({ agents: [file.definition] }), JSON.stringify(metadata), now, now]);
+			files[0]!.definition.name, JSON.stringify(handlerRefs), JSON.stringify(metadata), now, now]);
 	}
 }
 
@@ -74,7 +77,7 @@ export async function projectTreeDxCommitSignals(database: CapacityGovernanceDat
 		...(input.immutableRef?.startsWith('refs/') ? { sourceRef: input.immutableRef } : {}),
 	});
 	const paths = [...new Set(input.changedPaths.map((path) => path.trim().replace(/^\/+|\/+$/gu, '')).filter(Boolean))].sort();
-	if (paths.some((path) => /(?:^|\/)agents\/[^/]+\.mdx?$/u.test(path))) {
+	if (paths.some((path) => /(?:^|\/)agents\/[^/]+\.(?:md|mdx|yaml|yml)$/u.test(path))) {
 		await projectAgentDefinitions(database, input);
 	}
 	// An assignment workspace commit is unpublished output. Its canonical
