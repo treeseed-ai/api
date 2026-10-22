@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { relationAuthoringDatabase, object } from '../../../knowledge/workspaces/architecture/relation-authoring-fixture.ts';
 import { commitProposalVersionContent } from '../../../../../../src/api/control-plane/governance/proposal-version-content.ts';
 import { requireTreeDxOperation } from '../../../../../../src/api/control-plane/treedx/upstream-operation.ts';
+import { parseFrontmatterDocument } from '../../../../../../src/api/content/frontmatter.ts';
+import { readyProposal } from './ready-proposal-fixture.ts';
 
 // Real signed TreeDX and the original store on disposable native PostgreSQL.
 // The selected library ref, type bytes and local retained file are controlled
@@ -42,7 +44,8 @@ describe('governed proposal contract authority with divergent native authoring',
 			expect(await head()).toBe(localBefore);
 			await expect(read('refs/heads/staging',typePath)).rejects.toMatchObject({status:404});
 			const input={store:f.store,principal:{id:'operator-fixture'},initial:true,proposal:{id:'native-schema-proposal',teamId:'team',projectId,
-				title:'Native schema custody',body:'Create this request without replacing retained local work.',proposalTypes:['implementation']},update:{}};
+				title:'Native schema custody',body:'Create this request without replacing retained local work.',proposalTypes:['implementation']},
+				update:{groupIds:['provider-runtime'],executionPlan:readyProposal().executionPlan}};
 			const created=await commitProposalVersionContent(input);
 			expect(created.receipt.changedPaths).toEqual(['proposals/governance/native-schema-custody.mdx']);
 			expect(created.receipt.branchName).toBe('refs/heads/staging');
@@ -66,6 +69,10 @@ describe('governed proposal contract authority with divergent native authoring',
 			const revision={...input,initial:false,proposal:{...input.proposal,activeVersion:1,metadata:{contentProvenance:{repositoryId:repoId,contentPath:created.receipt.path,commitSha:created.receipt.commitSha}}},update:{workdayId,request:'Genuine estimate revision on exact prior private source.'}};
 			const revised=await commitProposalVersionContent(revision);
 			expect(revised.update.body).toBe(revision.update.request);
+			const revisedSource=object((await read(revised.receipt.commitSha,revised.receipt.path)).file).content;
+			const revisedDefinition=parseFrontmatterDocument(String(revisedSource)).frontmatter;
+			expect(revisedDefinition.executionPlan).toEqual(input.update.executionPlan);
+			expect(revisedDefinition.groupIds).toEqual(input.update.groupIds);
 			expect((await read(revised.receipt.commitSha,retainedPath)).file).toMatchObject({content:retained});
 			await expect(read(revised.receipt.commitSha,typePath)).rejects.toMatchObject({status:404});
 			expect(await head()).toBe(created.receipt.commitSha);
