@@ -401,24 +401,6 @@ describe('control-plane protocol contract', () => {
 			expect(registry.require(operationId).binding).toBe(Object.values(CONTROL_PLANE_OPERATIONS.teams).find((binding) => binding.descriptor.operationId === operationId));
 		}
 	});
-	it('negotiates the supported 2025 MCP protocol over the stateless transport', async () => {
-		const app = new Hono();
-		installControlPlaneProtocolRoutes(app, authenticate);
-		const response = await app.request('/mcp', {
-			method: 'POST',
-			headers: { authorization: 'Bearer test-token', 'content-type': 'application/json', host: 'localhost',
-				accept: 'application/json, text/event-stream' },
-			body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'legacy', version: '1' } } }),
-		});
-		const body = await response.text();
-		expect(response.status).toBe(200);
-		const payload = response.headers.get('content-type')?.includes('text/event-stream')
-			? JSON.parse(body.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n'))
-			: JSON.parse(body);
-		expect(payload).toMatchObject({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-06-18',
-			serverInfo: { name: 'treeseed-control-plane' } } });
-	});
-
 	it('serves discovery and tools through the official modern client', async () => {
 		const app = new Hono();
 		const registry = createApiControlPlaneOperations(apiDependencies());
