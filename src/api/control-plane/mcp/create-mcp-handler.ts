@@ -99,5 +99,5 @@ export function createControlPlaneMcpHandler(registry: OperationRegistry, confir
 			}));
 		}
 		return server;
-	}, { legacy: 'reject', responseMode: 'auto', bus });
+	}, { legacy: 'stateless', responseMode: 'auto', bus });
 }

@@ -43,6 +43,37 @@ it('publishes configured resource metadata, never the incoming Host or an API-lo
   }
 });
 
+it('serves the native coordinator 2025 handshake, discovery and shared backend read with verified Identity tokens', async () => {
+  const { app, token, observed } = await fixture();
+  const bearer = await token(resource, 'treeseed:read', 'native-coordinator');
+  const request = (message: unknown, authorization = `Bearer ${bearer}`) => app.request('https://api.example/mcp', {
+    method: 'POST', headers: { host: 'api.example', authorization, 'content-type': 'application/json',
+      accept: 'application/json, text/event-stream', 'mcp-protocol-version': '2025-06-18' }, body: JSON.stringify(message),
+  });
+  const payload = async (response: Response) => {
+    if (response.headers.get('content-type')?.includes('application/json')) return response.json();
+    expect(response.headers.get('content-type')).toContain('text/event-stream');
+    return JSON.parse((await response.text()).split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n'));
+  };
+  const initialize = { jsonrpc: '2.0', id: 1, method: 'initialize', params: {
+    protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'native-coordinator', version: '1.0.0' },
+  } };
+  const initialized = await request(initialize);
+  expect(initialized.status).toBe(200);
+  expect(await payload(initialized)).toMatchObject({ id: 1, result: { protocolVersion: '2025-06-18',
+    serverInfo: { name: 'treeseed-control-plane' } } });
+  const listed = await request({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
+  expect(listed.status).toBe(200);
+  expect(await payload(listed)).toMatchObject({ id: 2, result: { tools: [expect.objectContaining({ name: 'status.show' })] } });
+  const called = await request({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: {
+    name: 'status.show', arguments: { path: {}, query: {} },
+  } });
+  expect(called.status).toBe(200);
+  expect(await payload(called)).toMatchObject({ id: 3, result: { structuredContent: expect.any(Object) } });
+  expect(observed).toEqual([{ clientId: 'native-coordinator', expiresAt: expect.any(Number) }]);
+  expect((await request(initialize, 'Bearer invalid')).status).toBe(401);
+});
+
 it('uses verified Identity tokens for existing resource operations and denies wrong audiences without database reads', async () => {
   const { app, token, first } = await fixture();
   expect((await app.request('/v1/status', { headers: { authorization: `Bearer ${await token()}` } })).status).toBe(200);
