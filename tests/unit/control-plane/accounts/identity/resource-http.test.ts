@@ -2,13 +2,14 @@ import { Hono } from 'hono';
 import { expect, it, vi } from 'vitest';
 import { decodeJwt, generateKeyPair, SignJWT } from 'jose';
 import { BROWSER_SESSION_BRIDGE_PATH } from '@treeseed/sdk/identity';
+import { CONTROL_PLANE_OPERATION_LIST } from '@treeseed/sdk/operator-contracts';
 import { installApiIdentityRoutes } from '../../../../../src/api/auth/browser/api-routes.ts';
 import { createIdentityAuthenticator } from '../../../../../src/api/auth/identity-authenticator.ts';
 import { controlPlaneOperations } from '../../../../../src/api/control-plane/catalog/index.ts';
 import { OperationRegistry } from '../../../../../src/api/control-plane/catalog/operation-registry.ts';
 
 const issuer = 'https://identity.example/realms/treeseed', resource = 'https://api.example';
-async function fixture() {
+async function fixture(scopes = ['treeseed:read'], includeCommunication = false) {
   const keys = await generateKeyPair('RS256');
   const first = vi.fn(async (sql: string) => sql.includes('identity_workloads') ? null
     : sql.includes('user_identities') ? { user_id: 'preserved-user', status: 'active' } : { id: 'preserved-user' });
@@ -20,11 +21,12 @@ async function fixture() {
   const observed: Array<{ clientId: string; expiresAt: number | undefined }> = [];
   const status = controlPlaneOperations.require('status.show');
   installApiIdentityRoutes(app, { authenticate, services: new Map(), metadata: {
-    resource, authorization_servers: [issuer], bearer_methods_supported: ['header'], scopes_supported: ['treeseed:read'],
+    resource, authorization_servers: [issuer], bearer_methods_supported: ['header'], scopes_supported: scopes,
   } }, { registry: new OperationRegistry([{ ...status, handler: async (input, context) => {
     if (context.authInfo) observed.push({ clientId: context.authInfo.clientId, expiresAt: context.authInfo.expiresAt });
     return status.handler(input, context);
-  } }]) });
+  } }, ...(includeCommunication ? [{ binding: CONTROL_PLANE_OPERATION_LIST.find(operation => operation.descriptor.operationId === 'communications.send')!,
+    handler: async () => { throw new Error('Metadata reads must not invoke a mutation.'); } }] : [])]) });
   const token = (audience = resource, scope = 'treeseed:read', clientId: unknown = 'admin') => new SignJWT({ typ: 'Bearer', azp: clientId, scope })
     .setProtectedHeader({ alg: 'RS256' }).setIssuer(issuer).setAudience(audience).setSubject('exact-subject')
     .setIssuedAt().setExpirationTime('47s').sign(keys.privateKey);
@@ -41,6 +43,15 @@ it('publishes configured resource metadata, never the incoming Host or an API-lo
   for (const path of ['/.well-known/oauth-authorization-server', '/oauth/token', '/oauth/device_authorization', '/oauth/authorize', '/oauth/revoke']) {
     for (const method of ['GET', 'POST']) expect((await app.request(path, { method })).status).toBe(404);
   }
+});
+
+it('advertises only configured scopes of exposed MCP operations, preserving the general API metadata', async () => {
+  const scopes = ['treeseed:read', 'treeseed:admin', 'treeseed:execution', 'treeseed:projects:write'];
+  const { app } = await fixture(scopes, true);
+  const api = await (await app.request('/.well-known/oauth-protected-resource')).json();
+  const mcp = await (await app.request('/.well-known/oauth-protected-resource/mcp')).json();
+  expect(api).toMatchObject({ resource, scopes_supported: scopes });
+  expect(mcp).toMatchObject({ resource, authorization_servers: [issuer], scopes_supported: ['treeseed:read', 'treeseed:execution'] });
 });
 
 it('serves the native coordinator 2025 handshake, discovery and shared backend read with verified Identity tokens', async () => {
