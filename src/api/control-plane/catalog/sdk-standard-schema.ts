@@ -32,9 +32,10 @@ export function sdkStandardSchema(schema: SdkSchema) {
 }
 
 export function sdkOperationInputStandardSchema(binding: {
-	descriptor: Pick<ControlPlaneOperationBinding['descriptor'], 'kind' | 'idempotency' | 'concurrency'>;
+	descriptor: Pick<ControlPlaneOperationBinding['descriptor'], 'kind' | 'idempotency' | 'concurrency' | 'rest'>;
 	schema: { path: SdkSchema; query: SdkSchema; body: SdkSchema };
 }) {
+	const acceptsBody = Boolean(binding.descriptor.rest && binding.descriptor.rest.method !== 'GET');
 	const headerNames: string[] = binding.descriptor.kind === 'mutation'
 		? [binding.descriptor.idempotency.header, ...(binding.descriptor.concurrency.required ? [binding.descriptor.concurrency.writeHeader] : [])] : [];
 	const headersSchema = headerNames.length ? z.object(Object.fromEntries(headerNames.map(name => [name,
@@ -47,7 +48,7 @@ export function sdkOperationInputStandardSchema(binding: {
 		properties: {
 			path: mcpSchemaJson(binding.schema.path),
 			query: mcpSchemaJson(binding.schema.query),
-			...(binding.descriptor.kind === 'mutation' ? { body: mcpSchemaJson(binding.schema.body) } : {}),
+			...(acceptsBody ? { body: mcpSchemaJson(binding.schema.body) } : {}),
 			...(headersSchema ? { headers: z.toJSONSchema(headersSchema, { target: 'draft-7' }) } : {}),
 		},
 		additionalProperties: false,
@@ -69,7 +70,7 @@ export function sdkOperationInputStandardSchema(binding: {
 				}
 				const path = binding.schema.path.safeParse(input.path ?? {});
 				const query = binding.schema.query.safeParse(input.query ?? {});
-				const body = binding.schema.body.safeParse(binding.descriptor.kind === 'mutation' ? input.body ?? {} : undefined);
+				const body = binding.schema.body.safeParse(acceptsBody ? input.body ?? {} : undefined);
 				if (!path.success) return { issues: issues(path.error) };
 				if (!query.success) return { issues: issues(query.error) };
 				if (!body.success) return { issues: issues(body.error) };
