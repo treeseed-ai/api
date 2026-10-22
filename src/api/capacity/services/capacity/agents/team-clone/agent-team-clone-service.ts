@@ -14,7 +14,7 @@ import { projectTreeDxCommitSignals } from '../../../treedx/repositories/treedx-
 import { recordTreeDxAuthoringState } from '../../../treedx/repositories/treedx-authoring-journal.ts';
 import { authorizeCapacityTeam,type CapacityPrincipal } from '../../../../../control-plane/repositories/capacity/capacity-authorization.ts';
 import { CapacityOperationError } from '../../../../../control-plane/repositories/capacity/capacity-operation-error.ts';
-import { snapshotAgentDefinitions, type AgentDefinitionSourceFile } from '../agent-definition-snapshot.ts';
+import { parseAgentDefinitionSource, snapshotAgentDefinitions, type AgentDefinitionSourceFile } from '../agent-definition-snapshot.ts';
 
 type Row = Record<string,unknown>;
 type Project = { id:string; slug:string; name:string; status?:string };
@@ -49,7 +49,7 @@ function replacePromptText(value:unknown,source:Project,target:Project):unknown{
 	return value;
 }
 function adapt(sourceFile:SourceFile,source:Project,target:Project){
-	const parsed=parseFrontmatterDocument(sourceFile.content);
+	const parsed=parseAgentDefinitionSource(sourceFile.path,sourceFile.content);
 	const frontmatter=structuredClone(parsed.frontmatter) as Row;
 	frontmatter.id=`${target.slug}/${sourceFile.definition.agentClass}`;
 	for(const key of ['name','purpose'] as const)if(typeof frontmatter[key]==='string')frontmatter[key]=replaceIdentityText(frontmatter[key] as string,source,target);

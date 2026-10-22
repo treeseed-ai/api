@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { parse as parseYaml } from 'yaml';
 import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
 import { parseFrontmatterDocument } from '../../../../content/frontmatter.ts';
 import { projectLibraryPath, type KnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
@@ -13,6 +14,15 @@ export interface AgentDefinitionSourceFile {
 	content: string;
 	definition: AgentDefinition;
 	sourceDigest: string;
+}
+
+export function parseAgentDefinitionSource(path: string, content: string) {
+	if (/\.ya?ml$/iu.test(path) && !content.startsWith('---\n')) {
+		const parsed = parseYaml(content);
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Agent YAML must be a mapping.');
+		return { frontmatter: parsed as Record<string, unknown>, body: '' };
+	}
+	return parseFrontmatterDocument(content);
 }
 
 /** Read and validate one exact governed agent-definition collection. */
@@ -39,7 +49,13 @@ export async function snapshotAgentDefinitions(value: KnowledgeGatewayConnection
 		const content = file.content;
 		if (typeof content !== 'string') throw new CapacityOperationError(502, 'agent_team_source_missing',
 			'TreeDX did not return exact agent definition bytes.');
-		const path = text(file.path), validation = validateAgentDefinitionModel(parseFrontmatterDocument(content).frontmatter);
+		const path = text(file.path);
+		let frontmatter: Record<string, unknown>;
+		try { frontmatter = parseAgentDefinitionSource(path, content).frontmatter; }
+		catch (error) { throw new CapacityOperationError(409, 'agent_team_definition_invalid',
+			`Agent definition ${path || '(unknown)'} is invalid; the exact source snapshot cannot be used.`,
+			{ path, diagnostics: [{ code: 'agent_source_parse_invalid', path: 'frontmatter', message: error instanceof Error ? error.message : String(error) }] }); }
+		const validation = validateAgentDefinitionModel(frontmatter);
 		if (!validation.ok || !validation.data) throw new CapacityOperationError(409, 'agent_team_definition_invalid',
 			`Agent definition ${path || '(unknown)'} is invalid; the exact source snapshot cannot be used.`,
 			{ path, diagnostics: validation.diagnostics });
