@@ -59,11 +59,14 @@ export function workdayParticipants(parameters: Row, options: { includeEstimated
 					} else participants.push({ projectId, definition: validation.data,
 						activity, id: `${projectId}/${validation.data.id}:planning` });
 				}
-				else for (const proposalValue of array(record(parameters.proposalsByProjectId)[projectId])) {
+				else for (const proposalValue of Object.values(proposalsByProject).flatMap(array)) {
 					const proposal = record(proposalValue);
+					const contributions = proposal.schemaVersion === 'treeseed.proposal/v2';
+					if (contributions ? !array(proposal.groupIds).some(id => validation.data!.groupIds?.includes(text(id))
+						&& (!groups.length || groups.includes(text(id)))) : !array(proposalsByProject[projectId]).includes(proposalValue)) continue;
 					const proposalId = text(proposal.id);
 					const items = array(record(proposal.executionPlan).workItems).map(record);
-					const canEstimate = items.some(item => text(item.agentClass) === validation.data!.agentClass
+					const canEstimate = contributions || items.some(item => text(item.agentClass) === validation.data!.agentClass
 						&& (options.includeEstimated || Object.keys(record(item.estimate)).length === 0))
 						|| (validation.data.agentClass === 'reviewer' && items.some(item => item.review === 'required'
 							&& (options.includeEstimated || Object.keys(record(item.reviewEstimate)).length === 0)));

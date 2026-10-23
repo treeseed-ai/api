@@ -18,6 +18,31 @@ const definition = (agentClass: string, dependsOn: string[] = []): AgentDefiniti
 });
 
 describe('workday living-graph projection', () => {
+	it('projects every v2 group estimator without class-owned work or a privileged Reviewer ordering', () => {
+		const agents = ['technical-writer', 'tester', 'critic'].map(name => {
+			const agent = definition(name === 'critic' ? 'reviewer' : 'maintenance');
+			agent.id = `sdk/${name}`; agent.name = name; agent.groupIds = ['provider-runtime'];
+			agent.activityProfiles.estimating = { handler: 'writer', permissions, prompt: { system: 'Estimate and own a meaningful contribution.' } };
+			return { definition: agent, activities: ['planning', 'estimating'] };
+		});
+		const proposal = { schemaVersion: 'treeseed.proposal/v2', id: 'opaque-runner', groupIds: ['provider-runtime'],
+			request: 'Document, reproduce and repair the actual prepared request handoff.' };
+		const participation = { groupIds: ['provider-runtime'], agentProfilesByProjectId: { sdk: { agents } }, proposalsByProjectId: { sdk: [proposal] } };
+		const participants = workdayParticipants(participation);
+		const plan = compileWorkday({ id: 'group-contributions', teamId: 'team', policyId: 'default', policyRevision: 1,
+			executionMode: 'simulation', startsAt: '2026-10-23T13:00:00Z', policy: DEFAULT_WORKDAY_POLICY, agentIds: participants.map(row => row.id) });
+		const graph = projectActiveWorkdays({ teamId: 'team', revision: 1, profiles: {}, sources: [{ id: plan.id, teamId: 'team',
+			proposalsByProjectId: participation.proposalsByProjectId, parameters: { ...participation, appliedPlan: plan, scheduledProjectIds: ['sdk'],
+				planningSourceByProposalId: { [proposal.id]: { store: 'treedx', model: 'proposal', id: proposal.id, revision: 1,
+					repository: 'sdk-library', commit: 'a'.repeat(40), path: 'proposals/opaque-runner.mdx' } } } }] });
+		expect(graph.nodes.filter(row => row.kind === 'estimating')).toHaveLength(3);
+		for (const node of graph.nodes.filter(row => row.kind === 'estimating')) {
+			expect(node.workItemId).toBeUndefined(); expect(node.acceptanceCriteria).toEqual([proposal.request]);
+			const upstream = graph.edges.filter(edge => edge.toNodeId === node.id).map(edge => graph.nodes.find(row => row.id === edge.fromNodeId));
+			expect(upstream).toHaveLength(1); expect(upstream[0]!.kind).toBe('planning');
+		}
+		expect(validateExecutionGraph(graph.nodes, graph.edges)).toMatchObject({ ok: true });
+	});
 	it('accounts for only never-admitted obsolete estimator turns as cancelled in the original closing round', () => {
 		const projectId='sdk',proposalId='ready-proposal';
 		const agents=['engineer','reviewer'].map(agentClass=>{

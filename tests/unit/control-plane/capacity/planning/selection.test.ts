@@ -15,6 +15,20 @@ const classes = [
 ];
 
 describe('exact activity selection before living-node admission', () => {
+	it('admits every v2 group subscriber to estimating before a contribution plan exists regardless of class or project', () => {
+		const snapshot = (project: string, name: string, groupIds = ['provider-runtime']) => ({ agents: [{
+			definition: { ...definition(name, 'maintenance', { planning: profile('writer'), estimating: profile('writer') }), id: `${project}/${name}`, groupIds },
+			activities: ['planning', 'estimating'],
+		}] });
+		const parameters = { groupIds: ['provider-runtime'], agentProfilesByProjectId: {
+			agent: snapshot('agent', 'technical-writer'), api: snapshot('api', 'tester'),
+			other: snapshot('other', 'engineer', ['another-group']),
+		}, proposalsByProjectId: { agent: [{ schemaVersion: 'treeseed.proposal/v2', id: 'opaque-runner', groupIds: ['provider-runtime'] }] } };
+		const before = structuredClone(parameters), result = workdayParticipants(parameters);
+		expect(result.filter(row => row.activity === 'estimating').map(row => row.definition.id)).toEqual(['agent/technical-writer', 'api/tester']);
+		expect(result.filter(row => row.activity === 'planning').map(row => row.definition.id)).toEqual(['agent/technical-writer', 'api/tester']);
+		expect(result.every(row => row.proposalId === 'opaque-runner')).toBe(true); expect(parameters).toEqual(before);
+	});
 	it('rejects hidden agent or allocation-class selectors at the internal snapshot boundary', () => {
 		for (const field of ['agentSlugs', 'classIds', 'classSlugs']) {
 			expect(() => compileWorkdayAgentProfileSnapshot(classes, { activityTypes: ['planning'], [field]: ['architect'] }))

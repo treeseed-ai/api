@@ -114,7 +114,11 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 				? (await readExactProposal(input.store, input.proposal)).definition
 				: parseFrontmatterDocument(before).frontmatter;
 		const field = (key: string) => Object.hasOwn(input.update, key) ? input.update[key] : prior[key];
+		const schemaVersion = prior.schemaVersion ?? 'treeseed.proposal/v2';
+		if (schemaVersion !== 'treeseed.proposal/v1' && schemaVersion !== 'treeseed.proposal/v2') throw Object.assign(
+			new Error('The existing proposal has an unsupported content version.'), { status: 422, code: 'proposal_schema_version_unsupported' });
 		const source = serializeProposalDocument({
+			schemaVersion,
 			id: text(input.proposal.id), projectId, title, request: body, ...(summary ? { summary } : {}),
 			status: status as 'draft' | 'discussing' | 'ready' | 'decided' | 'withdrawn',
 			groupIds: field('groupIds'), objectiveRefs: field('objectiveRefs'), evidenceRefs: field('evidenceRefs'),

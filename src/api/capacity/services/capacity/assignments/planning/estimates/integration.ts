@@ -1,6 +1,7 @@
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { AssignmentResult } from '@treeseed/sdk/agent-capacity';
+import type { AssignmentResult, ExactEntityReference } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError } from '../../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../../repositories/capacity/assignments/assignment.ts';
 import { hasCompleteExecutablePlan, proposalApprovalFingerprint, readExactProposal } from '../../../../../../governance/executable-proposal.ts';
@@ -32,10 +33,75 @@ function workItems(value: Row): Row[] {
 	return Array.isArray(record(value.executionPlan).workItems) ? record(value.executionPlan).workItems as Row[] : [];
 }
 
-/** An estimator owns all proposal work items of its class; Reviewer owns required reviews. */
+type Estimator = Pick<DurableProviderAssignment, 'id' | 'agentId' | 'teamId' | 'projectId' | 'assignmentAttempt'>;
+type EstimateMerge = { frozen: Row; candidate: Row; current: Row; agentClass?: string;
+	assignment?: Estimator; ownedEstimateRefs?: ExactEntityReference[] };
+
+/** Ownership comes from the admitted attempt and canonical prior estimates.
+ * Concurrent first contributions may add disjoint work; no author can alter a
+ * peer's frozen work or replace a newer contribution with a stale result. */
+function mergeSubscriberEstimate(input: EstimateMerge): Row {
+	const assignment = input.assignment, attempt = assignment?.assignmentAttempt;
+	const deny = (code: string, message: string): never => { throw new CapacityGovernanceError(code, message, 409); };
+	if (!assignment || !attempt || attempt.id !== assignment.id || !assignment.agentId
+		|| attempt.projectId !== assignment.projectId || attempt.teamId !== assignment.teamId
+		|| attempt.effectiveProfile.activity !== 'estimating' || attempt.effectiveProfile.profileRef.id !== assignment.agentId
+		|| attempt.sourceRef.store !== 'treedx' || attempt.sourceRef.model !== 'proposal' || attempt.sourceRef.id !== input.frozen.id)
+		return deny('assignment_estimate_authority_invalid', 'Contribution ownership requires its actual admitted estimating attempt.');
+	for (const value of [input.frozen, input.candidate, input.current]) if (value.schemaVersion !== 'treeseed.proposal/v2'
+		|| !validatePortableContentData('proposal', value).ok) return deny('assignment_estimate_content_invalid',
+			'Every contribution must satisfy the current group proposal contract.');
+	const intent = (value: Row) => { const { executionPlan: _plan, status: _status, ...rest } = value; return rest; };
+	if (stable(intent(input.candidate)) !== stable(intent(input.frozen))) return deny('assignment_estimate_unrelated_change',
+		'An estimator cannot change the proposal objective, groups or other authored content.');
+	if (stable(intent(input.current)) !== stable(intent(input.frozen))) return deny('assignment_estimate_source_changed',
+		'The proposal objective, groups or other authored content changed after estimation began.');
+	const ref: ExactEntityReference = { store: 'postgresql', model: 'assignment-attempt', id: attempt.id, revision: attempt.attempt };
+	const owned = new Set([ref, ...(input.ownedEstimateRefs ?? [])].map(stable));
+	const owns = (item: Row) => owned.has(stable(item.estimateRef));
+	const frozenItems = workItems(input.frozen), candidateItems = workItems(input.candidate), currentItems = workItems(input.current);
+	const own = candidateItems.filter(owns), peers = candidateItems.filter(item => !owns(item));
+	if (!own.length || own.some(item => stable(item.estimateRef) !== stable(ref))) return deny('assignment_estimate_owner_missing',
+		'Each estimating author must submit its own work with the exact current attempt provenance.');
+	const ordered = (items: Row[]) => [...items].sort((left, right) => text(left.id).localeCompare(text(right.id)));
+	if (stable(ordered(peers)) !== stable(ordered(frozenItems.filter(item => !owns(item))))) return deny('assignment_estimate_unrelated_change',
+		'An estimator cannot add, remove or change another subscriber contribution.');
+	for (const peer of frozenItems.filter(item => !owns(item))) if (stable(currentItems.find(item => item.id === peer.id)) !== stable(peer))
+		return deny('assignment_estimate_source_changed', 'A frozen peer contribution changed while this estimate was being prepared.');
+	const currentOwn = currentItems.filter(owns);
+	if (stable(ordered(currentOwn)) !== stable(ordered(frozenItems.filter(owns))) && stable(ordered(currentOwn)) !== stable(ordered(own))) return deny(
+		'assignment_estimate_source_changed', 'A newer contribution from this author must not be overwritten.');
+	const merged = { ...input.current, executionPlan: { workItems: ordered([...currentItems.filter(item => !owns(item)), ...own]) } };
+	if (!validatePortableContentData('proposal', merged).ok) return deny('assignment_estimate_work_item_invalid',
+		'The combined contributions contain conflicting IDs, dependencies or invalid work.');
+	return merged;
+}
+
+async function ownEstimateReferences(store: CapacityGovernanceDatabase, assignment: Estimator,
+	frozen: Row, current: Row): Promise<ExactEntityReference[]> {
+	const ids = [...new Set([...workItems(frozen), ...workItems(current)].map(item => text(record(item.estimateRef).id)).filter(Boolean))];
+	if (!ids.length) return [];
+	const values = await store.all(`SELECT id,assignment_attempt_json FROM capacity_provider_assignments
+		WHERE team_id=? AND project_id=? AND agent_id=? AND id IN (${ids.map(() => '?').join(',')})`,
+		[assignment.teamId, assignment.projectId, assignment.agentId, ...ids]);
+	return values.flatMap(value => {
+		const parsed = assignmentAttemptSchema.safeParse(record(typeof value.assignment_attempt_json === 'string'
+			? JSON.parse(value.assignment_attempt_json) : value.assignment_attempt_json));
+		if (!parsed.success || parsed.data.id !== value.id || parsed.data.teamId !== assignment.teamId
+			|| parsed.data.projectId !== assignment.projectId || parsed.data.effectiveProfile.profileRef.id !== assignment.agentId
+			|| parsed.data.effectiveProfile.activity !== 'estimating' || parsed.data.sourceRef.model !== 'proposal'
+			|| parsed.data.sourceRef.id !== frozen.id) return [];
+		return [{ store: 'postgresql', model: 'assignment-attempt', id: parsed.data.id, revision: parsed.data.attempt }];
+	});
+}
+
+/** Current group contributions use actual attempt custody. The v1 branch is
+ * retained only for already-issued historical authority during migration. */
 export function mergeAssignmentEstimate(input: {
-	frozen: Row; candidate: Row; current: Row; agentClass: string;
+	frozen: Row; candidate: Row; current: Row; agentClass?: string;
+	assignment?: Estimator; ownedEstimateRefs?: ExactEntityReference[];
 }): Row {
+	if (input.frozen.schemaVersion === 'treeseed.proposal/v2') return mergeSubscriberEstimate(input);
 	const frozenItems = workItems(input.frozen);
 	const candidateItems = workItems(input.candidate);
 	const currentItems = workItems(input.current);
@@ -133,6 +199,37 @@ async function integrateAssignmentEstimateOnce(
 	requireEstimateAuthority(store);
 	const frozen = await readExactProposal(store, proposal, attempt.sourceRef);
 	const current = await readExactProposal(store, proposal);
+	if (['withdrawn', 'decided'].includes(text(current.definition.status))) throw new CapacityGovernanceError(
+		'assignment_estimate_proposal_closed', 'The current proposal is closed to new contributions.', 409);
+	const candidate = await readAssignmentEstimateProposal(store, assignment, result);
+	const contributions = frozen.definition.schemaVersion === 'treeseed.proposal/v2';
+	const merged = mergeAssignmentEstimate({ frozen: frozen.definition, candidate, current: current.definition,
+		agentClass: attempt.agentClass, assignment,
+		ownedEstimateRefs: contributions ? await ownEstimateReferences(store, assignment, frozen.definition, current.definition) : [] });
+	if (stable(merged) === stable(current.definition)) return;
+	// A contribution's presence cannot stand in for the whole group's completion.
+	// The canonical readiness gate checks genuine completed attempts after their
+	// results/read-back are committed; never mark the first v2 item ready here.
+	const allEstimated = !contributions && workItems(merged).every((item) => Object.keys(record(item.estimate)).length > 0
+		&& (item.review !== 'required' || Object.keys(record(item.reviewEstimate)).length > 0));
+	const authored = await commitProposalVersionContent({ store, proposal,
+		principal: { id: assignment.agentId, name: assignment.agentId },
+		update: { title: proposal.title, summary: proposal.summary, body: proposal.body,
+			proposalTypes: proposal.proposalTypes, status: allEstimated ? 'ready' : merged.status,
+			groupIds: merged.groupIds, objectiveRefs: merged.objectiveRefs, evidenceRefs: merged.evidenceRefs,
+			discussionRef: merged.discussionRef, executionPlan: merged.executionPlan,
+			workdayId: assignment.workDayId, expectedProposalVersion: proposal.activeVersion,
+			changeReason: `Integrate ${assignment.agentId} contribution from assignment ${assignment.id}.` } });
+	await store.updateGovernanceProposalDraft({ id: assignment.agentId, type: 'agent' }, text(proposal.id),
+		{ ...authored.update, createdByType: 'agent', createdById: assignment.agentId });
+	if (allEstimated) await finalizeEstimateReadyApproval(store, text(proposal.id), merged);
+}
+
+/** One exact native read boundary serves estimate integration and readiness. */
+export async function readAssignmentEstimateProposal(store: CapacityGovernanceDatabase, assignment: Estimator, result: AssignmentResult): Promise<Row> {
+	const attempt = assignment.assignmentAttempt;
+	if (!attempt || result.assignmentId !== assignment.id || result.status !== 'completed') throw new CapacityGovernanceError(
+		'assignment_estimate_result_invalid', 'Estimate read-back requires the actual attempt and its completed result.', 409);
 	const matches = result.references.filter((reference): reference is Extract<AssignmentResult['references'][number], { kind: 'treedx' }> => reference.kind === 'treedx'
 		&& reference.projectId === assignment.projectId && reference.repository === attempt.sourceRef.repository
 		&& reference.path === attempt.sourceRef.path);
@@ -158,21 +255,21 @@ async function integrateAssignmentEstimateOnce(
 		`Estimator proposal content is invalid: ${parsed.diagnostics.slice(0, 5)
 			.map((diagnostic) => `${diagnostic.field ?? 'document'}:${diagnostic.code}`).join(', ') || 'missing data'}.`,
 		409, { diagnostics: parsed.diagnostics });
-	const candidate = parsed.data as Row;
-	const merged = mergeAssignmentEstimate({ frozen: frozen.definition, candidate, current: current.definition,
-		agentClass: attempt.agentClass });
-	if (stable(merged) === stable(current.definition)) return;
-	const allEstimated = workItems(merged).every((item) => Object.keys(record(item.estimate)).length > 0
-		&& (item.review !== 'required' || Object.keys(record(item.reviewEstimate)).length > 0));
-	const authored = await commitProposalVersionContent({ store, proposal,
-		principal: { id: assignment.agentId, name: assignment.agentId },
-		update: { title: proposal.title, summary: proposal.summary, body: proposal.body,
-			proposalTypes: proposal.proposalTypes, status: allEstimated ? 'ready' : merged.status,
-			groupIds: merged.groupIds, objectiveRefs: merged.objectiveRefs, evidenceRefs: merged.evidenceRefs,
-			discussionRef: merged.discussionRef, executionPlan: merged.executionPlan,
-			workdayId: assignment.workDayId, expectedProposalVersion: proposal.activeVersion,
-			changeReason: `Integrate ${attempt.agentClass} estimates from assignment ${assignment.id}.` } });
-	await store.updateGovernanceProposalDraft({ id: assignment.agentId, type: 'agent' }, text(proposal.id),
-		{ ...authored.update, createdByType: 'agent', createdById: assignment.agentId });
-	if (allEstimated) await finalizeEstimateReadyApproval(store, text(proposal.id), merged);
+	return parsed.data as Row;
+}
+
+export async function isCurrentSubscriberContribution(store: CapacityGovernanceDatabase, proposal: Row, current: Row,
+	assignment: Estimator, result: AssignmentResult): Promise<boolean> {
+	const attempt = assignment.assignmentAttempt;
+	if (!attempt || !workItems(current).some(item => stable(item.estimateRef) === stable({
+		store: 'postgresql', model: 'assignment-attempt', id: attempt.id, revision: attempt.attempt }))) return false;
+	const frozen = await readExactProposal(store, proposal, attempt.sourceRef);
+	const candidate = await readAssignmentEstimateProposal(store, assignment, result);
+	try {
+		return stable(mergeSubscriberEstimate({ frozen: frozen.definition, current, candidate, assignment,
+			ownedEstimateRefs: await ownEstimateReferences(store, assignment, frozen.definition, current) })) === stable(current);
+	} catch (error) {
+		if (error instanceof CapacityGovernanceError && error.code.startsWith('assignment_estimate_')) return false;
+		throw error;
+	}
 }

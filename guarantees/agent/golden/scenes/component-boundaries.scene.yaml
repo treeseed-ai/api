@@ -3,6 +3,21 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: subscriber-contribution-ownership
+    action: { verifier: api.golden.subscriber-contribution-ownership }
+    expect: { status: passed }
+  - id: subscriber-contribution-readback
+    action: { verifier: api.golden.subscriber-contribution-readback }
+    expect: { status: passed }
+  - id: subscriber-contribution-readiness
+    action: { verifier: api.golden.subscriber-contribution-readiness }
+    expect: { status: passed }
+  - id: subscriber-contribution-audience
+    action: { verifier: api.golden.subscriber-contribution-audience }
+    expect: { status: passed }
+  - id: subscriber-contribution-projection
+    action: { verifier: api.golden.subscriber-contribution-projection }
+    expect: { status: passed }
   - id: group-workday-native
     action: { verifier: api.golden.group-workday-native }
     expect: { status: passed }

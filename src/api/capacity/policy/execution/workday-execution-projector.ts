@@ -121,15 +121,16 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 						throw new Error('Exact original estimating proposal authority required.');
 				}
 				const profile = definition.activityProfiles[activity]!;
-				const proposal = source.proposalsByProjectId?.[projectId]?.find((candidate) => text(candidate.id) === participant.proposalId);
+				const proposal = Object.values(source.proposalsByProjectId ?? {}).flat().find(candidate => text(candidate.id) === participant.proposalId);
+				const contributions = proposal?.schemaVersion === 'treeseed.proposal/v2';
 				const workItems = array(record(proposal?.executionPlan).workItems).map(record);
-				const workItem = activity === 'estimating' && definition.agentClass !== 'reviewer'
+				const workItem = activity === 'estimating' && !contributions && definition.agentClass !== 'reviewer'
 					? workItems.filter((item) => text(item.agentClass) === definition.agentClass
 						&& (obsolete || Object.keys(record(item.estimate)).length === 0)) : [];
-				if (activity === 'estimating' && (!workItems.length
+				if (activity === 'estimating' && !contributions && (!workItems.length
 					|| (definition.agentClass !== 'reviewer' && !workItem.length))) throw new Error(
 					`Estimating ${definition.agentClass} requires proposal work items owned by that class.`);
-				const estimatingCriteria = definition.agentClass === 'reviewer'
+				const estimatingCriteria = contributions ? [text(proposal.request)] : definition.agentClass === 'reviewer'
 					? workItems.filter((item) => item.review === 'required'
 						&& (obsolete || Object.keys(record(item.reviewEstimate)).length === 0)).map((item) =>
 						`Estimate the generated review of work item ${text(item.id)} independently: expectedSeconds, maximumSeconds, and rationale.`)
@@ -138,7 +139,7 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 				const proposalStatus = source.proposalStatusesByProposalId?.[participant.proposalId ?? ''];
 				const node = executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1', id: plannedId,
 					teamId: input.teamId, projectId, workdayId: workday.id, kind: activity, pairRole: null,
-					...(activity === 'estimating' && definition.agentClass !== 'reviewer' && workItem.length === 1
+					...(activity === 'estimating' && !contributions && definition.agentClass !== 'reviewer' && workItem.length === 1
 						? { workItemId: text(workItem[0]?.id) } : {}),
 					sourceRef: nodeSource, authorityRefs: [reference], ruleRevision: 1, nodeRevision: 1,
 						agentClass: definition.agentClass,
@@ -166,7 +167,8 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 						&& (value.proposalId === participant.proposalId || value.proposalId === undefined));
 					const ownContribution = contribution && current.find(node => node.id === `planning:${workday.id}:${round}:${contribution.id}`);
 				if (ownContribution) edges.push(edge(input.teamId, ownContribution.id, estimator.id, 'work-item', reference, input.revision));
-				if (estimator.agentClass === 'reviewer') for (const owner of current.filter(node => node.kind === 'estimating'
+				const proposal = Object.values(source.proposalsByProjectId ?? {}).flat().find(candidate => text(candidate.id) === estimator.sourceRef.id);
+				if (proposal?.schemaVersion !== 'treeseed.proposal/v2' && estimator.agentClass === 'reviewer') for (const owner of current.filter(node => node.kind === 'estimating'
 					&& node.projectId === estimator.projectId && node.sourceRef.id === estimator.sourceRef.id
 					&& node.agentClass !== 'reviewer')) {
 					edges.push(edge(input.teamId, owner.id, estimator.id, 'work-item', reference, input.revision));
@@ -179,22 +181,24 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 				const node = current.find((candidate) => candidate.id === `planning:${workday.id}:${round}:${participant.id}`);
 				if (!node) continue;
 				for (const dependency of participant.definition.activityProfiles[participant.activity]?.dependsOn?.agents ?? []) {
+					const selectedProposal = Object.values(source.proposalsByProjectId ?? {}).flat().find(proposal => text(proposal.id) === participant.proposalId);
+					const contributions = selectedProposal?.schemaVersion === 'treeseed.proposal/v2';
 					const upstream = participants.filter((candidate) => candidate.projectId === participant.projectId
 						&& candidate.activity === participant.activity
 						&& candidate.proposalId === participant.proposalId
-						&& (candidate.definition.id === dependency || candidate.definition.agentClass === dependency));
+						&& (candidate.definition.id === dependency || candidate.definition.name === dependency
+							|| (!contributions && candidate.definition.agentClass === dependency)));
 					if (!upstream.length) {
 						const frozenAgents = array(record(record(source.parameters.agentProfilesByProjectId)[participant.projectId]).agents)
 							.map((entry) => record(record(entry).definition));
 						const dependencyDefinition = frozenAgents.find((definition) => text(definition.id) === dependency
 							|| text(definition.agentClass) === dependency);
 						const dependencyClass = text(dependencyDefinition?.agentClass);
-						const selectedProposal = source.proposalsByProjectId?.[participant.projectId]?.find((proposal) => text(proposal.id) === participant.proposalId);
 						const proposalItems = array(record(selectedProposal?.executionPlan).workItems).map(record);
 						const ownedItems = dependencyClass === 'reviewer'
 							? proposalItems.filter((item) => item.review === 'required')
 							: proposalItems.filter((item) => text(item.agentClass) === dependencyClass);
-						const alreadyEstimated = participant.activity === 'estimating' && ownedItems.length > 0
+						const alreadyEstimated = !contributions && participant.activity === 'estimating' && ownedItems.length > 0
 							&& ownedItems.every((item) => Object.keys(record(dependencyClass === 'reviewer'
 								? item.reviewEstimate : item.estimate)).length > 0);
 						if (alreadyEstimated) continue;

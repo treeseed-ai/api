@@ -1,6 +1,31 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.subscriber-contribution-ownership:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/contributions/estimate-ownership.test.ts
+    testName: "merges distinct subscribers sharing one class without a winner or lost concurrent contribution"
+  api.golden.subscriber-contribution-readback:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/contributions/estimate-readback.test.ts
+    testName: "reads actual estimator source and stored attempt ownership while preserving a concurrent peer through moved denied and altered-source observations"
+  api.golden.subscriber-contribution-readiness:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/contributions/readiness.test.ts
+    testName: "does not accept discussion completions as each subscriber own estimate"
+  api.golden.subscriber-contribution-audience:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/selection.test.ts
+    testName: "admits every v2 group subscriber to estimating before a contribution plan exists regardless of class or project"
+  api.golden.subscriber-contribution-projection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "projects every v2 group estimator without class-owned work or a privileged Reviewer ordering"
   api.golden.group-workday-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

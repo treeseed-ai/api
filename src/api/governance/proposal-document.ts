@@ -2,13 +2,14 @@ import { serializeFrontmatterDocument } from '../content/frontmatter.ts';
 import { assertGovernanceContent } from './content-validation.ts';
 
 export function serializeProposalDocument(input: {
+	schemaVersion?: 'treeseed.proposal/v1' | 'treeseed.proposal/v2';
 	id: string; projectId: string; title: string; request: string; summary?: string;
 	status: 'draft' | 'discussing' | 'ready' | 'decided' | 'withdrawn';
 	objectiveRefs?: unknown; evidenceRefs?: unknown; discussionRef?: unknown; executionPlan?: unknown;
 	groupIds?: unknown;
 }) {
 	const source = serializeFrontmatterDocument({
-		schemaVersion: 'treeseed.proposal/v1', id: input.id, projectId: input.projectId,
+		schemaVersion: input.schemaVersion ?? 'treeseed.proposal/v2', id: input.id, projectId: input.projectId,
 		title: input.title, request: input.request, ...(input.summary ? { summary: input.summary } : {}), status: input.status,
 		...(input.groupIds !== undefined ? { groupIds: input.groupIds } : {}),
 		...(input.objectiveRefs ? { objectiveRefs: input.objectiveRefs } : {}),

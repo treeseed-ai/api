@@ -165,7 +165,7 @@ async function resolveCapacityWorkdayPreflight(
 			selectedProposals.filter(proposal => proposal.projectId === project.id).map(proposal => proposal.definition)])),
 	}).map((participant) => participant.id);
 	const reportingAgent = run.executionKind === 'workday' ? selectWorkdayReportingAgent([...agentProfiles].flatMap(([projectId, snapshot]) =>
-		snapshot.agents.map(({ definition }) => ({ projectId, definition }))), parameters.reportingAgentId) : null;
+		snapshot.agents.map(({ definition }) => ({ projectId, definition })))) : null;
 	if (run.executionKind === 'workday' && !reportingAgent) throw new CapacityGovernanceError(
 		'capacity_workday_reporting_selection_invalid', 'A Workday requires one eligible configured closeout Reporter before activation.', 409);
 	const appliedPlan = compileWorkday({ id: run.id, teamId: run.teamId,
