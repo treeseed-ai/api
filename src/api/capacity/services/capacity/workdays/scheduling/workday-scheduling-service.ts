@@ -16,6 +16,7 @@ import { reconcileCommunicationExecutionGraph, reconcileExecutionGraph } from '.
 import { workdayParticipants, selectWorkdayReportingAgents } from '../../../../policy/execution/workday-participants.ts';
 import { isDeepStrictEqual } from 'node:util';
 import { readExactProposal } from '../../../../../governance/executable-proposal.ts';
+import { validateDecisionAuthority } from '../../../../../governance/decision-authority.ts';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -120,17 +121,27 @@ async function resolveCapacityWorkdayPreflight(
 		if (!['draft','submitted','open','voting'].includes(text(proposal.status))) throw new CapacityGovernanceError(
 			'capacity_workday_proposal_not_plannable', `Workday proposal ${proposalId} is not open for cooperative planning.`, 409, { proposalId });
 		const exact = await readExactProposal(store, proposal);
+		if (exact.definition.schemaVersion !== 'treeseed.proposal/v2') throw new CapacityGovernanceError(
+			'capacity_workday_proposal_version_unsupported', 'New work requires subscriber-owned group contributions; retained class-targeted proposals remain history.', 409, { proposalId });
 		return { proposalId, projectId: text(proposal.projectId), ref: exact.ref, definition: exact.definition };
 	}));
-	const proposalGroups = selectedProposals.flatMap(proposal => Array.isArray(proposal.definition.groupIds)
-		? proposal.definition.groupIds.map(value => text(value)).filter(Boolean) : []);
-	const groupIds = [...new Set(Array.isArray(parameters.groupIds) ? parameters.groupIds.map(value => text(value)) : proposalGroups)].sort();
-	for (const proposal of selectedProposals) {
-		const groups = Array.isArray(proposal.definition.groupIds) ? proposal.definition.groupIds.map(value => text(value)) : [];
-		if (!groups.some(id => groupIds.includes(id))) throw new CapacityGovernanceError('capacity_workday_proposal_group_required',
-			'Proposal planning requires shared proposal groups and subscribed project agents.', 409, { proposalId: proposal.proposalId });
-	}
-	if (groupIds.length) parameters = { ...parameters, groupIds };
+	const selectedDecisionIds = Array.isArray(parameters.decisionIds) ? parameters.decisionIds.map(value => text(value)).filter(Boolean) : [];
+	const decisionProposals = await Promise.all(selectedDecisionIds.map(async decisionId => {
+		const authority = await validateDecisionAuthority(store, decisionId, { teamId: run.teamId, projectId: projects.map(project => project.id) });
+		if (!authority.valid || !authority.current) throw new CapacityGovernanceError(authority.code!, authority.message!, 409);
+		const proposal = await store.getGovernanceProposal(authority.current.proposalId);
+		if (!proposal) throw new CapacityGovernanceError('capacity_workday_proposal_not_found', 'The accepted decision proposal is unavailable.', 404);
+		const exact = await readExactProposal(store, proposal, { store: 'treedx', model: 'proposal', ...authority.current.proposalRef });
+		if (exact.definition.schemaVersion !== 'treeseed.proposal/v2') throw new CapacityGovernanceError(
+			'capacity_workday_proposal_version_unsupported', 'New work requires subscriber-owned group contributions; retained class-targeted decisions remain history.', 409, { decisionId });
+		return exact.definition;
+	}));
+	const proposalGroups = [...selectedProposals.map(proposal => proposal.definition), ...decisionProposals].flatMap(definition => Array.isArray(definition.groupIds)
+		? definition.groupIds.map(value => text(value)).filter(Boolean) : []);
+	const groupIds = [...new Set([...proposalGroups, ...(Array.isArray(parameters.groupIds) ? parameters.groupIds.map(value => text(value)).filter(Boolean) : [])])].sort();
+	if (!groupIds.length) throw new CapacityGovernanceError('capacity_workday_group_required',
+		'New work requires shared groups or exact proposals or decisions that supply their groups.', 409);
+	parameters = { ...parameters, groupIds };
 	const agentProfiles = new Map<string, Awaited<ReturnType<typeof resolveWorkdayAgentProfileSnapshot>>>();
 	for (const project of projects) {
 		const library = await store.getProjectTreeDxLibrary(project.id);
@@ -146,7 +157,7 @@ async function resolveCapacityWorkdayPreflight(
 		const contentRoot = text(library?.contentPath).replace(/^\/+|\/+$/gu, '');
 		const immutableRef = acceptedLibraryRevision(library ?? {}, project.id);
 		contexts.set(project.id, { contentRoot: contentRoot || capacityWorkdayContentRoot(project), repositoryId, immutableRef });
-		const profileSnapshot=await resolveWorkdayAgentProfileSnapshot(store, project.id, parameters.agentSelection, groupIds.length ? groupIds : undefined);
+		const profileSnapshot=await resolveWorkdayAgentProfileSnapshot(store, project.id, parameters.agentSelection, groupIds);
 		agentProfiles.set(project.id,profileSnapshot);
 		const projectProposals = selectedProposals.filter((proposal) => proposal.projectId === project.id);
 		for (const proposal of projectProposals) proposalContexts.set(proposal.proposalId, proposal.ref);

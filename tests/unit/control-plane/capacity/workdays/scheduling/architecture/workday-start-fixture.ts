@@ -106,7 +106,7 @@ activityProfiles:
 		};
 		const store = createCapacityControlPlane(host), publicService = createWorkdayService(store);
 		const principal = { id: 'operator', roles: ['admin'] };
-		const intent = { schemaVersion: 'treeseed.workday-intent/v1', teamId: 'team', profileId: 'default', projects: ['project'],
+		const intent = { schemaVersion: 'treeseed.workday-intent/v1', teamId: 'team', profileId: 'default', projects: ['project'], groupIds: ['portfolio-atlas'],
 			executionMode: 'simulation', startsAt: now, durationSeconds: 60, planningOnly: true,
 			operatorConstraints: { providerIds: ['provider'], maxConcurrency: 1 } };
 		const snapshot = async () => ({ workdays: await all('SELECT * FROM capacity_workday_runs ORDER BY id'),
