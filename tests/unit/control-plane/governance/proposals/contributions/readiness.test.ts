@@ -53,6 +53,19 @@ function fixture(activity: 'planning' | 'estimating') {
 }
 
 describe('every subscriber must own an estimate before approval', () => {
+	it('retains legacy class-targeted proposal content as history without allowing a fresh approval', async () => {
+		const f = fixture('estimating');
+		f.definition.schemaVersion = 'treeseed.proposal/v1';
+		Reflect.deleteProperty(f.definition, 'groupIds');
+		for (const item of f.definition.executionPlan.workItems) {
+			Reflect.deleteProperty(item, 'estimateRef'); Object.assign(item, { agentClass: 'maintenance' });
+		}
+		const before = structuredClone(f.definition), readiness = await governanceProposalReadinessMethod.call(f.store as never, 'proposal');
+		expect(readiness).toMatchObject({ contentReady: true, votingReady: false, executionPlanReady: false,
+			participationVersionReady: false, authorIndependent: false });
+		expect(readiness!.missingParticipantEstimates).toContain('subscriber-owned group contribution plan');
+		expect(f.definition).toEqual(before); expect(verifiedContribution).not.toHaveBeenCalled();
+	});
 	it('refuses approval when a configured contributor prerequisite has no contribution in the group plan', async () => {
 		const f = fixture('estimating'), agent = f.agents[0]!;
 		Object.assign(agent.activityProfiles, { acting: { ...agent.activityProfiles.acting,

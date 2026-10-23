@@ -22,7 +22,7 @@ describe('draft proposal graph readiness', () => {
 	it('keeps group approval blocked when subscribed project teams have not contributed', async () => {
 		const read = vi.mocked(executableProposal.readExactProposal), original = read.getMockImplementation()!;
 		const exact = await original({} as never, {});
-		read.mockResolvedValue({ ...exact, definition: { ...exact.definition, groupIds: ['portfolio-atlas'] } });
+		read.mockResolvedValue({ ...exact, definition: { ...exact.definition, schemaVersion: 'treeseed.proposal/v2', executionPlan: undefined, groupIds: ['portfolio-atlas'] } });
 		const agent = (id: string) => ({ schemaVersion: 'treeseed.agent/v1', id, name: id, agentClass: 'architect',
 			groupIds: ['portfolio-atlas'], purpose: 'Plan real portfolio changes.', responsibilities: ['Discuss the shared proposal.'],
 			capabilities: ['planning'], context: { include: ['assignment-subject'] }, activityProfiles: { planning: {
@@ -45,14 +45,14 @@ describe('draft proposal graph readiness', () => {
 				missingParticipantEstimates: ['admin/admin/architect', 'ui/ui/architect'] });
 		} finally { classes.mockRestore(); read.mockImplementation(original); }
 	});
-	it('uses the exact complete draft without requiring a separate feasibility Reviewer', async () => {
+	it('retains exact legacy content without making its class-targeted draft available for fresh approval', async () => {
 		const store = {
 			getGovernanceProposal: async () => ({ id: 'proposal', projectId: 'project', activeVersion: 1, createdById: 'author' }),
 			all: async () => [],
 		};
 		const readiness = await governanceProposalReadinessMethod.call(store as never, 'proposal');
-		expect(readiness).toMatchObject({ executionPlanReady: true, independentReviewCount: 0,
-			unresolvedBlockerCount: 0, votingReady: true });
+		expect(readiness).toMatchObject({ contentReady: true, executionPlanReady: false, independentReviewCount: 0,
+			unresolvedBlockerCount: 0, votingReady: false, missingParticipantEstimates: ['subscriber-owned group contribution plan'] });
 	});
 	it('accepts the same reviewed draft version as decision authority', async () => {
 		// Supplied UNIT rows/readbacks, not native governance or SQL proof.
