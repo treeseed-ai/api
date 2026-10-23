@@ -1020,6 +1020,12 @@ workflow:
   - id: architecture-dependency-admission-native-5
     action: { verifier: api.golden.architecture-dependency-admission-native-5 }
     expect: { status: passed }
+  - id: rework-active-state
+    action: { verifier: api.golden.rework-active-state }
+    expect: { status: passed }
+  - id: rework-active-state-sql
+    action: { verifier: api.golden.rework-active-state-sql }
+    expect: { status: passed }
   - id: architecture-rework-admission-native
     action: { verifier: api.golden.architecture-rework-admission-native }
     expect: { status: passed }
