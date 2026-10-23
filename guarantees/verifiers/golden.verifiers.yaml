@@ -640,7 +640,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
-    testName: "real governed YAML profile authoring retains native draft custody across empty inventory and producer review denial before exact renamed execution profile write"
+    testName: "real governed YAML profile authoring retains native draft custody across invalid profiles before exact renamed execution and review profile write"
   api.golden.execution-note-identity-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
