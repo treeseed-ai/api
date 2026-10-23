@@ -38,10 +38,15 @@ export function applyOperationalState(current: TeamGraph, projected: TeamGraph, 
 			&& continuationByRun.get(node.workdayId)?.has(prior.workdayId));
 		const freshSimulationAttempt = Boolean(prior && node.workdayId && prior.workdayId !== node.workdayId
 			&& node.authorityRefs?.some((reference) => reference.model === 'decision') && !continuedTerminal);
+		const activeAttempt = prior && !freshSimulationAttempt && node.kind !== 'condition'
+			&& ['assigned', 'running'].includes(prior.status) && activeAssignmentNodeIds.has(prior.id);
 		// A completed Reviewer result governs the paired Actor candidate, not the
 		// projection revision. Projection-only bumps must not reopen an approval;
 		// the caller rejects it when a newer Actor candidate has completed.
-		const applicableTerminal = !freshSimulationAttempt && terminal && (prior?.pairRole !== 'reviewer'
+		// Historical review-return evidence must not replace a newer admitted
+		// attempt's running state: exact lifecycle closeout requires that state.
+		const applicableTerminal = !freshSimulationAttempt && terminal
+			&& !(activeAttempt && terminal.nodeRevision < prior.nodeRevision) && (prior?.pairRole !== 'reviewer'
 			|| terminal.status === 'completed' || terminal.nodeRevision >= prior.nodeRevision) ? terminal : undefined;
 		// The caller has already reconciled paired review chronology. Applying the
 		// selected terminal state across a projection revision repairs transient
@@ -69,7 +74,7 @@ export function applyOperationalState(current: TeamGraph, projected: TeamGraph, 
 		}
 		const operational = prior && !freshSimulationAttempt && node.kind !== 'condition'
 			&& ((['completed', 'failed', 'cancelled'].includes(prior.status))
-				|| (['assigned', 'running'].includes(prior.status) && activeAssignmentNodeIds.has(prior.id)));
+				|| activeAttempt);
 		if (operational) {
 			// Priority governs future selection, not the already issued attempt's
 			// frozen revision, source, grants or limits. Omission clears it exactly.
