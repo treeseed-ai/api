@@ -57,16 +57,20 @@ describe('every subscriber must own an estimate before approval', () => {
 		const f = fixture('estimating'), agent = f.agents[0]!;
 		Object.assign(agent.activityProfiles, { acting: { ...agent.activityProfiles.acting,
 			dependsOn: { agents: ['unsubscribed-expert'] } } });
-		expect(await governanceProposalReadinessMethod.call(f.store as never, 'proposal')).toMatchObject({ votingReady: false, executionPlanReady: false });
+		const readiness = await governanceProposalReadinessMethod.call(f.store as never, 'proposal');
+		expect(readiness).toMatchObject({ votingReady: false, executionPlanReady: false });
+		expect(readiness!.missingVoting).toContain('group participation (execution_profile_dependency_missing)');
 	});
 	it('keeps execution readiness false when actual contributor profile dependencies create a cycle despite complete estimates', async () => {
 		const f = fixture('estimating');
 		for (const [index, agent] of f.agents.entries()) Object.assign(agent.activityProfiles, {
 			acting: { ...agent.activityProfiles.acting, dependsOn: { agents: [f.agents[1 - index]!.id.split('/').at(-1)!] } },
 		});
-		expect(await governanceProposalReadinessMethod.call(f.store as never, 'proposal')).toMatchObject({
+		const readiness = await governanceProposalReadinessMethod.call(f.store as never, 'proposal');
+		expect(readiness).toMatchObject({
 			votingReady: false, executionPlanReady: false,
 		});
+		expect(readiness!.missingVoting).toContain('group participation (execution_graph_invalid)');
 	});
 	it('refuses an additional contribution with no verified subscribed author even when every member has estimated', async () => {
 		const f = fixture('estimating'), first = f.definition.executionPlan.workItems[0]!;
