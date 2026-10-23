@@ -7,6 +7,18 @@ import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/a
 // Typed allocator output is a supplied component input, not native allocation proof.
 const opportunity = canonicalOfferBuildInput().allocationInputs.codex!.opportunity;
 describe('immutable assignment-attempt construction', () => {
+	it('retains profile and estimate authority without granting unrequested configuration or SQL reads', () => {
+		const exact = structuredClone(candidate), profile = { store: 'treedx' as const, model: 'agent', id: 'configured/member', repository: 'library', commit: 'b'.repeat(40), path: 'agents/member.mdx' };
+		const decision = { ...sourceRef, model: 'decision', id: 'decision', path: 'decisions/one.mdx' };
+		exact.node.authorityRefs = [...exact.node.authorityRefs!, profile, { store: 'postgresql', model: 'assignment-attempt', id: 'own-estimate', revision: 1 }, decision];
+		exact.contextRefs.push(profile); exact.node.requestedPermissions = { ...exact.node.requestedPermissions, content: { read: ['proposal', 'decision'], write: [] } } as never;
+		exact.effectiveProfile.permissionCeiling = exact.node.requestedPermissions;
+		const original = structuredClone(exact), result = buildAssignmentAttempt({ candidate: exact, run,
+			principal: { teamId: 'team', capacityProviderId: 'provider' } as never, providerSessionId: 'session', providers: [provider],
+			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
+		expect(result.assignment.authorityRefs).toEqual(exact.node.authorityRefs);
+		expect(result.assignment.grant.contentRead).toEqual([sourceRef, decision]); expect(exact).toEqual(original);
+	});
 	it('calibrates exact review history without inventing a minimum allocation floor', () => {
 		const review = structuredClone(candidate); Object.assign(review.node, { kind: 'reviewing', pairRole: null, agentClass: 'reviewer', workspace: 'read-only', estimate: { expectedSeconds: 100, maximumSeconds: 165 }, requestedPermissions: { content: { read: ['proposal'], write: [] }, tools: ['source.read', 'verification'] } });
 		Object.assign(review.effectiveProfile, { activity: 'reviewing', handler: 'reviewer', permissionCeiling: review.node.requestedPermissions });
