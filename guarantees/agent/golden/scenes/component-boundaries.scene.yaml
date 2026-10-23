@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: group-workday-native
+    action: { verifier: api.golden.group-workday-native }
+    expect: { status: passed }
   - id: assignment-phase-observation-unit
     action: { verifier: api.golden.assignment-phase-observation-unit }
     expect: { status: passed }

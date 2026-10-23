@@ -15,6 +15,28 @@ const classes = [
 ];
 
 describe('exact activity selection before living-node admission', () => {
+	it('rejects hidden agent or allocation-class selectors at the internal snapshot boundary', () => {
+		for (const field of ['agentSlugs', 'classIds', 'classSlugs']) {
+			expect(() => compileWorkdayAgentProfileSnapshot(classes, { activityTypes: ['planning'], [field]: ['architect'] }))
+				.toThrowError(/activity phases/u);
+		}
+	});
+	it('does not import a reporting agent from outside the subscribed group', () => {
+		const subscribed = { ...definition('writer', 'documentation', { planning: profile('writer') }), groupIds: ['project-api'] };
+		const reporter = { ...definition('reporter', 'reporting', { reporting: profile('reporter') }), groupIds: ['another-project'] };
+		const rows = [{ id: 'docs-class', slug: 'documentation', handlerRefs: { agents: [subscribed] } },
+			{ id: 'reporting-class', slug: 'reporting', handlerRefs: { agents: [reporter] } }];
+		const before = structuredClone(rows);
+		expect(compileWorkdayAgentProfileSnapshot(rows, { activityTypes: ['planning'] }, ['project-api']).agents.map(entry => entry.definition.id))
+			.toEqual(['sdk/writer']);
+		expect(rows).toEqual(before);
+	});
+	it('retains subscribed identities when their allocation class is paused', () => {
+		const rows = classes.map((row, index) => ({ ...row, status: index ? 'paused' : 'active',
+			handlerRefs: { agents: row.handlerRefs.agents.map(agent => ({ ...agent, groupIds: ['provider-runtime'] })) } }));
+		expect(compileWorkdayAgentProfileSnapshot(rows, undefined, ['provider-runtime']).agents.map(entry => entry.definition.id))
+			.toEqual(['sdk/architect', 'sdk/reviewer']);
+	});
 	it('brings subscribed project teams to the same proposal while estimates stay with its owning project', () => {
 		const agents = (project: string, agentClass: string, group = 'portfolio-atlas') => ({ agents: [{
 			definition: { ...definition(agentClass, agentClass, { planning: profile('writer'), estimating: profile('estimate') }),
@@ -45,28 +67,33 @@ describe('exact activity selection before living-node admission', () => {
 		expect(() => compileWorkdayAgentProfileSnapshot(rows, undefined, ['unknown-group'])).toThrow(/no eligible/u);
 		expect(rows).toEqual(held);
 	});
-	it('intersects selectors without copying or expanding definitions', () => {
-		const result = compileWorkdayAgentProfileSnapshot(classes, { agentSlugs: ['reviewer'], activityTypes: ['reviewing'] });
+	it('selects activity phases without copying or expanding definitions', () => {
+		const result = compileWorkdayAgentProfileSnapshot(classes, { activityTypes: ['reviewing'] });
 		expect(result.agents).toHaveLength(1);
 		expect(result.agents[0]).toMatchObject({ definition: { id: 'sdk/reviewer' }, activities: ['reviewing'] });
 	});
-	it('retains unselected definitions once and supports explicit union', () => {
+	it('retains all group definitions once and rejects a union targeting escape', () => {
 		expect(compileWorkdayAgentProfileSnapshot(classes).agents).toHaveLength(2);
-		expect(compileWorkdayAgentProfileSnapshot(classes, { classIds: ['class-a'], agentSlugs: ['reviewer'], mode: 'union' }).agents).toHaveLength(2);
+		expect(() => compileWorkdayAgentProfileSnapshot(classes, { classIds: ['class-a'], agentSlugs: ['reviewer'], mode: 'union' })).toThrow(/activity phases/u);
 	});
-	it('rejects a known but empty intersection', () => {
-		expect(() => compileWorkdayAgentProfileSnapshot(classes, { agentSlugs: ['architect'], activityTypes: ['reviewing'] })).toThrowError(/no eligible/u);
+	it('rejects a phase unsupported by the group audience', () => {
+		expect(() => compileWorkdayAgentProfileSnapshot(classes, { activityTypes: ['chat'] })).toThrowError(/exactly/u);
 	});
 	for (const selection of [{ agentSlugs: ['architect', 'typo'] }, { activityTypes: ['reviewng'] }, { classSlugs: ['project:engineering'] }, { classIds: ['missing'], agentSlugs: ['architect'], mode: 'union' }]) {
 		it(`rejects unknown selectors even when another selector matches: ${JSON.stringify(selection)}`, () => {
-			expect(() => compileWorkdayAgentProfileSnapshot(classes, selection)).toThrowError(/exactly/u);
+			expect(() => compileWorkdayAgentProfileSnapshot(classes, selection)).toThrowError(/activity phases/u);
 		});
 	}
 });
 
-it('retains one standing reporting activity beside an exact cooperative selection without changing selected planning work or admitting an empty intersection',()=>{
- const closeout=definition('closeout','digest-writer',{planning:profile('writer'),reporting:profile('reporter')}),rows=[...classes,{id:'class-c',slug:'digest-writer',status:'active',handlerRefs:{agents:[closeout]}}],held=structuredClone(rows);
- const selected=compileWorkdayAgentProfileSnapshot(rows,{agentSlugs:['architect'],activityTypes:['planning']});
- expect(selected.agents.map(entry=>({id:entry.definition.id,activities:entry.activities}))).toEqual([{id:'sdk/architect',activities:['planning']},{id:'sdk/closeout',activities:['reporting']}]);
- expect(()=>compileWorkdayAgentProfileSnapshot(rows,{agentSlugs:['architect'],activityTypes:['reviewing']})).toThrow(/no eligible/);expect(rows).toEqual(held);
+it('retains subscribed reporting beside cooperative phases without importing other group members',()=>{
+ const closeout={...definition('closeout','digest-writer',{reporting:profile('reporter')}),groupIds:['project-api']};
+ const rows=[{...classes[0],handlerRefs:{agents:[{...classes[0]!.handlerRefs.agents[0],groupIds:['project-api']}]}},
+  {...classes[1],handlerRefs:{agents:[{...classes[1]!.handlerRefs.agents[0],groupIds:['another-project']}]}},
+  {id:'class-c',slug:'digest-writer',status:'active',handlerRefs:{agents:[closeout]}}];
+ const held=structuredClone(rows),selected=compileWorkdayAgentProfileSnapshot(rows,{activityTypes:['planning']},['project-api']);
+ expect(selected.agents.map(entry=>({id:entry.definition.id,activities:entry.activities}))).toEqual([
+  {id:'sdk/architect',activities:['planning']},{id:'sdk/closeout',activities:['reporting']}]);
+ expect(()=>compileWorkdayAgentProfileSnapshot(rows,{activityTypes:['chat']},['project-api'])).toThrow(/exactly/);
+ expect(rows).toEqual(held);
 });
