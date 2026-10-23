@@ -27,7 +27,7 @@ const digest = (value: string) => `sha256:${createHash('sha256').update(value).d
 const definition = (id: string, name: string, prompt: string) => ({
 	schemaVersion: 'treeseed.agent/v1', id, name, agentClass: 'engineer', purpose: `${name} purpose.`,
 	responsibilities: [`Support ${name}.`], capabilities: ['reasoning'], context: { include: ['project-objectives'] },
-	groups: ['project-api'], activityProfiles: { chat: { handler: 'writer', permissions: {
+	activityProfiles: { chat: { handler: 'writer', permissions: {
 		content: { read: ['discussion'], write: ['discussion'] }, tools: ['discussion'],
 	}, prompt: { system: prompt } } },
 });
