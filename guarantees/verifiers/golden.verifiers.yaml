@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.contribution-cross-project-identity:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/contributions/contribution-graph.test.ts
+    testName: "keeps cross-project subscribers with the same configured name independent without a hidden project filter"
   api.golden.contribution-readiness-counter:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

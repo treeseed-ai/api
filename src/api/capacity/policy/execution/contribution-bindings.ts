@@ -48,7 +48,7 @@ export function contributionBindings(source: { teamId: string; frontmatter: Row;
 	const targetByBudget = new Map<string, string>();
 	const eligible = (target: Row, budget: Row) => {
 		const actor = owners.get(text(target.id))!, reviewer = owners.get(text(budget.id))!;
-		return actor.attempt.projectId === reviewer.attempt.projectId && actor.definition.id !== reviewer.definition.id
+		return (actor.attempt.projectId !== reviewer.attempt.projectId || actor.definition.id !== reviewer.definition.id)
 			&& Boolean(reviewer.definition.activityProfiles.reviewing);
 	};
 	// Each estimated review budget is used once. Matching never invents, scales or

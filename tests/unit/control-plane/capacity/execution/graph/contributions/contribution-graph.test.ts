@@ -75,3 +75,24 @@ it('refuses missing forged moved foreign or unsubscribed contributor authority a
 		expect(() => projectTeamExecutionGraph(supplied)).toThrow(); expect(supplied).toEqual(before);
 	}
 });
+
+it('keeps cross-project subscribers with the same configured name independent without a hidden project filter', () => {
+	const supplied = input(), source = supplied.sources[0]!, projects = ['ui', 'admin'];
+	source.frontmatter.executionPlan.workItems.splice(2); source.estimatingAttempts.splice(2);
+	const definitions = Object.values(supplied.profiles).slice(0, 2);
+	supplied.profiles = Object.fromEntries(definitions.map((definition, index) => {
+		const projectId = projects[index]!, attempt = source.estimatingAttempts[index]!;
+		definition.id = 'shared-worker'; definition.name = 'Shared worker'; attempt.projectId = projectId;
+		Object.assign(attempt.effectiveProfile.profileRef, { id: definition.id, repository: `${projectId}-library`, path: 'agents/shared-worker.mdx' });
+		return [`${projectId}:${definition.id}`, definition];
+	}));
+	const before = structuredClone(supplied), graph = projectTeamExecutionGraph(supplied);
+	for (const actor of graph.nodes.filter(node => node.kind === 'acting')) {
+		const reviewId = graph.edges.find(edge => edge.fromNodeId === actor.id && edge.provenance === 'review-pair')!.toNodeId;
+		const reviewer = graph.nodes.find(node => node.id === reviewId)!;
+		expect(reviewer.projectId).not.toBe(actor.projectId);
+		expect(reviewer.authorityRefs!.find(ref => ref.model === 'agent')!.id).toBe('shared-worker');
+		expect(actor.authorityRefs!.find(ref => ref.model === 'agent')!.id).toBe('shared-worker');
+	}
+	expect(supplied).toEqual(before);
+});
