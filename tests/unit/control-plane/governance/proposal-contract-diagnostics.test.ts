@@ -62,7 +62,7 @@ describe('proposal contract lookup failures', () => {
 		await expect(commitProposalVersionContent({ store: {}, principal: { id: 'user-1' },
 			proposal: { id: 'proposal-1', projectId: 'project-1', activeVersion: 1, title: 'Test proposal', summary: 'Verify source custody.', body: 'Test body.', proposalTypes: ['implementation'],
 				metadata: { plan: { desiredOutcome: 'Verified source', currentProblem: 'Digest mismatch', proposedApproach: 'Compare bytes',
-					scope: [], nonGoals: [], deliverables: [], acceptanceCriteria: [], risks: [], dependencies: [], alternatives: [], verification: [] } } }, update: {} })).rejects.toMatchObject({ status: 409, code: 'proposal_changeset_digest_mismatch' });
+					scope: [], nonGoals: [], deliverables: [], acceptanceCriteria: [], risks: [], dependencies: [], alternatives: [], verification: [] } } }, update: { groupIds: ['portfolio-runtime'] } })).rejects.toMatchObject({ status: 409, code: 'proposal_changeset_digest_mismatch' });
 		expect(client.commit).not.toHaveBeenCalled();
 		expect(client.applyChangeset.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ patch: expect.stringContaining('-  existing\n-\n-\n') }));
 		expect(client.closeWorkspace).toHaveBeenCalledExactlyOnceWith('workspace-1');

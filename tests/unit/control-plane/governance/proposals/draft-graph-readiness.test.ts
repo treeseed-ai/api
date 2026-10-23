@@ -40,7 +40,7 @@ describe('draft proposal graph readiness', () => {
 			.mockImplementation(async project => store.listProjectAgentClassesPage(project) as never);
 		try {
 			const readiness = await governanceProposalReadinessMethod.call(store as never, 'proposal');
-			expect(readiness).toMatchObject({ executionPlanReady: true, votingReady: false,
+			expect(readiness).toMatchObject({ executionPlanReady: false, votingReady: false,
 				participationVersionReady: false, authorIndependent: false,
 				missingParticipantEstimates: ['admin/admin/architect', 'ui/ui/architect'] });
 		} finally { classes.mockRestore(); read.mockImplementation(original); }

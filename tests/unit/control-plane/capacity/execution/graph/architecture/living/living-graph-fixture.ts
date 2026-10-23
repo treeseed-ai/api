@@ -6,6 +6,7 @@ import { parse } from 'yaml';
 import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
 import { readyProposal, readyWorkItem } from '../../../../../governance/proposals/architecture/ready-proposal-fixture.ts';
 import { projectTeamExecutionGraph, type ExecutableProposalSource } from '../../../../../../../../src/api/capacity/policy/execution/execution-graph-projector.ts';
+import { agentProfileReference } from '../../../../../../../../src/api/capacity/policy/execution/agent-profile-reference.ts';
 import { applyOperationalState, type TeamGraph } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
 import { createExecutionGraphService, persistExecutionGraph } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { splitPostgresSqlStatements } from '../../../../../../../../src/api/persistence/postgres-sql-statements.ts';
@@ -73,6 +74,7 @@ export function expectAuthoredGraphPairs(graph: Pick<TeamGraph, 'nodes' | 'edges
 		digest: source.digest, repository: source.repository, commit: source.commit, path: source.path };
 	const authorityRefs = [{ store: 'treedx', model: 'decision', id: decision.id, revision: decision.revision,
 		digest: decision.digest, repository: decision.repository, commit: decision.commit, path: decision.path }];
+	const profiles = graphProfiles([source.projectId]);
 	const nodes = graph.nodes.filter(node => node.projectId === source.projectId && node.pairRole);
 	expect(nodes).toHaveLength(12); expect(new Set(nodes.map(node => node.id)).size).toBe(12);
 	for (const item of workItems) {
@@ -81,8 +83,8 @@ export function expectAuthoredGraphPairs(graph: Pick<TeamGraph, 'nodes' | 'edges
 		expect(actors).toHaveLength(1); expect(reviewers).toHaveLength(1);
 		const exact = { teamId: source.teamId, projectId: source.projectId, workItemId: item.id,
 			sourceRef, authorityRefs, maximumReviewCycles: item.maximumReviewCycles };
-		expect(actors[0]).toMatchObject({ ...exact, kind: 'acting', agentClass: item.agentClass, workspace: item.workspace, estimate: item.estimate });
-		expect(reviewers[0]).toMatchObject({ ...exact, kind: 'reviewing', agentClass: 'reviewer', workspace: 'treedx', estimate: item.reviewEstimate });
+		expect(actors[0]).toMatchObject({ ...exact, authorityRefs: [...authorityRefs, agentProfileReference(profiles[`${source.projectId}:${item.agentClass}`]!)], kind: 'acting', agentClass: item.agentClass, workspace: item.workspace, estimate: item.estimate });
+		expect(reviewers[0]).toMatchObject({ ...exact, authorityRefs: [...authorityRefs, agentProfileReference(profiles[`${source.projectId}:reviewer`]!)], kind: 'reviewing', agentClass: 'reviewer', workspace: 'treedx', estimate: item.reviewEstimate });
 		const pairs = graph.edges.filter(edge => edge.fromNodeId === actors[0]!.id && edge.toNodeId === reviewers[0]!.id && edge.provenance === 'review-pair');
 		expect(pairs).toHaveLength(1); expect(pairs[0]).toMatchObject({ teamId: source.teamId, sourceRef });
 	}

@@ -5,13 +5,13 @@ scope: local-component-tests
 workflow:
   - id: subscriber-execution-context-owner
     action: { verifier: api.golden.subscriber-execution-context-owner }
-    expect: { ok: true }
+    expect: { status: passed }
   - id: decision-group-admission
     action: { verifier: api.golden.decision-group-admission }
-    expect: { ok: true }
+    expect: { status: passed }
   - id: legacy-proposal-admission
     action: { verifier: api.golden.legacy-proposal-admission }
-    expect: { ok: true }
+    expect: { status: passed }
   - id: contribution-prerequisite-readiness
     action: { verifier: api.golden.contribution-prerequisite-readiness }
     expect: { status: passed }

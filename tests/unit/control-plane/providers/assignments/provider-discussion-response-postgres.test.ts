@@ -20,7 +20,7 @@ describe('discussion publication SQL authority', () => {
 		const pool = new pg.Pool({ connectionString: url.href }), client = await pool.connect();
 		try {
 			await client.query('BEGIN');
-			await client.query(`CREATE TEMP TABLE capacity_provider_assignments (id text,team_id text,project_id text,assignment_result_json jsonb,status text,invocation_id text,updated_at text,lifecycle_code text,lifecycle_reason text);
+			await client.query(`CREATE TEMP TABLE capacity_provider_assignments (id text,team_id text,project_id text,agent_id text,assignment_attempt_json jsonb,assignment_result_json jsonb,status text,invocation_id text,updated_at text,lifecycle_code text,lifecycle_reason text);
 				CREATE TEMP TABLE agent_invocation_requests (id text,team_id text,project_id text,agent_id text,assignment_id text,status text,final_message_ref text,updated_at text,execution_kind text,requested_at text,completed_at text,blocking_state_json jsonb,metadata_json jsonb);
 				CREATE TEMP TABLE audit_events (id text,target_type text,target_id text,event_type text);
 				CREATE TEMP TABLE projects (id text,slug text);
@@ -60,7 +60,7 @@ describe('discussion publication SQL authority', () => {
 		const client = await pool.connect();
 		try {
 			await client.query('BEGIN');
-			await client.query(`CREATE TEMP TABLE capacity_provider_assignments (id text,team_id text,project_id text,assignment_result_json jsonb,status text,lease_state text,lease_token text,invocation_id text,updated_at text,lifecycle_code text,lifecycle_reason text);
+			await client.query(`CREATE TEMP TABLE capacity_provider_assignments (id text,team_id text,project_id text,agent_id text,assignment_attempt_json jsonb,assignment_result_json jsonb,status text,lease_state text,lease_token text,invocation_id text,updated_at text,lifecycle_code text,lifecycle_reason text);
 				CREATE TEMP TABLE agent_invocation_requests (id text,team_id text,assignment_id text,status text,final_message_ref text,response_json jsonb,updated_at text,execution_kind text,requested_at text,completed_at text,blocking_state_json jsonb);
 				CREATE TEMP TABLE audit_events (id text PRIMARY KEY,actor_type text,actor_id text,target_type text,target_id text,event_type text,data_json jsonb,created_at text);
 				INSERT INTO capacity_provider_assignments (id,team_id,status,lease_state,lease_token,invocation_id) VALUES ('assignment','team','leased','leased','lease','invocation');
