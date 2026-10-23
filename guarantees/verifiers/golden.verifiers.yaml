@@ -61,6 +61,26 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/planning/contributions/cross-project-estimate-readback.test.ts
     testName: "reads a subscriber contribution from the proposal owner library while retaining the contributor project and denying foreign ownership or missing write authority"
+  api.golden.subscriber-cross-project-workspace:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/assignment-workday-workspace.test.ts
+    testName: "gives a subscribed estimator the exact shared proposal workspace without changing its allocation project"
+  api.golden.subscriber-workspace-owner-bound:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/living-execution-assignment-paths.test.ts
+    testName: "creates a shared proposal estimate workspace only through its unique team library owner: bound"
+  api.golden.subscriber-workspace-owner-missing:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/living-execution-assignment-paths.test.ts
+    testName: "creates a shared proposal estimate workspace only through its unique team library owner: missing"
+  api.golden.subscriber-workspace-owner-ambiguous:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/living-execution-assignment-paths.test.ts
+    testName: "creates a shared proposal estimate workspace only through its unique team library owner: ambiguous"
   api.golden.subscriber-contribution-readiness:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

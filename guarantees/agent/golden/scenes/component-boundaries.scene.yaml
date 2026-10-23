@@ -39,6 +39,18 @@ workflow:
   - id: subscriber-cross-project-readback
     action: { verifier: api.golden.subscriber-cross-project-readback }
     expect: { status: passed }
+  - id: subscriber-cross-project-workspace
+    action: { verifier: api.golden.subscriber-cross-project-workspace }
+    expect: { status: passed }
+  - id: subscriber-workspace-owner-bound
+    action: { verifier: api.golden.subscriber-workspace-owner-bound }
+    expect: { status: passed }
+  - id: subscriber-workspace-owner-missing
+    action: { verifier: api.golden.subscriber-workspace-owner-missing }
+    expect: { status: passed }
+  - id: subscriber-workspace-owner-ambiguous
+    action: { verifier: api.golden.subscriber-workspace-owner-ambiguous }
+    expect: { status: passed }
   - id: subscriber-contribution-readiness
     action: { verifier: api.golden.subscriber-contribution-readiness }
     expect: { status: passed }

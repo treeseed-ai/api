@@ -2,6 +2,17 @@ import {describe,expect,it} from 'vitest';
 import {buildAssignmentAttempt} from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import {canonicalOfferBuildInput,candidate,run,provider,sourceRef} from '../fixtures/assignment-attempt-fixtures.ts';
 describe('frozen Workday workspace authority',()=>{
+ it('gives a subscribed estimator the exact shared proposal workspace without changing its allocation project',()=>{
+  const input=canonicalOfferBuildInput(),exact=structuredClone(input.candidate);
+  exact.node.kind='estimating';exact.node.pairRole=null;delete exact.node.workItemId;exact.node.workspace='treedx';
+  exact.node.sourceRef={...sourceRef,repository:'ui-library'};
+  exact.node.requestedPermissions={content:{read:['proposal'],write:['proposal']},tools:['source.read']};
+  exact.effectiveProfile.activity='estimating';exact.effectiveProfile.permissionCeiling=exact.node.requestedPermissions;
+  exact.contextRefs=[exact.node.sourceRef];exact.projectContentRepositoryId='sdk-library';
+  const before=structuredClone(exact),result=buildAssignmentAttempt({...input,candidate:exact}).assignment;
+  expect(result.projectId).toBe(exact.node.projectId);expect(result.workspace).toMatchObject({mode:'treedx',repository:'ui-library',baseCommit:sourceRef.commit});
+  expect(result.grant.contentWrite).toEqual([exact.node.sourceRef]);expect(exact).toEqual(before);
+ });
  it('keeps a lifecycle workspace on its held workday project context when the governed library advances before issuance',()=>{
   const input=canonicalOfferBuildInput(),exact=structuredClone(input.candidate),held={store:'treedx' as const,model:'knowledge',id:exact.node.projectId+':project-context',repository:exact.projectContentRepositoryId,commit:'d'.repeat(40),path:'README.md',revision:1,digest:'sha256:'+'4'.repeat(64)};
   exact.node.kind='reporting';exact.node.pairRole=null;exact.node.workspace='treedx';exact.node.sourceRef={store:'postgresql',model:'workday',id:input.run.id,revision:1,digest:'sha256:'+'1'.repeat(64)};

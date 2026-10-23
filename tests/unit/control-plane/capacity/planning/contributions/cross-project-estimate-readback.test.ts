@@ -3,6 +3,9 @@ import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/a
 import { assignment as original } from '../../execution/fixtures/assignment.ts';
 import { proposalNativeFixture } from '../../../governance/proposals/architecture/proposal-native-fixture.ts';
 import { integrateAssignmentEstimate, readAssignmentEstimateProposal } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/estimates/integration.ts';
+import { verifyAssignmentContent, reconcileAssignmentContent } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-content-readback.ts';
+import { readFileSync } from 'node:fs';
+import { splitPostgresSqlStatements } from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
 
 // Original SQL, SDK HTTP transport and native committed Git. The remote server
 // and admitted attempt are controlled inputs, not live agent or permission proof.
@@ -57,6 +60,24 @@ it('reads a subscriber contribution from the proposal owner library while retain
 		const integrated = await f.snapshot();
 		await integrateAssignmentEstimate(integrationStore as never, assignment as never, result);
 		expect(await f.snapshot()).toEqual(integrated);
+		const completionStore = { ...store, run: (sql: string, parameters?: unknown[]) => f.query(sql, parameters) };
+		expect(await verifyAssignmentContent(completionStore as never, assignment, result)).toEqual(result.references);
+		const auditDdl = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'))
+			.find(sql => sql.startsWith('CREATE TABLE "audit_events" ('));
+		if (!auditDdl) throw new Error('Original audit DDL required'); await f.query(auditDdl);
+		await f.query(`INSERT INTO capacity_provider_assignments
+			(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,mode,status,agent_id,work_day_id,
+			assignment_attempt_json,assignment_result_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			[assignment.id, 'controlled-membership', assignment.teamId, assignment.projectId, 'controlled-provider', 'maintenance', 'planning', 'completed',
+				assignment.agentId, 'cross-workday', JSON.stringify(attempt), JSON.stringify(result), original.createdAt, original.createdAt]);
+		const completed = await f.snapshot();
+		await reconcileAssignmentContent(completionStore, assignment.teamId, 'cross-workday');
+		const audits = (await f.query('SELECT * FROM audit_events ORDER BY id')).rows;
+		expect(audits).toHaveLength(1); expect(JSON.parse(String(audits[0]!.data_json))).toEqual({ resultId: result.id, references: result.references, publication: false });
+		const reads = f.requests.length;
+		await reconcileAssignmentContent(completionStore, assignment.teamId, 'cross-workday');
+		expect((await f.query('SELECT * FROM audit_events ORDER BY id')).rows).toEqual(audits);
+		expect(f.requests).toHaveLength(reads); expect(await f.snapshot()).toEqual(completed);
 		for (const change of [{ id: 'other-proposal' }, { projectId: 'foreign' }]) {
 			const altered = f.publishContent(source.path, { ...contribution, ...change }), checkpoint = await f.snapshot();
 			const changed = { ...result, references: result.references.map(reference => ({ ...reference, commit: altered.commit })) };
