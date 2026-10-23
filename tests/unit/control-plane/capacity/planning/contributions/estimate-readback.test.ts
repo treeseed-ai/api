@@ -9,6 +9,7 @@ import { loadProposalGroupContributions } from '../../../../../../src/api/capaci
 import { projectTeamExecutionGraph } from '../../../../../../src/api/capacity/policy/execution/execution-graph-projector.ts';
 import { effectiveProfile } from '../../../../../../src/api/capacity/services/build/execution-node-profile.ts';
 import { loadTeamExecutableProposalSources } from '../../../../../../src/api/capacity/services/capacity/execution/executable-proposal-source.ts';
+import { verifyAssignmentContent, recordAssignmentContentIntegration } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-content-readback.ts';
 
 describe('own contribution through owning SQL public HTTP client and native Git', () => {
 	it('reads actual estimator source and stored attempt ownership while preserving a concurrent peer through moved denied and altered-source observations', async () => {
@@ -68,12 +69,29 @@ describe('own contribution through owning SQL public HTTP client and native Git'
 			await f.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,handler_refs_json,metadata_json,created_at,updated_at)
 				VALUES (?,?,?,?,?,?,?,?,?)`, ['maintenance', 'team', 'project', 'maintenance', 'Maintenance', JSON.stringify({ agents: definitions }),
 				JSON.stringify({ source: 'project-library', immutableRef: frozen.commit, definitionPaths: definitions.map(definition => `agents/${definition.name}.mdx`) }), original.createdAt, original.createdAt]);
-			const store = { ...f.store, ensureInitialized: async () => {}, listTeamProjects: async () => [{ id: 'project' }] };
+			const store = { ...f.store, run: (sql: string, params: unknown[] = []) => f.query(sql, params),
+				ensureInitialized: async () => {}, listTeamProjects: async () => [{ id: 'project' }] };
+			const subject = { id: 'proposal', teamId: 'team', projectId: 'project' };
+			expect(await loadProposalGroupContributions(store as never, subject, current)).toMatchObject({ current: false,
+				missing: ['project/project/engineer', 'project/project/technical-writer'] });
 			for (const [index, { assignment, result }] of inputs.entries()) {
-				await f.query(`INSERT INTO audit_events (id,actor_type,event_type,target_type,target_id,data_json,created_at) VALUES (?,?,?,?,?,?,?)`,
-					[`integrated-${assignment.id}`, 'service', 'assignment.content.integrated', 'capacity_provider_assignment', assignment.id,
-						JSON.stringify({ resultId: result.id, references: result.references }), original.createdAt]);
-				if (!index) expect(await loadTeamExecutableProposalSources(store, 'team')).toEqual([]);
+				for (const fault of ['moved', 'denied'] as const) {
+					f.setFault(fault);
+					const before = await store.all('SELECT * FROM audit_events ORDER BY id');
+					await expect(verifyAssignmentContent(store, assignment, result)).rejects.toThrow();
+					expect(await store.all('SELECT * FROM audit_events ORDER BY id')).toEqual(before);
+				}
+				f.setFault('none');
+				const references = await verifyAssignmentContent(store, assignment, result);
+				await recordAssignmentContentIntegration(store, assignment, result, references);
+				const receipts = await store.all('SELECT * FROM audit_events ORDER BY id');
+				await recordAssignmentContentIntegration(store, assignment, result, references);
+				expect(await store.all('SELECT * FROM audit_events ORDER BY id')).toEqual(receipts);
+				if (!index) {
+					expect(await loadTeamExecutableProposalSources(store, 'team')).toEqual([]);
+					expect(await loadProposalGroupContributions(store as never, subject, current)).toMatchObject({
+						current: false, missing: ['project/project/engineer'] });
+				}
 			}
 			const verified = await loadProposalGroupContributions(store as never, { id: 'proposal', teamId: 'team', projectId: 'project' }, current);
 			expect(verified.current).toBe(true); expect(verified.attempts).toHaveLength(2);

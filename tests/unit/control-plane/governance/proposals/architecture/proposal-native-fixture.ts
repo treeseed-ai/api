@@ -22,15 +22,19 @@ export async function proposalNativeFixture() {
 			if (request.method !== 'POST' || request.url !== '/api/v1/repos/repository/files/read') throw new Error('Unexpected boundary');
 			const chunks: Buffer[] = [];
 			for await (const chunk of request) chunks.push(Buffer.from(chunk));
-			const input = JSON.parse(Buffer.concat(chunks).toString()) as { ref: string; path: string };
-			if (!/^[a-f0-9]{40}$/u.test(input.ref) || !/^(proposals|decisions|agents)\/[a-z0-9-]+\.mdx$/u.test(input.path)) throw new Error('Unsafe source');
-			requests.push({ ref: input.ref, path: input.path });
+			const input = JSON.parse(Buffer.concat(chunks).toString()) as { ref: string; path?: string; paths?: string[] };
+			const paths = input.path ? [input.path] : input.paths;
+			if (!/^[a-f0-9]{40}$/u.test(input.ref) || !Array.isArray(paths) || !paths.length
+				|| paths.some(path => !/^(proposals|decisions|agents)\/[a-z0-9-]+\.mdx$/u.test(path))) throw new Error('Unsafe source');
+			for (const path of paths) requests.push({ ref: input.ref, path });
 			if (fault === 'denied') { response.writeHead(403); response.end(JSON.stringify({ error: 'forbidden' })); return; }
-			const content = execFileSync('git', ['show', `${input.ref}:${input.path}`], { cwd: root, encoding: 'utf8' });
-			const frontmatter = parse(content.split('---\n')[1]!) as Record<string, unknown>;
+			const files = paths.map(path => {
+				const content = execFileSync('git', ['show', `${input.ref}:${path}`], { cwd: root, encoding: 'utf8' });
+				return { path, content, frontmatter: parse(content.split('---\n')[1]!) as Record<string, unknown> };
+			});
 			response.setHeader('content-type', 'application/json');
 			response.end(JSON.stringify({ resolvedRef: fault === 'moved' ? 'f'.repeat(40) : input.ref,
-				file: { path: input.path, content, frontmatter } }));
+				...(input.path ? { file: files[0] } : { files }) }));
 		} catch { response.writeHead(404); response.end(JSON.stringify({ error: 'not_found' })); }
 	});
 	try {
