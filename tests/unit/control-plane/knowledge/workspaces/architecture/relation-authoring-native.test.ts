@@ -129,16 +129,16 @@ describe('native ordinary relation creation and indexing', () => {
 			expect(decision).toEqual(original); expect(variants).toEqual(held);
 		} finally { await f.close(); }
 	}, 60_000);
-	it('real governed YAML profile authoring retains native draft custody across empty inventory and producer review denial before exact renamed execution profile write', async () => {
+	it('real governed YAML profile authoring retains native draft custody across invalid profiles before exact renamed execution and review profile write', async () => {
 		const f = await relationAuthoringDatabase(); try {
 			const workspace = await f.create(), before = await f.snapshot(), path = 'agents/renamed-executor.yaml';
 			const acting = { handler: 'configured-executor', permissions: { content: { read: ['proposal'], write: [] }, tools: ['source.read'] },
 				prompt: { system: 'Execute only the bounded configured objective with exact granted source authority.' } };
 			const profile = { schemaVersion: 'treeseed.agent/v1', id: 'renamed-executor', name: 'Renamed Executor', agentClass: 'renamed-executor',
 				purpose: 'Complete the exact configured execution objective.', responsibilities: ['Retain original assignment authority.'],
-				capabilities: ['source-inspection'], context: { include: ['assignment-subject'] }, activityProfiles: { acting } };
+				capabilities: ['source-inspection'], context: { include: ['assignment-subject'] }, activityProfiles: { acting, reviewing: acting } };
 			const invalid = [{ ...profile, capabilities: [] }, { ...profile, context: { include: [] } }, { ...profile, activityProfiles: {} },
-				{ ...profile, activityProfiles: { acting, reviewing: acting } },
+				{ ...profile, activityProfiles: { acting, reviewing: { ...acting, prompt: { system: '' } } } },
 				...[' padded', 'padded ', 'a'.repeat(101)].flatMap(agentClass => [
 					{ ...profile, agentClass },
 					{ ...profile, activityProfiles: { acting: { ...acting, dependsOn: { agents: [agentClass] } } } },
