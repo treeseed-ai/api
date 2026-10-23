@@ -1,3 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { splitPostgresSqlStatements } from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
+import { graphProfiles } from '../../../capacity/execution/graph/architecture/living/living-graph-fixture.ts';
+import { proposalNativeFixture } from './proposal-native-fixture.ts';
+import { loadProposalGroupContributions } from '../../../../../../src/api/capacity/services/capacity/execution/proposal-contributions.ts';
 import assert from 'node:assert/strict';
 import { expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -82,4 +87,68 @@ export function expectNativeSubscriberGraph(input: ReturnType<typeof nativeSubsc
 		expect(actor.authorityRefs).toContainEqual(expect.objectContaining({ model: 'agent', id: subscriber.definition.id }));
 		expect(reviewer.authorityRefs).toContainEqual(expect.objectContaining({ model: 'agent', id: input.subscribers[1 - index]!.definition.id }));
 	}
+}
+
+/** Each controlled author supplies separate own work and peer-review capacity. */
+export function subscriberSourceProposal<T extends { executionPlan: { workItems: Array<Record<string, unknown>> } }>(input: T) {
+	const items = input.executionPlan.workItems.map(item => ({ ...item,
+		estimateRef: { store: 'postgresql', model: 'assignment-attempt', id: 'controlled-estimate-proposal-0', revision: 1 } }));
+	return { ...input, executionPlan: { workItems: [...items, ...items.map((item, index) => ({ ...item,
+		id: `controlled-peer-${index}`, dependsOn: [], estimateRef: { ...item.estimateRef, id: 'controlled-estimate-proposal-1' },
+	}))] } };
+}
+
+/** Owning SQL, official client and committed Git. The HTTP server, completed
+ * attempts and results are controlled INPUTS; no live agents or TreeDX claimed. */
+export async function subscriberSourceFixture() {
+	const f = await proposalNativeFixture();
+	try {
+		const ddl = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
+		for (const table of ['project_agent_classes', 'audit_events']) {
+			const statement = ddl.find(sql => sql.startsWith(`CREATE TABLE "${table}" (`));
+			if (!statement) throw new Error(`Original DDL required: ${table}`); await f.query(statement);
+		}
+		const profiles = nativeSubscriberInputs(graphProfiles(), 'project', 'proposal', false).subscribers
+			.map(profile => ({ ...profile, path: profile.path.replace(/\.md$/u, '.mdx') }));
+		for (const profile of profiles) f.publishContent(profile.path, { ...profile.definition });
+		const store = { ...f.store, run: (sql: string, params: unknown[] = []) => f.query(sql, params),
+			ensureInitialized: async () => {}, listTeamProjects: async () => [{ id: 'project' }] };
+		const publishCurrent = async (definition: Record<string, unknown>) => {
+			const exact = await f.publish(definition), path = 'proposals/proposal.mdx';
+			const sourceRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
+				repository: 'repository', commit: exact.commit, path, digest: `sha256:${exact.digest}` };
+			for (const [index, profile] of profiles.entries()) {
+				const id = `controlled-estimate-proposal-${index}`;
+				await f.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,handler_refs_json,metadata_json,created_at,updated_at)
+					VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET metadata_json=EXCLUDED.metadata_json`,
+					[profile.definition.agentClass, 'team', 'project', profile.definition.agentClass, profile.definition.name,
+						JSON.stringify({ agents: [profile.definition] }), JSON.stringify({ source: 'project-library', immutableRef: exact.commit,
+							definitionPaths: [profile.path] }), original.createdAt, original.createdAt]);
+				const attempt = assignmentAttemptSchema.parse({ ...original, id, workItemId: undefined, sourceRef, status: 'completed',
+					agentClass: profile.definition.agentClass,
+					effectiveProfile: { ...original.effectiveProfile, activity: 'estimating', handler: 'writer',
+						profileRef: { store: 'treedx', model: 'agent', id: profile.definition.id, repository: 'repository', commit: exact.commit, path: profile.path } },
+					workspace: { mode: 'treedx', workspaceId: `controlled-${id}`, repository: 'repository', baseCommit: exact.commit, writablePaths: [path] },
+					grant: { contentRead: [sourceRef], contentWrite: [sourceRef], sourceRead: [], sourceWrite: [], tools: [] } });
+				const result = assignmentResultSchema.parse({ schemaVersion: 'treeseed.assignment-result/v1', id: `result-${id}-${exact.commit}`,
+					assignmentId: id, status: 'completed', summary: 'Controlled source-intake INPUT, no live agent completion or usage claimed.',
+					references: [{ kind: 'treedx', projectId: 'project', repository: 'repository', commit: exact.commit, path, workspaceId: `controlled-${id}` }],
+					verification: [], diagnostics: [], usage: { elapsedSeconds: 0 }, completedAt: original.createdAt });
+				await f.query(`INSERT INTO capacity_provider_assignments
+					(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,mode,status,agent_id,
+					assignment_attempt_json,assignment_result_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+					ON CONFLICT(id) DO UPDATE SET assignment_attempt_json=EXCLUDED.assignment_attempt_json,assignment_result_json=EXCLUDED.assignment_result_json`,
+					[id, 'controlled-membership', 'team', 'project', 'controlled-provider', profile.definition.agentClass, 'planning', 'completed',
+						profile.definition.id, JSON.stringify(attempt), JSON.stringify(result), original.createdAt, original.createdAt]);
+				const scope = { id, teamId: 'team', projectId: 'project', agentId: profile.definition.id, assignmentAttempt: attempt };
+				const references = await verifyAssignmentContent(store, scope, result);
+				await recordAssignmentContentIntegration(store, scope, result, references);
+			}
+			const contributions = await loadProposalGroupContributions(store as never,
+				{ id: 'proposal', projectId: 'project', teamId: 'team' }, definition);
+			if (!contributions.current) throw new Error(`Controlled current subscriber source is incomplete: ${JSON.stringify(contributions.missing)}`);
+			return exact;
+		};
+		return { ...f, store, publishCurrent };
+	} catch (error) { await f.close(); throw error; }
 }

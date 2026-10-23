@@ -86,6 +86,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/planning/contributions/estimate-readback.test.ts
     testName: "reads actual estimator source and stored attempt ownership while preserving a concurrent peer through moved denied and altered-source observations"
+  api.golden.subscriber-contribution-order-replay:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/contributions/estimate-ownership.test.ts
+    testName: "keeps an already integrated contribution current when the proposal orders work by workflow rather than alphabetically"
+  api.golden.subscriber-source-participant-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-native-readiness.test.ts
+    testName: "admits bounded current subscriber content while rejecting named participant fields at exact source intake"
   api.golden.subscriber-cross-project-readback:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -730,7 +740,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-native-readiness.test.ts
-    testName: "real executable proposal intake retains invalid committed work-item inventories through repeated denial before exact bounded source retry"
+    testName: "legacy exact intake retains malformed inventory history and valid bounded bytes without admitting fresh class-targeted work"
   api.golden.execution-profile-signal-cutover-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -3240,7 +3250,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-native.test.ts
-    testName: "original governance acceptance publishes one native classed Decision for the exact proposal and preserves that content and original history through decision creation replay"
+    testName: "original governance accepts both group subscriber contributions into one exact native Decision and preserves content and history through replay"
   api.golden.execution-provider-offer-unit-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

@@ -26,6 +26,13 @@ function input(name: string, itemId: string, frozen: Row = draft) {
 }
 
 describe('subscriber-owned estimate contributions', () => {
+	it('keeps an already integrated contribution current when the proposal orders work by workflow rather than alphabetically', () => {
+		const engineer = input('engineer', 'z-repair-request'), tester = input('tester', 'a-reproduce-request');
+		const current = { ...draft, executionPlan: { workItems: [engineer.work, tester.work] } }, held = structuredClone(current);
+		for (const author of [engineer, tester]) expect(mergeAssignmentEstimate({ ...author,
+			frozen: current, candidate: current, current } as never)).toEqual(current);
+		expect(current).toEqual(held);
+	});
 	it('keeps multiple own work items deterministic on repeated publication and refuses concurrent ID collisions', () => {
 		const author = input('engineer', 'repair-request');
 		author.candidate.executionPlan.workItems.push({ ...author.work, id: 'document-request' });

@@ -74,6 +74,9 @@ function mergeSubscriberEstimate(input: EstimateMerge): Row {
 	const merged = { ...input.current, executionPlan: { workItems: ordered([...currentItems.filter(item => !owns(item)), ...own]) } };
 	if (!validatePortableContentData('proposal', merged).ok) return deny('assignment_estimate_work_item_invalid',
 		'The combined contributions contain conflicting IDs, dependencies or invalid work.');
+	// Workflow order is authored content. An unchanged contribution must remain
+	// current without rewriting the proposal merely to alphabetize its items.
+	if (stable(ordered(workItems(merged))) === stable(ordered(currentItems))) return input.current;
 	return merged;
 }
 
