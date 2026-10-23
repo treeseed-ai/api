@@ -19,7 +19,7 @@ const sourceRef = {
 const decisionRef = { store: 'postgresql', model: 'decision', id: 'decision', revision: 1, digest: `sha256:${'c'.repeat(64)}` };
 const permissions = { content: { read: ['proposal', 'decision'], write: [] }, tools: ['source.read'] };
 it('reads shared planning proposal context through its owning project binding and refuses a foreign team', async () => {
-	for (const teamId of ['team', 'foreign-team']) {
+	for (const kind of ['planning', 'estimating']) for (const teamId of ['team', 'foreign-team']) {
 		vi.mocked(resolveKnowledgeGatewayConnection).mockImplementation(async (_store, input) => ({
 			repositoryId: input.projectId === 'ui' ? 'repository' : 'admin-library', client: gateway,
 		}) as never);
@@ -32,7 +32,7 @@ it('reads shared planning proposal context through its owning project binding an
 			getProjectTreeDxLibrary: async () => ({ repositoryId: 'repository' }), config: { fetchImpl }, all: async () => [],
 			listHubRepositories: async () => [{ id: 'admin-source', role: 'software', provider: 'github', owner: 'treeseed-ai', name: 'admin', currentBranch: 'staging' }] };
 		const read = workItemContext(store, { id: 'shared-planning', projectId: 'admin', teamId: 'team',
-			kind: 'planning', workItemId: null, sourceRef, requestedPermissions: permissions } as never);
+			kind, workItemId: null, sourceRef, requestedPermissions: permissions } as never);
 		if (teamId === 'team') expect(await read).toEqual([sourceRef, sharedGit, { store: 'git', model: 'repository',
 			id: 'admin-source', repository: 'treeseed-ai/admin', commit: 'd'.repeat(40) }]);
 		else await expect(read).rejects.toMatchObject({ code: 'execution_node_source_repository_changed' });

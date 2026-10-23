@@ -36,6 +36,9 @@ workflow:
   - id: subscriber-contribution-readback
     action: { verifier: api.golden.subscriber-contribution-readback }
     expect: { status: passed }
+  - id: subscriber-cross-project-readback
+    action: { verifier: api.golden.subscriber-cross-project-readback }
+    expect: { status: passed }
   - id: subscriber-contribution-readiness
     action: { verifier: api.golden.subscriber-contribution-readiness }
     expect: { status: passed }

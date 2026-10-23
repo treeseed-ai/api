@@ -56,6 +56,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/planning/contributions/estimate-readback.test.ts
     testName: "reads actual estimator source and stored attempt ownership while preserving a concurrent peer through moved denied and altered-source observations"
+  api.golden.subscriber-cross-project-readback:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/contributions/cross-project-estimate-readback.test.ts
+    testName: "reads a subscriber contribution from the proposal owner library while retaining the contributor project and denying foreign ownership or missing write authority"
   api.golden.subscriber-contribution-readiness:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

@@ -205,7 +205,7 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 	if (source.store !== 'treedx' || !source.repository || !source.commit || !source.path) {
 		throw new CapacityGovernanceError('execution_node_source_invalid', `Node ${node.id} lacks exact proposal provenance.`, 409);
 	}
-	const owner = node.kind === 'planning' ? await store.getGovernanceProposal(source.id) : null;
+	const owner = node.kind === 'planning' || node.kind === 'estimating' ? await store.getGovernanceProposal(source.id) : null;
 	const sourceProjectId = owner && text(owner.teamId, owner.team_id) === node.teamId ? text(owner.projectId, owner.project_id) : node.projectId;
 	const connection = await resolveKnowledgeGatewayConnection(store, {
 		projectId: sourceProjectId, write: false, relationPaths: true, readRefs: [source.commit],

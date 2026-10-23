@@ -231,14 +231,24 @@ export async function readAssignmentEstimateProposal(store: CapacityGovernanceDa
 	if (!attempt || result.assignmentId !== assignment.id || result.status !== 'completed') throw new CapacityGovernanceError(
 		'assignment_estimate_result_invalid', 'Estimate read-back requires the actual attempt and its completed result.', 409);
 	const matches = result.references.filter((reference): reference is Extract<AssignmentResult['references'][number], { kind: 'treedx' }> => reference.kind === 'treedx'
-		&& reference.projectId === assignment.projectId && reference.repository === attempt.sourceRef.repository
+		&& reference.repository === attempt.sourceRef.repository
 		&& reference.path === attempt.sourceRef.path);
 	if (matches.length !== 1) throw new CapacityGovernanceError('assignment_estimate_reference_invalid',
 		'Estimator result must cite exactly one proposal commit in its authorized project library.', 409);
 	const reference = matches[0]!;
+	const crossProject = reference.projectId !== assignment.projectId;
+	if (crossProject) {
+		const owner = await store.first('SELECT team_id,project_id FROM governance_proposals WHERE id=?', [attempt.sourceRef.id]);
+		if (!owner || owner.team_id !== assignment.teamId || owner.project_id !== reference.projectId) throw new CapacityGovernanceError(
+			'assignment_estimate_proposal_mismatch', 'A contribution must cite the proposal owner in its admitted team.', 409);
+		if (!attempt.grant.contentWrite.some(grant => grant.store === 'treedx' && grant.model === 'proposal'
+			&& grant.id === attempt.sourceRef.id && grant.repository === reference.repository && grant.path === reference.path
+			&& grant.commit === attempt.sourceRef.commit)) throw new CapacityGovernanceError('assignment_estimate_reference_invalid',
+			'Cross-project estimation requires the exact admitted proposal write grant.', 409);
+	}
 	if (attempt.workspace.mode !== 'treedx' || reference.workspaceId !== attempt.workspace.workspaceId) throw new CapacityGovernanceError(
 		'assignment_estimate_workspace_mismatch', 'Estimator result did not originate from its authorized workspace.', 409);
-	const connection = await resolveKnowledgeGatewayConnection(store, { projectId: assignment.projectId,
+	const connection = await resolveKnowledgeGatewayConnection(store, { projectId: reference.projectId,
 		write: false, relationPaths: true, readRefs: [reference.commit] });
 	if (!connection || connection.repositoryId !== reference.repository) throw new CapacityGovernanceError(
 		'assignment_estimate_repository_changed', 'Estimator proposal repository binding changed.', 409);
@@ -255,7 +265,11 @@ export async function readAssignmentEstimateProposal(store: CapacityGovernanceDa
 		`Estimator proposal content is invalid: ${parsed.diagnostics.slice(0, 5)
 			.map((diagnostic) => `${diagnostic.field ?? 'document'}:${diagnostic.code}`).join(', ') || 'missing data'}.`,
 		409, { diagnostics: parsed.diagnostics });
-	return parsed.data as Row;
+	const definition = record(parsed.data);
+	if (definition.id !== attempt.sourceRef.id || definition.projectId !== reference.projectId
+		|| (crossProject && definition.schemaVersion !== 'treeseed.proposal/v2')) throw new CapacityGovernanceError(
+		'assignment_estimate_content_invalid', 'Estimate content must retain its exact proposal identity and owning project.', 409);
+	return definition;
 }
 
 export async function isCurrentSubscriberContribution(store: CapacityGovernanceDatabase, proposal: Row, current: Row,
