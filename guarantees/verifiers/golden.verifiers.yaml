@@ -1,6 +1,21 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.legacy-graph-condition:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/executable-proposal-source.test.ts
+    testName: "preserves legacy authority and condition history while retiring unissued work: condition"
+  api.golden.legacy-graph-issued:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/executable-proposal-source.test.ts
+    testName: "preserves legacy authority and condition history while retiring unissued work: issued"
+  api.golden.legacy-graph-unissued:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/executable-proposal-source.test.ts
+    testName: "preserves legacy authority and condition history while retiring unissued work: unissued"
   api.golden.subscriber-execution-context-owner:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

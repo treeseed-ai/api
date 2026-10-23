@@ -7,7 +7,7 @@ vi.mock('../../../../../../../src/api/knowledge/gateway-treedx-connection.ts', (
 }));
 import { resolveKnowledgeGatewayConnection } from '../../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { workItemContext } from '../../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
-import { readyProposal } from '../../../../governance/proposals/architecture/ready-proposal-fixture.ts';
+import { readyContributionProposal } from '../../../../governance/proposals/architecture/ready-proposal-fixture.ts';
 const sourceRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
  digest: `sha256:${'a'.repeat(64)}`, repository: 'repository', commit: 'b'.repeat(40), path: 'proposals/one.mdx' };
 const permissions = { content: { read: ['proposal', 'decision'], write: [] }, tools: ['source.read'] };
@@ -17,7 +17,7 @@ it('reads shared planning proposal context through its owning project binding an
 		vi.mocked(resolveKnowledgeGatewayConnection).mockImplementation(async (_store, input) => ({
 			repositoryId: input.projectId === 'ui' ? 'repository' : 'admin-library', client: gateway,
 		}) as never);
-		const proposal = readyProposal(), sharedGit = { store: 'git' as const, model: 'repository', id: 'ui-source', repository: 'treeseed-ai/ui', commit: 'e'.repeat(40) };
+		const proposal = readyContributionProposal(), sharedGit = { store: 'git' as const, model: 'repository', id: 'ui-source', repository: 'treeseed-ai/ui', commit: 'e'.repeat(40) };
 		Object.assign(proposal, { id: 'proposal', projectId: 'ui', groupIds: ['portfolio-atlas'] });
 		Object.assign(proposal.executionPlan.workItems[0]!, { contextRefs: [sharedGit] });
 		const content = `---\n${stringify(proposal)}---\n`, exactRef = { ...sourceRef, digest: `sha256:${createHash('sha256').update(content).digest('hex')}` };

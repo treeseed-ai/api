@@ -242,11 +242,13 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 		const runId = decisionRun(node);
 		return runId ? { ...node, workdayId: runId } : node;
 	});
+	const issuedNodeIds = new Set([...activeAssignmentRows, ...terminalAssignmentRows].map((row: Row) => text(row.execution_node_id)));
 	const workdayProjection = projectActiveWorkdays({ teamId, revision, sources: workdays, profiles,
 		decisionNodes: proposalProjection?.nodes ?? [], retainedNodes: current.nodes,
-		issuedNodeIds: [...activeAssignmentRows, ...terminalAssignmentRows].map((row: Row) => text(row.execution_node_id)) });
+		issuedNodeIds: [...issuedNodeIds] });
 	const communicationProjection = projectCommunicationInvocations({ teamId, revision, sources: communications, profiles });
-	const frozenNodes = current.nodes.filter((node) => frozenInvalid.has(`${node.sourceRef.id}\u0000${node.sourceRef.digest}`));
+	const frozenNodes = current.nodes.filter((node) => (node.kind === 'condition' || issuedNodeIds.has(node.id))
+		&& frozenInvalid.has(`${node.sourceRef.id}\u0000${node.sourceRef.digest}`));
 	const frozenNodeIds = new Set(frozenNodes.map((node) => node.id));
 	const nodes = scope === 'communication'
 		? [...current.nodes.filter((node) => node.kind !== 'communication'), ...communicationProjection.nodes]

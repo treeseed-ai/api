@@ -208,6 +208,8 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 		'execution_node_source_invalid', `Node ${node.id} proposal is unavailable to this team.`, 409);
 	const sourceProjectId = text(owner.projectId, owner.project_id);
 	const exact = await readExactProposal(store, owner, source);
+	if (exact.definition.schemaVersion !== 'treeseed.proposal/v2') throw new CapacityGovernanceError(
+		'execution_node_source_version_unsupported', 'Fresh proposal work requires subscriber-owned group contributions; issued legacy attempts retain their original authority.', 409);
 	if (!node.workItemId && (node.kind === 'planning' || node.kind === 'estimating')) {
 		const proposal = exact.definition;
 		const refs = [source, ...await canonicalProposalContextRefs(store, { ...node, projectId: sourceProjectId }, [

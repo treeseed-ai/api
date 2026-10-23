@@ -103,6 +103,10 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 					error instanceof Error ? error.message : 'The accepted Decision could not be read.');
 			}
 		}
+		if (exact.definition.schemaVersion !== 'treeseed.proposal/v2') {
+			if (state?.count && onFrozenInvalid) onFrozenInvalid({ id: text(row.proposal_id), digest: `sha256:${text(row.active_content_hash)}` });
+			continue;
+		}
 		sources.push({
 			teamId, projectId: selectedProjectId, repository: exact.ref.repository!, path: exact.ref.path!, commit: exact.ref.commit!,
 			digest: exact.ref.digest!, proposalRevision: Number(accepted ? row.proposal_version : row.active_version),

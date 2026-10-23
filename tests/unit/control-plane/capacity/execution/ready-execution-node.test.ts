@@ -202,11 +202,11 @@ describe('direct ready-node admission input', () => {
 		const objectiveRef = { store: 'treedx', model: 'objective', id: 'objective', repository: 'treeseed-ai/sdk-library',
 			commit: 'b'.repeat(40), path: 'objectives/core' };
 		const proposal = {
-			schemaVersion: 'treeseed.proposal/v1', id: 'proposal', projectId, title: 'Governed planning',
+			schemaVersion: 'treeseed.proposal/v2', groupIds: ['portfolio-runtime'], id: 'proposal', projectId, title: 'Governed planning',
 			request: 'Plan the exact accepted work.', summary: 'Use exact governed context.', status: 'draft',
 			objectiveRefs: [objectiveRef], executionPlan: { workItems: [{
-				id: 'implementation', activity: 'acting', agentClass: 'engineer', workspace: 'read-only', review: 'none',
-				objective: 'Implement the governed change.', estimate: { expectedSeconds: 120, maximumSeconds: 240 },
+				id: 'implementation', activity: 'acting', estimateRef: { store: 'postgresql', model: 'assignment-attempt', id: 'controlled-estimate', revision: 1 }, workspace: 'read-only', review: 'none',
+				objective: 'Implement the governed change.', estimate: { expectedSeconds: 120, maximumSeconds: 240, rationale: 'Controlled own implementation budget.' },
 				dependsOn: [], contextRefs: [gitRef], requestedPermissions: permissions, requiredCapabilities: ['source.read'],
 				acceptanceCriteria: ['Focused tests pass.'],
 			}] },

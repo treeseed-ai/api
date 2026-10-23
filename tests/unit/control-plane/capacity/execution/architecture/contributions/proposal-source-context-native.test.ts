@@ -34,5 +34,12 @@ it('reads acting and reviewing context from the exact shared proposal owner whil
 			await expect(workItemContext({ ...store, getGovernanceProposal: async () => ({ id: 'proposal', projectId: 'project', teamId: 'foreign' }) }, node as never)).rejects.toThrow();
 			expect(node).toEqual(held); expect(await f.snapshot()).toEqual(before);
 		}
+		const legacy = await f.publish({ ...readyProposal(), groupIds: ['portfolio-runtime'] });
+		const retained = await f.snapshot();
+		for (const kind of ['acting', 'reviewing']) await expect(workItemContext(store, {
+			teamId: 'team', projectId: 'worker', id: `legacy-${kind}`, kind, workItemId: item.id,
+			sourceRef: { ...sourceRef, commit: legacy.commit, digest: `sha256:${legacy.digest}` },
+		} as never)).rejects.toMatchObject({ code: 'execution_node_source_version_unsupported' });
+		expect(await f.snapshot()).toEqual(retained);
 	} finally { await f.close(); vi.unstubAllEnvs(); }
 });

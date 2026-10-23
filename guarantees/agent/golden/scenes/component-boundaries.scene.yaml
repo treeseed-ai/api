@@ -3,6 +3,15 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: legacy-graph-condition
+    action: { verifier: api.golden.legacy-graph-condition }
+    expect: { status: passed }
+  - id: legacy-graph-issued
+    action: { verifier: api.golden.legacy-graph-issued }
+    expect: { status: passed }
+  - id: legacy-graph-unissued
+    action: { verifier: api.golden.legacy-graph-unissued }
+    expect: { status: passed }
   - id: subscriber-execution-context-owner
     action: { verifier: api.golden.subscriber-execution-context-owner }
     expect: { status: passed }

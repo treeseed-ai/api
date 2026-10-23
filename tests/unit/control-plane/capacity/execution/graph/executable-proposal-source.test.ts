@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 const exactProposal = vi.hoisted(() => vi.fn());
 const exactDecision = vi.hoisted(() => vi.fn());
+// Current cohort is a controlled collaborator in source-selection UNIT cases.
+vi.mock('../../../../../../src/api/capacity/services/capacity/execution/proposal-contributions.ts', () => ({
+ loadProposalGroupContributions: async () => ({ current: true, attempts: [], profiles: {}, missing: [], independent: true }),
+}));
 vi.mock('../../../../../../src/api/governance/executable-proposal.ts', async (importOriginal) => ({
 	...await importOriginal<typeof import('../../../../../../src/api/governance/executable-proposal.ts')>(),
 	readExactProposal: exactProposal,
@@ -10,7 +14,7 @@ vi.mock('../../../../../../src/api/governance/executable-proposal.ts', async (im
 
 import { loadTeamExecutableProposalSources } from '../../../../../../src/api/capacity/services/capacity/execution/executable-proposal-source.ts';
 import { loadProposalBlockingFeedback } from '../../../../../../src/api/capacity/services/capacity/execution/proposal-planning-source.ts';
-import { readyProposal } from '../../../governance/proposals/architecture/ready-proposal-fixture.ts';
+import { readyProposal, readyContributionProposal } from '../../../governance/proposals/architecture/ready-proposal-fixture.ts';
 import { reconcileExecutionGraph } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { CapacityOperationError } from '../../../../../../src/api/control-plane/repositories/capacity/capacity-operation-error.ts';
 
@@ -68,7 +72,7 @@ describe('executable proposal source selection', () => {
 		}] : [{ proposal_id: 'proposal', project_id: 'project', active_version: 1,
 			active_content_hash: 'a'.repeat(64), metadata_json: {}, decision_id: null }]);
 		exactProposal.mockResolvedValueOnce({ ref: { repository: 'treeseed-ai/sdk', path: 'proposals/one.md',
-			commit: 'b'.repeat(40), digest: `sha256:${'a'.repeat(64)}` }, definition: readyProposal() });
+			commit: 'b'.repeat(40), digest: `sha256:${'a'.repeat(64)}` }, definition: readyContributionProposal() });
 		const sources = await loadTeamExecutableProposalSources({ all }, 'team', 'project');
 		expect(sources).toHaveLength(1);
 		expect(sources[0]).toMatchObject({ decision: null, feedback: [{ id: 'question-1', resolved: false }] });
@@ -116,7 +120,7 @@ describe('executable proposal source selection', () => {
 			accepted_decision_id: 'decision', proposal_version: 2,
 			decision_record_json: { proposalRef },
 		}]);
-		exactProposal.mockResolvedValueOnce({ ref: proposalRef, definition: { ...readyProposal(), status: 'decided' } });
+		exactProposal.mockResolvedValueOnce({ ref: proposalRef, definition: { ...readyContributionProposal(), status: 'decided' } });
 		const decisionRef = { store: 'treedx', model: 'decision', id: 'decision', revision: 1,
 			digest: `sha256:${'d'.repeat(64)}`, repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40), path: 'decisions/decision.mdx' };
 		exactDecision.mockResolvedValueOnce({ ref: decisionRef, definition: { id: 'decision' } });
@@ -208,25 +212,32 @@ describe('executable proposal source selection', () => {
 		await expect(loadTeamExecutableProposalSources({ all }, 'team', undefined, () => undefined))
 			.rejects.toMatchObject({ code: 'proposal_execution_plan_invalid' });
 	});
-	it('retains a blocked historical component during ordinary team reconciliation', async () => {
+	it.each(['condition', 'issued', 'unissued'])('preserves legacy authority and condition history while retiring unissued work: %s', async mode => {
 		const source = { store: 'treedx', model: 'proposal', id: 'historical', revision: 1,
 			digest: `sha256:${'a'.repeat(64)}`, repository: 'library', commit: 'b'.repeat(40), path: 'proposals/old.mdx' };
-		const all = vi.fn(async (query: string) => {
+		const id = mode === 'condition' ? 'old-condition' : 'old-action';
+		const node = { id, team_id: 'team', project_id: 'project', source_ref_json: source, authority_refs_json: [], rule_revision: 1,
+			node_revision: 1, graph_revision_created: 1, graph_revision_updated: 1,
+			...(mode === 'condition' ? { kind: 'condition', pair_role: null, status: 'blocked',
+				condition_json: { conditionType: 'authority', subjectRef: source, expectedState: 'accepted' } }
+				: { kind: 'acting', pair_role: 'actor', status: mode === 'issued' ? 'assigned' : 'ready', work_item_id: 'retained-work',
+					agent_class: 'maintenance', estimate_json: { expectedSeconds: 30, maximumSeconds: 60 }, workspace: 'read-only',
+					required_capabilities_json: [], requested_permissions_json: { content: { read: ['proposal'], write: [] }, tools: [] },
+					acceptance_criteria_json: ['Retain the exact original authority.'], maximum_review_cycles: 2 }) };
+		const held = structuredClone(node), all = vi.fn(async (query: string) => {
 			if (query.includes('FROM governance_proposals')) return [{ proposal_id: 'historical', project_id: 'project',
-				active_version: 1, active_content_hash: 'a'.repeat(64), accepted_decision_id: 'decision',
-				decision_record_json: { proposalRef: { id: 'historical' } } }];
-			if (query.includes('FROM execution_nodes')) return [{ id: 'old-condition', team_id: 'team', project_id: 'project',
-				kind: 'condition', pair_role: null, source_ref_json: source, authority_refs_json: [], rule_revision: 1,
-				node_revision: 1, status: 'blocked', condition_json: { conditionType: 'authority', subjectRef: source,
-					expectedState: 'accepted' }, graph_revision_created: 1, graph_revision_updated: 1 }];
+				active_version: 1, active_content_hash: 'a'.repeat(64), accepted_decision_id: 'decision', proposal_version: 1,
+				decision_record_json: { proposalRef: source } }];
+			if (query.includes('FROM execution_nodes')) return [node];
+			if (mode === 'issued' && query.includes('FROM capacity_provider_assignments')
+				&& query.includes("'pending','leased','running','returned'")) return [{ execution_node_id: id }];
 			return [];
 		});
-		exactProposal.mockRejectedValueOnce(Object.assign(new Error('Legacy proposal schema is invalid.'), {
-			status: 422, code: 'proposal_execution_plan_invalid',
-		}));
+		exactProposal.mockResolvedValueOnce({ ref: source, definition: { ...readyProposal(), id: 'historical', status: 'decided' } });
+		exactDecision.mockResolvedValueOnce({ ref: { ...source, model: 'decision', id: 'decision' }, definition: {} });
 		const store = { all, first: vi.fn(async () => ({ revision: 1, graph_digest: `sha256:${'b'.repeat(64)}` })) };
 		const planned = await reconcileExecutionGraph(store, 'team', { plan: true });
-		expect(planned).toMatchObject({ changes: { stale: [], added: [] } });
-		expect(all).toHaveBeenCalledWith(expect.stringContaining('FROM governance_proposals'), ['team']);
+		expect(planned).toMatchObject({ changes: { stale: mode === 'unissued' ? [id] : [], added: [] } });
+		expect(node).toEqual(held); expect(all).toHaveBeenCalledWith(expect.stringContaining('FROM governance_proposals'), ['team']);
 	});
 });
