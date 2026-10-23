@@ -31,14 +31,6 @@ const branch=(connection:KnowledgeGatewayConnection)=>`refs/heads/${connection.a
 function fileRows(value:unknown):Row[]{const row=record(value);return (Array.isArray(row.files)?row.files:Array.isArray(row.results)?row.results:[]).map(record);}
 function selectProject(projects:Project[],selector:string):Project|null{return projects.find((project)=>project.id===selector||project.slug===selector)??null;}
 function classAgents(value:unknown):unknown[]{const agents=record(record(value).handlerRefs).agents;return Array.isArray(agents)?agents:[];}
-function rejectLossyMultiProfileClone(files:SourceFile[]){
-	const byClass=new Map<string,SourceFile[]>();
-	for(const file of files)byClass.set(file.definition.agentClass,[...(byClass.get(file.definition.agentClass)??[]),file]);
-	const conflict=[...byClass].find(([,members])=>members.length>1);
-	if(conflict)throw new CapacityOperationError(409,'agent_team_multi_profile_unsupported',
-		`Team cloning cannot preserve multiple profiles in allocation class ${conflict[0]}; clone each profile through a multi-profile capable workflow.`,
-		{agentClass:conflict[0],agentIds:conflict[1].map((file)=>file.definition.id)});
-}
 function replaceIdentityText(value:string,source:Project,target:Project):string{return value
 		.replace(new RegExp(`\\b${source.name.replace(/[.*+?^${}()|[\]\\]/gu,'\\$&')}\\b`,'gu'),target.name)
 		.replace(new RegExp(`\\b${source.slug.replace(/[.*+?^${}()|[\]\\]/gu,'\\$&')}\\b`,'gu'),target.slug);}
@@ -48,17 +40,24 @@ function replacePromptText(value:unknown,source:Project,target:Project):unknown{
 	if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value as Row).map(([key,item])=>[key,replacePromptText(item,source,target)]));
 	return value;
 }
-function adapt(sourceFile:SourceFile,source:Project,target:Project){
+function adapt(sourceFile:SourceFile,source:Project,target:Project,sourceContentPath:string){
 	const parsed=parseAgentDefinitionSource(sourceFile.path,sourceFile.content);
 	const frontmatter=structuredClone(parsed.frontmatter) as Row;
-	frontmatter.id=`${target.slug}/${sourceFile.definition.agentClass}`;
+	const sourcePrefix=source.slug?`${source.slug}/`:'';
+	const identity=sourceFile.definition.id;
+	const profile=identity.startsWith(sourcePrefix)?identity.slice(sourcePrefix.length):identity.slice(identity.indexOf('/')+1);
+	frontmatter.id=`${target.slug}/${profile}`;
 	for(const key of ['name','purpose'] as const)if(typeof frontmatter[key]==='string')frontmatter[key]=replaceIdentityText(frontmatter[key] as string,source,target);
 	if(Array.isArray(frontmatter.responsibilities))frontmatter.responsibilities=frontmatter.responsibilities.map((item)=>typeof item==='string'?replaceIdentityText(item,source,target):item);
 	if(frontmatter.activityProfiles&&typeof frontmatter.activityProfiles==='object')frontmatter.activityProfiles=replacePromptText(frontmatter.activityProfiles,source,target);
 	const content=serializeFrontmatterDocument(frontmatter,replaceIdentityText(parsed.body,source,target));
 	const validation=validateAgentDefinitionModel(frontmatter);
 	if(!validation.ok)throw new CapacityOperationError(422,'agent_team_definition_invalid','The adapted agent definition is invalid.',{ projectId:target.id,path:sourceFile.path,diagnostics:validation.diagnostics });
-	return {path:projectLibraryPath('.',`agents/${sourceFile.definition.agentClass}.mdx`),content,digest:hash(content),agentClass:sourceFile.definition.agentClass};
+	const root=sourceContentPath.replace(/^\/+|\/+$/gu,'');
+	const relative= root&&root!=='.'&&sourceFile.path.startsWith(`${root}/`)?sourceFile.path.slice(root.length+1):sourceFile.path;
+	const path=projectLibraryPath('.',relative);
+	if(!path.startsWith('agents/')||path==='agents/')throw new CapacityOperationError(409,'agent_team_definition_path_invalid','The source agent definition path is outside the agents directory.',{path:sourceFile.path});
+	return {path,content,digest:hash(content),agentClass:sourceFile.definition.agentClass};
 }
 
 async function connection(store:any,projectId:string,write:boolean,readRefs:string[]=[]){
@@ -95,18 +94,29 @@ async function readExisting(value:KnowledgeGatewayConnection,commit:string,paths
 	return new Map(fileRows(response).filter((file)=>typeof file.content==='string').map((file)=>[text(file.path),String(file.content)]));
 }
 async function classes(store:any,projectId:string):Promise<Row[]>{const page=await store.listProjectAgentClassesPage(projectId,{limit:200,cursor:null});return Array.isArray(page?.items)?page.items.map(record):[];}
-function projectionMatches(entries:Row[],definitions:ReturnType<typeof adapt>[],commit:string){return definitions.every((item)=>entries.some((entry)=>
-	text(entry.slug)===item.agentClass&&entry.status==='active'&&text(record(entry.metadata).immutableRef)===commit
-	&&stable(classAgents(entry))===stable([validateAgentDefinitionModel(parseFrontmatterDocument(item.content).frontmatter).data])));}
+type AdaptedDefinition=ReturnType<typeof adapt>;
+function groupDefinitions(definitions:AdaptedDefinition[]){
+	const groups=new Map<string,AdaptedDefinition[]>();
+	for(const item of definitions)groups.set(item.agentClass,[...(groups.get(item.agentClass)??[]),item]);
+	return groups;
+}
+function definitionModels(definitions:AdaptedDefinition[]){return definitions.map((item)=>validateAgentDefinitionModel(parseFrontmatterDocument(item.content).frontmatter).data);}
+function projectionMatches(entries:Row[],definitions:AdaptedDefinition[],commit:string){return [...groupDefinitions(definitions)].every(([agentClass,members])=>entries.some((entry)=>
+	text(entry.slug)===agentClass&&entry.status==='active'&&text(record(entry.metadata).immutableRef)===commit
+	&&stable(classAgents(entry))===stable(definitionModels(members))
+	&&stable(record(entry.metadata).definitionPaths)===stable(members.map((item)=>item.path))));}
 async function activateDefinitions(store:any,target:Project,definitions:ReturnType<typeof adapt>[],commit:string,libraryRef:string,idempotencyKey:string){
 	const entries=await classes(store,target.id);
-	for(const item of definitions){
-		const validation=validateAgentDefinitionModel(parseFrontmatterDocument(item.content).frontmatter);
-		if(!validation.ok||!validation.data)throw new CapacityOperationError(422,'agent_team_definition_invalid','The cloned agent definition cannot be activated.');
-		const existing=entries.find((entry)=>text(entry.slug)===item.agentClass&&entry.status==='active')??entries.find((entry)=>text(entry.slug)===item.agentClass);
-		const input={slug:item.agentClass,name:validation.data.name,status:'active',handlerRefs:{agents:[validation.data]},metadata:{...record(existing?.metadata),source:'project-library',immutableRef:commit,libraryRef,definitionPaths:[item.path],definitionDigest:item.digest.replace(/^sha256:/u,'')}};
-		if(existing)await store.updateProjectAgentClass(target.id,text(existing.id),input,`${idempotencyKey}:${target.id}:${item.agentClass}:update`);
-		else await store.createProjectAgentClass(target.id,{id:`${target.id}:${item.agentClass}`,...input},`${idempotencyKey}:${target.id}:${item.agentClass}:create`);
+	for(const [agentClass,members] of groupDefinitions(definitions)){
+		const models=members.map((item)=>{
+			const validation=validateAgentDefinitionModel(parseFrontmatterDocument(item.content).frontmatter);
+			if(!validation.ok||!validation.data)throw new CapacityOperationError(422,'agent_team_definition_invalid','The cloned agent definition cannot be activated.');
+			return validation.data;
+		});
+		const existing=entries.find((entry)=>text(entry.slug)===agentClass&&entry.status==='active')??entries.find((entry)=>text(entry.slug)===agentClass);
+		const input={slug:agentClass,name:models[0]!.name,status:'active',handlerRefs:{agents:models},metadata:{...record(existing?.metadata),source:'project-library',immutableRef:commit,libraryRef,definitionPaths:members.map((item)=>item.path),definitionDigest:hash(members.map((item)=>item.digest).join('\n')).replace(/^sha256:/u,'')}};
+		if(existing)await store.updateProjectAgentClass(target.id,text(existing.id),input,`${idempotencyKey}:${target.id}:${agentClass}:update`);
+		else await store.createProjectAgentClass(target.id,{id:`${target.id}:${agentClass}`,...input},`${idempotencyKey}:${target.id}:${agentClass}:create`);
 	}
 }
 
@@ -122,10 +132,9 @@ export class AgentTeamCloneService{
 		const sourceCommit=await acceptedSourceCommit(this.store,source.id),sourceConnection=await connection(this.store,source.id,false,[sourceCommit]);
 		const sourceSnapshot=await snapshotAgents(sourceConnection,sourceCommit).catch((error)=>failed('source_read',source.id,error));
 		if(!sourceSnapshot.files.length)throw new CapacityOperationError(409,'agent_team_source_empty','The source project has no valid agent definitions.');
-		rejectLossyMultiProfileClone(sourceSnapshot.files);
 		const targetPlans:AgentTeamClonePlan['targets']=[];
 		for(const target of targets){
-			const targetState=await resolveTargetSnapshot(this.store,target.id),targetConnection=targetState.connection,targetSnapshotData=targetState.snapshot,definitions=sourceSnapshot.files.map((file)=>({source:file,...adapt(file,source,target)}));
+			const targetState=await resolveTargetSnapshot(this.store,target.id),targetConnection=targetState.connection,targetSnapshotData=targetState.snapshot,definitions=sourceSnapshot.files.map((file)=>({source:file,...adapt(file,source,target,sourceConnection.contentPath)}));
 			const existing=await readExisting(targetConnection,targetSnapshotData.commit,definitions.map((item)=>projectLibraryPath(targetConnection.contentPath,item.path))).catch((error)=>failed('target_definition_read',target.id,error));
 			const changes=definitions.filter((item)=>existing.get(projectLibraryPath(targetConnection.contentPath,item.path))!==item.content),projected=projectionMatches(await classes(this.store,target.id),definitions,targetSnapshotData.commit);
 			const action=changes.length===0&&projected?'noop':changes.some((item)=>!existing.has(projectLibraryPath(targetConnection.contentPath,item.path)))?'create':'update';
@@ -142,13 +151,12 @@ export class AgentTeamCloneService{
 		if(!source||source.slug!==plan.source.slug)throw new CapacityOperationError(409,'agent_team_source_changed','The planned source project identity changed.');
 		const sourceConnection=await connection(this.store,source.id,false,[plan.source.commit]);if(sourceConnection.repositoryId!==plan.source.repository)throw new CapacityOperationError(409,'agent_team_source_changed','The planned source repository changed.');
 		const sourceSnapshot=await snapshotAgents(sourceConnection,plan.source.commit);if(sourceSnapshot.commit!==plan.source.commit)throw new CapacityOperationError(409,'agent_team_source_changed','The planned source commit changed.');
-		rejectLossyMultiProfileClone(sourceSnapshot.files);
 		const results=[];
 		for(const targetPlan of plan.targets){
 			const target=selectProject(projects,targetPlan.projectId);if(!target||target.slug!==targetPlan.slug)throw new CapacityOperationError(409,'agent_team_target_changed','A planned target project identity changed.',{projectId:targetPlan.projectId});
 			const targetConnection=await connection(this.store,target.id,true,[targetPlan.commit]);if(targetConnection.repositoryId!==targetPlan.repository)throw new CapacityOperationError(409,'agent_team_target_changed','A planned target repository changed.',{projectId:target.id});
 			const targetSnapshot=await snapshotAgents(targetConnection,targetPlan.commit);if(targetSnapshot.commit!==targetPlan.commit)throw new CapacityOperationError(409,'agent_team_target_moved','A target snapshot moved after planning.',{projectId:target.id,expected:targetPlan.commit,actual:targetSnapshot.commit});
-			const desired=sourceSnapshot.files.map((file)=>({source:file,...adapt(file,source,target)}));
+			const desired=sourceSnapshot.files.map((file)=>({source:file,...adapt(file,source,target,sourceConnection.contentPath)}));
 			if(stable(desired.map((item)=>({path:item.path,agentClass:item.agentClass,sourceDigest:item.source.sourceDigest,desiredDigest:item.digest})))!==stable(targetPlan.definitions))throw new CapacityOperationError(409,'agent_team_plan_stale','Adapted definitions no longer match the frozen plan.',{projectId:target.id});
 			const paths=desired.map((item)=>projectLibraryPath(targetConnection.contentPath,item.path)),existing=await readExisting(targetConnection,targetPlan.commit,paths);
 			const changes=desired.flatMap((item)=>{const path=projectLibraryPath(targetConnection.contentPath,item.path),before=existing.get(path)??null;return before===item.content?[]:[{path,before,after:item.content}];});
