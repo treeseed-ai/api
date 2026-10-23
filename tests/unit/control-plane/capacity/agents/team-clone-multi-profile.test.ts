@@ -85,8 +85,8 @@ describe('team clone with shared-class profiles', () => {
 		const principal = { id: 'admin', roles: ['admin'] };
 		const plan = await service.plan(principal, 'team-id', { sourceProject: 'sdk', targetProjects: ['target'] });
 		expect(plan.targets[0]).toMatchObject({ commit: initialTargetCommit, action: 'create', definitions: [
-			{ path: 'agents/engineer.mdx', agentClass: 'engineer' },
 			{ path: 'agents/operator-engineer.yaml', agentClass: 'engineer' },
+			{ path: 'agents/engineer.mdx', agentClass: 'engineer' },
 		] });
 		const receipt = await service.apply(principal, 'team-id', plan);
 		expect(receipt.targets[0]).toMatchObject({ action: 'created', commit: clonedCommit, definitionCount: 2 });
