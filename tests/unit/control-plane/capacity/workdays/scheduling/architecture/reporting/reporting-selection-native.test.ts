@@ -70,13 +70,16 @@ it('native public preflight denies a Workday with no configured closeout Reporte
 it('native public admission selects the configured closeout Reporter independently of cooperative planning filters without creating extra planning work',async()=>{
  const f=await workdayStartDatabase();try{
   const planner=structuredClone(f.definition);Reflect.deleteProperty(planner.activityProfiles,'reporting');
-  const selected={...configuredCloseout(planner),id:'configured/standing-closeout',agentClass:'digest-writer',groupIds:['closeout-occupation']};
+  const selected={...configuredCloseout(planner),id:'configured/standing-closeout',agentClass:'digest-writer',groupIds:['closeout-occupation'],activityProfiles:{reporting:configuredCloseout(planner).activityProfiles.reporting}};
   await f.query('UPDATE project_agent_classes SET handler_refs_json=? WHERE id=?',[JSON.stringify({agents:[planner]}),'class']);
   await f.query('INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,handler_refs_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',['closeout-class','team','project','digest-writer','Configured closeout',JSON.stringify({agents:[selected]}),f.intent.startsAt,f.intent.startsAt]);
-  const input={...f.intent,reportingAgentId:selected.id,groupIds:['portfolio-atlas'],agentSelection:{activityTypes:['planning']}},held=structuredClone(input);
+  const input={...f.intent,groupIds:['portfolio-atlas'],agentSelection:{activityTypes:['planning']}},held=structuredClone(input);
+  const denied=await f.snapshot();await expect(f.publicService.preflight(f.principal,'team',input)).rejects.toMatchObject({code:'capacity_workday_reporting_selection_invalid'});expect(await f.snapshot()).toEqual(denied);
+  const subscribed={...selected,groupIds:['portfolio-atlas']};
+  await f.query('UPDATE project_agent_classes SET handler_refs_json=? WHERE id=?',[JSON.stringify({agents:[subscribed]}),'closeout-class']);
   const planned=await f.publicService.preflight(f.principal,'team',input);await f.start(planned);
   const after=await f.snapshot(),parameters=JSON.parse(String(after.workdays[0]!.parameters_json));
-  expect(parameters.appliedPlan.reportingAgentId).toBe(selected.id);expect(parameters.agentSelection).toEqual(normalizeWorkdayAgentSelection(input.agentSelection));expect(parameters.agentSelection.agentSlugs).toEqual([]);expect(parameters.groupIds).toEqual(['portfolio-atlas']);expect(parameters.agentSelection.activityTypes).toEqual(input.agentSelection.activityTypes);
+  expect(parameters.appliedPlan.reportingAgentId).toBe(selected.id);expect(parameters.agentSelection).toEqual(normalizeWorkdayAgentSelection(input.agentSelection));expect(parameters.agentSelection).not.toHaveProperty('agentSlugs');expect(parameters.groupIds).toEqual(['portfolio-atlas']);expect(parameters.agentSelection.activityTypes).toEqual(input.agentSelection.activityTypes);
   expect(parameters.agentProfilesByProjectId.project.agents.map((entry:{definition:{id:string};activities:string[]})=>({id:entry.definition.id,activities:entry.activities}))).toEqual([{id:planner.id,activities:['planning']},{id:selected.id,activities:['reporting']}]);
   expect(after.nodes.filter(row=>row.kind==='planning').map(row=>row.agent_class)).toEqual([planner.agentClass]);expect(after.nodes.filter(row=>row.kind==='reporting').map(row=>row.agent_class)).toEqual([selected.agentClass]);expect(after.nodes.filter(row=>row.kind==='condition')).toHaveLength(1);
   expect(after.assignments).toEqual([]);expect(after.reservations).toEqual([]);expect(after.usage).toEqual([]);expect(after.ledger).toEqual([]);expect(input).toEqual(held);

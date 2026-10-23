@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { admitDiscussionInvocations, conversationRunDurationSeconds } from '../../../../../src/api/capacity/services/capacity/invocations/discussion-invocation-service.ts';
 import { compileWorkdayAgentProfileSnapshot } from '../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-profile-policy.ts';
 import { compileCapacityWorkdayRunRecord } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
+import { normalizeWorkdayAgentSelection } from '@treeseed/sdk/operator-contracts';
 
 const permissions = { content: { read: ['knowledge', 'discussion'], write: ['discussion'] }, tools: ['discussion', 'source.read'] };
 const agent = (slug: string) => ({
@@ -16,12 +17,16 @@ describe('discussion invocation capacity admission', () => {
 		expect(conversationRunDurationSeconds(180)).toBe(240);
 	});
 
-	it.each(['selected', 'unknown', 'unselected-chat', 'corrupt'])('authorizes parent communication from the existing frozen profiles: %s', async (scenario) => {
+	it.each(['selected', 'unknown', 'unselected-chat', 'missing-chat', 'corrupt'])('authorizes parent communication from the existing frozen profiles: %s', async (scenario) => {
 		const definition = agent('architect');
 		const snapshot = compileWorkdayAgentProfileSnapshot([{ id: 'class', slug: 'architect', handler_refs_json: { agents: [{ ...definition,
 			activityProfiles: { ...definition.activityProfiles, planning: definition.activityProfiles.chat } }] } }],
 			scenario === 'unselected-chat' ? { activityTypes: ['planning'] } : undefined);
 		if (scenario === 'corrupt') snapshot.revision = 'invalid';
+		if (scenario === 'missing-chat') {
+			const missing = { ...definition, activityProfiles: { planning: definition.activityProfiles.chat } };
+			Object.assign(snapshot, compileWorkdayAgentProfileSnapshot([{ id: 'class', slug: 'architect', handler_refs_json: { agents: [missing] } }]));
+		}
 		const store = {
 			first: vi.fn(async (query: string) => query.includes('SELECT * FROM capacity_workday_runs')
 				? { id: 'parent', execution_kind: 'workday', parameters_json: { agentProfilesByProjectId: { project: snapshot } } } : null),
@@ -33,7 +38,7 @@ describe('discussion invocation capacity admission', () => {
 		const result = admitDiscussionInvocations(store, { teamId: 'team', projectId: 'project', projectSlug: 'sdk',
 			discussionId: 'discussion', messageId: 'message', messagePath: 'discussion-messages/message.mdx', messageCommit: 'c'.repeat(40),
 			contextRefs: [], agentSlugs: [scenario === 'unknown' ? 'engineer' : 'architect'], idempotencyKey: scenario, parentWorkdayId: 'parent', durationSeconds: 180 });
-		if (scenario === 'selected') await expect(result).resolves.toMatchObject([{ status: 'blocked', blocker: 'communication_supply_unavailable' }]);
+		if (['selected', 'unselected-chat'].includes(scenario)) await expect(result).resolves.toMatchObject([{ status: 'blocked', blocker: 'communication_supply_unavailable' }]);
 		else await expect(result).rejects.toMatchObject({ code: scenario === 'corrupt' ? 'capacity_workday_agent_profile_snapshot_invalid' : 'discussion_parent_agent_not_frozen' });
 		expect(store.createCapacityWorkdayRun).not.toHaveBeenCalled();
 	});
@@ -79,7 +84,7 @@ describe('discussion invocation capacity admission', () => {
 
 		expect(createdRuns).toHaveLength(1);
 		expect(store.createCapacityWorkdayRun).toHaveBeenCalledWith('team', expect.objectContaining({
-			parameters: expect.objectContaining({ durationSeconds: 240, scheduledProjectIds: ['project'] }),
+			parameters: expect.objectContaining({ durationSeconds: 240, scheduledProjectIds: ['project'], agentSelection: normalizeWorkdayAgentSelection({ activityTypes: ['chat'] }) }),
 		}));
 		// Root lanes are shared by capability-specific adapters. Their legacy
 		// materialized owner must not veto the current canonical availability report.
