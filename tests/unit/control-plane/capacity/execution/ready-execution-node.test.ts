@@ -265,8 +265,10 @@ describe('direct ready-node admission input', () => {
 	});
 
 	it('loads the exact profile and predecessor results without creating a demand record', async () => {
+		const estimateAuthority = { store: 'postgresql' as const, model: 'assignment-attempt', id: 'own-estimate', revision: 1 };
+		const row = nodeRow(); row.authority_refs_json.push(estimateAuthority);
 		const store = { ...teamContextStore, all: vi.fn()
-			.mockResolvedValueOnce([nodeRow()])
+			.mockResolvedValueOnce([row])
 			.mockResolvedValueOnce([classRow(definition)])
 			.mockResolvedValueOnce([{ assignment_result_json: result }]) };
 		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
@@ -282,6 +284,8 @@ describe('direct ready-node admission input', () => {
 			expect.objectContaining({ id: 'project:project-objective', path: 'objectives/core', commit: '1'.repeat(40) }),
 		]));
 		expect(candidate.sourceRepositories).toEqual(['treeseed-ai/sdk']);
+		expect(candidate.node.authorityRefs).toContainEqual(estimateAuthority);
+		expect(candidate.contextRefs.some(reference => reference.store === 'postgresql')).toBe(false);
 		expect(candidate.effectiveProfile.profileRef).toMatchObject({
 			store: 'treedx', repository: 'repository', commit: agentCommit, path: agentPath,
 		});

@@ -283,7 +283,7 @@ describe('native proposal Decision authority', () => {
 					profileRef: { store: 'treedx', model: 'agent', id: actorProfile.definition.id, repository, commit, path: actorProfile.path },
 					activity: 'acting', handlerOrigin: selectedProfile.handler.includes('/') ? 'project-runtime' : 'agent-package', permissionCeiling: selectedProfile.permissions },
 				sourceRepositories: [], predecessorResults: [], readyAt: actorRow.updated_at,
-				contextRefs: [proposalRef, ...actorNode.authorityRefs,
+				contextRefs: [proposalRef, ...actorNode.authorityRefs.filter(reference => reference.store !== 'postgresql'),
 					{ store: 'treedx', model: 'knowledge', id: 'team-context:team-readme', repository: teamRepository, commit: teamCommit, path: 'README.md' },
 					{ store: 'treedx', model: 'objective', id: 'team-context:team-objective', repository: teamRepository, commit: teamCommit, path: 'objectives/core' },
 					{ store: 'treedx', model: 'objective', id: `${projectId}:project-objective`, repository, commit: projectContextCommit, path: 'objectives/core' }] }];
