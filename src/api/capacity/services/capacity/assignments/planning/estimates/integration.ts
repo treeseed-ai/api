@@ -9,12 +9,10 @@ import { commitProposalVersionContent } from '../../../../../../control-plane/go
 import { resolveKnowledgeGatewayConnection } from '../../../../../../knowledge/gateway-treedx-connection.ts';
 import type { CapacityGovernanceDatabase } from '../../../../../database.ts';
 import type { WorkdayTreeDxConnectionStore } from '../../../workdays/treedx/workday-treedx-connection.ts';
+import type { ControlPlaneStore } from '../../../../../../persistence/store.ts';
 
-type EstimateIntegrationStore = CapacityGovernanceDatabase & WorkdayTreeDxConnectionStore & {
-	getGovernanceProposal(id: string): Promise<Record<string, unknown> | null>;
-	updateGovernanceProposalDraft(actor: { id: string; type: string }, proposalId: string, input: Record<string, unknown>): Promise<unknown>;
-	evaluateGovernanceProposal(proposalId: string, input: Record<string, unknown>): Promise<unknown>;
-};
+type EstimateIntegrationStore = CapacityGovernanceDatabase & WorkdayTreeDxConnectionStore & Pick<ControlPlaneStore,
+	'getGovernanceProposal' | 'updateGovernanceProposalDraft' | 'evaluateGovernanceProposal'>;
 
 function requireEstimateAuthority(store: CapacityGovernanceDatabase & Partial<EstimateIntegrationStore>): asserts store is EstimateIntegrationStore {
 	if (!store.config || !store.getProjectTreeDxLibrary || !store.getGovernanceProposal
@@ -225,7 +223,7 @@ async function integrateAssignmentEstimateOnce(
 			discussionRef: merged.discussionRef, executionPlan: merged.executionPlan,
 			workdayId: assignment.workDayId, expectedProposalVersion: proposal.activeVersion,
 			changeReason: `Integrate ${assignment.agentId} contribution from assignment ${assignment.id}.` } });
-	await store.updateGovernanceProposalDraft({ id: assignment.agentId, type: 'agent' }, text(proposal.id),
+	await store.updateGovernanceProposalDraft({ id: assignment.agentId, scopes: [], roles: [], permissions: [] }, text(proposal.id),
 		{ ...authored.update, createdByType: 'agent', createdById: assignment.agentId });
 	if (allEstimated) await finalizeEstimateReadyApproval(store, text(proposal.id), merged);
 }
