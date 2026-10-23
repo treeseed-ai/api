@@ -3,7 +3,7 @@ import { appliedWorkdaySchema, assignmentResultSchema, compilePlanningRounds, wo
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import { workdayParticipants } from '../../../../policy/execution/workday-participants.ts';
-import { hasCompleteExecutablePlan, readExactProposal } from '../../../../../governance/executable-proposal.ts';
+import { readExactProposal } from '../../../../../governance/executable-proposal.ts';
 import { reconcileAssignmentContent } from '../../assignments/lifecycle/assignment-content-readback.ts';
 import { runtimeWorkdayPhase } from '../../../build/ready-execution-node.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
@@ -47,7 +47,7 @@ async function completedReportRef(store: CapacityGovernanceDatabase, run: Durabl
 	return completed[0]!;
 }
 
-async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: DurableCapacityWorkdayRun, plan: AppliedWorkday) {
+async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: DurableCapacityWorkdayRun) {
 	const selectedProposalIds = [...new Set(Array.isArray(run.parameters.proposalIds)
 		? run.parameters.proposalIds.filter((id): id is string => typeof id === 'string' && Boolean(id)) : [])];
 	const decisionIds = [...new Set(Array.isArray(run.parameters.decisionIds)
@@ -66,9 +66,7 @@ async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: 
 		.filter(([id]) => !selected.size || selected.has(id)));
 	const proposalsByProjectId: Record<string, Row[]> = {};
 	let hasPlanningProposals = false;
-	const first = plan.planningRounds[0]!;
-	const prefix = `planning:${plan.id}:${first.round}:`;
-	const initialAgentIds = first.assignmentIds.map((id) => id.slice(prefix.length));
+	const groups = new Set(Array.isArray(run.parameters.groupIds) ? run.parameters.groupIds : []);
 	const projectIds = Array.isArray(run.parameters.scheduledProjectIds) ? run.parameters.scheduledProjectIds : [];
 	for (const projectId of projectIds) {
 		if (typeof projectId !== 'string') continue;
@@ -77,11 +75,13 @@ async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: 
 			${selected.size ? `AND id IN (${scopedProposalIds.map(() => '?').join(',')})` : ''}
 			ORDER BY id LIMIT 101`, [run.teamId, projectId, ...scopedProposalIds]);
 		if (candidates.length > 100) throw new Error(`planning_proposal_inventory_too_large:${projectId}`);
-		hasPlanningProposals ||= candidates.length > 0;
 		proposalsByProjectId[projectId] = [];
 		for (const proposal of candidates) {
 			try {
 				const exact = await readExactProposal(store, proposal);
+				if (exact.definition.schemaVersion !== 'treeseed.proposal/v2'
+					|| !Array.isArray(exact.definition.groupIds) || !exact.definition.groupIds.some(id => groups.has(id))) continue;
+				hasPlanningProposals = true;
 				const proposalId = String(exact.definition.id);
 				sources[proposalId] = exact.ref;
 				proposalsByProjectId[projectId].push(exact.definition);
@@ -94,25 +94,22 @@ async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: 
 	const proposalsNeedingEstimates = Object.fromEntries(await Promise.all(Object.entries(proposalsByProjectId)
 		.map(async ([projectId, proposals]) => [projectId, (await Promise.all(proposals.map(async proposal => {
 			if (proposal.status === 'withdrawn') return null;
-			if (proposal.schemaVersion !== 'treeseed.proposal/v2') return hasCompleteExecutablePlan(proposal) ? null : proposal;
 			const participation = await loadProposalGroupContributions(store as never,
 				{ id: proposal.id, teamId: run.teamId, projectId }, proposal);
 			return participation.current ? null : proposal;
 		}))).filter((proposal): proposal is Row => proposal !== null)] as const)));
-	const estimators = Object.values(proposalsNeedingEstimates).some((proposals) => proposals.length)
-		? workdayParticipants({ ...run.parameters, proposalsByProjectId: proposalsNeedingEstimates })
-			.filter((participant) => participant.activity === 'estimating' && projectIds.includes(participant.projectId))
-			.map((participant) => participant.id) : [];
+	const participants = workdayParticipants({ ...run.parameters, proposalsByProjectId: proposalsNeedingEstimates })
+		.filter(participant => projectIds.includes(participant.projectId)).map(participant => participant.id);
 	const proposals = Object.values(proposalsByProjectId).flat();
 	const groupContributionsReady = selected.size > 0 && proposals.length > 0 && proposals.every(proposal => proposal.schemaVersion === 'treeseed.proposal/v2')
 		&& Object.values(proposalsNeedingEstimates).every(proposals => proposals.length === 0);
 	return { sources, proposalIds: selectedProposalIds.sort(),
 		// Terminal explicit scope is not autonomous proposal discovery. Keep the
 		// initial phase window, but do not repeat already-decided planning work.
-		// Estimators are dynamic: only the current exact proposal can select them;
-		// falling back to the initial estimator IDs creates unmaterializable rounds.
+		// Every new turn is derived from the current group audience and exact
+		// proposal. Initial IDs are historical authority, not new turn selectors.
 		agentIds: (selected.size && !hasPlanningProposals) || groupContributionsReady ? []
-			: [...new Set([...initialAgentIds.filter(id => id.endsWith(':planning')), ...estimators])].sort() };
+			: [...new Set(participants)].sort() };
 }
 
 function advanceRounds(plan: AppliedWorkday, states: Map<string, string>, now: string): AppliedWorkday {
@@ -146,7 +143,7 @@ export async function advanceLivingWorkday(store: CapacityGovernanceDatabase & {
 	if (!requestClose && next.state === 'active' && await runtimeWorkdayPhase(store, run, now) === 'planning'
 		&& planningWindowEnd - Date.parse(now) >= next.policySnapshot.planningTurnMaximumSeconds * 1_000
 		&& next.planningRounds.length && next.planningRounds.every((round) => round.state === 'complete')) {
-		const { sources, proposalIds, agentIds } = await nextPlanningParticipants(store, run, next);
+		const { sources, proposalIds, agentIds } = await nextPlanningParticipants(store, run);
 		if (agentIds.length) {
 			const round = next.planningRounds.at(-1)!.round + 1;
 			const turns = compilePlanningRounds(next.id, agentIds, next.policySnapshot.planningTurnMaximumSeconds, round);

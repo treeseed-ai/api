@@ -121,6 +121,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/contributions/issued-workday-custody.test.ts
     testName: "original SQL graph storage retains the exact issued nodes edges and observations through role-free replay"
+  api.golden.workday-group-round-continuation:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: "rebuilds later rounds from current group contributions instead of initial planning ID suffixes"
   api.golden.subscriber-cross-project-readback:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -3795,12 +3800,12 @@ verifiers:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
     testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
-    testName: keeps incomplete scoped proposals planning even when exact executable-plan parsing is not ready
+    testName: does not regenerate historical planning IDs for an unreadable scoped proposal
   api.golden.unscoped-proposal-discovery:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
     testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
-    testName: adds a newly created proposal owner and Reviewer to the next round without replacing the frozen planning agents
+    testName: adds every frozen group subscriber to a newly discovered proposal without class or Reviewer preference
   api.golden.decision-proposal-selection:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
@@ -3875,7 +3880,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
     testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
-    testName: keeps planning a fully estimated ready proposal until external approval yields acting work
+    testName: keeps planning a populated ready proposal until genuine group participation is current
   api.golden.parallel-proposals:
     kind: vitestCase
     ownerPackage: '@treeseed/api'

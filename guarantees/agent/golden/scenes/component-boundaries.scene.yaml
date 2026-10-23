@@ -3195,3 +3195,6 @@ workflow:
   - id: mcp-schema-constraints-unit
     action: { verifier: api.golden.mcp-schema-constraints-unit }
     expect: { status: passed }
+  - id: workday-group-round-continuation
+    action: { verifier: api.golden.workday-group-round-continuation }
+    expect: { status: passed }
