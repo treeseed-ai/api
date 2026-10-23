@@ -13,7 +13,8 @@ type WorkdayProject,
 import { resolveWorkdayAgentProfileSnapshot } from '../policy/workday-agent-profile-policy.ts';
 import { reconcileTreeDxRefSignals } from '../../../treedx/repositories/treedx-ref-signal-reconciler.ts';
 import { reconcileCommunicationExecutionGraph, reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
-import { workdayParticipants, selectWorkdayReportingAgent } from '../../../../policy/execution/workday-participants.ts';
+import { workdayParticipants, selectWorkdayReportingAgents } from '../../../../policy/execution/workday-participants.ts';
+import { isDeepStrictEqual } from 'node:util';
 import { readExactProposal } from '../../../../../governance/executable-proposal.ts';
 
 type JsonRecord = Record<string, unknown>;
@@ -151,6 +152,11 @@ async function resolveCapacityWorkdayPreflight(
 		for (const proposal of projectProposals) proposalContexts.set(proposal.proposalId, proposal.ref);
 	}
 	const selectedProjectIds = new Set(projects.map((project) => project.id));
+	if (parameters.agentProfilesByProjectId !== undefined
+		&& !isDeepStrictEqual(parameters.agentProfilesByProjectId, Object.fromEntries(agentProfiles))) {
+		throw new CapacityGovernanceError('capacity_workday_profile_authority_changed',
+			'The subscribed profiles differ from the frozen workday preflight authority.', 409);
+	}
 	const outsideSelection = selectedProposals.filter((proposal) => !selectedProjectIds.has(proposal.projectId));
 	if (outsideSelection.length) throw new CapacityGovernanceError('capacity_workday_proposal_project_mismatch',
 		'Every selected proposal must belong to a selected workday project.', 409,
@@ -164,10 +170,10 @@ async function resolveCapacityWorkdayPreflight(
 		proposalsByProjectId: Object.fromEntries(projects.map(project => [project.id,
 			selectedProposals.filter(proposal => proposal.projectId === project.id).map(proposal => proposal.definition)])),
 	}).map((participant) => participant.id);
-	const reportingAgent = run.executionKind === 'workday' ? selectWorkdayReportingAgent([...agentProfiles].flatMap(([projectId, snapshot]) =>
-		snapshot.agents.map(({ definition }) => ({ projectId, definition })))) : null;
-	if (run.executionKind === 'workday' && !reportingAgent) throw new CapacityGovernanceError(
-		'capacity_workday_reporting_selection_invalid', 'A Workday requires one eligible configured closeout Reporter before activation.', 409);
+	const reportingAgents = run.executionKind === 'workday' ? selectWorkdayReportingAgents([...agentProfiles].flatMap(([projectId, snapshot]) =>
+		snapshot.agents.map(({ definition }) => ({ projectId, definition })))) : [];
+	if (run.executionKind === 'workday' && !reportingAgents.length) throw new CapacityGovernanceError(
+		'capacity_workday_reporting_selection_invalid', 'A Workday requires subscribed configured closeout profiles before activation.', 409);
 	const appliedPlan = compileWorkday({ id: run.id, teamId: run.teamId,
 		executionMode,
 		activityTypes: Array.isArray(record(parameters.agentSelection).activityTypes)
@@ -179,7 +185,7 @@ async function resolveCapacityWorkdayPreflight(
 			planningTurnMaximumSeconds: Number(parameters.planningTurnMaximumSeconds ?? 180),
 			communicationConcurrency: Math.max(1, Number(parameters.communicationConcurrency ?? 1)),
 			...canonicalWorkdayShares(parameters, projects) },
-		agentIds, startsAt: startedAt, ...(reportingAgent ? { reportingAgentId: reportingAgent.definition.id } : {}) });
+		agentIds, startsAt: startedAt });
 	// Turn ceilings are not reservations. Admission sizes each turn against supply.
 	return { parameters,executionMode,providerId,startedAt,environment,membership,projects,contexts,proposalContexts,agentProfiles,time,appliedPlan };
 }
@@ -218,6 +224,7 @@ export async function preflightCapacityWorkdayRun(store: WorkdayScheduleStore, r
 		availableSeconds: resolved.time.availableSeconds,
 		executionNodeDemands,
 		appliedPlan: resolved.appliedPlan,
+		agentProfilesByProjectId: Object.fromEntries(resolved.agentProfiles),
 	};
 }
 

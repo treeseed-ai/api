@@ -16,7 +16,7 @@ import{expectNodeBirthHistory,expectWorkdayLifecycleHistory}from'./node-birth-hi
 			const initial = await f.store.getCapacityWorkdayRun('team', receipt.workdayId);
 			if (!initial) throw new Error('Original native started run required');
 			const originalPlan = appliedWorkdaySchema.parse(initial.parameters.appliedPlan), initialTruth = await f.snapshot();
-			const standingIds=initialTruth.nodes.filter(node=>node.kind!=='planning').map(node=>node.id);expect(initialTruth.nodes.map(node=>node.kind).sort()).toEqual(['condition','planning','reporting']);expect(standingIds).toHaveLength(2);expect(originalPlan.reportingAgentId).toBe(f.definition.id);
+			const standingIds=initialTruth.nodes.filter(node=>node.kind!=='planning').map(node=>node.id);expect(initialTruth.nodes.map(node=>node.kind).sort()).toEqual(['condition','planning','reporting']);expect(standingIds).toHaveLength(2);expect(originalPlan).not.toHaveProperty('reportingAgentId');
 			expect(originalPlan.policySnapshot).toEqual(policy); expect(originalPlan.planningRounds).toHaveLength(1);
 			const nativePlan = async () => {
 				const run = await f.store.getCapacityWorkdayRun('team', receipt.workdayId);
@@ -85,7 +85,7 @@ import{expectNodeBirthHistory,expectWorkdayLifecycleHistory}from'./node-birth-hi
 it('original native planning closeout observes every unclaimed cancellation before exact tick replay without changing the original deadline or financial authority',async()=>{
  const f=await workdayStartDatabase();try{
   const planned=await f.preflight(),started=await f.start(planned),run=await f.store.getCapacityWorkdayRun('team',started.workdayId);if(!run)throw new Error('Original native workday required');
-  const plan=appliedWorkdaySchema.parse(run.parameters.appliedPlan),before=await f.snapshot();expectNodeBirthHistory(before);expect(before.nodes.length).toBeGreaterThan(0);expect(before.nodes.map(node=>node.kind).sort()).toEqual(['condition','planning','reporting']);expect(before.nodes.every(node=>node.status===(node.kind==='planning'?'ready':'blocked'))).toBe(true);const planning=before.nodes.filter(node=>node.kind==='planning');expect(planning).toHaveLength(1);expect(plan.reportingAgentId).toBe(f.definition.id);
+  const plan=appliedWorkdaySchema.parse(run.parameters.appliedPlan),before=await f.snapshot();expectNodeBirthHistory(before);expect(before.nodes.length).toBeGreaterThan(0);expect(before.nodes.map(node=>node.kind).sort()).toEqual(['condition','planning','reporting']);expect(before.nodes.every(node=>node.status===(node.kind==='planning'?'ready':'blocked'))).toBe(true);const planning=before.nodes.filter(node=>node.kind==='planning');expect(planning).toHaveLength(1);expect(plan).not.toHaveProperty('reportingAgentId');
   const tick=await f.store.tickCapacityWorkdayRun('team',started.workdayId,plan.endsAt,'native-node-closeout'),after=await f.snapshot();
   expect(after.nodes.map(node=>node.id).sort()).toEqual(before.nodes.map(node=>node.id).sort());expect(after.nodes.every(node=>node.status===(node.kind==='planning'?'cancelled':node.kind==='condition'?'completed':'ready'))).toBe(true);expectNodeBirthHistory(after);
   const cancelled=after.events.filter(event=>event.event_type==='execution.node.state'&&JSON.parse(String(event.context_json)).status==='cancelled');expect(cancelled).toHaveLength(planning.length);

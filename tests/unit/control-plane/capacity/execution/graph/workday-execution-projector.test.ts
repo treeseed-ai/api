@@ -320,7 +320,8 @@ describe('workday living-graph projection', () => {
 			workItemId: 'release', agentClass: 'reviewer', maximumReviewCycles: 2 };
 		const graph = projectActiveWorkdays({ teamId: 'team', revision: 1,
 			sources: [{ id: plan.id, teamId: 'team', parameters: { appliedPlan: { ...plan, state: 'closing',
-				closingAt: '2026-09-22T12:15:00.000Z' }, scheduledProjectIds: ['sdk'], decisionIds: ['decision-1'] } }],
+				closingAt: '2026-09-22T12:15:00.000Z' }, scheduledProjectIds: ['sdk'], decisionIds: ['decision-1'],
+				agentProfilesByProjectId: { sdk: { agents: [{ definition: reporter, activities: ['reporting'] }] } } } }],
 			profiles: { 'sdk:reporter': reporter }, decisionNodes: [actor, reviewer] });
 		const condition = graph.nodes.find((node) => node.kind === 'condition')!;
 		expect(graph.edges.filter((candidate) => candidate.toNodeId === condition.id).map((candidate) => candidate.fromNodeId))
@@ -428,13 +429,16 @@ it('projects only the selected configured closeout Reporter while preserving eve
  expect.soft(projected.nodes.filter(node=>node.kind==='planning').map(node=>node.projectId).sort()).toEqual(['api','sdk']);expect.soft(projected.nodes.filter(node=>node.kind==='reporting')).toHaveLength(1);expect.soft(projected.nodes.filter(node=>node.kind==='reporting').map(node=>node.projectId)).toEqual(['sdk']);expect(source).toEqual(held);
 });
 
-it('denies omitted ambiguous foreign duplicate and moved reporting authority without replacing the captured selection',()=>{
+it('denies foreign duplicate and moved retained reporting authority without replacing the captured selection',()=>{
  const f=explicitReportingSelection(),profiles={'sdk:digest-writer':f.selected,'api:digest-writer':f.other},parameters={appliedPlan:f.plan,scheduledProjectIds:['sdk','api'],agentProfilesByProjectId:f.snapshot};
- for(const reportingAgentId of [undefined,'foreign/digest-writer','sdk/missing']) {
+ for(const reportingAgentId of ['foreign/digest-writer','sdk/missing']) {
   const plan={...f.plan};delete plan.reportingAgentId;Object.assign(plan,reportingAgentId===undefined?{}:{reportingAgentId});
   const source={id:plan.id,teamId:'team',parameters:{...parameters,appliedPlan:plan}},held=structuredClone(source);
   expect(()=>projectActiveWorkdays({teamId:'team',revision:1,profiles,sources:[source]})).toThrow();expect(source).toEqual(held);
  }
+ const currentPlan={...f.plan};delete currentPlan.reportingAgentId;
+ const current=projectActiveWorkdays({teamId:'team',revision:1,profiles,sources:[{id:f.plan.id,teamId:'team',parameters:{...parameters,appliedPlan:currentPlan}}]});
+ expect(current.nodes.filter(node=>node.kind==='reporting').map(node=>node.projectId).sort()).toEqual(['api','sdk']);
  const duplicate={...f.other,id:f.selected.id};
  expect(()=>projectActiveWorkdays({teamId:'team',revision:1,profiles:{...profiles,'api:digest-writer':duplicate},sources:[{id:f.plan.id,teamId:'team',parameters}]})).toThrow();
  const moved={...f.selected,purpose:'Changed after frozen selection.'};

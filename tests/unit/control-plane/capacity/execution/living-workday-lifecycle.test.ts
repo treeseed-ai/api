@@ -385,6 +385,29 @@ describe('living workday lifecycle', () => {
 			parameters: expect.objectContaining({ appliedPlan: expect.objectContaining({ reportRef: reportReference }) }) }));
 		expect(updateCapacityWorkdayRun.mock.calls[0]?.[2]).not.toHaveProperty('reportRefs');
 	});
+	it.each(['complete', 'missing-second', 'failed-second', 'unsettled'])('requires every group closeout receipt before ending a multi-project workday: %s', async mode => {
+		const closingRun = { ...run, parameters: { appliedPlan: { ...plan, state: 'closing', closingAt: now } } } as never;
+		const reports = [{ id: 'project-report', kind: 'reporting', status: 'completed' },
+			{ id: 'other-report', kind: 'reporting', status: mode === 'failed-second' ? 'failed' : 'completed' }];
+		const store = { all: vi.fn(async (sql: string, parameters: unknown[]) => {
+			if (sql.includes('SELECT id,kind,status')) return reports;
+			if (sql.includes('assignment_result_json')) {
+				const second = parameters[2] === 'other-report';
+				if (second && mode === 'missing-second') return [];
+				const value = { ...reportResult, id: second ? 'other-result' : reportResult.id,
+					assignmentId: second ? 'other-assignment' : reportResult.assignmentId,
+					references: [{ ...reportReference, ...(second ? { projectId: 'other', path: 'notes/other-report.md' } : {}) }] };
+				return [{ id: value.assignmentId, assignment_result_json: JSON.stringify(value), integrated_at: now,
+					integration_json: JSON.stringify({ resultId: value.id, references: value.references, publication: false }) }];
+			}
+			if (sql.includes('SELECT DISTINCT provider_session_id')) return [];
+			return [{ state: mode === 'unsettled' ? 'reserved' : 'consumed' }];
+		}), updateCapacityWorkdayRun: vi.fn(async () => closingRun) };
+		const result = await advanceLivingWorkday(store as never, closingRun, now);
+		expect(result.status).toBe(mode === 'complete' ? 'completed' : mode === 'unsettled' ? 'running' : 'failed');
+		if (mode === 'complete') expect(result.plan).toMatchObject({ state: 'ended', reportRef: { ...reportReference, projectId: 'other', path: 'notes/other-report.md' } });
+		else expect(result.plan).not.toHaveProperty('reportRef');
+	});
 	it.each(['missing', 'duplicate', 'invalid', 'wrong-assignment', 'wrong-store', 'future-completion', 'missing-integration',
 		'future-integration', 'wrong-result-integration', 'wrong-reference-integration', 'invalid-integration-time', 'invalid-integration-json'])('rejects %s Reporter evidence despite a completed graph node', async failure => {
 		const closingRun = { ...run, parameters: { appliedPlan: { ...plan, state: 'closing', closingAt: now } } } as never;

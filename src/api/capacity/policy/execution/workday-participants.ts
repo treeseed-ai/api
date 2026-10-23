@@ -79,11 +79,11 @@ export function workdayParticipants(parameters: Row, options: { includeEstimated
 	return participants.sort((left, right) => left.id.localeCompare(right.id));
 }
 
-/** Resolve one configured closeout profile without changing planning participation. */
-export function selectWorkdayReportingAgent(candidates: Array<{projectId: string; definition: AgentDefinition}>, selection?: unknown) {
+/** Current closeout includes every subscribed reporting profile. A selector is retained issued-plan authority only. */
+export function selectWorkdayReportingAgents(candidates: Array<{projectId: string; definition: AgentDefinition}>, selection?: unknown) {
  const eligible=candidates.filter(candidate=>candidate.definition.activityProfiles.reporting);
  const selected=selection===undefined?eligible:eligible.filter(candidate=>candidate.definition.id===selection);
- if((selection!==undefined && selected.length!==1)||selected.length>1) throw new CapacityGovernanceError(
-  'capacity_workday_reporting_selection_invalid','Select exactly one eligible configured reporting agent from the participating projects.',409);
- return selected[0] ?? null;
+ if(selection!==undefined && selected.length!==1) throw new CapacityGovernanceError(
+  'capacity_workday_reporting_selection_invalid','The retained reporting agent must resolve exactly once in its frozen participants.',409);
+ return selected.sort((left,right)=>(left.projectId+':'+left.definition.id).localeCompare(right.projectId+':'+right.definition.id));
 }

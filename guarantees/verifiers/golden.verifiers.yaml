@@ -3325,7 +3325,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-profile-projection.test.ts
-    testName: "rejects ambiguous closeout selection instead of manufacturing multiple workday reports"
+    testName: "rejects an ambiguous retained single-reporter authority rather than changing issued work"
   api.golden.architecture-reporting-event-denial:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -5023,12 +5023,37 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
-    testName: "denies omitted ambiguous foreign duplicate and moved reporting authority without replacing the captured selection"
+    testName: "denies foreign duplicate and moved retained reporting authority without replacing the captured selection"
   api.golden.reporting-selection-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/reporting/reporting-selection-native.test.ts
-    testName: "native public preflight and start retain one configured joint Reporter before activation and preserve exact selection through denial and replay"
+    testName: "native public preflight and start freeze all subscribed project closeout profiles and reject actor selectors through denial and replay"
+  api.golden.group-closeout-projection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-profile-projection.test.ts
+    testName: "projects every frozen subscribed closeout contribution without selecting a single actor"
+  api.golden.group-closeout-sql-complete:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/closeout/group-closeout-persistence.test.ts
+    testName: "requires all project report receipts and settlements at the owning SQL boundary: complete"
+  api.golden.group-closeout-sql-missing-integration:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/closeout/group-closeout-persistence.test.ts
+    testName: "requires all project report receipts and settlements at the owning SQL boundary: missing-integration"
+  api.golden.group-closeout-sql-pending:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/closeout/group-closeout-persistence.test.ts
+    testName: "requires all project report receipts and settlements at the owning SQL boundary: pending"
+  api.golden.group-closeout-sql-unsettled:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/closeout/group-closeout-persistence.test.ts
+    testName: "requires all project report receipts and settlements at the owning SQL boundary: unsettled"
   api.golden.reporting-selection-admission-seal-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

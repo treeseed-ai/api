@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { appliedWorkdaySchema, executionEdgeSchema, executionNodeSchema,
+import { appliedWorkdaySchema, executionEdgeSchema, executionNodeSchema, validateAgentDefinitionModel,
 	type AgentDefinition, type ExecutionEdge, type ExecutionNode, type ExactEntityReference } from '@treeseed/sdk/agent-capacity';
-import { workdayParticipants, selectWorkdayReportingAgent, type WorkdayParticipant } from './workday-participants.ts';
+import { workdayParticipants, selectWorkdayReportingAgents, type WorkdayParticipant } from './workday-participants.ts';
 import { modelTurnEstimate } from './model-turn-estimate.ts';
 import { agentProfileReference } from './agent-profile-reference.ts';
 
@@ -218,15 +218,17 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 				}
 			}
 		}
-		const selectedReporter = selectWorkdayReportingAgent(Object.entries(input.profiles).flatMap(([key, definition]) =>
-			projectIds.filter(projectId => key.startsWith(`${projectId}:`)).map(projectId => ({ projectId, definition }))), workday.reportingAgentId);
-		if (selectedReporter) {
-			const { projectId, definition: reporter } = selectedReporter;
-			if (workday.reportingAgentId !== undefined) {
-				const frozen = array(record(record(source.parameters.agentProfilesByProjectId)[projectId]).agents)
-					.map(entry => record(entry).definition).filter(definition => text(record(definition).id) === workday.reportingAgentId);
-				if (frozen.length !== 1 || stable(frozen[0]) !== stable(reporter)) throw new Error('The selected reporting profile differs from its frozen Workday authority.');
-			}
+		const reportingAgents = selectWorkdayReportingAgents(projectIds.flatMap(projectId =>
+			array(record(record(source.parameters.agentProfilesByProjectId)[projectId]).agents).flatMap(entry => {
+				const checked = validateAgentDefinitionModel(record(entry).definition);
+				if (!checked.ok || !checked.data) throw new Error('The frozen reporting profile is invalid.');
+				if (!checked.data.activityProfiles.reporting) return [];
+				const definition = checked.data;
+				const current = Object.entries(input.profiles).filter(([key, candidate]) => key.startsWith(`${projectId}:`) && candidate.id === definition.id);
+				if (current.length !== 1 || stable(current[0]![1]) !== stable(definition)) throw new Error('The reporting profile differs from its frozen Workday authority.');
+				return [{ projectId, definition }];
+			})), workday.reportingAgentId);
+		for (const { projectId, definition: reporter } of reportingAgents) {
 			const reporting = reporter.activityProfiles.reporting!;
 			const reporterId = `reporting:${workday.id}:${projectId}/${reporter.id}`;
 			const report = executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1', id: reporterId,

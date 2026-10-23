@@ -17,28 +17,34 @@ const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.st
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
 
 async function completedReportRef(store: CapacityGovernanceDatabase, run: DurableCapacityWorkdayRun, reports: Row[], now: string): Promise<Extract<AssignmentResult['references'][number], { kind: 'treedx' }> | null> {
-	if (reports.length !== 1 || reports[0]!.status !== 'completed') return null;
-	const rows = await store.all(`SELECT assignment.id,assignment.assignment_result_json,
-		audit.created_at AS integrated_at,audit.data_json AS integration_json
-		FROM capacity_provider_assignments assignment LEFT JOIN audit_events audit
-		ON audit.target_id=assignment.id AND audit.target_type='capacity_provider_assignment'
-		AND audit.event_type='assignment.content.integrated'
-		WHERE assignment.team_id=? AND assignment.work_day_id=? AND assignment.execution_node_id=? AND assignment.status='completed'
-		ORDER BY assignment.completed_at DESC,assignment.id DESC`, [run.teamId, run.id, reports[0]!.id]);
-	if (rows.length !== 1) return null;
-	let value: unknown = rows[0]!.assignment_result_json;
-	if (typeof value === 'string') try { value = JSON.parse(value); } catch { return null; }
-	const parsed = assignmentResultSchema.safeParse(value);
-	if (!parsed.success || parsed.data.status !== 'completed' || parsed.data.assignmentId !== rows[0]!.id
-		|| !Number.isFinite(Date.parse(now)) || Date.parse(parsed.data.completedAt) > Date.parse(now)) return null;
-	const references = parsed.data.references;
-	if (references.length !== 1 || references[0]!.kind !== 'treedx') return null;
-	const integratedAt = Date.parse(String(rows[0]!.integrated_at));
-	if (!Number.isFinite(integratedAt) || integratedAt > Date.parse(now)) return null;
-	let integration: unknown = rows[0]!.integration_json;
-	if (typeof integration === 'string') try { integration = JSON.parse(integration); } catch { return null; }
-	if (record(integration).resultId !== parsed.data.id || !isDeepStrictEqual(record(integration).references, references)) return null;
-	return references[0]!;
+	if (!reports.length || reports.some(report => report.status !== 'completed')) return null;
+	const completed: Extract<AssignmentResult['references'][number], { kind: 'treedx' }>[] = [];
+	for (const report of [...reports].sort((left,right)=>String(left.id).localeCompare(String(right.id)))) {
+		const rows = await store.all(`SELECT assignment.id,assignment.assignment_result_json,
+			audit.created_at AS integrated_at,audit.data_json AS integration_json
+			FROM capacity_provider_assignments assignment LEFT JOIN audit_events audit
+			ON audit.target_id=assignment.id AND audit.target_type='capacity_provider_assignment'
+			AND audit.event_type='assignment.content.integrated'
+			WHERE assignment.team_id=? AND assignment.work_day_id=? AND assignment.execution_node_id=? AND assignment.status='completed'
+			ORDER BY assignment.completed_at DESC,assignment.id DESC`, [run.teamId, run.id, report.id]);
+		if (rows.length !== 1) return null;
+		let value: unknown = rows[0]!.assignment_result_json;
+		if (typeof value === 'string') try { value = JSON.parse(value); } catch { return null; }
+		const parsed = assignmentResultSchema.safeParse(value);
+		if (!parsed.success || parsed.data.status !== 'completed' || parsed.data.assignmentId !== rows[0]!.id
+			|| !Number.isFinite(Date.parse(now)) || Date.parse(parsed.data.completedAt) > Date.parse(now)) return null;
+		const references = parsed.data.references;
+		if (references.length !== 1 || references[0]!.kind !== 'treedx') return null;
+		const integratedAt = Date.parse(String(rows[0]!.integrated_at));
+		if (!Number.isFinite(integratedAt) || integratedAt > Date.parse(now)) return null;
+		let integration: unknown = rows[0]!.integration_json;
+		if (typeof integration === 'string') try { integration = JSON.parse(integration); } catch { return null; }
+		if (record(integration).resultId !== parsed.data.id || !isDeepStrictEqual(record(integration).references, references)) return null;
+		completed.push(references[0]!);
+	}
+	// Preserve the existing singular entry point; every report remains authoritative
+	// on its assignment and every integration receipt above must be present.
+	return completed[0]!;
 }
 
 async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: DurableCapacityWorkdayRun, plan: AppliedWorkday) {

@@ -2975,6 +2975,21 @@ workflow:
   - id: reporting-selection-native
     action: { verifier: api.golden.reporting-selection-native }
     expect: { status: passed }
+  - id: group-closeout-projection
+    action: { verifier: api.golden.group-closeout-projection }
+    expect: { status: passed }
+  - id: group-closeout-sql-complete
+    action: { verifier: api.golden.group-closeout-sql-complete }
+    expect: { status: passed }
+  - id: group-closeout-sql-missing-integration
+    action: { verifier: api.golden.group-closeout-sql-missing-integration }
+    expect: { status: passed }
+  - id: group-closeout-sql-pending
+    action: { verifier: api.golden.group-closeout-sql-pending }
+    expect: { status: passed }
+  - id: group-closeout-sql-unsettled
+    action: { verifier: api.golden.group-closeout-sql-unsettled }
+    expect: { status: passed }
   - id: reporting-selection-admission-seal-native
     action: { verifier: api.golden.reporting-selection-admission-seal-native }
     expect: { status: passed }
