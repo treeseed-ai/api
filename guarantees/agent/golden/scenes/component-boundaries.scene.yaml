@@ -63,6 +63,18 @@ workflow:
   - id: workday-legacy-source-context-denial
     action: { verifier: api.golden.workday-legacy-source-context-denial }
     expect: { status: passed }
+  - id: workday-group-authority-required
+    action: { verifier: api.golden.workday-group-authority-required }
+    expect: { status: passed }
+  - id: workday-subscribed-autonomous-audience
+    action: { verifier: api.golden.workday-subscribed-autonomous-audience }
+    expect: { status: passed }
+  - id: workday-legacy-class-demand-denial
+    action: { verifier: api.golden.workday-legacy-class-demand-denial }
+    expect: { status: passed }
+  - id: workday-issued-plan-storage-custody
+    action: { verifier: api.golden.workday-issued-plan-storage-custody }
+    expect: { status: passed }
   - id: subscriber-cross-project-readback
     action: { verifier: api.golden.subscriber-cross-project-readback }
     expect: { status: passed }

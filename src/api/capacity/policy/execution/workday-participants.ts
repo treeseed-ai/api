@@ -21,62 +21,55 @@ export interface WorkdayParticipant {
 	id: string;
 }
 
-/** Resolve only cooperative planning profiles frozen into one workday.
- *
- * Reviewing, reporting, and chat already have concrete living-graph sources:
- * proposal/candidate authority, workday closing, and discussion messages.
- * Selecting them filters admission; it must not manufacture subjectless
- * work. Default planning includes estimating only where an exact selected
- * proposal supplies work for that agent; autonomous planning needs no proposal.
- */
-export function workdayParticipants(parameters: Row, options: { includeEstimated?: boolean } = {}): WorkdayParticipant[] {
-	const snapshots = record(parameters.agentProfilesByProjectId);
-	const selectedActivities = array(record(parameters.agentSelection).activityTypes).map(text).filter(Boolean);
-	const explicitActivitySelection = selectedActivities.length > 0;
-	const groups = array(parameters.groupIds).map(text);
-	const proposalsByProject = record(parameters.proposalsByProjectId);
-	const participants: WorkdayParticipant[] = [];
-	for (const [projectId, snapshotValue] of Object.entries(snapshots)) {
-		for (const entryValue of array(record(snapshotValue).agents)) {
-			const entry = record(entryValue);
-			const validation = validateAgentDefinitionModel(entry.definition);
-			if (!validation.ok || !validation.data) continue;
-			const frozenActivities = array(entry.activities).map(text).filter(Boolean) as Activity[];
-			const activities = (explicitActivitySelection ? frozenActivities : frozenActivities.filter((activity) =>
-				activity === 'planning' || activity === 'estimating'))
-				.filter((activity): activity is 'planning' | 'estimating' => activity === 'planning' || activity === 'estimating');
-			for (const activity of activities) {
-				if (!validation.data.activityProfiles[activity]) continue;
-				if (activity === 'planning') {
-						const proposals = (groups.length ? Object.values(proposalsByProject).flatMap(array)
-							: array(proposalsByProject[projectId])).map(record);
-						if (groups.length && proposals.length) for (const proposal of proposals) {
-							if (!array(proposal.groupIds).some(id => groups.includes(text(id))
-								&& validation.data!.groupIds?.includes(text(id)))) continue;
-						const proposalId = text(proposal.id);
-						if (proposalId) participants.push({ projectId, proposalId, definition: validation.data,
-							activity, id: `${projectId}/${validation.data.id}:planning:${proposalKey(proposalId)}` });
-					} else participants.push({ projectId, definition: validation.data,
-						activity, id: `${projectId}/${validation.data.id}:planning` });
-				}
-				else for (const proposalValue of Object.values(proposalsByProject).flatMap(array)) {
-					const proposal = record(proposalValue);
-					const contributions = proposal.schemaVersion === 'treeseed.proposal/v2';
-					if (contributions ? !array(proposal.groupIds).some(id => validation.data!.groupIds?.includes(text(id))
-						&& (!groups.length || groups.includes(text(id)))) : !array(proposalsByProject[projectId]).includes(proposalValue)) continue;
-					const proposalId = text(proposal.id);
-					const items = array(record(proposal.executionPlan).workItems).map(record);
-					const canEstimate = contributions || items.some(item => text(item.agentClass) === validation.data!.agentClass
-						&& (options.includeEstimated || Object.keys(record(item.estimate)).length === 0))
-						|| (validation.data.agentClass === 'reviewer' && items.some(item => item.review === 'required'
-							&& (options.includeEstimated || Object.keys(record(item.reviewEstimate)).length === 0)));
-					if (proposalId && canEstimate) participants.push({ projectId, proposalId,
-						definition: validation.data, activity, id: `${projectId}/${validation.data.id}:estimating:${proposalKey(proposalId)}` });
-				}
-			}
-		}
-	}
-	return participants.sort((left, right) => left.id.localeCompare(right.id));
+function frozenCooperativeAgents(parameters: Row) {
+ return Object.entries(record(parameters.agentProfilesByProjectId)).flatMap(([projectId, snapshot]) =>
+  array(record(snapshot).agents).flatMap(value => {
+   const entry = record(value), checked = validateAgentDefinitionModel(entry.definition);
+   if (!checked.ok || !checked.data) return [];
+   const activities = array(entry.activities).map(text).filter((activity): activity is WorkdayParticipant['activity'] =>
+    activity === 'planning' || activity === 'estimating');
+   return [{ projectId, definition: checked.data, activities }];
+  }));
+}
+
+/** New cooperative work comes only from the governed group audience. */
+export function workdayParticipants(parameters: Row): WorkdayParticipant[] {
+ const groups = array(parameters.groupIds).map(text).filter(Boolean);
+ if (!groups.length) return [];
+ const proposals = Object.values(record(parameters.proposalsByProjectId)).flatMap(array).map(record);
+ const selected = array(record(parameters.agentSelection).activityTypes).map(text);
+ const participants: WorkdayParticipant[] = [];
+ for (const agent of frozenCooperativeAgents(parameters)) {
+  if (!agent.definition.groupIds?.some(id => groups.includes(id))) continue;
+  for (const activity of agent.activities) {
+   if (!agent.definition.activityProfiles[activity] || selected.length && !selected.includes(activity)) continue;
+   const base = `${agent.projectId}/${agent.definition.id}:${activity}`;
+   if (activity === 'planning' && !proposals.length) participants.push({ projectId: agent.projectId, definition: agent.definition, activity, id: base });
+   else for (const proposal of proposals) {
+    if (proposal.schemaVersion !== 'treeseed.proposal/v2' || !text(proposal.id)
+     || !array(proposal.groupIds).some(id => groups.includes(text(id)) && agent.definition.groupIds?.includes(text(id)))) continue;
+    participants.push({ projectId: agent.projectId, definition: agent.definition, proposalId: text(proposal.id), activity, id: `${base}:${proposalKey(text(proposal.id))}` });
+   }
+  }
+ }
+ return participants.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+/** Decode only identities already declared in the immutable planning rounds.
+ * This is custody/cancellation history, never a source of new admission. */
+export function declaredWorkdayParticipants(parameters: Row, declaredIds: ReadonlySet<string>): WorkdayParticipant[] {
+ const proposals = new Set([...Object.keys(record(parameters.planningSourceByProposalId)),
+  ...Object.values(record(parameters.proposalsByProjectId)).flatMap(array).map(value => text(record(value).id))].filter(Boolean));
+ const found = new Map<string, WorkdayParticipant>();
+ for (const agent of frozenCooperativeAgents(parameters)) for (const activity of agent.activities) {
+  if (!agent.definition.activityProfiles[activity]) continue;
+  const base = `${agent.projectId}/${agent.definition.id}:${activity}`;
+  const identity = { projectId: agent.projectId, definition: agent.definition, activity };
+  const candidates = [...(activity === 'planning' ? [{ ...identity, id: base }] : []),
+   ...[...proposals].map(proposalId => ({ ...identity, proposalId, id: `${base}:${proposalKey(proposalId)}` }))];
+  for (const candidate of candidates) if (declaredIds.has(candidate.id)) found.set(candidate.id, candidate);
+ }
+ return [...found.values()].sort((left, right) => left.id.localeCompare(right.id));
 }
 
 /** Current closeout includes every subscribed reporting profile. A selector is retained issued-plan authority only. */

@@ -101,6 +101,26 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-denial-native.test.ts
     testName: "refuses fresh legacy proposal context hidden behind a Workday source without mutating retained authority"
+  api.golden.workday-group-authority-required:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/audience/current-admission.test.ts
+    testName: "requires group authority for new autonomous planning rather than treating an arbitrary snapshot as an audience"
+  api.golden.workday-subscribed-autonomous-audience:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/audience/current-admission.test.ts
+    testName: "admits only subscribed autonomous planners even when the frozen inventory contains another group"
+  api.golden.workday-legacy-class-demand-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/audience/current-admission.test.ts
+    testName: "never derives new estimator work from legacy class or privileged reviewer selectors"
+  api.golden.workday-issued-plan-storage-custody:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/contributions/issued-workday-custody.test.ts
+    testName: "original SQL graph storage retains the exact issued nodes edges and observations through role-free replay"
   api.golden.subscriber-cross-project-readback:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -4040,17 +4060,17 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
-    testName: "automatically admits only proposal work owners and Reviewer to estimating; autonomous planning remains valid"
+    testName: "admits every model group subscriber to estimation until genuine cohort completion"
   api.golden.estimating-missing-only:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
-    testName: "projects estimates only for missing owner and reviewer measurements"
+    testName: "does not treat populated item estimates as completed subscriber participation"
   api.golden.estimating-six-owners:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
-    testName: "projects six work-owner contributions, including multiple items for Engineer, and one Reviewer"
+    testName: "projects all seven subscribed contributors without manufacturing a privileged Reviewer dependency"
   api.golden.estimating-target-selection:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
