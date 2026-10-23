@@ -105,7 +105,7 @@ describe('team clone with shared-class profiles', () => {
 		expect((activeClass.handlerRefs as { agents: Array<Record<string, unknown>> }).agents.map((agent) => agent.groupIds))
 			.toEqual([['project-api'], ['project-api']]);
 		expect((activeClass.handlerRefs as { agents: Array<Record<string, unknown>> }).agents.map((agent) => agent.activityProfiles))
-			.toEqual(sourceFiles.map(({ value }) => ({
+			.toEqual(sourceFiles.map(({ definition: value }) => ({
 				chat: { handler: 'sdk/reviewer', permissions: { content: { read: ['knowledge'], write: ['discussion'] }, tools: ['discussion'] },
 					parameters: { reviewer: 'sdk/reviewer' }, prompt: { system: value.activityProfiles.chat.prompt.system } },
 				acting: { handler: 'sdk/reviewer', permissions: { content: { read: ['discussion'], write: ['discussion'] }, tools: ['discussion'] },
