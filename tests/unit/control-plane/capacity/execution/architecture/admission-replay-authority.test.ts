@@ -14,6 +14,20 @@ function replayStore() {
 }
 
 describe('immutable admission replay authority', () => {
+	it('identifies the rejected original assignment and differing authority fields without exposing authority values', async () => {
+		const { store, stored } = replayStore(), input = replayInput(replayAttempt());
+		input.assignment.graphRevision += 1;
+		input.assignment.effectiveProfile.parameters = { privateValue: 'must-not-appear-in-diagnostic' };
+		const before = structuredClone({ input, stored });
+		const error = await admitLivingExecutionAssignment(store, input).then(() => null, error => error);
+		expect(error).toMatchObject({ code: 'execution_assignment_idempotency_conflict', status: 409,
+			details: { assignmentId: input.assignment.id, nodeId: input.assignment.nodeId,
+				nodeRevision: input.assignment.nodeRevision, workdayId: input.assignment.workdayId,
+				retainedNodeId: stored.executionNodeId, retainedNodeRevision: stored.executionNodeRevision,
+				changedAuthorityFields: ['effectiveProfile', 'graphRevision'] } });
+		expect(JSON.stringify(error.details)).not.toContain('must-not-appear-in-diagnostic');
+		expect({ input, stored }).toEqual(before);
+	});
 	it('retains the exact concurrently committed admission after an absent first lookup and denies changed or missing late snapshots without writes', async () => {
 		for (const variant of ['exact', 'foreign-provider', 'changed-attempt', 'missing'] as const) {
 			const { store, stored } = replayStore(), input = replayInput(replayAttempt());

@@ -148,7 +148,9 @@ describe('initial living assignment native admission', () => {
 				for (const replay of await Promise.all([f.admit(input), f.admit(structuredClone(input))])) expect(replay.assignmentAttempt).toEqual(f.attempt);
 				const substituted = structuredClone(input); substituted.assignment.graphRevision = next.revision;
 				const heldSubstitution = structuredClone(substituted);
-				await expect(f.admit(substituted)).rejects.toMatchObject({ status: 409, code: 'execution_assignment_idempotency_conflict' });
+				await expect(f.admit(substituted)).rejects.toMatchObject({ status: 409, code: 'execution_assignment_idempotency_conflict',
+					details: { assignmentId: f.attempt.id, nodeId: node.id, retainedNodeId: node.id,
+						changedAuthorityFields: ['graphRevision'] } });
 				expect(substituted).toEqual(heldSubstitution); expect(input).toEqual(held); expect(await f.snapshot()).toEqual(retained);
 				previous = next;
 			}
