@@ -49,7 +49,13 @@ function adapt(sourceFile:SourceFile,source:Project,target:Project,sourceContent
 	frontmatter.id=`${target.slug}/${profile}`;
 	for(const key of ['name','purpose'] as const)if(typeof frontmatter[key]==='string')frontmatter[key]=replaceIdentityText(frontmatter[key] as string,source,target);
 	if(Array.isArray(frontmatter.responsibilities))frontmatter.responsibilities=frontmatter.responsibilities.map((item)=>typeof item==='string'?replaceIdentityText(item,source,target):item);
-	if(frontmatter.activityProfiles&&typeof frontmatter.activityProfiles==='object')frontmatter.activityProfiles=replacePromptText(frontmatter.activityProfiles,source,target);
+	if(frontmatter.activityProfiles&&typeof frontmatter.activityProfiles==='object'){
+		frontmatter.activityProfiles=Object.fromEntries(Object.entries(frontmatter.activityProfiles as Row).map(([activity,profile])=>{
+			if(!profile||typeof profile!=='object'||Array.isArray(profile))return [activity,profile];
+			const fields=profile as Row;
+			return [activity,Object.hasOwn(fields,'prompt')?{...fields,prompt:replacePromptText(fields.prompt,source,target)}:fields];
+		}));
+	}
 	const content=serializeFrontmatterDocument(frontmatter,replaceIdentityText(parsed.body,source,target));
 	const validation=validateAgentDefinitionModel(frontmatter);
 	if(!validation.ok)throw new CapacityOperationError(422,'agent_team_definition_invalid','The adapted agent definition is invalid.',{ projectId:target.id,path:sourceFile.path,diagnostics:validation.diagnostics });

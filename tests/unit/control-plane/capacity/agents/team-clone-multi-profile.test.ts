@@ -27,9 +27,14 @@ const digest = (value: string) => `sha256:${createHash('sha256').update(value).d
 const definition = (id: string, name: string, prompt: string) => ({
 	schemaVersion: 'treeseed.agent/v1', id, name, agentClass: 'engineer', purpose: `${name} purpose.`,
 	responsibilities: [`Support ${name}.`], capabilities: ['reasoning'], context: { include: ['project-objectives'] }, groupIds: ['project-api'],
-	activityProfiles: { chat: { handler: 'writer', permissions: {
-		content: { read: ['discussion'], write: ['discussion'] }, tools: ['discussion'],
-	}, prompt: { system: prompt } } },
+	activityProfiles: {
+		chat: { handler: 'sdk/reviewer', permissions: {
+			content: { read: ['sdk'], write: ['discussion'] }, tools: ['sdk/reviewer'],
+		}, parameters: { reviewer: 'sdk/reviewer' }, prompt: { system: prompt } },
+		reviewing: { handler: 'sdk/reviewer', permissions: {
+			content: { read: ['discussion'], write: ['discussion'] }, tools: ['sdk/reviewer'],
+		}, prompt: { system: `Review for ${name} in SDK.` } },
+	},
 });
 
 describe('team clone with shared-class profiles', () => {
@@ -99,6 +104,13 @@ describe('team clone with shared-class profiles', () => {
 			.toEqual(['target/operator-engineer', 'target/engineer']);
 		expect((activeClass.handlerRefs as { agents: Array<Record<string, unknown>> }).agents.map((agent) => agent.groupIds))
 			.toEqual([['project-api'], ['project-api']]);
+		expect((activeClass.handlerRefs as { agents: Array<Record<string, unknown>> }).agents.map((agent) => agent.activityProfiles))
+			.toEqual(sourceFiles.map(({ value }) => ({
+				chat: { handler: 'sdk/reviewer', permissions: { content: { read: ['sdk'], write: ['discussion'] }, tools: ['sdk/reviewer'] },
+					parameters: { reviewer: 'sdk/reviewer' }, prompt: { system: value.activityProfiles.chat.prompt.system } },
+				reviewing: { handler: 'sdk/reviewer', permissions: { content: { read: ['discussion'], write: ['discussion'] }, tools: ['sdk/reviewer'] },
+					prompt: { system: `Review for Target ${value.name.replace('SDK ', '')} in Target.` } },
+			})))
 		expect((activeClass.handlerRefs as { agents: Array<Record<string, unknown>> }).agents.map((agent) =>
 			((agent.activityProfiles as Record<string, { prompt: { system: string } }>).chat.prompt.system)))
 			.toEqual(['Keep operator instructions intact.', 'Keep engineer instructions intact.']);
