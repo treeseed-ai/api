@@ -11,12 +11,10 @@ import {
 	type ExecutionNode,
 	type ExactEntityReference,
 } from '@treeseed/sdk/agent-capacity';
-import { validatePortableContentData } from '@treeseed/sdk/content-validation';
 import type { DurableCapacityWorkdayRun } from '../../repositories/capacity/workdays/workday-run.ts';
 import type { WorkdayProject } from '../capacity/workdays/policy/workday-project-policy.ts';
 import { decodeExecutionNode } from '../../../control-plane/repositories/capacity/execution/execution-graph-storage.ts';
 import { CapacityGovernanceError } from '../../database.ts';
-import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
 import { selectAssignmentSourceRepository } from '../capacity/assignments/context/source-repository.ts';
 import { readExactProposal } from '../../../governance/executable-proposal.ts';
 import { workdayLineageSql } from '../capacity/workdays/scheduling/workday-continuation.ts';
@@ -205,24 +203,13 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 	if (source.store !== 'treedx' || !source.repository || !source.commit || !source.path) {
 		throw new CapacityGovernanceError('execution_node_source_invalid', `Node ${node.id} lacks exact proposal provenance.`, 409);
 	}
-	const owner = node.kind === 'planning' || node.kind === 'estimating' ? await store.getGovernanceProposal(source.id) : null;
-	const sourceProjectId = owner && text(owner.teamId, owner.team_id) === node.teamId ? text(owner.projectId, owner.project_id) : node.projectId;
-	const connection = await resolveKnowledgeGatewayConnection(store, {
-		projectId: sourceProjectId, write: false, relationPaths: true, readRefs: [source.commit],
-	});
-	if (!connection || connection.repositoryId !== source.repository) throw new CapacityGovernanceError(
-		'execution_node_source_repository_changed', `Node ${node.id} proposal repository changed.`, 409);
-	const response = record(await connection.client.readRepositoryFile({
-		repoId: source.repository, ref: source.commit, path: source.path,
-		encoding: 'utf8', parseFrontmatter: true, allowProtected: true,
-	}));
-	if (text(response.resolvedRef) !== source.commit) throw new CapacityGovernanceError(
-		'execution_node_source_moved', `Node ${node.id} proposal source moved.`, 409);
-	const file = record(response.file ?? (Array.isArray(response.files) ? response.files[0] : null));
-	const validation = validatePortableContentData('proposal', record(file.frontmatter));
-	if (!validation.ok) throw new CapacityGovernanceError('execution_node_source_invalid', `Node ${node.id} proposal is no longer valid.`, 409);
+	const owner = await store.getGovernanceProposal(source.id);
+	if (!owner || text(owner.teamId, owner.team_id) !== node.teamId) throw new CapacityGovernanceError(
+		'execution_node_source_invalid', `Node ${node.id} proposal is unavailable to this team.`, 409);
+	const sourceProjectId = text(owner.projectId, owner.project_id);
+	const exact = await readExactProposal(store, owner, source);
 	if (!node.workItemId && (node.kind === 'planning' || node.kind === 'estimating')) {
-		const proposal = record(validation.data);
+		const proposal = exact.definition;
 		const refs = [source, ...await canonicalProposalContextRefs(store, { ...node, projectId: sourceProjectId }, [
 			...array(proposal.objectiveRefs), ...array(proposal.evidenceRefs),
 			...(proposal.discussionRef ? [proposal.discussionRef] : []),
@@ -230,10 +217,10 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 		])];
 		return sourceProjectId !== node.projectId ? projectSourceContext(store, node, refs) : refs;
 	}
-	const workItems = array(record(record(validation.data).executionPlan).workItems).map(record);
+	const workItems = array(record(exact.definition.executionPlan).workItems).map(record);
 	const workItem = workItems.find((candidate) => text(candidate.id) === node.workItemId);
 	if (!workItem) throw new CapacityGovernanceError('execution_node_work_item_missing', `Node ${node.id} work item is missing.`, 409);
-	return array(workItem.contextRefs) as ExactEntityReference[];
+	return canonicalProposalContextRefs(store, { ...node, projectId: sourceProjectId }, array(workItem.contextRefs));
 }
 
 

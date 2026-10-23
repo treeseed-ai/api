@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: subscriber-execution-context-owner
+    action: { verifier: api.golden.subscriber-execution-context-owner }
+    expect: { ok: true }
   - id: decision-group-admission
     action: { verifier: api.golden.decision-group-admission }
     expect: { ok: true }

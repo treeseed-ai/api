@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.subscriber-execution-context-owner:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/contributions/proposal-source-context-native.test.ts
+    testName: "reads acting and reviewing context from the exact shared proposal owner while preserving worker identity and refusing foreign moved or corrupt authority"
   api.golden.decision-group-admission:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

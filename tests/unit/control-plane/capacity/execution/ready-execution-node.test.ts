@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { stringify } from 'yaml';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const gateway = vi.hoisted(() => ({ readRepositoryFile: vi.fn() }));
 vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({
@@ -18,27 +19,7 @@ const sourceRef = {
 };
 const decisionRef = { store: 'postgresql', model: 'decision', id: 'decision', revision: 1, digest: `sha256:${'c'.repeat(64)}` };
 const permissions = { content: { read: ['proposal', 'decision'], write: [] }, tools: ['source.read'] };
-it('reads shared planning proposal context through its owning project binding and refuses a foreign team', async () => {
-	for (const kind of ['planning', 'estimating']) for (const teamId of ['team', 'foreign-team']) {
-		vi.mocked(resolveKnowledgeGatewayConnection).mockImplementation(async (_store, input) => ({
-			repositoryId: input.projectId === 'ui' ? 'repository' : 'admin-library', client: gateway,
-		}) as never);
-		const proposal = readyProposal(), sharedGit = { store: 'git' as const, model: 'repository', id: 'ui-source', repository: 'treeseed-ai/ui', commit: 'e'.repeat(40) };
-		Object.assign(proposal, { id: 'proposal', projectId: 'ui', groupIds: ['portfolio-atlas'] });
-		Object.assign(proposal.executionPlan.workItems[0]!, { contextRefs: [sharedGit] });
-		gateway.readRepositoryFile.mockResolvedValue({ resolvedRef: sourceRef.commit, file: { frontmatter: proposal } });
-		const fetchImpl = vi.fn(async () => new Response('d'.repeat(40)));
-		const store = { getGovernanceProposal: async () => ({ id: 'proposal', projectId: 'ui', teamId }),
-			getProjectTreeDxLibrary: async () => ({ repositoryId: 'repository' }), config: { fetchImpl }, all: async () => [],
-			listHubRepositories: async () => [{ id: 'admin-source', role: 'software', provider: 'github', owner: 'treeseed-ai', name: 'admin', currentBranch: 'staging' }] };
-		const read = workItemContext(store, { id: 'shared-planning', projectId: 'admin', teamId: 'team',
-			kind, workItemId: null, sourceRef, requestedPermissions: permissions } as never);
-		if (teamId === 'team') expect(await read).toEqual([sourceRef, sharedGit, { store: 'git', model: 'repository',
-			id: 'admin-source', repository: 'treeseed-ai/admin', commit: 'd'.repeat(40) }]);
-		else await expect(read).rejects.toMatchObject({ code: 'execution_node_source_repository_changed' });
-	}
-	vi.mocked(resolveKnowledgeGatewayConnection).mockImplementation(async () => ({ repositoryId: 'repository', client: gateway }) as never);
-});
+
 function nodeRow(id = 'node', decisionId = 'decision') {
 	return {
 		id, team_id: 'team', project_id: projectId, work_item_id: 'implementation',
@@ -220,7 +201,7 @@ describe('direct ready-node admission input', () => {
 		const gitRef = { store: 'git', model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40) };
 		const objectiveRef = { store: 'treedx', model: 'objective', id: 'objective', repository: 'treeseed-ai/sdk-library',
 			commit: 'b'.repeat(40), path: 'objectives/core' };
-		gateway.readRepositoryFile.mockResolvedValueOnce({ resolvedRef: 'b'.repeat(40), file: { frontmatter: {
+		const proposal = {
 			schemaVersion: 'treeseed.proposal/v1', id: 'proposal', projectId, title: 'Governed planning',
 			request: 'Plan the exact accepted work.', summary: 'Use exact governed context.', status: 'draft',
 			objectiveRefs: [objectiveRef], executionPlan: { workItems: [{
@@ -229,13 +210,15 @@ describe('direct ready-node admission input', () => {
 				dependsOn: [], contextRefs: [gitRef], requestedPermissions: permissions, requiredCapabilities: ['source.read'],
 				acceptanceCriteria: ['Focused tests pass.'],
 			}] },
-		} } });
-		const refs = await workItemContext({ getGovernanceProposal: async () => ({ projectId, teamId: 'team' }), getProjectTreeDxLibrary: vi.fn(async () => ({
+		};
+		const content = `---\n${stringify(proposal)}---\n`, exactRef = { ...sourceRef, digest: `sha256:${createHash('sha256').update(content).digest('hex')}` };
+		gateway.readRepositoryFile.mockResolvedValueOnce({ resolvedRef: 'b'.repeat(40), file: { content, frontmatter: proposal } });
+		const refs = await workItemContext({ getGovernanceProposal: async () => ({ id: 'proposal', projectId, teamId: 'team' }), getProjectTreeDxLibrary: vi.fn(async () => ({
 			repositoryId: 'repository', contentRepositoryUrl: 'https://github.com/treeseed-ai/sdk-library.git',
 		})) } as never, {
-			teamId: 'team', projectId, id: kind, kind, pairRole: null, workItemId: null, sourceRef,
+			teamId: 'team', projectId, id: kind, kind, pairRole: null, workItemId: null, sourceRef: exactRef,
 		} as never);
-		expect(refs).toEqual([sourceRef, { ...objectiveRef, repository: 'repository' }, gitRef]);
+		expect(refs).toEqual([exactRef, { ...objectiveRef, repository: 'repository' }, gitRef]);
 	});
 
 	it('attaches a proposal work item exact Git source to proposal-bound communication', async () => {
