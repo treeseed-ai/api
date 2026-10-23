@@ -7,7 +7,7 @@ vi.mock('../../../../../../../src/api/knowledge/gateway-treedx-connection.ts', (
 }));
 import { resolveKnowledgeGatewayConnection } from '../../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { workItemContext } from '../../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
-import { readyContributionProposal } from '../../../../governance/proposals/architecture/ready-proposal-fixture.ts';
+import { readyContributionProposal, readyProposal } from '../../../../governance/proposals/architecture/ready-proposal-fixture.ts';
 const sourceRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
  digest: `sha256:${'a'.repeat(64)}`, repository: 'repository', commit: 'b'.repeat(40), path: 'proposals/one.mdx' };
 const permissions = { content: { read: ['proposal', 'decision'], write: [] }, tools: ['source.read'] };
@@ -33,4 +33,24 @@ it('reads shared planning proposal context through its owning project binding an
 		else await expect(read).rejects.toMatchObject({ code: 'execution_node_source_invalid' });
 	}
 	vi.mocked(resolveKnowledgeGatewayConnection).mockImplementation(async () => ({ repositoryId: 'repository', client: gateway }) as never);
+});
+
+it('uses the current proposal guard for Workday context without changing legacy bytes or frozen authority', async () => {
+	for (const legacy of [true, false]) {
+		const proposal = legacy ? readyProposal() : readyContributionProposal();
+		const content = `---\n${stringify(proposal)}---\n`, exact = { ...sourceRef,
+			digest: `sha256:${createHash('sha256').update(content).digest('hex')}` };
+		gateway.readRepositoryFile.mockResolvedValue({ resolvedRef: exact.commit, file: { content, frontmatter: proposal } });
+		const book = { ...exact, model: 'book', id: 'core', path: 'books/core.md' };
+		const parameters = { workdayContextByProjectId: { project: book }, planningSourceByProposalId: { proposal: exact } };
+		const before = structuredClone({ proposal, parameters });
+		const store = { first: async () => ({ parameters_json: JSON.stringify(parameters) }),
+			getGovernanceProposal: async () => ({ id: 'proposal', teamId: 'team', projectId: 'project' }),
+			getProjectTreeDxLibrary: async () => ({ repositoryId: 'repository' }) };
+		const read = workItemContext(store, { id: 'workday-planning', teamId: 'team', projectId: 'project',
+			kind: 'planning', workdayId: 'run', sourceRef: { store: 'postgresql', model: 'workday', id: 'run' } } as never);
+		if (legacy) await expect(read).rejects.toMatchObject({ code: 'execution_node_source_version_unsupported' });
+		else expect(await read).toEqual([book, exact]);
+		expect({ proposal, parameters }).toEqual(before);
+	}
 });

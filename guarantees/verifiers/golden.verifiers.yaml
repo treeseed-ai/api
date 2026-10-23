@@ -96,6 +96,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-native-readiness.test.ts
     testName: "admits bounded current subscriber content while rejecting named participant fields at exact source intake"
+  api.golden.workday-legacy-source-context-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-denial-native.test.ts
+    testName: "refuses fresh legacy proposal context hidden behind a Workday source without mutating retained authority"
   api.golden.subscriber-cross-project-readback:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

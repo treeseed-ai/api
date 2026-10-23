@@ -9,7 +9,7 @@ import { executionNodeRunScope, linearPredecessorSourceCommit, listReadyExecutio
 import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { replayAttempt } from './architecture/admission-replay-fixture.ts';
 import { candidate as governedCandidate } from './fixtures/assignment-attempt-fixtures.ts';
-import { readyProposal } from '../../governance/proposals/architecture/ready-proposal-fixture.ts';
+import { readyContributionProposal } from '../../governance/proposals/architecture/ready-proposal-fixture.ts';
 import { executionNodeSchema } from '@treeseed/sdk/agent-capacity';
 import { agentProfileReference } from '../../../../../src/api/capacity/policy/execution/agent-profile-reference.ts';
 const projectId = 'project';
@@ -126,7 +126,7 @@ const teamContextStore = {
 
 describe('direct ready-node admission input', () => {
 	it('retains frozen selected Proposal Git context for workday planning without following later proposal versions', async () => {
-		const definition = readyProposal(), git = contextRefs[0]!;
+		const definition = readyContributionProposal(), git = contextRefs[0]!;
 		Object.assign(definition.executionPlan.workItems[0]!, { contextRefs: [git] });
 		const bytes = 'controlled exact selected proposal bytes', digest = createHash('sha256').update(bytes).digest('hex');
 		const frozen = { ...sourceRef, digest: `sha256:${digest}` };

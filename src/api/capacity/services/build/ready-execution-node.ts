@@ -137,6 +137,13 @@ async function projectSourceContext(store: any, node: ExecutionNode, resolved: E
 	return resolved;
 }
 
+async function readExecutionProposal(store: any, owner: Row, source: ExactEntityReference) {
+	const exact = await readExactProposal(store, owner, source);
+	if (exact.definition.schemaVersion !== 'treeseed.proposal/v2') throw new CapacityGovernanceError(
+		'execution_node_source_version_unsupported', 'Fresh proposal work requires subscriber-owned group contributions; issued legacy attempts retain their original authority.', 409);
+	return exact;
+}
+
 export async function workItemContext(store: any, node: ExecutionNode): Promise<ExactEntityReference[]> {
 	const source = node.sourceRef;
 	if (node.kind === 'communication' && source.store === 'treedx' && source.repository && source.commit) {
@@ -193,7 +200,7 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 			if (!proposal || text(proposal.teamId ?? proposal.team_id) !== node.teamId) throw new CapacityGovernanceError(
 				'execution_node_workday_source_missing', `Node ${node.id} selected proposal is unavailable.`, 409);
 			if (text(proposal.projectId ?? proposal.project_id) !== node.projectId) continue;
-			const exact = await readExactProposal(store, proposal, reference as ExactEntityReference);
+			const exact = await readExecutionProposal(store, proposal, reference as ExactEntityReference);
 			const workItemRefs = array(record(exact.definition.executionPlan).workItems)
 				.flatMap(item => array(record(item).contextRefs));
 			resolved.push(exact.ref, ...await canonicalProposalContextRefs(store, node, workItemRefs));
@@ -207,9 +214,7 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 	if (!owner || text(owner.teamId, owner.team_id) !== node.teamId) throw new CapacityGovernanceError(
 		'execution_node_source_invalid', `Node ${node.id} proposal is unavailable to this team.`, 409);
 	const sourceProjectId = text(owner.projectId, owner.project_id);
-	const exact = await readExactProposal(store, owner, source);
-	if (exact.definition.schemaVersion !== 'treeseed.proposal/v2') throw new CapacityGovernanceError(
-		'execution_node_source_version_unsupported', 'Fresh proposal work requires subscriber-owned group contributions; issued legacy attempts retain their original authority.', 409);
+	const exact = await readExecutionProposal(store, owner, source);
 	if (!node.workItemId && (node.kind === 'planning' || node.kind === 'estimating')) {
 		const proposal = exact.definition;
 		const refs = [source, ...await canonicalProposalContextRefs(store, { ...node, projectId: sourceProjectId }, [

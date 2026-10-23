@@ -60,6 +60,9 @@ workflow:
   - id: subscriber-source-participant-denial
     action: { verifier: api.golden.subscriber-source-participant-denial }
     expect: { status: passed }
+  - id: workday-legacy-source-context-denial
+    action: { verifier: api.golden.workday-legacy-source-context-denial }
+    expect: { status: passed }
   - id: subscriber-cross-project-readback
     action: { verifier: api.golden.subscriber-cross-project-readback }
     expect: { status: passed }
