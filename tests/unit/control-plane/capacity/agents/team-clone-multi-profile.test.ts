@@ -29,10 +29,10 @@ const definition = (id: string, name: string, prompt: string) => ({
 	responsibilities: [`Support ${name}.`], capabilities: ['reasoning'], context: { include: ['project-objectives'] }, groupIds: ['project-api'],
 	activityProfiles: {
 		chat: { handler: 'sdk/reviewer', permissions: {
-			content: { read: ['sdk'], write: ['discussion'] }, tools: ['sdk/reviewer'],
+			content: { read: ['knowledge'], write: ['discussion'] }, tools: ['discussion'],
 		}, parameters: { reviewer: 'sdk/reviewer' }, prompt: { system: prompt } },
-		reviewing: { handler: 'sdk/reviewer', permissions: {
-			content: { read: ['discussion'], write: ['discussion'] }, tools: ['sdk/reviewer'],
+		acting: { handler: 'sdk/reviewer', permissions: {
+			content: { read: ['discussion'], write: ['discussion'] }, tools: ['discussion'],
 		}, prompt: { system: `Review for ${name} in SDK.` } },
 	},
 });
@@ -106,9 +106,9 @@ describe('team clone with shared-class profiles', () => {
 			.toEqual([['project-api'], ['project-api']]);
 		expect((activeClass.handlerRefs as { agents: Array<Record<string, unknown>> }).agents.map((agent) => agent.activityProfiles))
 			.toEqual(sourceFiles.map(({ value }) => ({
-				chat: { handler: 'sdk/reviewer', permissions: { content: { read: ['sdk'], write: ['discussion'] }, tools: ['sdk/reviewer'] },
+				chat: { handler: 'sdk/reviewer', permissions: { content: { read: ['knowledge'], write: ['discussion'] }, tools: ['discussion'] },
 					parameters: { reviewer: 'sdk/reviewer' }, prompt: { system: value.activityProfiles.chat.prompt.system } },
-				reviewing: { handler: 'sdk/reviewer', permissions: { content: { read: ['discussion'], write: ['discussion'] }, tools: ['sdk/reviewer'] },
+				acting: { handler: 'sdk/reviewer', permissions: { content: { read: ['discussion'], write: ['discussion'] }, tools: ['discussion'] },
 					prompt: { system: `Review for Target ${value.name.replace('SDK ', '')} in Target.` } },
 			})))
 		expect((activeClass.handlerRefs as { agents: Array<Record<string, unknown>> }).agents.map((agent) =>
