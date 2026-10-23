@@ -53,10 +53,16 @@ function fixture(activity: 'planning' | 'estimating') {
 }
 
 describe('every subscriber must own an estimate before approval', () => {
+	it('refuses approval when a configured contributor prerequisite has no contribution in the group plan', async () => {
+		const f = fixture('estimating'), agent = f.agents[0]!;
+		Object.assign(agent.activityProfiles, { acting: { ...agent.activityProfiles.acting,
+			dependsOn: { agents: ['unsubscribed-expert'] } } });
+		expect(await governanceProposalReadinessMethod.call(f.store as never, 'proposal')).toMatchObject({ votingReady: false, executionPlanReady: false });
+	});
 	it('keeps execution readiness false when actual contributor profile dependencies create a cycle despite complete estimates', async () => {
 		const f = fixture('estimating');
 		for (const [index, agent] of f.agents.entries()) Object.assign(agent.activityProfiles, {
-			acting: { ...agent.activityProfiles.acting, dependsOn: { agents: [f.agents[1 - index]!.id] } },
+			acting: { ...agent.activityProfiles.acting, dependsOn: { agents: [f.agents[1 - index]!.id.split('/').at(-1)!] } },
 		});
 		expect(await governanceProposalReadinessMethod.call(f.store as never, 'proposal')).toMatchObject({
 			votingReady: false, executionPlanReady: false,

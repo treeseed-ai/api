@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: contribution-prerequisite-readiness
+    action: { verifier: api.golden.contribution-prerequisite-readiness }
+    expect: { status: passed }
   - id: contribution-cross-project-identity
     action: { verifier: api.golden.contribution-cross-project-identity }
     expect: { status: passed }

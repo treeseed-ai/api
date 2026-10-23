@@ -281,6 +281,9 @@ export function projectTeamExecutionGraph(input: {
 						fromNodeId: predecessor.id, toNodeId: actor.id, provenance: 'profile-agent', sourceRef }, input.revision));
 				}
 				if (!dependencyItems.length) {
+					if (contributions) throw Object.assign(new Error(`Contributor ${profile.definition.id} requires a contribution from ${dependencyClass} before approval.`), {
+						code: 'execution_profile_dependency_missing',
+					});
 					const conditionId = deterministicId('node', [source.teamId,source.projectId,sourceRef.id,
 						sourceRef.revision,text(workItem.id),'missing-agent',dependencyClass]);
 					if (!nodes.some((candidate) => candidate.id === conditionId)) nodes.push(executionNodeSchema.parse({

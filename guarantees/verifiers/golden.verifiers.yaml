@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.contribution-prerequisite-readiness:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/contributions/readiness.test.ts
+    testName: "refuses approval when a configured contributor prerequisite has no contribution in the group plan"
   api.golden.contribution-cross-project-identity:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
