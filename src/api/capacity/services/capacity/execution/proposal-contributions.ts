@@ -87,4 +87,3 @@ export async function loadProposalGroupContributions(store: ControlPlaneStore, p
 	return { missing, current: missing.length === 0, attempts: [...completedAttempts.values()], profiles,
 		independent: [...completed].some(key => required.get(key)!.id !== text(proposal.createdById)) };
 }
-
