@@ -3,6 +3,7 @@ import { appliedWorkdaySchema, executionEdgeSchema, executionNodeSchema,
 	type AgentDefinition, type ExecutionEdge, type ExecutionNode, type ExactEntityReference } from '@treeseed/sdk/agent-capacity';
 import { workdayParticipants, selectWorkdayReportingAgent, type WorkdayParticipant } from './workday-participants.ts';
 import { modelTurnEstimate } from './model-turn-estimate.ts';
+import { agentProfileReference } from './agent-profile-reference.ts';
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
@@ -141,7 +142,7 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 					teamId: input.teamId, projectId, workdayId: workday.id, kind: activity, pairRole: null,
 					...(activity === 'estimating' && !contributions && definition.agentClass !== 'reviewer' && workItem.length === 1
 						? { workItemId: text(workItem[0]?.id) } : {}),
-					sourceRef: nodeSource, authorityRefs: [reference], ruleRevision: 1, nodeRevision: 1,
+					sourceRef: nodeSource, authorityRefs: [reference, agentProfileReference(definition)], ruleRevision: 1, nodeRevision: 1,
 						agentClass: definition.agentClass,
 					status: obsolete ? 'cancelled' : activity === 'estimating' && proposalStatus
 						&& !['draft', 'submitted', 'open'].includes(proposalStatus)
@@ -212,7 +213,7 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 			}
 		}
 		const selectedReporter = selectWorkdayReportingAgent(Object.entries(input.profiles).flatMap(([key, definition]) =>
-			projectIds.filter(projectId => key === `${projectId}:${definition.agentClass}`).map(projectId => ({ projectId, definition }))), workday.reportingAgentId);
+			projectIds.filter(projectId => key.startsWith(`${projectId}:`)).map(projectId => ({ projectId, definition }))), workday.reportingAgentId);
 		if (selectedReporter) {
 			const { projectId, definition: reporter } = selectedReporter;
 			if (workday.reportingAgentId !== undefined) {
@@ -224,7 +225,7 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 			const reporterId = `reporting:${workday.id}:${projectId}/${reporter.id}`;
 			const report = executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1', id: reporterId,
 				teamId: input.teamId, projectId, workdayId: workday.id, kind: 'reporting', pairRole: null,
-				sourceRef: reference, authorityRefs: [reference], ruleRevision: 1, nodeRevision: 1, agentClass: reporter.agentClass,
+				sourceRef: reference, authorityRefs: [reference, agentProfileReference(reporter)], ruleRevision: 1, nodeRevision: 1, agentClass: reporter.agentClass,
 				status: 'blocked', estimate: { expectedSeconds: 5, maximumSeconds: 30 },
 				// Reporting is deterministic, but admission still requires a provider that
 				// explicitly offers the standard reporting execution capability.

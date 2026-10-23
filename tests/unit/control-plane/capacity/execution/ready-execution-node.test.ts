@@ -10,6 +10,7 @@ import { replayAttempt } from './architecture/admission-replay-fixture.ts';
 import { candidate as governedCandidate } from './fixtures/assignment-attempt-fixtures.ts';
 import { readyProposal } from '../../governance/proposals/architecture/ready-proposal-fixture.ts';
 import { executionNodeSchema } from '@treeseed/sdk/agent-capacity';
+import { agentProfileReference } from '../../../../../src/api/capacity/policy/execution/agent-profile-reference.ts';
 const projectId = 'project';
 const sourceRef = {
 	store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
@@ -42,7 +43,7 @@ function nodeRow(id = 'node', decisionId = 'decision') {
 	return {
 		id, team_id: 'team', project_id: projectId, work_item_id: 'implementation',
 		kind: 'acting', pair_role: 'actor', source_ref_json: sourceRef,
-		authority_refs_json: [{ ...decisionRef, id: decisionId }],
+		authority_refs_json: [{ ...decisionRef, id: decisionId }, agentProfileReference(definition as never)],
 		rule_revision: 1, node_revision: 1, agent_class: 'engineer', status: 'ready',
 		estimate_json: { expectedSeconds: 120, maximumSeconds: 180 },
 		required_capabilities_json: ['code-change'], requested_permissions_json: permissions,
@@ -343,7 +344,7 @@ describe('direct ready-node admission input', () => {
 		const failed = { ...result, id: 'failed-result', assignmentId: 'failed-assignment', status: 'failed' };
 		const store = { ...teamContextStore, all: vi.fn()
 			.mockResolvedValueOnce([{ ...nodeRow(), kind: 'reporting', pair_role: null,
-				workday_id: 'run', agent_class: 'reporter', authority_refs_json: [], workspace: 'treedx' }])
+				workday_id: 'run', agent_class: 'reporter', authority_refs_json: [agentProfileReference(reporter as never)], workspace: 'treedx' }])
 			.mockResolvedValueOnce([classRow(reporter, 'class-reporter')])
 			.mockResolvedValueOnce([{ assignment_result_json: failed }, { assignment_result_json: result }]) };
 		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
@@ -419,7 +420,7 @@ describe('direct ready-node admission input', () => {
 			resolvedRef: agentCommit, file: { path: agentPath, frontmatter: reviewer },
 		});
 		const node = { ...nodeRow(), kind: 'reviewing', pair_role: 'reviewer', agent_class: 'reviewer',
-			workspace: 'treedx', requested_permissions_json: reviewPermissions };
+			workspace: 'treedx', requested_permissions_json: reviewPermissions, authority_refs_json: [decisionRef, agentProfileReference(reviewer as never)] };
 		const createStore = (grants: unknown[]) => ({ ...teamContextStore, all: vi.fn()
 			.mockResolvedValueOnce([node])
 			.mockResolvedValueOnce([classRow(reviewer, 'class-reviewer')])
@@ -458,7 +459,7 @@ describe('direct ready-node admission input', () => {
 			...nodeRow('planning:run:1:project/agent:planning'),
 			workday_id: 'run', work_item_id: null, kind: 'planning', pair_role: null,
 			source_ref_json: { store: 'postgresql', model: 'workday', id: 'run', revision: 1, digest: `sha256:${'f'.repeat(64)}` },
-			authority_refs_json: [{ store: 'postgresql', model: 'workday', id: 'run', revision: 1, digest: `sha256:${'f'.repeat(64)}` }],
+			authority_refs_json: [{ store: 'postgresql', model: 'workday', id: 'run', revision: 1, digest: `sha256:${'f'.repeat(64)}` }, agentProfileReference(definition as never)],
 			agent_class: 'engineer', workspace: 'treedx',
 		};
 		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([planning])
@@ -472,7 +473,7 @@ describe('direct ready-node admission input', () => {
 	it('fails closed when the exact activity profile is unavailable', async () => {
 		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([nodeRow()]).mockResolvedValueOnce([]) };
 		await expect(listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs))
-			.rejects.toMatchObject({ code: 'execution_node_agent_profile_missing' });
+			.rejects.toMatchObject({ code: 'execution_node_agent_identity_ambiguous' });
 	});
 
 	it('passes the prior exact Reviewer result to a revised Actor node', async () => {

@@ -6,6 +6,30 @@ const { projectWorkdays } = vi.hoisted(() => ({ projectWorkdays: vi.fn() }));
 vi.mock('../../../../../../src/api/capacity/policy/execution/workday-execution-projector.ts', () => ({ projectActiveWorkdays: projectWorkdays }));
 
 describe('project-scoped reconciliation during another project workday', () => {
+	it('indexes every configured subscriber by identity and refuses duplicate identities without a class winner', async () => {
+		const definition = (name: string) => ({ schemaVersion: 'treeseed.agent/v1', id: `sdk/${name}`, name,
+			agentClass: 'maintenance', purpose: 'Contribute bounded portfolio work.', responsibilities: ['Respond to governed work.'],
+			capabilities: ['reasoning'], context: { include: ['project'] }, groupIds: ['portfolio'], activityProfiles: {
+				chat: { handler: 'writer', permissions: { content: { read: ['discussion'], write: ['discussion'] }, tools: [] },
+					prompt: { system: `Answer the governed portfolio request as ${name}.` } },
+			} });
+		const first = definition('technical-writer'), second = definition('tester');
+		projectWorkdays.mockReturnValue({ nodes: [], edges: [], changedSourceRefs: [] });
+		for (const agents of [[first, second], [first, first]]) {
+			const store = { all: async (sql: string) => sql.includes('FROM project_agent_classes')
+				? [{ project_id: 'sdk', handler_refs_json: { agents } }]
+				: sql.includes('FROM capacity_workday_runs') ? [{ id: 'workday', team_id: 'team', parameters_json: { appliedPlan: {} } }] : [],
+				first: async () => null };
+			const pending = reconcileExecutionGraph(store, 'team', { plan: true });
+			if (agents[0] === agents[1]) await expect(pending).rejects.toMatchObject({ code: 'agent_profile_conflict' });
+			else {
+				await pending;
+				expect(projectWorkdays).toHaveBeenLastCalledWith(expect.objectContaining({ profiles: {
+					'sdk:sdk/technical-writer': first, 'sdk:sdk/tester': second,
+				} }));
+			}
+		}
+	});
 	it('keeps workday projection authoritative even when its source is a proposal', async () => {
 		const sourceRef = { store: 'treedx' as const, model: 'proposal', id: 'golden-sdk', revision: 1,
 			digest: `sha256:${'a'.repeat(64)}`, repository: 'sdk-library', commit: 'b'.repeat(40), path: 'proposals/golden.mdx' };

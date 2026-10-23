@@ -100,7 +100,7 @@ async function readGraph(store: any, teamId: string): Promise<TeamGraph> {
 
 async function loadProfiles(store: any, teamId: string): Promise<Record<string, AgentDefinition>> {
 	const rows = await store.all(`SELECT project_id,handler_refs_json FROM project_agent_classes
-		WHERE team_id = ? AND status = 'active' ORDER BY project_id,id`, [teamId]);
+		WHERE team_id = ? ORDER BY project_id,id`, [teamId]);
 	const profiles: Record<string, AgentDefinition> = {};
 	for (const row of rows) for (const candidate of array(record(row.handler_refs_json).agents)) {
 		const validation = validateAgentDefinitionModel(candidate);
@@ -108,9 +108,9 @@ async function loadProfiles(store: any, teamId: string): Promise<Record<string, 
 			new CapacityOperationError(409, 'agent_profile_invalid', 'An active project agent class does not contain a valid minimal agent definition.'),
 			{ diagnostics: validation.diagnostics },
 		);
-		const key = `${text(row.project_id)}:${validation.data.agentClass}`;
-		if (profiles[key] && stable(profiles[key]) !== stable(validation.data)) {
-			throw new CapacityOperationError(409, 'agent_profile_conflict', `Project ${row.project_id} has conflicting ${validation.data.agentClass} definitions.`);
+		const key = `${text(row.project_id)}:${validation.data.id}`;
+		if (profiles[key]) {
+			throw new CapacityOperationError(409, 'agent_profile_conflict', `Project ${row.project_id} has duplicate ${validation.data.id} identities.`);
 		}
 		profiles[key] = validation.data;
 	}

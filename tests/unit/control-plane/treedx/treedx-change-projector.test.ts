@@ -5,7 +5,9 @@ const { reconcileExecutionGraph, resolveKnowledgeGatewayConnection, snapshotAgen
 }));
 vi.mock('../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts', () => ({ reconcileExecutionGraph }));
 vi.mock('../../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({ resolveKnowledgeGatewayConnection }));
-vi.mock('../../../../src/api/capacity/services/capacity/agents/agent-definition-snapshot.ts', () => ({ snapshotAgentDefinitions }));
+vi.mock('../../../../src/api/capacity/services/capacity/agents/agent-definition-snapshot.ts', async importOriginal => ({
+	...await importOriginal<object>(), snapshotAgentDefinitions,
+}));
 
 import { projectTreeDxCommitSignals } from '../../../../src/api/capacity/services/treedx/repositories/treedx-change-projector.ts';
 
@@ -62,5 +64,24 @@ describe('TreeDX change projection', () => {
 		expect(store.run).toHaveBeenCalledWith(expect.stringContaining('UPDATE project_agent_classes'), expect.arrayContaining([
 			'SDK Reviewer', expect.stringContaining('sdk/reviewer'), expect.stringContaining(`"immutableRef":"${'d'.repeat(40)}"`),
 		]));
+	});
+	it('publishes all subscribers in one allocation class without overwriting a peer or class allocation settings', async () => {
+		const store = database(), files = ['writer', 'tester'].map((name, index) => ({ path: `agents/${name}.mdx`,
+			sourceDigest: `sha256:${String(index + 1).repeat(64)}`, definition: {
+				id: `project/${name}`, name, agentClass: 'maintenance', groupIds: ['portfolio'],
+			} }));
+		store.all.mockResolvedValue([{ id: 'class-maintenance', slug: 'maintenance', name: 'Maintenance', status: 'active',
+			metadata_json: { allocation: 'preserved', definitionDigest: 'obsolete-single-agent-digest' } }] as never);
+		resolveKnowledgeGatewayConnection.mockResolvedValue({ baseRef: 'refs/heads/staging' });
+		snapshotAgentDefinitions.mockResolvedValue({ commit: 'd'.repeat(40), files });
+		await projectTreeDxCommitSignals(store as never, { projectId: 'project-1', commitSha: 'd'.repeat(40),
+			changedPaths: files.map(file => file.path), changeSummary: 'Publish shared-class subscribers.', actorType: 'user' });
+		const writes = store.run.mock.calls.filter(([sql]) => String(sql).includes('UPDATE project_agent_classes')) as unknown as Array<[string, unknown[]]>;
+		expect(writes).toHaveLength(1);
+		const values = writes[0]![1];
+		expect(values[0]).toBe('Maintenance');
+		expect(JSON.parse(String(values[1]))).toEqual({ agents: [files[1]!.definition, files[0]!.definition] });
+		expect(JSON.parse(String(values[2]))).toEqual({ source: 'project-library', immutableRef: 'd'.repeat(40),
+			libraryRef: 'refs/heads/staging', allocation: 'preserved', definitionPaths: ['agents/tester.mdx', 'agents/writer.mdx'] });
 	});
 });

@@ -3,7 +3,7 @@ import { CapacityGovernanceError } from '../../../database.ts';
 import { enqueueTreeDxCommitReplication } from './treedx-commit-replication.ts';
 import { reconcileExecutionGraph } from '../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
-import { snapshotAgentDefinitions } from '../../capacity/agents/agent-definition-snapshot.ts';
+import { agentDefinitionClasses, snapshotAgentDefinitions } from '../../capacity/agents/agent-definition-snapshot.ts';
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {
@@ -25,21 +25,21 @@ async function projectAgentDefinitions(database: CapacityGovernanceDatabase, inp
 	const project = await database.first('SELECT team_id FROM projects WHERE id=? LIMIT 1', [input.projectId]);
 	if (!project?.team_id) throw new CapacityGovernanceError('agent_profile_project_missing',
 		'Published agent definitions require an active project.', 409, { projectId: input.projectId });
-	for (const file of snapshot.files) {
-		const slug = file.definition.agentClass;
+	for (const group of agentDefinitionClasses(snapshot.files)) {
+		const { slug } = group;
 		const existing = classes.find((entry) => String(entry.slug ?? '') === slug && entry.status === 'active')
 			?? classes.find((entry) => String(entry.slug ?? '') === slug);
-		const metadata = { ...record(existing?.metadata_json ?? existing?.metadata), source: 'project-library', immutableRef: input.commitSha,
-				libraryRef: input.immutableRef ?? connection.baseRef, definitionPaths: [file.path],
-				definitionDigest: file.sourceDigest.replace(/^sha256:/u, '') };
+		const metadata: Row = { ...record(existing?.metadata_json ?? existing?.metadata), source: 'project-library', immutableRef: input.commitSha,
+				libraryRef: input.immutableRef ?? connection.baseRef, definitionPaths: group.definitionPaths };
+		delete metadata.definitionDigest;
 		const now = new Date().toISOString();
 		if (existing) await database.run(`UPDATE project_agent_classes SET name=?,status='active',handler_refs_json=?,metadata_json=?,updated_at=?
-			WHERE id=? AND project_id=?`, [file.definition.name, JSON.stringify({ agents: [file.definition] }), JSON.stringify(metadata), now,
+			WHERE id=? AND project_id=?`, [String(existing.name ?? group.name), JSON.stringify(group.handlerRefs), JSON.stringify(metadata), now,
 			String(existing.id), input.projectId]);
 		else await database.run(`INSERT INTO project_agent_classes
 			(id,team_id,project_id,slug,name,status,handler_refs_json,metadata_json,created_at,updated_at)
 			VALUES (?,?,?,?,?,'active',?,?,?,?)`, [`${input.projectId}:${slug}`, String(project.team_id), input.projectId, slug,
-			file.definition.name, JSON.stringify({ agents: [file.definition] }), JSON.stringify(metadata), now, now]);
+			group.name, JSON.stringify(group.handlerRefs), JSON.stringify(metadata), now, now]);
 	}
 }
 

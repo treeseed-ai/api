@@ -14,7 +14,7 @@ import { projectTreeDxCommitSignals } from '../../../treedx/repositories/treedx-
 import { recordTreeDxAuthoringState } from '../../../treedx/repositories/treedx-authoring-journal.ts';
 import { authorizeCapacityTeam,type CapacityPrincipal } from '../../../../../control-plane/repositories/capacity/capacity-authorization.ts';
 import { CapacityOperationError } from '../../../../../control-plane/repositories/capacity/capacity-operation-error.ts';
-import { snapshotAgentDefinitions, type AgentDefinitionSourceFile } from '../agent-definition-snapshot.ts';
+import { agentDefinitionClasses, snapshotAgentDefinitions, type AgentDefinitionSourceFile } from '../agent-definition-snapshot.ts';
 
 type Row = Record<string,unknown>;
 type Project = { id:string; slug:string; name:string; status?:string };
@@ -87,18 +87,24 @@ async function readExisting(value:KnowledgeGatewayConnection,commit:string,paths
 	return new Map(fileRows(response).filter((file)=>typeof file.content==='string').map((file)=>[text(file.path),String(file.content)]));
 }
 async function classes(store:any,projectId:string):Promise<Row[]>{const page=await store.listProjectAgentClassesPage(projectId,{limit:200,cursor:null});return Array.isArray(page?.items)?page.items.map(record):[];}
-function projectionMatches(entries:Row[],definitions:ReturnType<typeof adapt>[],commit:string){return definitions.every((item)=>entries.some((entry)=>
-	text(entry.slug)===item.agentClass&&entry.status==='active'&&text(record(entry.metadata).immutableRef)===commit
-	&&stable(classAgents(entry))===stable([validateAgentDefinitionModel(parseFrontmatterDocument(item.content).frontmatter).data])));}
+function projectedClasses(definitions:ReturnType<typeof adapt>[]){return agentDefinitionClasses(definitions.map(item=>{
+	const validation=validateAgentDefinitionModel(parseFrontmatterDocument(item.content).frontmatter);
+	if(!validation.ok||!validation.data)throw new CapacityOperationError(422,'agent_team_definition_invalid','The cloned agent definition cannot be activated.');
+	return {path:item.path,definition:validation.data};
+}));}
+function projectionMatches(entries:Row[],definitions:ReturnType<typeof adapt>[],commit:string){return projectedClasses(definitions).every(group=>entries.some(entry=>
+	text(entry.slug)===group.slug&&entry.status==='active'&&text(record(entry.metadata).immutableRef)===commit
+	&&stable(classAgents(entry))===stable(group.handlerRefs.agents)
+	&&stable(record(entry.metadata).definitionPaths)===stable(group.definitionPaths)));}
 async function activateDefinitions(store:any,target:Project,definitions:ReturnType<typeof adapt>[],commit:string,libraryRef:string,idempotencyKey:string){
 	const entries=await classes(store,target.id);
-	for(const item of definitions){
-		const validation=validateAgentDefinitionModel(parseFrontmatterDocument(item.content).frontmatter);
-		if(!validation.ok||!validation.data)throw new CapacityOperationError(422,'agent_team_definition_invalid','The cloned agent definition cannot be activated.');
-		const existing=entries.find((entry)=>text(entry.slug)===item.agentClass&&entry.status==='active')??entries.find((entry)=>text(entry.slug)===item.agentClass);
-		const input={slug:item.agentClass,name:validation.data.name,status:'active',handlerRefs:{agents:[validation.data]},metadata:{...record(existing?.metadata),source:'project-library',immutableRef:commit,libraryRef,definitionPaths:[item.path],definitionDigest:item.digest.replace(/^sha256:/u,'')}};
-		if(existing)await store.updateProjectAgentClass(target.id,text(existing.id),input,`${idempotencyKey}:${target.id}:${item.agentClass}:update`);
-		else await store.createProjectAgentClass(target.id,{id:`${target.id}:${item.agentClass}`,...input},`${idempotencyKey}:${target.id}:${item.agentClass}:create`);
+	for(const group of projectedClasses(definitions)){
+		const existing=entries.find(entry=>text(entry.slug)===group.slug&&entry.status==='active')??entries.find(entry=>text(entry.slug)===group.slug);
+		const metadata:Row={...record(existing?.metadata),source:'project-library',immutableRef:commit,libraryRef,definitionPaths:group.definitionPaths};
+		delete metadata.definitionDigest;
+		const input={slug:group.slug,name:text(existing?.name)||group.name,status:'active',handlerRefs:group.handlerRefs,metadata};
+		if(existing)await store.updateProjectAgentClass(target.id,text(existing.id),input,`${idempotencyKey}:${target.id}:${group.slug}:update`);
+		else await store.createProjectAgentClass(target.id,{id:`${target.id}:${group.slug}`,...input},`${idempotencyKey}:${target.id}:${group.slug}:create`);
 	}
 }
 

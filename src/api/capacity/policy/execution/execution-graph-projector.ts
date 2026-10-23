@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { agentProfileReference } from './agent-profile-reference.ts';
 import {
 	executionNodeSchema,
 	graphRevisionSchema,
@@ -80,11 +81,13 @@ function decisionRef(source: ExecutableProposalSource): ExactEntityReference | n
 }
 
 function profileFor(profiles: Record<string, AgentDefinition>, projectId: string, agentClass: string, activity: 'acting' | 'reviewing') {
-	const profile = profiles[`${projectId}:${agentClass}`]?.activityProfiles[activity];
+	const matches = Object.entries(profiles).filter(([key, definition]) => key.startsWith(`${projectId}:`) && definition.agentClass === agentClass);
+	if (matches.length !== 1) throw Object.assign(new Error(`Historical agent class ${agentClass} is not a unique contributor.`), { code: 'execution_profile_ambiguous' });
+	const definition = matches[0]![1], profile = definition.activityProfiles[activity];
 	if (!profile) throw Object.assign(new Error(`Agent class ${agentClass} has no ${activity} profile.`), {
 		code: 'execution_profile_missing', agentClass, activity,
 	});
-	return profile;
+	return { ...profile, agentReference: agentProfileReference(definition) };
 }
 
 function requestedPermissions(workItem: Row, profile: ReturnType<typeof profileFor>, pairRole: 'actor' | 'reviewer') {
@@ -137,7 +140,7 @@ function workNode(input: {
 		teamId: input.source.teamId, projectId: input.source.projectId,
 		workItemId: itemId, kind, pairRole: input.pairRole, sourceRef,
 		...(input.workItem.priority !== undefined ? { priority: input.workItem.priority } : {}),
-		authorityRefs: authority ? [authority] : [],
+		authorityRefs: [...(authority ? [authority] : []), input.profile.agentReference],
 		ruleRevision: RULE_REVISION, nodeRevision: 1, agentClass,
 		status: authority ? 'blocked' : 'proposed',
 		estimate, requiredCapabilities: input.pairRole === 'reviewer'

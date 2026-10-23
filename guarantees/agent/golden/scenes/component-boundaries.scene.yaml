@@ -3,6 +3,15 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: subscriber-identity-binding
+    action: { verifier: api.golden.subscriber-identity-binding }
+    expect: { status: passed }
+  - id: subscriber-profile-native
+    action: { verifier: api.golden.subscriber-profile-native }
+    expect: { status: passed }
+  - id: shared-class-publication
+    action: { verifier: api.golden.shared-class-publication }
+    expect: { status: passed }
   - id: subscriber-contribution-ownership
     action: { verifier: api.golden.subscriber-contribution-ownership }
     expect: { status: passed }

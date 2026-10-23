@@ -1,6 +1,21 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.subscriber-identity-binding:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/agents/execution-node-profile.test.ts
+    testName: "binds the addressed subscriber among peers sharing a class and rejects missing conflicting or moved identity authority"
+  api.golden.subscriber-profile-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/subscriber-profile-native.test.ts
+    testName: "native governed shared-class subscribers retain both YAML profiles through publication group discovery and exact addressed execution binding"
+  api.golden.shared-class-publication:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/treedx-change-projector.test.ts
+    testName: "publishes all subscribers in one allocation class without overwriting a peer or class allocation settings"
   api.golden.subscriber-contribution-ownership:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

@@ -75,7 +75,7 @@ describe('workday living-graph projection', () => {
 		const held=structuredClone(input),graph=projectActiveWorkdays(input);
 		expect(graph.nodes.map(n=>n.id).sort()).toEqual([...first.assignmentIds,...second.assignmentIds].sort());
 		for(const prior of retainedNodes)expect(graph.nodes.find(n=>n.id===prior.id)).toEqual(prior);
-		for(const node of graph.nodes.filter(n=>second.assignmentIds.includes(n.id))){expect(node).toMatchObject({kind:'estimating',status:'cancelled',workdayId:plan.id,sourceRef:reference});expect(node.authorityRefs).toHaveLength(1);expect(node.authorityRefs![0]).toMatchObject({store:'postgresql',model:'workday',id:plan.id});}
+		for(const node of graph.nodes.filter(n=>second.assignmentIds.includes(n.id))){expect(node).toMatchObject({kind:'estimating',status:'cancelled',workdayId:plan.id,sourceRef:reference});expect(node.authorityRefs).toHaveLength(2);expect(node.authorityRefs![0]).toMatchObject({store:'postgresql',model:'workday',id:plan.id});expect(node.authorityRefs![1]).toMatchObject({store:'postgresql',model:'agent',digest:expect.stringMatching(/^sha256:/u)});}
 		expect(validateExecutionGraph(graph.nodes,graph.edges)).toMatchObject({ok:true});expect(input).toEqual(held);
 		// Existing nodes OR original attempts must never be reclassified by recovery.
 		expect(()=>projectActiveWorkdays({...input,issuedNodeIds:[...first.assignmentIds,...second.assignmentIds]})).toThrow('Missing original node for an issued planning turn');
