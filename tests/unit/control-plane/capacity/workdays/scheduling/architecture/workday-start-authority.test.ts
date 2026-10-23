@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { acceptedLibraryRevision, canonicalWorkdayShares } from '../../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-scheduling-service.ts';
 import { parsePublicWorkdayIntent } from '../../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-preflight-service.ts';
-const intent = { schemaVersion: 'treeseed.workday-intent/v1', teamId: 'team', profileId: 'default', projects: ['project'],
+const intent = { schemaVersion: 'treeseed.workday-intent/v1', teamId: 'team', profileId: 'default', projects: ['project'], groupIds: ['portfolio-runtime'],
 	executionMode: 'simulation', startsAt: '2026-10-03T00:00:00.000Z', durationSeconds: 60, planningOnly: true };
 
 describe('first-start compiler authority before native admission', () => {
