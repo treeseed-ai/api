@@ -26,9 +26,14 @@ vi.mock('../../../../src/api/capacity/services/treedx/repositories/treedx-author
 }));
 vi.mock('../../../../src/api/realtime/session-events.ts', () => ({ persistSessionEvent: vi.fn(async () => undefined) }));
 
-import { commitDiscussionMessage } from '../../../../src/api/discussions/content.ts';
+import { commitDiscussionMessage, mentionedAgentSlugs } from '../../../../src/api/discussions/content.ts';
 
 describe('canonical Discussion authoring', () => {
+	it('keeps qualified cross-project mentions in their addressed project only', () => {
+		const message = '@api/engineer @platform/architect @tester Coordinate the real portfolio repair.';
+		expect(mentionedAgentSlugs(message, 'platform')).toEqual(['architect', 'tester']);
+		expect(mentionedAgentSlugs(message, 'api')).toEqual(['engineer', 'tester']);
+	});
 	it('commits a new thread and message with an exact same-changeset Discussion reference', async () => {
 		mocks.commit.mockResolvedValue({ commitSha: 'a'.repeat(40), branchName: 'refs/heads/staging',
 			changedPaths: ['discussions/chat-1.mdx', 'discussion-messages/chat-1/message-1.mdx'] });

@@ -64,8 +64,9 @@ function assertDiscussionContent(path: string, source: string) {
 	});
 }
 
-export function mentionedAgentSlugs(body: string) {
-	return parseCommunicationAddresses(body).map((address) => address.agentSlug);
+export function mentionedAgentSlugs(body: string, projectSlug?: string) {
+	return parseCommunicationAddresses(body).filter(address => !address.projectSlug || address.projectSlug === projectSlug)
+		.map((address) => address.agentSlug);
 }
 
 export async function loadDiscussions(input: {
@@ -192,7 +193,7 @@ export async function loadDiscussions(input: {
 }
 
 export async function commitDiscussionMessage(input: {
-	store: any; projectId: string; teamId: string; principal: Row & { name?: string }; body: string;
+	store: any; projectId: string; projectSlug?: string; teamId: string; principal: Row & { name?: string }; body: string;
 	lookupWorkday?: (teamId: string, workdayId: string) => Promise<{ executionMode: string } | null>;
 	intent: 'discuss' | 'propose'; discussionId?: string; topic?: string; fileRefs?: unknown[]; contextRefs?: AgentAtlasContextReference[];
 	authorType?: 'user' | 'agent' | 'system'; messageId?: string;
@@ -225,7 +226,7 @@ export async function commitDiscussionMessage(input: {
 	const discussionId = text(input.discussionId, randomUUID());
 	const messageId = text(input.messageId, randomUUID());
 	const topic = text(input.topic, input.body.replace(/\s+/gu, ' ').slice(0, 96));
-	const mentions = mentionedAgentSlugs(input.body);
+	const mentions = mentionedAgentSlugs(input.body, input.projectSlug);
 	const recipients = [...new Set((input.recipients ?? []).map((value) => text(value)).filter(Boolean))];
 	const mentionedAgents = input.authorType === 'agent'
 		? mentions.filter((agentId) => recipients.includes(agentId))

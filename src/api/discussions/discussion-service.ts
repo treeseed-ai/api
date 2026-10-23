@@ -179,7 +179,7 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 					parentWorkdayId,
 					lookupWorkday: (teamId, workdayId) => invocationStore.getCapacityWorkdayRun(teamId, workdayId),
 					createDiscussion: !text(body.discussionId) || (body.createDiscussion === true && existing.discussions.length === 0), topic: text(record(existing.discussions[0]?.frontmatter).topic) || text(body.topic) || undefined,
-					fileRefs: Array.isArray(body.fileRefs) ? body.fileRefs : [], contextRefs,
+					projectSlug: text(project.slug, project.id), fileRefs: Array.isArray(body.fileRefs) ? body.fileRefs : [], contextRefs,
 					recipients: Array.isArray(body.recipients) ? body.recipients.map(String) : [],
 					inboxIntent: ['comment', 'answer', 'reply'].includes(text(body.inboxIntent)) ? body.inboxIntent as 'comment'|'answer'|'reply' : undefined,
 					replyTo: text(body.replyTo) || undefined, ...(continuation ?? {}) });
