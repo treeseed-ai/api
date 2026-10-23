@@ -54,8 +54,9 @@ describe('governed activity lifecycle projection', () => {
 		expect(graph.edges).toContainEqual(expect.objectContaining({ fromNodeId: condition!.id,
 			toNodeId: planning.id, provenance: 'profile-event' }));
 		expect(reconcile(graph).nodes.find(node => node.id === planning.id)?.status).toBe('blocked');
-		expect(reconcile(project([profile('planner', { reporting: false, planningClosing: true })], 'closing'))
-			.nodes.find(node => node.id === planning.id)?.status).toBe('ready');
+		const closing = reconcile(project([profile('planner', { reporting: false, planningClosing: true })], 'closing'));
+		expect(closing.nodes.find(node => node.id === condition!.id)?.status).toBe('completed');
+		expect(closing.nodes.find(node => node.id === planning.id)?.status).toBe('cancelled');
 	});
 
 	it('does not manufacture reporting work for disabled profiles or mutate governed profile bytes', () => {

@@ -6,6 +6,11 @@ vi.mock('../../../../../../src/api/capacity/services/capacity/assignments/lifecy
 	reconcileAssignmentContent: vi.fn(async () => undefined),
 }));
 import { advanceLivingWorkday } from '../../../../../../src/api/capacity/services/capacity/workdays/lifecycle/living-workday-lifecycle.ts';
+import { profile } from '../graph/architecture/workday-profile-fixture.ts';
+
+const definition = { ...profile('researcher', { reporting: false }), id: 'researcher', groupIds: ['research-work'] };
+const audience = { groupIds: ['research-work'], scheduledProjectIds: ['project'],
+	agentProfilesByProjectId: { project: { agents: [{ definition, activities: ['planning'] }] } } };
 
 const plan = { ...compileWorkday({ id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 4,
 	executionMode: 'simulation', policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 3600, planningPercent: 100 / 3,
@@ -16,7 +21,7 @@ describe('planning round admission before an authoritative boundary', () => {
 	it('repeats beyond two planning rounds without duplicating an active turn or refreshing the original policy and deadline', async () => {
 		let run: DurableCapacityWorkdayRun = { id: plan.id, teamId: plan.teamId, capacityProviderId: 'provider',
 			scenarioId: 'repeated-planning', status: 'running', environment: 'test', executionMode: 'simulation',
-			executionKind: 'workday', requestedById: 'operator', parameters: { appliedPlan: structuredClone(plan), planningOnly: true },
+			executionKind: 'workday', requestedById: 'operator', parameters: { ...audience, appliedPlan: structuredClone(plan), planningOnly: true },
 			summary: {}, metrics: {}, expected: {}, actual: {}, reportRefs: {}, error: {}, startedAt: plan.startsAt,
 			completedAt: null, createdAt: plan.startsAt, updatedAt: plan.startsAt };
 		const store = { ensureInitialized: vi.fn<CapacityGovernanceDatabase['ensureInitialized']>(),
@@ -28,7 +33,8 @@ describe('planning round admission before an authoritative boundary', () => {
 			// These are supplied UNIT node outcomes, not managed executions.
 			const rounds = appliedWorkdaySchema.parse(current).planningRounds;
 			const now = new Date(Date.parse(plan.startsAt) + ordinal * 1_000).toISOString();
-			store.all.mockResolvedValue(rounds.flatMap(round => round.assignmentIds.map(id => ({ id, kind: 'planning', status: 'completed' }))));
+			store.all.mockImplementation(async (sql: string) => sql.includes('FROM execution_nodes')
+				? rounds.flatMap(round => round.assignmentIds.map(id => ({ id, kind: 'planning', status: 'completed' }))) : []);
 			store.updateCapacityWorkdayRun.mockResolvedValue(run);
 			const result = await advanceLivingWorkday(store, run, now);
 			expect(run).toEqual(before);
@@ -40,8 +46,9 @@ describe('planning round admission before an authoritative boundary', () => {
 			expect(result.plan.policySnapshot).toEqual(plan.policySnapshot);
 			run = { ...run, parameters: { ...run.parameters, appliedPlan: result.plan } };
 			const held = structuredClone(run);
-			store.all.mockResolvedValue(result.plan.planningRounds.flatMap(round => round.assignmentIds.map(id =>
-				({ id, kind: 'planning', status: round.round === ordinal ? 'ready' : 'completed' }))));
+			store.all.mockImplementation(async (sql: string) => sql.includes('FROM execution_nodes')
+				? result.plan.planningRounds.flatMap(round => round.assignmentIds.map(id =>
+					({ id, kind: 'planning', status: round.round === ordinal ? 'ready' : 'completed' }))) : []);
 			expect(await advanceLivingWorkday(store, run, now)).toEqual({ changed: false, plan: result.plan, status: 'running' });
 			expect(run).toEqual(held);
 		}
@@ -55,9 +62,9 @@ describe('planning round admission before an authoritative boundary', () => {
 		['last seconds of workday', '2026-10-01T21:05:00.000Z', false],
 	] as const)('%s preserves deadlines and creates only usable new rounds', async (_label, now, admitted) => {
 		const run = { id: 'workday', teamId: 'team', status: 'running', completedAt: null, reportRefs: {},
-			parameters: { appliedPlan: plan } };
-		const store = { all: vi.fn(async () => plan.planningRounds.flatMap(round => round.assignmentIds
-			.map(id => ({ id, kind: 'planning', status: 'completed' })))), updateCapacityWorkdayRun: vi.fn(async () => run) };
+			parameters: { ...audience, appliedPlan: plan } };
+		const store = { first: vi.fn(async () => null), all: vi.fn(async (sql: string) => sql.includes('FROM execution_nodes') ? plan.planningRounds.flatMap(round => round.assignmentIds
+			.map(id => ({ id, kind: 'planning', status: 'completed' }))) : []), updateCapacityWorkdayRun: vi.fn(async () => run) };
 		const result = await advanceLivingWorkday(store as never, run as never, now);
 		expect(result.plan.planningRounds).toHaveLength(admitted ? 2 : 1);
 		expect(result.plan.startsAt).toBe(plan.startsAt);

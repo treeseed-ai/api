@@ -9,6 +9,7 @@ schemaVersion: treeseed.agent/v1
 id: project/${agentClass}
 name: Configured ${agentClass}
 agentClass: ${agentClass}
+groupIds: [lifecycle-work]
 purpose: Produce the assigned governed contribution.
 responsibilities: [Complete only the assigned work.]
 capabilities: [treeseed.coordination.reporting]
@@ -39,7 +40,7 @@ export function project(profiles: AgentDefinition[], state: 'active' | 'closing'
 	return projectActiveWorkdays({ teamId: 'team', revision: 1,
 		profiles: Object.fromEntries(profiles.map(definition => [`project:${definition.agentClass}`, definition])),
 		sources: [{ id: plan.id, teamId: 'team', parameters: { appliedPlan: { ...plan, state },
-			scheduledProjectIds: ['project'], agentProfilesByProjectId: { project: { agents: participants } } } }] });
+			groupIds: ['lifecycle-work'], scheduledProjectIds: ['project'], agentProfilesByProjectId: { project: { agents: participants } } } }] });
 }
 
 export const emptyGraph = (): TeamGraph => ({ teamId: 'team', revision: 0, digest: '', nodes: [], edges: [] });

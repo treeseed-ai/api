@@ -5,7 +5,7 @@ import pg from 'pg';
 import { CapacityWorkdayScheduleService, serializeWorkdaySchedule } from '../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-schedule-service.ts';
 import { WorkdayPreflightService } from '../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-preflight-service.ts';
 
-const intent = { schemaVersion: 'treeseed.workday-intent/v1', teamId: 'team', profileId: 'default', projects: ['sdk'],
+const intent = { schemaVersion: 'treeseed.workday-intent/v1', teamId: 'team', profileId: 'default', projects: ['sdk'], groupIds: ['sdk-work'],
 	startsAt: '2026-09-17T00:00:00.000Z', durationSeconds: 600, executionMode: 'production',
 	allocation: { planningPercent: 20, allocationWeight: 2, projectPercentages: { sdk: 100 } } };
 const row = () => ({ id: 'schedule', team_id: 'team', status: 'active', purpose: 'Useful work', intent_json: JSON.stringify(intent),
@@ -68,7 +68,10 @@ describe('native PostgreSQL recurring-intent migration', () => {
 			await pool.query(`INSERT INTO capacity_workday_schedules VALUES ('schedule','team','provider','paused','Useful work','["sdk"]','{}',600,600,1,600,'{}',0,'{}',NULL,'2026-09-17T00:00:00.000Z',1,'prior','prior')`);
 			await pool.query(readFileSync('drizzle/control-plane/0034_recurring_workday_canonical_intent.sql', 'utf8'));
 			const saved = (await pool.query('SELECT * FROM capacity_workday_schedules')).rows[0];
-			expect(serializeWorkdaySchedule(saved)).toMatchObject({ id: 'schedule', status: 'paused', intent: { projects: ['sdk'], durationSeconds: 600, operatorConstraints: { providerIds: ['provider'], maxConcurrency: 1 } } });
+			expect(saved).toMatchObject({ id: 'schedule', status: 'paused' });
+			expect(JSON.parse(String(saved.intent_json))).toMatchObject({ projects: ['sdk'], durationSeconds: 600, operatorConstraints: { providerIds: ['provider'], maxConcurrency: 1 } });
+			// Historical unscoped bytes survive migration but cannot become fresh admission.
+			expect(() => serializeWorkdaySchedule(saved)).toThrow('Workday intent is invalid');
 			for (const retired of ['time_policy_json', 'available_seconds', 'publication_policy_json', 'planning_only']) expect(saved).not.toHaveProperty(retired);
 		} finally {
 			await pool?.end(); await admin.query(`DROP DATABASE IF EXISTS "${name}"`); await admin.end();

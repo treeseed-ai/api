@@ -40,8 +40,8 @@ it('native governed shared-class subscribers retain both YAML profiles through p
 		await projectTreeDxCommitSignals(f.store, signal);
 		const classes = await f.store.all('SELECT * FROM project_agent_classes WHERE project_id=? ORDER BY id', [source.projectId]);
 		const shared = classes.filter(row => row.slug === 'maintenance'); expect(shared).toHaveLength(1);
-		expect(object(shared[0]!.handler_refs_json).agents).toEqual(definitions);
-		expect(object(shared[0]!.metadata_json).definitionPaths).toEqual(paths);
+		expect(object(JSON.parse(String(shared[0]!.handler_refs_json))).agents).toEqual(definitions);
+		expect(object(JSON.parse(String(shared[0]!.metadata_json))).definitionPaths).toEqual(paths);
 		const repository = new ProjectAgentClassRepository(f.store);
 		const selected = await resolveWorkdayAgentProfileSnapshot({ listProjectAgentClassesPage: (id, page) =>
 			repository.listPage(id, { ...page, cursor: null }) }, source.projectId, undefined, ['native-shared-team']);
@@ -61,7 +61,7 @@ it('native governed shared-class subscribers retain both YAML profiles through p
 		expect(await snapshotAgentDefinitions(connection, source.commit)).toEqual(baseline);
 		await projectTreeDxCommitSignals(f.store, signal);
 		const replayed = await f.store.all('SELECT * FROM project_agent_classes WHERE project_id=? AND slug=?', [source.projectId, 'maintenance']);
-		expect(object(replayed[0]!.handler_refs_json)).toEqual(object(shared[0]!.handler_refs_json));
+		expect(JSON.parse(String(replayed[0]!.handler_refs_json))).toEqual(JSON.parse(String(shared[0]!.handler_refs_json)));
 		// Actual native TreeDX, owning PostgreSQL, group discovery and exact profile
 		// read-back. No agent/model execution, assignment or measured usage claimed.
 	} finally { await f.close(); }

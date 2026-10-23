@@ -203,7 +203,9 @@ describe('native publication to owning scheduler candidate input', () => {
 			const published = await f.publish(), before = await f.snapshot();
 			expect(graphNode(published.graph, 'first', 'actor', 'dependent').status).toBe('blocked');
 			expect(await f.ready()).toEqual([]); expect(await f.snapshot()).toEqual(before);
-			expect(before.assignments).toEqual([]); expect(before.reservations).toEqual([]); expect(before.ledger).toEqual([]);
+			expect(before.assignments.map(row => row.id).sort()).toEqual(f.sources.flatMap(source => source.estimatingAttempts!.map(attempt => attempt.id)).sort());
+			expect(before.assignments.every(row => row.mode === 'planning' && row.status === 'completed')).toBe(true);
+			expect(before.reservations).toEqual([]); expect(before.ledger).toEqual([]);
 		} finally { await f.close(); }
 	}, 60_000);
 	it('actual original graph SQL and native exact profile proposal reads retain both cross-project Actor and Reviewer results despite distinct accepted Decision ownership', async () => {
