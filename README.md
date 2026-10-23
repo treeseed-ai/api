@@ -34,6 +34,20 @@ Cookie-authenticated browser mutations cross the Admin same-origin proxy, which 
 
 ## Runtime Services
 
+Team discussion addresses resolve names and governed group memberships across
+the complete project-agent inventory. An unqualified `@name` addresses every
+matching project agent or group member; `@project/name` preserves the project
+qualification. Overlapping addresses deduplicate by project and actual agent
+identity, with required participation taking precedence. Allocation class,
+handler, enabled activity and class status do not silently remove an addressed
+member. Admission checks authority separately and reports denial explicitly.
+Invalid addressed definitions and incomplete inventory fail explicitly.
+
+Project-local discussion projection preserves qualified recipients. It must not
+strip another project's prefix and invoke an unrelated local agent. This fixes
+the discussion audience boundary only; removing class-based workday/estimate
+and paired-review selection remains a required linked architecture correction.
+
 Railway builds backend services from this package root:
 
 ```text

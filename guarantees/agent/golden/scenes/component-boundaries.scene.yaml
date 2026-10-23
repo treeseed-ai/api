@@ -3002,6 +3002,12 @@ workflow:
   - id: project-topic-discussion-scope
     action: { verifier: api.golden.project-topic-discussion-scope }
     expect: { status: passed }
+  - id: group-mention-audience
+    action: { verifier: api.golden.group-mention-audience }
+    expect: { status: passed }
+  - id: qualified-mention-scope
+    action: { verifier: api.golden.qualified-mention-scope }
+    expect: { status: passed }
 
   - id: simulation-proposal-frozen-contract
     action: { verifier: api.golden.simulation-proposal-frozen-contract }

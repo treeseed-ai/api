@@ -5070,6 +5070,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/communication/discussion-supply-postgres.test.ts
     testName: "uses reported capability lanes rather than the retired materialized lane owner"
+  api.golden.group-mention-audience:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/audience/group-targets-postgres.test.ts
+    testName: "resolves exact group members and shared names from real PostgreSQL without changing inventory"
+  api.golden.qualified-mention-scope:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/discussions/discussion-content-cutover.test.ts
+    testName: "keeps qualified cross-project mentions in their addressed project only"
 
   api.golden.simulation-proposal-frozen-contract:
     kind: vitestCase
