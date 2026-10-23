@@ -8,6 +8,7 @@ import { splitPostgresSqlStatements } from '../../../../../../src/api/persistenc
 import { loadProposalGroupContributions } from '../../../../../../src/api/capacity/services/capacity/execution/proposal-contributions.ts';
 import { projectTeamExecutionGraph } from '../../../../../../src/api/capacity/policy/execution/execution-graph-projector.ts';
 import { effectiveProfile } from '../../../../../../src/api/capacity/services/build/execution-node-profile.ts';
+import { loadTeamExecutableProposalSources } from '../../../../../../src/api/capacity/services/capacity/execution/executable-proposal-source.ts';
 
 describe('own contribution through owning SQL public HTTP client and native Git', () => {
 	it('reads actual estimator source and stored attempt ownership while preserving a concurrent peer through moved denied and altered-source observations', async () => {
@@ -67,19 +68,20 @@ describe('own contribution through owning SQL public HTTP client and native Git'
 			await f.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,handler_refs_json,metadata_json,created_at,updated_at)
 				VALUES (?,?,?,?,?,?,?,?,?)`, ['maintenance', 'team', 'project', 'maintenance', 'Maintenance', JSON.stringify({ agents: definitions }),
 				JSON.stringify({ source: 'project-library', immutableRef: frozen.commit, definitionPaths: definitions.map(definition => `agents/${definition.name}.mdx`) }), original.createdAt, original.createdAt]);
-			for (const { assignment, result } of inputs) await f.query(`INSERT INTO audit_events
-				(id,actor_type,event_type,target_type,target_id,data_json,created_at) VALUES (?,?,?,?,?,?,?)`,
-				[`integrated-${assignment.id}`, 'service', 'assignment.content.integrated', 'capacity_provider_assignment', assignment.id,
-					JSON.stringify({ resultId: result.id, references: result.references }), original.createdAt]);
 			const store = { ...f.store, ensureInitialized: async () => {}, listTeamProjects: async () => [{ id: 'project' }] };
+			for (const [index, { assignment, result }] of inputs.entries()) {
+				await f.query(`INSERT INTO audit_events (id,actor_type,event_type,target_type,target_id,data_json,created_at) VALUES (?,?,?,?,?,?,?)`,
+					[`integrated-${assignment.id}`, 'service', 'assignment.content.integrated', 'capacity_provider_assignment', assignment.id,
+						JSON.stringify({ resultId: result.id, references: result.references }), original.createdAt]);
+				if (!index) expect(await loadTeamExecutableProposalSources(store, 'team')).toEqual([]);
+			}
 			const verified = await loadProposalGroupContributions(store as never, { id: 'proposal', teamId: 'team', projectId: 'project' }, current);
 			expect(verified.current).toBe(true); expect(verified.attempts).toHaveLength(2);
-			const row = proposal.metadata_json as string, provenance = JSON.parse(row).contentProvenance;
+			const sources = await loadTeamExecutableProposalSources(store, 'team'); expect(sources).toHaveLength(1);
+			expect(sources[0]!.estimatingAttempts).toEqual(verified.attempts);
 			const graph = projectTeamExecutionGraph({ teamId: 'team', revision: 1,
 				profiles: Object.fromEntries(definitions.map(definition => [`project:${definition.id}`, definition])) as never,
-				sources: [{ teamId: 'team', projectId: 'project', repository: 'repository', path, commit: provenance.commitSha,
-					digest: `sha256:${provenance.digest}`, proposalRevision: Number(proposal.active_version), frontmatter: current,
-					estimatingAttempts: verified.attempts, decision: null }] });
+				sources });
 			for (const node of graph.nodes.filter(node => node.kind === 'acting' || node.kind === 'reviewing')) {
 				const bound = await effectiveProfile(store, node);
 				expect(bound.profile.profileRef.id).toBe(node.authorityRefs!.find(ref => ref.model === 'agent')!.id);
