@@ -3041,6 +3041,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-authority.test.ts
     testName: "denies review evidence produced before admission or after the returned result"
+  api.golden.architecture-decision-review-native-continuation:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-native.test.ts
+    testName: "binds a simulation continuation review to its exact ancestor candidate and denies unrelated work"
   api.golden.architecture-decision-review-native-complete:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

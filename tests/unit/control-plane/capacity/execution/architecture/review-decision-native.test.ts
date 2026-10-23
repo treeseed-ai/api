@@ -23,17 +23,41 @@ async function nativeReview() {
 			project_agent_class_id,mode,status,execution_node_id,execution_node_revision,assignment_result_json,completed_at,created_at,updated_at)
 			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, ['actor-assignment', 'membership', 'team', 'project', 'provider',
 				'arbitrary-author', 'acting', 'completed', 'actor-node', 1, JSON.stringify(actorResult()), actorResult().completedAt, assignedAt, assignedAt]);
-		const resolve = (commit: string, otherCommit?: string) => {
+		const resolve = (commit: string, otherCommit?: string, assignment = reviewAssignment()) => {
 			const result = reviewResult(commit);
 			if (otherCommit) result.references.push({ kind: 'treedx', projectId: 'project', repository: 'repository',
 				commit: otherCommit, path: 'decisions/review-two.mdx', workspaceId: 'workspace' });
-			return resolveReviewDisposition(fixture.store as unknown as CapacityGovernanceDatabase, reviewAssignment(), result);
+			return resolveReviewDisposition(fixture.store as unknown as CapacityGovernanceDatabase, assignment, result);
 		};
 		return { ...fixture, resolve };
 	} catch (error) { await fixture.close(); throw error; }
 }
 
 describe('native classed work-review authority', () => {
+	it('binds a simulation continuation review to its exact ancestor candidate and denies unrelated work', async () => {
+		const fixture = await nativeReview();
+		try {
+			for (const [id, team, parameters] of [['prior', 'team', {}], ['next', 'team', { continueFromWorkdayId: 'prior' }],
+				['unrelated', 'team', {}], ['foreign', 'other', {}]]) {
+				await fixture.query(`INSERT INTO capacity_workday_runs (id,team_id,status,parameters_json,created_at,updated_at)
+					VALUES (?,?,?,?,?,?)`, [id, team, 'completed', JSON.stringify(parameters), assignedAt, assignedAt]);
+			}
+			const assignment = reviewAssignment(); assignment.executionMode = 'simulation'; assignment.workDayId = 'next';
+			const source = fixture.publishContent('decisions/review-one.mdx', reviewDecision());
+			for (const parent of ['prior', 'next', 'unrelated', 'foreign']) {
+				await fixture.query('UPDATE capacity_provider_assignments SET work_day_id=? WHERE id=?', [parent, 'actor-assignment']);
+				const before = await fixture.snapshot();
+				if (['prior', 'next'].includes(parent)) {
+					expect(await Promise.all([fixture.resolve(source.commit, undefined, assignment), fixture.resolve(source.commit, undefined, assignment)]))
+						.toEqual(['approved', 'approved']);
+				} else await expect(fixture.resolve(source.commit, undefined, assignment)).rejects.toMatchObject({ code: 'review_candidate_reference_missing' });
+				expect(await fixture.snapshot()).toEqual(before);
+			}
+			await fixture.query('UPDATE capacity_provider_assignments SET work_day_id=?,assignment_result_json=? WHERE id=?',
+				['prior', JSON.stringify({ ...actorResult(), id: 'unassigned-result' }), 'actor-assignment']);
+			await expect(fixture.resolve(source.commit, undefined, assignment)).rejects.toMatchObject({ code: 'review_candidate_reference_missing' });
+		} finally { await fixture.close(); }
+	});
 	it('reads exact committed authority, approval and vote evidence repeatedly and concurrently without mutation', async () => {
 		const fixture = await nativeReview();
 		try {
