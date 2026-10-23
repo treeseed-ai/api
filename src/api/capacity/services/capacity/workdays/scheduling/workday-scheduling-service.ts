@@ -217,6 +217,7 @@ export async function preflightCapacityWorkdayRun(store: WorkdayScheduleStore, r
 		ok: true,
 		teamId: run.teamId,
 		providerId: resolved.providerId,
+		groupIds: resolved.parameters.groupIds,
 		projects: resolved.projects.map((project) => ({
 			id: project.id,
 			slug: project.slug ?? project.id,

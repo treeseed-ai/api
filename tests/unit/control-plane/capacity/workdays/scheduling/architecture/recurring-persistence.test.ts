@@ -20,7 +20,7 @@ async function recurrence() {
 			createCapacityWorkdayRun: async () => { guarded.push('create'); throw new Error('Unrelated initial admission is outside this receipt-replay fixture'); },
 			preflightCapacityWorkdayRunRequest: async () => { guarded.push('preflight'); throw new Error('Unrelated preflight is outside this receipt-replay fixture'); } };
 		const service = new CapacityWorkdayScheduleService(store), intent = { schemaVersion: 'treeseed.workday-intent/v1', teamId: 'team', profileId: 'default',
-			projects: ['project'], executionMode: 'simulation', startsAt: '2026-10-02T21:00:00.000Z', durationSeconds: 60,
+			projects: ['project'], groupIds: ['portfolio-runtime'], executionMode: 'simulation', startsAt: '2026-10-02T21:00:00.000Z', durationSeconds: 60,
 			planningOnly: true, allocation: { allocationWeight: 1, planningPercent: 20 }, operatorConstraints: { providerIds: ['provider'], maxConcurrency: 1 } };
 		const create = (id = 'schedule') => service.create('team', { id, purpose: 'Governed recurrence', intent, cadenceSeconds: 60, nextRunAt: intent.startsAt });
 		const seedReceipt = async (scheduleId = 'schedule') => {

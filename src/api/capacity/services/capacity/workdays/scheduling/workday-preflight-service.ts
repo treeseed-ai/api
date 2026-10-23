@@ -212,6 +212,7 @@ export class WorkdayPreflightService {
 		// Freeze the existing complete profile authority, including every closeout
 		// contributor, before creation can observe a changed group or definition.
 		record(runInput.parameters).agentProfilesByProjectId=projection.agentProfilesByProjectId;
+		record(runInput.parameters).groupIds=projection.groupIds;
 		const profileGeneration=integer(appliedPlan.policyRevision,1);
 		const state:WorkdayPreflightObservation={
 			profileGeneration, profileDigest:digest({profileId:intent.profileId,policy:appliedPlan.policySnapshot,reportingAgentId:appliedPlan.reportingAgentId,

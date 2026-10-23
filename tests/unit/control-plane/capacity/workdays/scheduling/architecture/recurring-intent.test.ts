@@ -4,7 +4,7 @@ import { parsePublicWorkdayIntent } from '../../../../../../../src/api/capacity/
 import { serializeWorkdaySchedule, CapacityWorkdayScheduleService } from '../../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-schedule-service.ts';
 
 export const intent = { schemaVersion: 'treeseed.workday-intent/v1' as const, teamId: 'team', profileId: 'default',
-	projects: ['project'], executionMode: 'simulation' as const, startsAt: '2026-10-02T21:00:00.000Z', durationSeconds: 60,
+	projects: ['project'], groupIds: ['portfolio-runtime'], executionMode: 'simulation' as const, startsAt: '2026-10-02T21:00:00.000Z', durationSeconds: 60,
 	planningOnly: true, allocation: { allocationWeight: 1, planningPercent: 20 }, operatorConstraints: { providerIds: ['provider'], maxConcurrency: 1 } };
 
 describe('manual and recurring canonical high-level intent', () => {

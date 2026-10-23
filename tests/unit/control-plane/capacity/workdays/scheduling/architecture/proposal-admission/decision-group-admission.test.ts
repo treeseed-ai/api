@@ -45,6 +45,7 @@ it('derives every accepted proposal group from exact decision authority without 
 			const run = compileCapacityWorkdayRunRecord('team', { id: 'new-workday', capacityProviderId: 'controlled-provider', executionMode: 'simulation',
 				parameters: { projects: ['project'], decisionIds: ['decision'], ...(groupIds ? { groupIds } : {}), durationSeconds: 600 } });
 			const preflight = await preflightCapacityWorkdayRun(store as never, run);
+			expect(preflight).toMatchObject({ groupIds: ['portfolio-ui', 'provider-runtime'] });
 			expect(preflight.agentProfilesByProjectId.project.agents.map(entry => entry.definition.id)).toEqual(agents.map(agent => agent.id));
 			expect(await f.snapshot()).toEqual(before);
 		}
