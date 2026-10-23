@@ -1046,6 +1046,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/ontology/availability-accounting.test.ts
     testName: "compares every retained shared model report after adapter renaming without resetting usage or suppressing unhealthy regression"
+  api.golden.availability-owned-refresh-conflict:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-refresh-boundary.test.ts
+    testName: "adds only the authenticated owner current session identity to the existing 409"
+  api.golden.availability-owned-refresh-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-refresh-boundary.test.ts
+    testName: "keeps missing, closed, expired, and foreign sessions on the details-free 409 path"
   api.golden.execution-accounting-continuity-native-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

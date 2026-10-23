@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AvailabilitySessionRepository } from '../../../../src/api/capacity/repositories/accounts/availability-session.ts';
+import { AvailabilitySessionRepository } from '../../../../../src/api/capacity/repositories/accounts/availability-session.ts';
 
 describe('owned availability refresh conflict details', () => {
 	it('returns only a live advanced session identity under the exact membership, team, and provider scope', async () => {

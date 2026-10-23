@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CapacityGovernanceError } from '../../../../src/api/capacity/database.ts';
-import { refreshProviderAvailability } from '../../../../src/api/control-plane/repositories/providers/provider-runtime-service.ts';
+import { CapacityGovernanceError } from '../../../../../src/api/capacity/database.ts';
+import { refreshProviderAvailability } from '../../../../../src/api/control-plane/repositories/providers/provider-runtime-service.ts';
 
 const principal = { membershipId: 'membership-owned', teamId: 'team-owned', capacityProviderId: 'provider-owned', scopes: ['provider:availability:write'] };
 const currentSession = { id: 'session-owned', status: 'open' as const, sequence: 2 };

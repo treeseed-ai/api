@@ -3072,3 +3072,9 @@ workflow:
   - id: mcp-schema-constraints-unit
     action: { verifier: api.golden.mcp-schema-constraints-unit }
     expect: { status: passed }
+  - id: availability-owned-refresh-conflict
+    action: { verifier: api.golden.availability-owned-refresh-conflict }
+    expect: { status: passed }
+  - id: availability-owned-refresh-denial
+    action: { verifier: api.golden.availability-owned-refresh-denial }
+    expect: { status: passed }
