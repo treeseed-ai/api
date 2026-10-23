@@ -217,6 +217,12 @@ describe('provider accounting in disposable PostgreSQL', () => {
         batch:(operations:Array<{query:string;params?:unknown[]}>)=>f.right.batch(operations)};
       const competing=await Promise.all([service.refresh(principal,opened.id,refreshInput),new AvailabilitySessionService(peer).refresh(principal,opened.id,refreshInput)]),winners=competing.filter(value=>value!==null);expect(winners).toHaveLength(1);expect(competing.filter(value=>value===null)).toHaveLength(1);
       const refreshed=winners[0]!;expect(refreshed.sequence).toBe(opened.sequence+1);
+      const staleState=await snapshot(f.right);
+      expect(await new AvailabilitySessionService(peer).refresh(principal,opened.id,refreshInput)).toBeNull();
+      const conflict=await new AvailabilitySessionService(peer).refreshConflict(principal,opened.id,opened.sequence);
+      expect(conflict).toEqual({id:opened.id,status:'open',sequence:refreshed.sequence});
+      expect(Object.keys(conflict ?? {}).sort()).toEqual(['id','sequence','status']);
+      expect(await snapshot(f.left)).toEqual(staleState);expect(await snapshot(f.right)).toEqual(staleState);
       await observeAvailability([{sequence:opened.sequence,status:'open',at:opened.refreshedAt},{sequence:refreshed.sequence,status:'open',at:refreshed.refreshedAt}]);
       const observedHealth=(await f.right.pool.query("SELECT metadata_json FROM capacity_audit_events WHERE resource_id=$1 AND idempotency_key=$2",[opened.id,refreshed.sequence+':open'])).rows;expect(observedHealth).toHaveLength(1);expect(JSON.parse(observedHealth[0].metadata_json).adapters[0].modelHealthy).toBe(false);
       const refreshedBytes=await snapshot(f.right);expect(await service.refresh(principal,opened.id,refreshInput)).toBeNull();expect(await snapshot(f.left)).toEqual(refreshedBytes);expect(refreshInput).toEqual(refreshBefore);expect(failedAvailability).toHaveLength(5);

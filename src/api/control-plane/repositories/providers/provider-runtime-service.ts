@@ -108,6 +108,21 @@ export function providerPrincipal(auth: unknown, requiredScopes: string[]): Prov
 	return principal;
 }
 
+export async function refreshProviderAvailability(
+	availability: Pick<AvailabilitySessionService, 'refresh' | 'refreshConflict'>,
+	auth: unknown,
+	sessionId: string,
+	body: Record<string, unknown>,
+) {
+	const principal = providerPrincipal(auth, ['provider:availability:write']);
+	const session = await availability.refresh(principal, sessionId, body);
+	if (session) return session;
+	const currentSession = await availability.refreshConflict(principal, sessionId, Number(body.expectedSequence));
+	throw new CapacityGovernanceError('provider_availability_refresh_conflict',
+		'Availability session refresh was rejected because the session is closed, expired, or changed concurrently.', 409,
+		currentSession ? { currentSession } : undefined);
+}
+
 function identityRotation(body: Record<string, unknown>): CapacityProviderIdentityRotationRequest {
 	if (!Number.isInteger(body.expectedIdentityVersion) || !body.newPublicJwk || typeof body.newPublicJwk !== 'object'
 		|| !body.oldProof || typeof body.oldProof !== 'object' || !body.newProof || typeof body.newProof !== 'object') {
@@ -291,10 +306,8 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 		rotateIdentity(auth: unknown, body: Record<string, unknown>, idempotencyKey = '') { return registration.rotateIdentity(providerPrincipal(auth, []), identityRotation(body), idempotencyKey); },
 		rotateCredential(auth: unknown, idempotencyKey = '') { return registration.authorizeProviderCredentialRotation(providerPrincipal(auth, []), idempotencyKey); },
 		createAvailability(auth: unknown, body: Record<string, unknown>) { return availability.open(providerPrincipal(auth, ['provider:availability:write']), body); },
-		async refreshAvailability(auth: unknown, sessionId: string, body: Record<string, unknown>) {
-			const session = await availability.refresh(providerPrincipal(auth, ['provider:availability:write']), sessionId, body);
-			if (!session) throw new CapacityGovernanceError('provider_availability_refresh_conflict', 'Availability session refresh was rejected because the session is closed, expired, or changed concurrently.', 409);
-			return session;
+		refreshAvailability(auth: unknown, sessionId: string, body: Record<string, unknown>) {
+			return refreshProviderAvailability(availability, auth, sessionId, body);
 		},
 		async closeAvailability(auth: unknown, sessionId: string) {
 			const session = await availability.close(providerPrincipal(auth, ['provider:availability:write']), sessionId);
