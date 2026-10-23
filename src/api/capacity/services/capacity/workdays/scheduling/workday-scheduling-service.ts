@@ -10,7 +10,7 @@ capacityWorkdayRequestedProjectReferences,
 resolveCapacityWorkdayProjects,
 type WorkdayProject,
 } from '../policy/workday-project-policy.ts';
-import { resolveWorkdayAgentProfileSnapshot } from '../policy/workday-agent-profile-policy.ts';
+import { resolveWorkdayAgentProfileSnapshot, resolveDiscussionAgentProfileSnapshot } from '../policy/workday-agent-profile-policy.ts';
 import { reconcileTreeDxRefSignals } from '../../../treedx/repositories/treedx-ref-signal-reconciler.ts';
 import { reconcileCommunicationExecutionGraph, reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { workdayParticipants, selectWorkdayReportingAgents } from '../../../../policy/execution/workday-participants.ts';
@@ -139,7 +139,7 @@ async function resolveCapacityWorkdayPreflight(
 	const proposalGroups = [...selectedProposals.map(proposal => proposal.definition), ...decisionProposals].flatMap(definition => Array.isArray(definition.groupIds)
 		? definition.groupIds.map(value => text(value)).filter(Boolean) : []);
 	const groupIds = [...new Set([...proposalGroups, ...(Array.isArray(parameters.groupIds) ? parameters.groupIds.map(value => text(value)).filter(Boolean) : [])])].sort();
-	if (!groupIds.length) throw new CapacityGovernanceError('capacity_workday_group_required',
+	if (!groupIds.length && run.executionKind !== 'conversation') throw new CapacityGovernanceError('capacity_workday_group_required',
 		'New work requires shared groups or exact proposals or decisions that supply their groups.', 409);
 	parameters = { ...parameters, groupIds };
 	const agentProfiles = new Map<string, Awaited<ReturnType<typeof resolveWorkdayAgentProfileSnapshot>>>();
@@ -157,7 +157,9 @@ async function resolveCapacityWorkdayPreflight(
 		const contentRoot = text(library?.contentPath).replace(/^\/+|\/+$/gu, '');
 		const immutableRef = acceptedLibraryRevision(library ?? {}, project.id);
 		contexts.set(project.id, { contentRoot: contentRoot || capacityWorkdayContentRoot(project), repositoryId, immutableRef });
-		const profileSnapshot=await resolveWorkdayAgentProfileSnapshot(store, project.id, parameters.agentSelection, groupIds);
+		const profileSnapshot=run.executionKind === 'conversation'
+			? await resolveDiscussionAgentProfileSnapshot(store, run, project.id)
+			: await resolveWorkdayAgentProfileSnapshot(store, project.id, parameters.agentSelection, groupIds);
 		agentProfiles.set(project.id,profileSnapshot);
 		const projectProposals = selectedProposals.filter((proposal) => proposal.projectId === project.id);
 		for (const proposal of projectProposals) proposalContexts.set(proposal.proposalId, proposal.ref);

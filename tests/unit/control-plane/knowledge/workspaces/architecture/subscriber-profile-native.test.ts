@@ -5,7 +5,7 @@ import { object } from './relation-authoring-fixture.ts';
 import { snapshotAgentDefinitions } from '../../../../../../src/api/capacity/services/capacity/agents/agent-definition-snapshot.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { projectTreeDxCommitSignals } from '../../../../../../src/api/capacity/services/treedx/repositories/treedx-change-projector.ts';
-import { resolveWorkdayAgentProfileSnapshot } from '../../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-profile-policy.ts';
+import { resolveWorkdayAgentProfileSnapshot, resolveDiscussionAgentProfileSnapshot } from '../../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-profile-policy.ts';
 import { projectCommunicationInvocations } from '../../../../../../src/api/capacity/policy/execution/communication-execution-projector.ts';
 import { effectiveProfile } from '../../../../../../src/api/capacity/services/build/execution-node-profile.ts';
 import { ProjectAgentClassRepository } from '../../../../../../src/api/capacity/repositories/projects/agents/project-agent-class.ts';
@@ -46,15 +46,34 @@ it('native governed shared-class subscribers retain both YAML profiles through p
 		const selected = await resolveWorkdayAgentProfileSnapshot({ listProjectAgentClassesPage: (id, page) =>
 			repository.listPage(id, { ...page, cursor: null }) }, source.projectId, undefined, ['native-shared-team']);
 		expect(selected.agents.map(entry => entry.definition.id)).toEqual(definitions.map(definition => definition.id));
-		const profiles = Object.fromEntries(selected.agents.map(entry => [`${source.projectId}:${entry.definition.id}`, entry.definition]));
 		for (const definition of definitions) {
+			const invocationId = `addressed-${definition.name}`, workdayId = `conversation-${definition.name}`;
+			const discussion = { invocationId, discussionId: 'portfolio', messageId: 'request',
+				messagePath: 'discussions/portfolio/messages/request.mdx', commitSha: commit };
+			await f.query(`INSERT INTO agent_invocation_requests (id,team_id,project_id,project_agent_class_id,agent_id,agent_revision,
+				execution_kind,status,execution_id,scope_hash,available_at,idempotency_key,request_digest,metadata_json,requested_at)
+				VALUES (?,?,?,?,?,?,'conversation','admitted',?,'controlled-native-input',?,?,?,?,?)`,
+				[invocationId, 'team', source.projectId, shared[0]!.id, definition.name, commit, workdayId,
+					new Date().toISOString(), invocationId, invocationId, JSON.stringify({ discussionId: discussion.discussionId,
+						sourceMessageId: discussion.messageId, sourceMessagePath: discussion.messagePath, sourceCommit: commit }), new Date().toISOString()]);
+			const conversation = { id: workdayId, teamId: 'team', parameters: { agentSelection: { activityTypes: ['chat'] }, discussion } };
+			const addressed = await resolveDiscussionAgentProfileSnapshot({ first: f.store.first.bind(f.store),
+				listProjectAgentClassesPage: (id, page) => repository.listPage(id, { ...page, cursor: null }) }, conversation, source.projectId);
+			expect(addressed.agents.map(entry => entry.definition.id)).toEqual([definition.id]);
+			const profiles = Object.fromEntries(addressed.agents.map(entry => [`${source.projectId}:${entry.definition.id}`, entry.definition]));
 			const projected = projectCommunicationInvocations({ teamId: 'team', revision: 1, profiles,
-				sources: [{ id: `addressed-${definition.name}`, teamId: 'team', projectId: source.projectId,
-					workdayId: `conversation-${definition.name}`, agentId: definition.id, repository: source.repository,
+				sources: [{ id: invocationId, teamId: 'team', projectId: source.projectId,
+					workdayId, agentId: definition.id, repository: source.repository,
 					commit, path: 'discussions/portfolio/messages/request.mdx', durationSeconds: 120 }] });
 			const bound = await effectiveProfile(f.store, projected.nodes[0]!);
 			expect(bound.profile.profileRef).toMatchObject({ id: definition.id, commit, repository: source.repository });
 			expect(bound.profile.prompt).toEqual(definition.activityProfiles.chat.prompt);
+			for (const changed of [{ id: 'foreign-workday' }, { teamId: 'foreign-team' }, { parameters: {
+				...conversation.parameters, discussion: { ...discussion, messageId: 'forged' } } }]) {
+				await expect(resolveDiscussionAgentProfileSnapshot({ first: f.store.first.bind(f.store),
+					listProjectAgentClassesPage: (id, page) => repository.listPage(id, { ...page, cursor: null }) },
+					{ ...conversation, ...changed }, source.projectId)).rejects.toMatchObject({ code: 'capacity_workday_discussion_authority_invalid' });
+			}
 		}
 		// Original exact history remains readable; repeated publication retains the
 		// same complete class instead of replacing it with its last member.
