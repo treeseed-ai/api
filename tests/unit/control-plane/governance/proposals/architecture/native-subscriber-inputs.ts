@@ -45,6 +45,12 @@ export async function recordNativeSubscriberInputs(f: Awaited<ReturnType<typeof 
 	input: ReturnType<typeof nativeSubscriberInputs>, sourceRef: ExactEntityReference, open: Set<string>) {
 	assert.ok(sourceRef.repository && sourceRef.commit && sourceRef.path);
 	const now = new Date().toISOString(), ids: string[] = [];
+	// Controlled assignment inputs must retain the original full SQL foreign keys.
+	await f.query(`INSERT INTO capacity_providers (id,fingerprint,public_jwk_json,display_name,created_at,updated_at)
+		VALUES ('controlled-provider','controlled-native-input','{}','Controlled input provider',?,?) ON CONFLICT(id) DO NOTHING`, [now, now]);
+	await f.query(`INSERT INTO capacity_provider_team_memberships
+		(id,team_id,capacity_provider_id,approved_at,approved_by_id,created_at,updated_at)
+		VALUES ('controlled-membership','team','controlled-provider',?,'controlled-operator',?,?) ON CONFLICT(id) DO NOTHING`, [now, now, now]);
 	for (const [index, profile] of input.subscribers.entries()) {
 		const item = input.declaration.executionPlan.workItems[index]!;
 		const created = await f.client.workspaces.create(sourceRef.repository, { baseRef: sourceRef.commit,
