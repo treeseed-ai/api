@@ -1841,6 +1841,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/dependency-admission-native.test.ts
     testName: "late native dependent assignment insertion interruption rolls back the reservation and retries identical dependency custody without deleting predecessor history"
+  api.golden.rework-active-state:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/rework-active-state.test.ts
+    testName: "preserves newer admitted rework over historical review return during repeated reconciliation"
+  api.golden.rework-active-state-sql:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/rework-active-state.test.ts
+    testName: "persists running rework through native graph reconciliation so exact lifecycle closeout remains admissible"
   api.golden.architecture-rework-admission-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
