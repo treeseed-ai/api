@@ -192,12 +192,14 @@ async function integrateAssignmentEstimateOnce(
 	if (!store.getGovernanceProposal) throw new CapacityGovernanceError(
 		'assignment_estimate_authority_unavailable', 'Estimate integration requires governed proposal authority.', 503);
 	const proposal = await store.getGovernanceProposal(attempt.sourceRef.id);
-	if (!proposal || proposal.projectId !== assignment.projectId || proposal.teamId !== assignment.teamId) throw new CapacityGovernanceError(
-		'assignment_estimate_proposal_mismatch', 'Estimating assignment proposal is outside its project and team.', 409);
+	if (!proposal || proposal.teamId !== assignment.teamId) throw new CapacityGovernanceError(
+		'assignment_estimate_proposal_mismatch', 'Estimating assignment proposal is outside its team.', 409);
 	if (!['draft', 'submitted', 'open'].includes(text(proposal.status))) throw new CapacityGovernanceError(
 		'assignment_estimate_proposal_closed', 'Estimating cannot update a proposal after voting or decision.', 409);
 	requireEstimateAuthority(store);
 	const frozen = await readExactProposal(store, proposal, attempt.sourceRef);
+	if (proposal.projectId !== assignment.projectId && frozen.definition.schemaVersion !== 'treeseed.proposal/v2') throw new CapacityGovernanceError(
+		'assignment_estimate_proposal_mismatch', 'Retained class-owned estimates cannot cross their original project.', 409);
 	const current = await readExactProposal(store, proposal);
 	if (['withdrawn', 'decided'].includes(text(current.definition.status))) throw new CapacityGovernanceError(
 		'assignment_estimate_proposal_closed', 'The current proposal is closed to new contributions.', 409);

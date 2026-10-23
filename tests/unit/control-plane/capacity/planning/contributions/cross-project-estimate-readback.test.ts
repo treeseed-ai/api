@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 import { assignment as original } from '../../execution/fixtures/assignment.ts';
 import { proposalNativeFixture } from '../../../governance/proposals/architecture/proposal-native-fixture.ts';
-import { readAssignmentEstimateProposal } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/estimates/integration.ts';
+import { integrateAssignmentEstimate, readAssignmentEstimateProposal } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/estimates/integration.ts';
 
 // Original SQL, SDK HTTP transport and native committed Git. The remote server
 // and admitted attempt are controlled inputs, not live agent or permission proof.
@@ -44,6 +44,19 @@ it('reads a subscriber contribution from the proposal owner library while retain
 			grant: { ...attempt.grant, contentWrite: [] } } }, result)).rejects.toMatchObject({ code: 'assignment_estimate_reference_invalid' });
 		const foreign = { ...result, references: result.references.map(reference => ({ ...reference, projectId: 'foreign' })) };
 		await expect(readAssignmentEstimateProposal(store as never, assignment, foreign)).rejects.toMatchObject({ code: 'assignment_estimate_proposal_mismatch' });
+		// A controlled already-integrated current version proves unchanged replay,
+		// not the initial authoring/publishing path or a generated agent estimate.
+		await f.query('UPDATE governance_proposals SET active_version=2,active_content_hash=?,metadata_json=?', [candidate.digest,
+			JSON.stringify({ contentProvenance: { repositoryId: 'repository', contentPath: source.path, commitSha: candidate.commit, digest: candidate.digest } })]);
+		const integrationStore = { ...store, getGovernanceProposal: async (id: string) => {
+			const value = await f.store.first('SELECT * FROM governance_proposals WHERE id=?', [id]);
+			return value ? { ...value, teamId: value.team_id, projectId: value.project_id, activeVersion: value.active_version,
+				activeContentHash: value.active_content_hash, metadata: JSON.parse(String(value.metadata_json)) } : null;
+		}, updateGovernanceProposalDraft: async () => { throw new Error('Unchanged replay cannot author another version'); },
+			evaluateGovernanceProposal: async () => { throw new Error('Replay cannot fabricate approval'); } };
+		const integrated = await f.snapshot();
+		await integrateAssignmentEstimate(integrationStore as never, assignment as never, result);
+		expect(await f.snapshot()).toEqual(integrated);
 		for (const change of [{ id: 'other-proposal' }, { projectId: 'foreign' }]) {
 			const altered = f.publishContent(source.path, { ...contribution, ...change }), checkpoint = await f.snapshot();
 			const changed = { ...result, references: result.references.map(reference => ({ ...reference, commit: altered.commit })) };
