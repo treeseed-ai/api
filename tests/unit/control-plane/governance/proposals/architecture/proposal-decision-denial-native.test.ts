@@ -11,8 +11,6 @@ import { CapacityOperationError } from '../../../../../../src/api/control-plane/
 import { workItemContext } from '../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import { executionNodeSchema } from '@treeseed/sdk/agent-capacity';
 import { candidate } from '../../../capacity/execution/fixtures/assignment-attempt-fixtures.ts';
-import { readFileSync } from 'node:fs';
-import { splitPostgresSqlStatements } from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
 
 async function operationalDecision() {
 	const fixture = await proposalNativeFixture();
@@ -38,9 +36,6 @@ describe('native proposal Decision authority', () => {
 			Object.assign(definition.executionPlan.workItems[0]!, { contextRefs: [git] });
 			const published = await f.publish(definition), frozen = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
 				digest: `sha256:${published.digest}`, repository: 'repository', commit: published.commit, path: 'proposals/proposal.mdx' };
-			const ddl = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'))
-				.filter(sql => sql.startsWith('CREATE TABLE "capacity_workday_runs" ('));
-			expect(ddl).toHaveLength(1); await f.query(ddl[0]!);
 			const book = { ...frozen, model: 'book', id: 'core', path: 'books/core.md' };
 			const parameters = { workdayContextByProjectId: { project: book }, planningSourceByProposalId: { proposal: frozen } };
 			await f.query(`INSERT INTO capacity_workday_runs (id,team_id,scenario_id,environment,parameters_json,created_at,updated_at)

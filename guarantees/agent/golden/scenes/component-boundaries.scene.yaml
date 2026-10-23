@@ -1737,6 +1737,9 @@ workflow:
   - id: architecture-decision-review-unit-time
     action: { verifier: api.golden.architecture-decision-review-unit-time }
     expect: { status: passed }
+  - id: architecture-decision-review-native-continuation
+    action: { verifier: api.golden.architecture-decision-review-native-continuation }
+    expect: { status: passed }
   - id: architecture-decision-review-native-complete
     action: { verifier: api.golden.architecture-decision-review-native-complete }
     expect: { status: passed }

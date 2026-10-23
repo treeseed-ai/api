@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { CapacityGovernanceError, type CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../knowledge/gateway-treedx-connection.ts';
+import { workdayLineageSql } from '../../workdays/scheduling/workday-continuation.ts';
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {
@@ -44,7 +45,7 @@ export async function resolveReviewDisposition(store: CapacityGovernanceDatabase
 			SELECT assignment_result_json FROM capacity_provider_assignments candidate
 			WHERE candidate.team_id=edge.team_id AND candidate.execution_node_id=actor.id
 				AND candidate.status='completed' AND candidate.assignment_result_json IS NOT NULL
-				${assignment.executionMode === 'simulation' && assignment.workDayId ? 'AND candidate.work_day_id=?' : ''}
+					${assignment.executionMode === 'simulation' && assignment.workDayId ? `AND candidate.work_day_id IN ${workdayLineageSql('?', 'candidate.team_id')}` : ''}
 				AND candidate.completed_at<=?
 			ORDER BY candidate.execution_node_revision DESC,candidate.completed_at DESC,candidate.id DESC LIMIT 1
 		) completed ON true
