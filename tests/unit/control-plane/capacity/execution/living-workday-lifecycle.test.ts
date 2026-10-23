@@ -307,7 +307,7 @@ describe('living workday lifecycle', () => {
 		], policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
 		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
 			groupIds: ['portfolio'], proposalIds: [proposalId], agentProfilesByProjectId: { project: { agents: ['researcher', 'reviewer'].map(agentClass =>
-				({ definition: planningAgent(agentClass), activities: ['estimating'] })) } } } } as never;
+				({ definition: planningAgent(agentClass), activities: ['estimating'] })) } } } };
 		const store = { all: vi.fn(async (sql: string) => sql.includes('execution_nodes')
 			? [{ id: initialId, kind: 'estimating', status: 'completed' }]
 			: [{ id: proposalId, team_id: 'team', project_id: 'project' }]),

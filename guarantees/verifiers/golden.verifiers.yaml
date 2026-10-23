@@ -126,6 +126,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
     testName: "rebuilds later rounds from current group contributions instead of initial planning ID suffixes"
+  api.golden.native-scheduling-subscriber-inputs:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-authority.test.ts
+    testName: "uses distinct group-owned subscriber inputs for fresh native scheduling while retaining original dependency anchors and historical fixtures"
   api.golden.subscriber-cross-project-readback:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

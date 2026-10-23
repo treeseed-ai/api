@@ -3198,3 +3198,6 @@ workflow:
   - id: workday-group-round-continuation
     action: { verifier: api.golden.workday-group-round-continuation }
     expect: { status: passed }
+  - id: native-scheduling-subscriber-inputs
+    action: { verifier: api.golden.native-scheduling-subscriber-inputs }
+    expect: { status: passed }

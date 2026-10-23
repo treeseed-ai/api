@@ -13,6 +13,30 @@ import { listReadyExecutionNodes } from '../../../../../../src/api/capacity/serv
 import { applyOperationalState, type TeamGraph } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
 import { persistExecutionGraph } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { createCapacityControlPlane } from '../../../../../../src/api/capacity/control-plane.ts';
+import { nativeSubscriberInputs, recordNativeSubscriberInputs } from '../../../governance/proposals/architecture/native-subscriber-inputs.ts';
+import { loadProposalGroupContributions } from '../../../../../../src/api/capacity/services/capacity/execution/proposal-contributions.ts';
+import type { relationInputs } from '../../../capacity/execution/graph/architecture/relations/relation-fixture.ts';
+
+/** Migrate only fresh scheduling inputs; shared relation/history inputs stay V1. */
+export function schedulingSubscriberInputs(input: Pick<ReturnType<typeof relationInputs>, 'sources' | 'profiles'>) {
+	return input.sources.map(source => {
+		const cohort = nativeSubscriberInputs(input.profiles, source.projectId, String(source.frontmatter.id), false);
+		const groups = [`${source.projectId}-delivery`];
+		for (const profile of cohort.subscribers) profile.definition.groupIds = groups;
+		for (const profile of cohort.profileInputs) input.profiles[`${source.projectId}:${profile.definition.agentClass}`] = profile.definition;
+		const original = object(source.frontmatter.executionPlan).workItems; assert.ok(Array.isArray(original));
+		assert.equal(original.length, cohort.subscribers.length);
+		cohort.declaration = { ...cohort.declaration, ...source.frontmatter, schemaVersion: 'treeseed.proposal/v2', groupIds: groups,
+			executionPlan: { workItems: original.map((value, index) => {
+				const { agentClass: _allocation, ...item } = object(value), contribution = cohort.declaration.executionPlan.workItems[index]!;
+				return { ...contribution, ...item, estimateRef: contribution.estimateRef,
+					estimate: { ...object(item.estimate), rationale: contribution.estimate.rationale },
+					reviewEstimate: { ...object(item.reviewEstimate), rationale: contribution.reviewEstimate.rationale } };
+			}) } } as typeof cohort.declaration;
+		source.frontmatter = cohort.declaration;
+		return cohort;
+	});
+}
 
 export function schedulingInputs(): Parameters<typeof buildAssignmentAttempt>[0] {
 	const now = '2026-09-13T12:00:00.000Z', plan = { ...compileWorkday({ id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
@@ -39,14 +63,17 @@ export function schedulingInputs(): Parameters<typeof buildAssignmentAttempt>[0]
 // not live Actor/Reviewer execution, provider polling/admission or generated usage.
 export async function relationSchedulingDatabase(primarySource?: ExactEntityReference, workItemPriorities?: ReadonlyMap<string, number>) {
 	const f = await relationPublicationDatabase(); let teamRepository: string | undefined;
+	const open = new Set<string>();
 	const close = async () => {
 		const failures: unknown[] = [];
+		for (const id of open) try { await f.client.workspaces.close(id); open.delete(id); } catch (error) { failures.push(error); }
 		if (teamRepository) try { await f.client.repositories.retire(teamRepository); } catch (error) { failures.push(error); }
 		try { await f.close(); } catch (error) { failures.push(error); }
 		if (failures.length) throw new AggregateError(failures, 'Relation scheduling fixture cleanup failed');
 	};
 	try {
 		const run = schedulingInputs().run, now = run.createdAt;
+		const cohorts = schedulingSubscriberInputs(f);
 		// Explicit canonical native demand, not a runtime alias for the older
 		// controlled projector unit input's unqualified "verification" label.
 		for (const source of f.sources) {
@@ -108,6 +135,21 @@ export async function relationSchedulingDatabase(primarySource?: ExactEntityRefe
 				}
 			} catch (error) { failure = error; throw error; }
 			finally { try { await f.client.workspaces.close(id); } catch (error) { if (failure) throw new AggregateError([failure, error], 'Native input write and workspace close failed'); throw error; } }
+			const declaration = source.frontmatter;
+			const proposal = await f.store.createGovernanceProposal(f.principal, { teamId: source.teamId, projectId: source.projectId,
+				id: String(declaration.id), title: String(declaration.title), summary: String(declaration.summary), request: String(declaration.request),
+				contentProvenance: { repositoryId: source.repository, contentPath: source.path, commitSha: source.commit,
+					digest: source.digest.replace(/^sha256:/u, '') } }); assert.ok(proposal);
+			await f.query('UPDATE governance_proposals SET active_content_hash=? WHERE id=?', [source.digest.replace(/^sha256:/u, ''), declaration.id]);
+			await f.query('UPDATE governance_proposal_versions SET content_hash=? WHERE proposal_id=?', [source.digest.replace(/^sha256:/u, ''), declaration.id]);
+		}
+		for (const [index, source] of f.sources.entries()) {
+			await recordNativeSubscriberInputs(f, cohorts[index]!, { store: 'treedx', model: 'proposal', id: String(source.frontmatter.id),
+				repository: source.repository, commit: source.commit, path: source.path, digest: source.digest, revision: source.proposalRevision }, open);
+			const contributions = await loadProposalGroupContributions(f.store,
+				{ id: source.frontmatter.id, projectId: source.projectId, teamId: source.teamId }, source.frontmatter);
+			assert.equal(contributions.current, true, JSON.stringify(contributions.missing));
+			source.estimatingAttempts = contributions.attempts;
 		}
 		Object.assign(f.link.from, { commit: f.sources[0]!.commit, digest: f.sources[0]!.digest });
 		Object.assign(f.link.to, { commit: f.sources[1]!.commit, digest: f.sources[1]!.digest });
