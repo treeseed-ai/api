@@ -25,12 +25,16 @@ export interface WorkdayAgentProfileSnapshot { revision: string; agents: Workday
 interface Store { listProjectAgentClassesPage(projectId: string, filters: { limit: number }): Promise<CapacityPage<unknown>> }
 
 export function compileWorkdayAgentProfileSnapshot(agentClasses: unknown[], selectionValue?: unknown, groupIds?: readonly string[]): WorkdayAgentProfileSnapshot {
-	const selection = normalizeWorkdayAgentSelection(selectionValue);
+	let selection: ReturnType<typeof normalizeWorkdayAgentSelection>;
+	try { selection = normalizeWorkdayAgentSelection(selectionValue); }
+	catch (error) { throw new CapacityGovernanceError('capacity_workday_agent_selection_invalid',
+		'Workday selection accepts activity phases only; groups supply the participants.', 409, { diagnostics: record(error).issues }); }
 	const available: WorkdayAgentSelectionSnapshot[] = [];
 	for (const value of agentClasses) {
 		const row = record(value);
-		if (text(row.status || 'active') !== 'active') continue;
 		for (const candidate of array(record(row.handlerRefs ?? row.handler_refs ?? row.handler_refs_json).agents)) {
+			const membership = record(candidate).groupIds;
+			if (groupIds !== undefined && !(Array.isArray(membership) && membership.some(id => groupIds.includes(String(id))))) continue;
 			const validation = validateAgentDefinitionModel(candidate);
 			if (!validation.ok || !validation.data) throw new CapacityGovernanceError(
 				'capacity_workday_agent_profile_invalid', 'An active project agent class contains an invalid minimal agent definition.', 409,
@@ -40,26 +44,12 @@ export function compileWorkdayAgentProfileSnapshot(agentClasses: unknown[], sele
 				projectAgentClassSlug: text(row.slug) || validation.data.agentClass, activities });
 		}
 	}
-	const selectorMatch = (entry: WorkdayAgentSelectionSnapshot, activity: string) => {
-		const classMatch = !selection.classIds.length && !selection.classSlugs.length
-			|| selection.classIds.includes(entry.projectAgentClassId) || selection.classSlugs.includes(entry.projectAgentClassSlug)
-			|| selection.classSlugs.includes(entry.definition.agentClass);
-		const agentNames = [entry.definition.id, entry.definition.id.split('/').at(-1) ?? entry.definition.id];
-		const agentMatch = !selection.agentSlugs.length || selection.agentSlugs.some((id) => agentNames.includes(id));
-		const activityMatch = !selection.activityTypes.length || selection.activityTypes.includes(activity);
-		return selection.mode === 'union'
-			? (selection.classIds.length + selection.classSlugs.length > 0 && classMatch)
-				|| (selection.agentSlugs.length > 0 && agentMatch) || (selection.activityTypes.length > 0 && activityMatch)
-			: classMatch && agentMatch && activityMatch;
-	};
-	const agents = available.filter(entry => groupIds === undefined || (entry.definition.groupIds ?? []).some(id => groupIds.includes(id)))
-		.map((entry) => ({ ...entry, activities: entry.activities.filter((activity) => selectorMatch(entry, activity)) }))
+	const audience = available;
+	const agents = audience
+		.map((entry) => ({ ...entry, activities: entry.activities.filter((activity) => !selection.activityTypes.length || selection.activityTypes.includes(activity)) }))
 		.filter((entry) => entry.activities.length).sort((left, right) => left.definition.id.localeCompare(right.definition.id));
 	const unknown = [
-		...selection.classIds.filter((id) => !available.some((entry) => entry.projectAgentClassId === id)).map((value) => ({ selector: 'classIds', value })),
-		...selection.classSlugs.filter((id) => !available.some((entry) => [entry.projectAgentClassSlug,entry.definition.agentClass].includes(id))).map((value) => ({ selector: 'classSlugs', value })),
-		...selection.agentSlugs.filter((id) => !available.some((entry) => [entry.definition.id,entry.definition.id.split('/').at(-1)].includes(id))).map((value) => ({ selector: 'agentSlugs', value })),
-		...selection.activityTypes.filter((id) => !available.some((entry) => entry.activities.includes(id as never))).map((value) => ({ selector: 'activityTypes', value })),
+		...selection.activityTypes.filter((id) => !audience.some((entry) => entry.activities.includes(id as never))).map((value) => ({ selector: 'activityTypes', value })),
 	];
 	if (unknown.length) throw new CapacityGovernanceError('capacity_workday_agent_selection_unknown',
 		'Workday selectors must identify eligible activity profiles exactly.', 409, { unknown });
@@ -67,7 +57,7 @@ export function compileWorkdayAgentProfileSnapshot(agentClasses: unknown[], sele
 		'Workday selection resolved no eligible activity profiles.', 409);
 	// Cooperative selectors cannot remove the standing closeout activity.
 	// Preserve the original empty/unknown selection denials before reserving it.
-	for (const entry of available) if (entry.definition.activityProfiles.reporting) {
+	for (const entry of audience) if (entry.definition.activityProfiles.reporting) {
 		const selected = agents.find(candidate => candidate.definition === entry.definition);
 		if (selected) { if (!selected.activities.includes('reporting')) selected.activities.push('reporting'); }
 		else agents.push({ ...entry, activities: ['reporting'] });

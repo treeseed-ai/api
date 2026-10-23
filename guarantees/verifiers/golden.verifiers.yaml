@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.group-workday-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/audience/workday-groups-postgres.test.ts
+    testName: "retains all subscribed identities and excludes outside reporting while refusing identity targeting"
   api.golden.assignment-phase-observation-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -610,7 +615,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
-    testName: "real governed YAML profile authoring retains native draft custody across empty inventory and producer review denial before exact renamed execution profile write"
+    testName: "real governed YAML profile authoring retains native draft custody across invalid profiles before exact renamed execution and review profile write"
   api.golden.execution-note-identity-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -4973,7 +4978,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/planning/selection.test.ts
-    testName: "retains one standing reporting activity beside an exact cooperative selection without changing selected planning work or admitting an empty intersection"
+    testName: "retains subscribed reporting beside cooperative phases without importing other group members"
   api.golden.seed-adopt-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
