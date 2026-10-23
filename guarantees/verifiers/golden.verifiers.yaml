@@ -1841,6 +1841,21 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/dependency-admission-native.test.ts
     testName: "late native dependent assignment insertion interruption rolls back the reservation and retries identical dependency custody without deleting predecessor history"
+  api.golden.architecture-rework-admission-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/rework-admission-native.test.ts
+    testName: "admits the next Actor revision with exact prior product and paired review, retaining history and one reservation on replay"
+  api.golden.architecture-rework-admission-incomplete:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/rework-admission-native.test.ts
+    testName: "requires both exact rework results rather than admitting just the old product"
+  api.golden.architecture-rework-admission-returned:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/rework-admission-native.test.ts
+    testName: "retains exact reviewed context across an explicitly returned Actor revision"
   api.golden.architecture-relation-scheduling-unit-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
