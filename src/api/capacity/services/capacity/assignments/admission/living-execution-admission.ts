@@ -98,7 +98,14 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 			|| (input.allocation.selection !== undefined && !isDeepStrictEqual(
 				retainedAllocation, input.allocation))) {
 			throw new CapacityGovernanceError('execution_assignment_idempotency_conflict',
-				'Assignment identity is already bound to different immutable execution authority.', 409);
+				'Assignment identity is already bound to different immutable execution authority.', 409, {
+					assignmentId: assignment.id, nodeId: assignment.nodeId, nodeRevision: assignment.nodeRevision,
+					workdayId: assignment.workdayId, retainedNodeId: stored.executionNodeId,
+					retainedNodeRevision: stored.executionNodeRevision,
+					// Names only: prompts, grants, inputs and provider credentials stay private.
+					changedAuthorityFields: Object.keys(requestedAuthority).filter(key => !isDeepStrictEqual(
+						retainedAuthority[key as keyof typeof retainedAuthority], requestedAuthority[key as keyof typeof requestedAuthority])).sort(),
+				});
 		}
 		return stored;
 	};
