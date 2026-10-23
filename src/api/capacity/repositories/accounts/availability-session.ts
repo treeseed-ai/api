@@ -101,6 +101,19 @@ export class AvailabilitySessionRepository {
 		const current=await this.get(input.teamId,input.id);if(!current)throw new CapacityGovernanceError('provider_availability_observation_conflict','Committed refresh is missing.',500);await observeAvailabilitySession(this.database,current);return current;
 	}
 
+	/** Return only the bounded recovery identity for an exact owner when a live session advanced. */
+	async getRefreshConflict(input: Pick<AvailabilitySessionWrite, 'id' | 'membershipId' | 'teamId' | 'providerId'>, expectedSequence: number, now: string) {
+		await this.database.ensureInitialized();
+		const row = await this.database.first(`SELECT id,status,sequence FROM capacity_provider_availability_sessions
+			WHERE id=? AND membership_id=? AND team_id=? AND capacity_provider_id=?
+			AND status='open' AND expires_at>? AND sequence>? LIMIT 1`,
+		[input.id,input.membershipId,input.teamId,input.providerId,now,expectedSequence]);
+		if (!row) return null;
+		const sequence = Number(row.sequence);
+		if (!Number.isInteger(sequence) || sequence <= expectedSequence) return null;
+		return { id: text(row.id), status: status(row.status, input.id), sequence };
+	}
+
 	async close(teamId: string, membershipId: string, sessionId: string) {
 		await this.database.ensureInitialized();
 		const now = new Date().toISOString();

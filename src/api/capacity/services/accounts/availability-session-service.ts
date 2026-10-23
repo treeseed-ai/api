@@ -77,6 +77,13 @@ export class AvailabilitySessionService {
 			[...upsertCapacityExecutionProviderOperations({ providerId: principal.capacityProviderId, executionProviders: write.executionProviders, providerNativeLimits: write.nativeLimits, createdAt: now, availabilityGuard: guard }), ...reconcileSeedGrantOperations(write)]));
 	}
 
+	async refreshConflict(principal: ProviderAvailabilityPrincipal, sessionId: string, expectedSequence: number) {
+		await this.assertMembership(principal);
+		if (!Number.isInteger(expectedSequence) || expectedSequence < 1) return null;
+		return this.repository.getRefreshConflict({ id: sessionId, membershipId: principal.membershipId,
+			teamId: principal.teamId, providerId: principal.capacityProviderId }, expectedSequence, new Date().toISOString());
+	}
+
 	async close(principal: ProviderAvailabilityPrincipal, sessionId: string) {
 		return capacityTransaction(this.database,async database=>{const owner=new AvailabilitySessionService(database);
 		await owner.assertMembership(principal);

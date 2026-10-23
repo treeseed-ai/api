@@ -293,7 +293,11 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 		createAvailability(auth: unknown, body: Record<string, unknown>) { return availability.open(providerPrincipal(auth, ['provider:availability:write']), body); },
 		async refreshAvailability(auth: unknown, sessionId: string, body: Record<string, unknown>) {
 			const session = await availability.refresh(providerPrincipal(auth, ['provider:availability:write']), sessionId, body);
-			if (!session) throw new CapacityGovernanceError('provider_availability_refresh_conflict', 'Availability session refresh was rejected because the session is closed, expired, or changed concurrently.', 409);
+			if (!session) {
+				const currentSession = await availability.refreshConflict(providerPrincipal(auth, ['provider:availability:write']), sessionId, Number(body.expectedSequence));
+				throw new CapacityGovernanceError('provider_availability_refresh_conflict', 'Availability session refresh was rejected because the session is closed, expired, or changed concurrently.', 409,
+					currentSession ? { currentSession } : undefined);
+			}
 			return session;
 		},
 		async closeAvailability(auth: unknown, sessionId: string) {
