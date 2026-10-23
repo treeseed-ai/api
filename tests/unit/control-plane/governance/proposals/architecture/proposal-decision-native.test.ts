@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { validateDecisionAuthority, validateExecutionAuthorityReceipt } from '../../../../../../src/api/governance/decision-authority.ts';
-import { readyProposal, nativeProposalProfileInputs, prepareNativeProposalVoting } from './ready-proposal-fixture.ts';
+import { prepareNativeProposalVoting } from './ready-proposal-fixture.ts';
+import { nativeSubscriberInputs, recordNativeSubscriberInputs, expectNativeSubscriberGraph } from './native-subscriber-inputs.ts';
 import { verifyNativeProposalReconciliation } from './proposal-reconciliation-fixture.ts';
 import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { stringify } from 'yaml';
@@ -28,7 +29,7 @@ import { createGovernanceService } from '../../../../../../src/api/control-plane
 import { createDiscussionService } from '../../../../../../src/api/discussions/discussion-service.ts';
 import { SessionEventService } from '../../../../../../src/api/realtime/session-events.ts';
 describe('native proposal Decision authority', () => {
-	it('original governance acceptance publishes one native classed Decision for the exact proposal and preserves that content and original history through decision creation replay', async () => {
+	it('original governance accepts both group subscriber contributions into one exact native Decision and preserves content and history through replay', async () => {
 		// Native proposal bytes and the administrative principal are INPUTS. The
 		// Decision must be produced by the ORIGINAL governance method, not seeded
 		// by this test. This is not authenticated operator HTTP or managed dispatch.
@@ -36,22 +37,17 @@ describe('native proposal Decision authority', () => {
 		const f = await relationAuthoringDatabase(true), extraWorkspaces = new Set<string>(); assert.ok(f.peerStore);
 		let teamRepository: string | undefined;
 		try {
-			// Existing postgresGraph owns a fresh UUID database, ALL original
-			// migrations, two independent pools, and its own exact cleanup.
+			// postgresGraph owns a fresh UUID database, original migrations, independent pools and cleanup.
 			// The original integrated Discussion journal advances this binding via
 			// its owning store method, which requires the represented instance row.
 			// This is a disposable connection INPUT, not service provisioning.
 			expect((await f.query('SELECT id,base_url,status FROM treedx_instances WHERE id=?', ['native-conformance'])).rows)
 				.toEqual([{ id: 'native-conformance', base_url: process.env.TREEDX_BASE_URL, status: 'active' }]);
 			const repository = f.sources[0]!.repository, projectId = f.sources[0]!.projectId;
-			const declaration = { ...readyProposal(), id: `proposal-${randomUUID()}`, projectId };
-			if (canonicalSupply) for (const workItem of declaration.executionPlan.workItems) {
-				workItem.requiredCapabilities = ['treeseed.research.verification'];
-				workItem.requestedPermissions.content.read.push('decision');
-			}
+			const subscriberInputs = nativeSubscriberInputs(f.profiles, projectId, `proposal-${randomUUID()}`, canonicalSupply);
+			const { declaration, profileInputs } = subscriberInputs;
 			const originalInputs = structuredClone({ declaration, principal: f.principal, sources: f.sources });
 			const path = `proposals/${declaration.id}.mdx`, raw = `---\n${stringify(declaration)}---\n`;
-			const { profileInputs, closeout } = nativeProposalProfileInputs(f.profiles, projectId, canonicalSupply);
 			const profileInputsBefore = structuredClone(profileInputs);
 			const refsBefore = object(await f.client.repositories.refs(repository));
 			assert.ok(Array.isArray(refsBefore.refs));
@@ -98,7 +94,11 @@ describe('native proposal Decision authority', () => {
 				const connection = await resolveKnowledgeGatewayConnection(f.store, { projectId: source.projectId, write: true }); expect(connection).not.toBeNull();
 				await completedGraphRefresh(connection!.client, { repoId: source.repository, ref: 'refs/heads/staging', paths: ['notes/**'] });
 			}
-			const input = { status: 'approved', reason: 'Authorize the exact bounded proposal input.', expectedProposalVersion: 1 };
+			const estimateIds = await recordNativeSubscriberInputs(f, subscriberInputs,
+				{ store: 'treedx', model: 'proposal', id: declaration.id, revision: 1, digest: `sha256:${digest}`, repository, commit, path }, extraWorkspaces);
+			expect(await f.store.governanceProposalReadiness(declaration.id)).toMatchObject({ executionPlanReady: true,
+				participationVersionReady: true, missingParticipantEstimates: [] });
+			const input = { status: 'approved', reason: 'Authorize both source-backed subscriber contributions.', expectedProposalVersion: 1 };
 			if (canonicalSupply) {
 				const subjectRef = { store: 'treedx', model: 'proposal', id: declaration.id, revision: 1, digest: `sha256:${digest}`, repository, commit, path };
 				const question = { schemaVersion: 'treeseed.question/v1', id: `question-${declaration.id}`, projectId, subjectRef,
@@ -215,7 +215,7 @@ describe('native proposal Decision authority', () => {
 			const retainedContent = [...contents.values()][0]!;
 			const projected = (await f.store.all('SELECT * FROM execution_nodes WHERE team_id=? ORDER BY id', ['team']))
 				.map(decodeExecutionNode).filter(node => node.sourceRef.id === declaration.id);
-			expect(projected.filter(node => node.pairRole === 'actor')).toHaveLength(1); expect(projected.filter(node => node.pairRole === 'reviewer')).toHaveLength(1);
+			expectNativeSubscriberGraph(subscriberInputs, projected);
 			for (const node of projected.filter(value => value.pairRole !== null)) {
 				expect(node.sourceRef).toEqual(proposalRef);
 				assert.ok(node.authorityRefs); const authorities = node.authorityRefs.filter(ref => ref.model === 'decision'); expect(authorities).toHaveLength(1);
@@ -269,8 +269,8 @@ describe('native proposal Decision authority', () => {
 			const readerBefore = await readerState();
 			const currentBinding = readerBefore.bindings.find(binding => binding.project_id === projectId); assert.ok(currentBinding);
 			const projectContextCommit = String(currentBinding.content_repository_ref); expect(projectContextCommit).toMatch(/^[a-f0-9]{40}$/u);
-			expect(readerBefore.assignments).toEqual([]); expect(readerBefore.reservations).toEqual([]); expect(readerBefore.usage).toEqual([]);
-			const actorNode = projected.find(node => node.pairRole === 'actor'); assert.ok(actorNode); assert.ok(actorNode.authorityRefs); assert.ok(typeof actorNode.agentClass === 'string'); expect(actorNode.status).toBe('ready');
+			expect(readerBefore.assignments.map(row => row.id)).toEqual(estimateIds); expect(readerBefore.reservations).toEqual([]); expect(readerBefore.usage).toEqual([]);
+			const actorNode = projected.find(node => node.pairRole === 'actor' && node.workItemId === declaration.executionPlan.workItems[0]!.id); assert.ok(actorNode); assert.ok(actorNode.authorityRefs); assert.ok(typeof actorNode.agentClass === 'string'); expect(actorNode.status).toBe('ready');
 			const actorRow = graph.nodes.find(row => row.id === actorNode.id); assert.ok(actorRow); assert.equal(typeof actorRow.updated_at, 'string');
 			const actorProfile = profileInputs.find(profile => profile.definition.agentClass === actorNode.agentClass); assert.ok(actorProfile);
 			const selectedProfile = actorProfile.definition.activityProfiles.acting; assert.ok(selectedProfile);
@@ -386,9 +386,12 @@ describe('native proposal Decision authority', () => {
 			const storedRows = await f.store.all('SELECT * FROM capacity_operation_receipts WHERE resource_type=? AND resource_id=?', ['workday_preflight', receipt.id]);
 			expect(storedRows).toHaveLength(1); const persisted = object(JSON.parse(String(storedRows[0]!.response_json))); expect(persisted.receipt).toEqual(receipt); expect(persisted.intent).toEqual(intent);
 			expect(object(object(persisted.runInput).parameters).decisionIds).toEqual([decisionId]);
-			expect(object(object(persisted.runInput).parameters).reportingAgentId).toBe(closeout.id);
+			expect(object(object(persisted.runInput).parameters).groupIds).toEqual(declaration.groupIds);
+			expect(object(object(persisted.runInput).parameters)).not.toHaveProperty('reportingAgentId');
 			const preflightProjection=await capacity.preflightCapacityWorkdayRunRequest('team',object(persisted.runInput));
-			expect(object(preflightProjection.appliedPlan).reportingAgentId).toBe(closeout.id);
+			expect(object(preflightProjection.appliedPlan)).not.toHaveProperty('reportingAgentId');
+			expect(object(preflightProjection.agentProfilesByProjectId)[projectId]).toMatchObject({ agents:
+				subscriberInputs.subscribers.map(profile => expect.objectContaining({ definition: profile.definition })) });
 			const hash = (value: unknown) => `sha256:${createHash('sha256').update(canonicalJson(value)).digest('base64url')}`;
 			expect(receipt.intentDigest).toBe(hash(intent)); expect(storedRows[0]!.request_digest).toBe(receipt.intentDigest); expect(receipt.demandSetDigest).toBe(hash({ selectedDemands: receipt.selectedDemands, objectives: [], proposalIds: [], decisionIds: [decisionId] }));
 			const { preflightDigest, ...payload } = receipt; expect(preflightDigest).toBe(hash(payload));
@@ -450,7 +453,8 @@ describe('native proposal Decision authority', () => {
 					counters: await f.store.all('SELECT * FROM capacity_admission_counters ORDER BY id'), claims: await f.store.all('SELECT * FROM capacity_reservation_counter_claims ORDER BY reservation_id,counter_id'),
 					nodes: await f.store.all('SELECT * FROM execution_nodes ORDER BY id'), usage: await f.store.all('SELECT * FROM capacity_usage_actuals ORDER BY id'),
 					ledger: await f.store.all('SELECT * FROM capacity_ledger_entries ORDER BY id') });
-				const committed = await state(); expect(committed.assignments).toHaveLength(1); expect(committed.reservations).toHaveLength(1);
+				const committed = await state(); expect(committed.assignments).toHaveLength(3); expect(committed.reservations).toHaveLength(1);
+				expect(committed.assignments.filter(row => estimateIds.includes(String(row.id)))).toEqual(readerBefore.assignments);
 				expect(committed.proxies).toHaveLength(1); expect(committed.claims).toHaveLength(2); expect(committed.counters).toHaveLength(2); for (const counter of committed.counters) expect(counter).toMatchObject({ hard_limit: 10, committed_amount: 3 });
 				expect(committed.reservations[0]).toMatchObject({ assignment_id: attempt.id, reserved_seconds: 3, expires_at: attempt.deadline });
 				expect(committed.nodes.find(node => node.id === actorNode.id)?.status).toBe('assigned'); expect(committed.usage).toEqual([]); expect(committed.ledger).toEqual(before.ledger);
@@ -469,17 +473,15 @@ describe('native proposal Decision authority', () => {
 				expect(winner.assignment?.assignmentAttempt).toEqual({ ...attempt, status: 'leased' }); expect(attempt.status).toBe('created'); expect(typeof winner.leaseToken).toBe('string'); expect(Boolean(winner.leaseToken)).toBe(true); expect(winner.assignment?.leaseToken === winner.leaseToken).toBe(true);
 				const expiry = Date.parse(winner.assignment?.leaseExpiresAt ?? ''); expect(expiry).toBeGreaterThan(calledAt); expect(expiry).toBeLessThanOrEqual(Date.parse(attempt.deadline)); expect(Date.now()).toBeLessThanOrEqual(Date.parse(attempt.deadline));
 				for (const loser of claims.filter(value => !value.assignment)) expect(loser.leaseToken).toBeNull();
-				const claimed = await state(); expect(claimed.assignments).toHaveLength(1);
+				const claimed = await state(); expect(claimed.assignments).toHaveLength(3);
+				expect(claimed.assignments.filter(row => estimateIds.includes(String(row.id)))).toEqual(readerBefore.assignments);
 				for (const field of ['reservations', 'proxies', 'counters', 'claims', 'nodes', 'usage', 'ledger'] as const) expect(claimed[field]).toEqual(committed[field]);
 				expect((await capacity.getProviderAssignment('team', attempt.id))?.leaseToken === winner.leaseToken).toBe(true); expect(leaseInput).toEqual(leaseBefore); expect(admission).toEqual(admissionBefore); expect(publication).toEqual(publicationBefore);
 				expect(await f.store.all('SELECT * FROM governance_events ORDER BY id')).toEqual(history); expect(await f.store.all('SELECT * FROM governance_decisions ORDER BY id')).toEqual(rows);
 				expect(await f.store.all('SELECT * FROM capacity_operation_receipts ORDER BY id')).toEqual(allReceipts);
 				const readback = object(await native.readRepositoryFile({ repoId: repository, ref: retainedContent.commit, path: retainedContent.path, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }));
 				expect(readback.resolvedRef).toBe(retainedContent.commit); expect(object(readback.file).content).toBe(retainedContent.raw);
-				// A genuine content producer reaches native atomic admission; signed
-				// conformance is still supplied qualification, not a suite receipt,
-				// authenticated enrollment/public HTTP, model or usage proof. Native
-				// claim promises share one PGlite connection, not independent PG pools.
+				// Native admission/claim does not prove live model execution or usage.
 			}
 		} finally {
 			const cleanupErrors: unknown[] = [];
