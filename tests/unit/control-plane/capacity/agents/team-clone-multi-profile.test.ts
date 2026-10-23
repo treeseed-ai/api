@@ -26,7 +26,7 @@ const clonedCommit = 'c'.repeat(40);
 const digest = (value: string) => `sha256:${createHash('sha256').update(value).digest('hex')}`;
 const definition = (id: string, name: string, prompt: string) => ({
 	schemaVersion: 'treeseed.agent/v1', id, name, agentClass: 'engineer', purpose: `${name} purpose.`,
-	responsibilities: [`Support ${name}.`], capabilities: ['reasoning'], context: { include: ['project-objectives'] },
+	responsibilities: [`Support ${name}.`], capabilities: ['reasoning'], context: { include: ['project-objectives'] }, groupIds: ['project-api'],
 	activityProfiles: { chat: { handler: 'writer', permissions: {
 		content: { read: ['discussion'], write: ['discussion'] }, tools: ['discussion'],
 	}, prompt: { system: prompt } } },
@@ -97,6 +97,8 @@ describe('team clone with shared-class profiles', () => {
 		} });
 		expect((activeClass.handlerRefs as { agents: Array<Record<string, unknown>> }).agents.map((agent) => agent.id))
 			.toEqual(['target/operator-engineer', 'target/engineer']);
+		expect((activeClass.handlerRefs as { agents: Array<Record<string, unknown>> }).agents.map((agent) => agent.groupIds))
+			.toEqual([['project-api'], ['project-api']]);
 		expect((activeClass.handlerRefs as { agents: Array<Record<string, unknown>> }).agents.map((agent) =>
 			((agent.activityProfiles as Record<string, { prompt: { system: string } }>).chat.prompt.system)))
 			.toEqual(['Keep operator instructions intact.', 'Keep engineer instructions intact.']);
