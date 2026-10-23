@@ -23,7 +23,7 @@ export async function proposalNativeFixture() {
 			const chunks: Buffer[] = [];
 			for await (const chunk of request) chunks.push(Buffer.from(chunk));
 			const input = JSON.parse(Buffer.concat(chunks).toString()) as { ref: string; path: string };
-			if (!/^[a-f0-9]{40}$/u.test(input.ref) || !/^(proposals|decisions)\/[a-z0-9-]+\.mdx$/u.test(input.path)) throw new Error('Unsafe source');
+			if (!/^[a-f0-9]{40}$/u.test(input.ref) || !/^(proposals|decisions|agents)\/[a-z0-9-]+\.mdx$/u.test(input.path)) throw new Error('Unsafe source');
 			requests.push({ ref: input.ref, path: input.path });
 			if (fault === 'denied') { response.writeHead(403); response.end(JSON.stringify({ error: 'forbidden' })); return; }
 			const content = execFileSync('git', ['show', `${input.ref}:${input.path}`], { cwd: root, encoding: 'utf8' });
@@ -55,7 +55,7 @@ export async function proposalNativeFixture() {
 			first: async (sql: string, parameters: unknown[] = []) => (await query(sql, parameters)).rows[0] ?? null,
 			all: async (sql: string, parameters: unknown[] = []) => (await query(sql, parameters)).rows };
 		const publishContent = (path: string, definition: Record<string, unknown>) => {
-			if (!/^(proposals|decisions)\/[a-z0-9-]+\.mdx$/u.test(path)) throw new Error('Unsafe fixture path');
+			if (!/^(proposals|decisions|agents)\/[a-z0-9-]+\.mdx$/u.test(path)) throw new Error('Unsafe fixture path');
 			mkdirSync(join(root, path.split('/')[0]!), { recursive: true });
 			const source = `---\n${stringify(definition)}---\n`;
 			writeFileSync(join(root, path), source);

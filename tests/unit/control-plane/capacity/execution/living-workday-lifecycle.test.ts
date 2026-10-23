@@ -6,6 +6,9 @@ import { advanceLivingWorkday } from '../../../../../src/api/capacity/services/c
 import { DEFAULT_WORKDAY_POLICY, appliedWorkdaySchema, compileWorkday, validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
 import { runtimeWorkdayPhase } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import { compileCapacityWorkdayRunRecord } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
+import { readExactProposal } from '../../../../../src/api/governance/executable-proposal.ts';
+const contributionProof = vi.hoisted(() => vi.fn());
+vi.mock('../../../../../src/api/capacity/services/capacity/execution/proposal-contributions.ts', () => ({ loadProposalGroupContributions: contributionProof }));
 
 const fluidPlan = { ...compileWorkday({ id: 'fluid-workday', teamId: 'team', policyId: 'default', policyRevision: 1,
 	executionMode: 'simulation', policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 3600, planningPercent: 100 / 3,
@@ -78,6 +81,30 @@ const reportResult = { schemaVersion: 'treeseed.assignment-result/v1', id: 'resu
 	usage: { elapsedSeconds: 1 }, diagnostics: [], completedAt: now };
 
 describe('living workday lifecycle', () => {
+	it('continues group estimating after the first structurally complete contribution until the shared cohort reader verifies everyone', async () => {
+		const partial = { schemaVersion: 'treeseed.proposal/v2', id: 'partial-group', groupIds: ['portfolio'], status: 'discussing',
+			executionPlan: { workItems: [{ id: 'document-runner', estimate: { expectedSeconds: 30, maximumSeconds: 60 },
+				review: 'required', reviewEstimate: { expectedSeconds: 20, maximumSeconds: 40 } }] } };
+		const agents = ['technical-writer', 'tester'].map(name => ({ definition: { ...planningAgent('maintenance'),
+			id: `project/${name}`, name, groupIds: ['portfolio'] }, activities: ['estimating'] }));
+		for (const current of [false, true]) {
+			contributionProof.mockResolvedValue({ current, attempts: [], missing: current ? [] : ['project/project/tester'] });
+			vi.mocked(readExactProposal).mockResolvedValueOnce({ definition: partial, ref: {
+				store: 'treedx', model: 'proposal', id: partial.id, revision: 2, digest: `sha256:${'a'.repeat(64)}`,
+				repository: 'project-library', commit: 'b'.repeat(40), path: 'proposals/partial-group.mdx' } } as never);
+			const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z', policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
+			const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
+				proposalIds: [partial.id], groupIds: ['portfolio'], agentProfilesByProjectId: { project: { agents } } } };
+			const store = { first: async () => null, all: async (sql: string) => sql.includes('FROM governance_proposals')
+				? [{ id: partial.id, team_id: 'team', project_id: 'project' }]
+				: currentPlan.planningRounds.flatMap(round => round.assignmentIds.map(id => ({ id, kind: 'planning', status: 'completed' }))),
+				updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
+			const next = await advanceLivingWorkday(store as never, currentRun as never, '2026-09-13T15:03:00Z');
+			expect(next.plan.planningRounds).toHaveLength(current ? 2 : 3);
+			if (!current) expect(next.plan.planningRounds.at(-1)!.assignmentIds.filter(id => id.includes(':estimating:'))).toHaveLength(2);
+			expect(next.plan.endsAt).toBe(currentPlan.endsAt); expect(next.plan.policySnapshot).toEqual(currentPlan.policySnapshot);
+		}
+	});
 	it('cancels an explicitly stopped conversation without waiting for or fabricating a Reporter result', async () => {
 		const conversation = { ...run, executionKind: 'conversation' } as never;
 		const store = { all: vi.fn(async () => []), updateCapacityWorkdayRun: vi.fn(async () => conversation) };

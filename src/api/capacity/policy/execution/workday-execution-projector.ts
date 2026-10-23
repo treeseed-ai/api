@@ -109,6 +109,12 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 					&& planningSource.model === 'proposal' ? planningSource as ExactEntityReference : reference;
 				const plannedId = `planning:${workday.id}:${round}:${participant.id}`;
 				if (!plannedIds.has(plannedId)) continue;
+				if (issuedIds.has(plannedId)) {
+					const retained = retainedById.get(plannedId)!;
+					if (retained.teamId !== input.teamId || retained.projectId !== projectId || retained.workdayId !== workday.id
+						|| retained.kind !== activity || retained.agentClass !== definition.agentClass) throw new Error('Original issued planning node custody differs.');
+					current.push(retained); nodes.push(retained); continue;
+				}
 				const obsolete = activity === 'estimating' && !requiredIds.has(participant.id);
 				if (obsolete) {
 					const retained = retainedById.get(plannedId);

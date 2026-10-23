@@ -86,6 +86,11 @@ describe('workday living-graph projection', () => {
 		expect(projectActiveWorkdays({...input,issuedNodeIds:[...first.assignmentIds,'planning:another-workday:2:sdk/sdk/engineer:estimating:ready-proposal']})).toEqual(graph);
 
 		const {closingAt:_closingAt,...withoutClosing}=plan;
+		const stillEstimating={...source,proposalsByProjectId:{sdk:[draft]},proposalStatusesByProposalId:{[proposalId]:'open'},
+			parameters:{...source.parameters,appliedPlan:{...withoutClosing,state:'active' as const}}};
+		const advanced=projectActiveWorkdays({...input,sources:[stillEstimating]});
+		for(const prior of retainedNodes)expect(advanced.nodes.find(node=>node.id===prior.id)).toEqual(prior);
+		for(const id of second.assignmentIds)expect(advanced.nodes.find(node=>node.id===id)?.sourceRef).toEqual(reference);
 		const active={...source,parameters:{...source.parameters,appliedPlan:{...withoutClosing,state:'active' as const}}};
 		expect(projectActiveWorkdays({...input,sources:[active]}).nodes).toEqual([]);
 		const noSource={...source,proposalsByProjectId:{sdk:[]}};

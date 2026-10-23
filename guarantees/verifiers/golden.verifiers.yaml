@@ -1,6 +1,26 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.contribution-readiness-counter:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/contributions/readiness.test.ts
+    testName: "keeps execution readiness false when actual contributor profile dependencies create a cycle despite complete estimates"
+  api.golden.contribution-execution-ownership:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/contributions/contribution-graph.test.ts
+    testName: "binds each same-class author to its own acting work and another author own review budget in documentation-first dependency order"
+  api.golden.contribution-execution-denials:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/contributions/contribution-graph.test.ts
+    testName: "refuses missing forged moved foreign or unsubscribed contributor authority and infeasible independent review"
+  api.golden.contribution-cohort-lifecycle:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: "continues group estimating after the first structurally complete contribution until the shared cohort reader verifies everyone"
   api.golden.subscriber-identity-binding:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

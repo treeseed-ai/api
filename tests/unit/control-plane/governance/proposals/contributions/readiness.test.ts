@@ -29,12 +29,13 @@ function fixture(activity: 'planning' | 'estimating') {
 	const agents = names.map(name => ({ schemaVersion: 'treeseed.agent/v1', id: `project/${name}`, name,
 		agentClass: 'maintenance', groupIds: ['provider-runtime'], purpose: 'Repair actual runtime source.',
 		responsibilities: ['Own a useful contribution.'], capabilities: ['source-repair'], context: { include: ['assignment-subject'] },
-		activityProfiles: { planning: profiles, estimating: profiles } }));
+		activityProfiles: { planning: profiles, estimating: profiles, acting: profiles, reviewing: profiles } }));
 	const rows = names.map(name => {
 		const id = `turn-${name}`, ref = { ...original.sourceRef, repository: 'library', commit: 'a'.repeat(40), path: 'proposals/proposal.mdx' };
 		const attempt = assignmentAttemptSchema.parse({ ...original, id, projectId: 'project', agentClass: 'maintenance',
 			workItemId: undefined, sourceRef: ref, effectiveProfile: { ...original.effectiveProfile, activity, handler: 'writer',
-				profileRef: { ...original.effectiveProfile.profileRef, id: `project/${name}` } },
+				profileRef: { store: 'treedx', model: 'agent', id: `project/${name}`, repository: 'library',
+					commit: 'b'.repeat(40), path: `agents/${name}.mdx` } },
 			workspace: { mode: 'treedx', workspaceId: `workspace-${name}`, repository: 'library', baseCommit: 'a'.repeat(40), writablePaths: ['proposals/proposal.mdx'] },
 			grant: { contentRead: [ref], contentWrite: [ref], sourceRead: [], sourceWrite: [], tools: [] }, status: 'completed' });
 		const result = assignmentResultSchema.parse({ schemaVersion: 'treeseed.assignment-result/v1', id: `result-${name}`,
@@ -48,10 +49,19 @@ function fixture(activity: 'planning' | 'estimating') {
 		listTeamProjects: async () => [{ id: 'project' }], all: async (sql: string) => sql.includes('capacity_provider_assignments') ? rows : [] };
 	vi.spyOn(ProjectAgentClassRepository.prototype, 'listPage').mockResolvedValue({ items: [{ id: 'allocation', slug: 'maintenance', status: 'active',
 		handlerRefs: { agents } }], page: { hasMore: false, nextCursor: null } } as never);
-	return { store, rows, definition };
+	return { store, rows, definition, agents };
 }
 
 describe('every subscriber must own an estimate before approval', () => {
+	it('keeps execution readiness false when actual contributor profile dependencies create a cycle despite complete estimates', async () => {
+		const f = fixture('estimating');
+		for (const [index, agent] of f.agents.entries()) Object.assign(agent.activityProfiles, {
+			acting: { ...agent.activityProfiles.acting, dependsOn: { agents: [f.agents[1 - index]!.id] } },
+		});
+		expect(await governanceProposalReadinessMethod.call(f.store as never, 'proposal')).toMatchObject({
+			votingReady: false, executionPlanReady: false,
+		});
+	});
 	it('refuses an additional contribution with no verified subscribed author even when every member has estimated', async () => {
 		const f = fixture('estimating'), first = f.definition.executionPlan.workItems[0]!;
 		f.definition.executionPlan.workItems.push({ ...first, id: 'foreign-work', estimateRef: { ...first.estimateRef, id: 'unproved-author' } });
