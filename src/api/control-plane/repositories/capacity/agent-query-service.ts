@@ -46,11 +46,13 @@ async function acceptedAgents(store: any, projectId: string) {
 			const slug = parsed.data.id.split('/').at(-1)!;
 			if (identities.has(parsed.data.id) || slugs.has(slug)) throw new CapacityOperationError(409, 'agent_definition_duplicate', 'Stored agent identity is ambiguous.');
 			identities.add(parsed.data.id); slugs.add(slug);
-			return parsed.data;
-		}).map((agent) => ({
+			const definitionSources = record(agentClass.metadata).definitionSources;
+			const source = (Array.isArray(definitionSources) ? definitionSources : []).map(record).find((item) => item.agentId === parsed.data!.id);
+			return { definition: parsed.data, definitionSource: source ? { path: source.path, digest: source.digest } : null };
+		}).map(({ definition: agent, definitionSource }) => ({
 			agentSlug: agent.id.split('/').at(-1) ?? agent.id, name: agent.name,
 			projectAgentClassId: agentClass.id, allocationClass: agentClass.slug, definitionRevision: String(record(agentClass.metadata).immutableRef ?? agentClass.updatedAt ?? ''),
-			definition: agent, activities: agent.activityProfiles, chatEnabled: Boolean(agent.activityProfiles.chat),
+			definition: agent, definitionSource, activities: agent.activityProfiles, chatEnabled: Boolean(agent.activityProfiles.chat),
 			effectiveActivities: Object.fromEntries(Object.entries(agent.activityProfiles).map(([activity, profile]) => [activity, {
 				handler: profile.handler, origin: profile.handler.includes('/') ? 'project-runtime' : 'agent-package',
 				prompt: profile.prompt, context: [...agent.context.include, ...(profile.additionalContext ?? [])],

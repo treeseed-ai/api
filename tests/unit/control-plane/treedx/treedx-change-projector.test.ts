@@ -59,8 +59,34 @@ describe('TreeDX change projection', () => {
 		});
 		await projectTreeDxCommitSignals(store as never, { projectId: 'project-1', commitSha: 'd'.repeat(40),
 			immutableRef: 'refs/heads/staging', changedPaths: ['agents/reviewer.mdx'], changeSummary: 'Update Reviewer.', actorType: 'user' });
-		expect(store.run).toHaveBeenCalledWith(expect.stringContaining('UPDATE project_agent_classes'), expect.arrayContaining([
-			'SDK Reviewer', expect.stringContaining('sdk/reviewer'), expect.stringContaining(`"immutableRef":"${'d'.repeat(40)}"`),
-		]));
+		const [sql, values] = store.run.mock.calls.find(([sql]) => String(sql).includes('UPDATE project_agent_classes'))!;
+		expect(sql).toContain('UPDATE project_agent_classes');
+		expect(JSON.parse(String(values[0]))).toEqual({ agents: [expect.objectContaining({ id: 'sdk/reviewer' })] });
+		expect(String(values[1])).toContain(`"immutableRef":"${'d'.repeat(40)}"`);
+	});
+
+	it('activates same-class profiles together with per-agent source custody', async () => {
+		const store = database();
+		store.all.mockResolvedValue([{ id: 'class-engineer', slug: 'engineer', status: 'active', metadata_json: '{}' }]);
+		resolveKnowledgeGatewayConnection.mockResolvedValue({ baseRef: 'refs/heads/staging' });
+		const definition = (id: string, name: string) => ({ schemaVersion: 'treeseed.agent/v1', id, name,
+			agentClass: 'engineer', purpose: 'Operate recovery.', responsibilities: ['Recover.'], capabilities: ['engineering'],
+			activityProfiles: { acting: { handler: 'writer', permissions: { content: { read: ['objective'], write: ['proposal'] }, tools: ['source.read'] },
+				prompt: { system: 'Work from the governed recovery plan.' } } }, context: { include: ['assignment-subject'] } });
+		snapshotAgentDefinitions.mockResolvedValue({ commit: 'f'.repeat(40), files: [
+			{ path: 'agents/operator-engineer.yaml', sourceDigest: `sha256:${'1'.repeat(64)}`, definition: definition('sdk/operator-engineer', 'Operator Engineer') },
+			{ path: 'agents/engineer.mdx', sourceDigest: `sha256:${'2'.repeat(64)}`, definition: definition('sdk/engineer', 'SDK Engineer') },
+		] });
+		await projectTreeDxCommitSignals(store as never, { projectId: 'project-1', commitSha: 'f'.repeat(40),
+			immutableRef: 'refs/heads/staging', changedPaths: ['agents/operator-engineer.yaml'], changeSummary: 'Add operator profile.', actorType: 'user' });
+		const classWrites = store.run.mock.calls.filter(([sql]) => String(sql).includes('UPDATE project_agent_classes'));
+		expect(classWrites).toHaveLength(1);
+		const [, values] = classWrites[0]!;
+		expect(JSON.parse(String(values[0])).agents.map((agent: { id: string }) => agent.id)).toEqual(['sdk/operator-engineer', 'sdk/engineer']);
+		const metadata = JSON.parse(String(values[1]));
+		expect(metadata.definitionSources).toEqual([
+			{ agentId: 'sdk/operator-engineer', path: 'agents/operator-engineer.yaml', digest: `sha256:${'1'.repeat(64)}` },
+			{ agentId: 'sdk/engineer', path: 'agents/engineer.mdx', digest: `sha256:${'2'.repeat(64)}` },
+		]);
 	});
 });

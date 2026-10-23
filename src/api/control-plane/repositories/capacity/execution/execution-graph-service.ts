@@ -108,10 +108,9 @@ async function loadProfiles(store: any, teamId: string): Promise<Record<string, 
 			new CapacityOperationError(409, 'agent_profile_invalid', 'An active project agent class does not contain a valid minimal agent definition.'),
 			{ diagnostics: validation.diagnostics },
 		);
-		const key = `${text(row.project_id)}:${validation.data.agentClass}`;
-		if (profiles[key] && stable(profiles[key]) !== stable(validation.data)) {
-			throw new CapacityOperationError(409, 'agent_profile_conflict', `Project ${row.project_id} has conflicting ${validation.data.agentClass} definitions.`);
-		}
+		const key = `${text(row.project_id)}:${validation.data.id}`;
+		if (profiles[key]) throw new CapacityOperationError(409, 'agent_profile_duplicate',
+			`Project ${row.project_id} has duplicate ${validation.data.id} definitions.`);
 		profiles[key] = validation.data;
 	}
 	return profiles;

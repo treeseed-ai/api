@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { parse as parseYaml } from 'yaml';
 import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
 import { parseFrontmatterDocument } from '../../../../content/frontmatter.ts';
 import { projectLibraryPath, type KnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
@@ -15,10 +16,19 @@ export interface AgentDefinitionSourceFile {
 	sourceDigest: string;
 }
 
+export function parseAgentDefinitionSource(path: string, content: string) {
+	if (/\.ya?ml$/iu.test(path) && !content.startsWith('---\n')) {
+		const parsed = parseYaml(content);
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Agent YAML must be a mapping.');
+		return { frontmatter: parsed as Record<string, unknown>, body: '' };
+	}
+	return parseFrontmatterDocument(content);
+}
+
 /** Read and validate one exact governed agent-definition collection. */
 export async function snapshotAgentDefinitions(value: KnowledgeGatewayConnection, ref = value.baseRef) {
 	const listed = await value.client.listRepositoryPaths({ repoId: value.repositoryId, ref,
-		paths: [projectLibraryPath(value.contentPath, 'agents/**')], kinds: ['blob'], extensions: ['.md', '.mdx'], limit: 200, allowProtected: true });
+		paths: [projectLibraryPath(value.contentPath, 'agents/**')], kinds: ['blob'], extensions: ['.md', '.mdx', '.yaml', '.yml'], limit: 200, allowProtected: true });
 	const commit = text(listed.resolvedRef);
 	if (!/^[0-9a-f]{40}$/u.test(commit)) throw new CapacityOperationError(409, 'agent_team_snapshot_invalid',
 		'TreeDX did not resolve the agent collection to an exact commit.');
@@ -39,14 +49,22 @@ export async function snapshotAgentDefinitions(value: KnowledgeGatewayConnection
 		const content = file.content;
 		if (typeof content !== 'string') throw new CapacityOperationError(502, 'agent_team_source_missing',
 			'TreeDX did not return exact agent definition bytes.');
-		const path = text(file.path), validation = validateAgentDefinitionModel(parseFrontmatterDocument(content).frontmatter);
+		const path = text(file.path);
+		let frontmatter: Record<string, unknown>;
+		try { frontmatter = parseAgentDefinitionSource(path, content).frontmatter; }
+		catch (error) { throw new CapacityOperationError(409, 'agent_team_definition_invalid',
+			`Agent definition ${path || '(unknown)'} is invalid; the exact source snapshot cannot be used.`,
+			{ path, diagnostics: [{ code: 'agent_source_parse_invalid', path: 'frontmatter', message: error instanceof Error ? error.message : String(error) }] }); }
+		const validation = validateAgentDefinitionModel(frontmatter);
 		if (!validation.ok || !validation.data) throw new CapacityOperationError(409, 'agent_team_definition_invalid',
 			`Agent definition ${path || '(unknown)'} is invalid; the exact source snapshot cannot be used.`,
 			{ path, diagnostics: validation.diagnostics });
 		return { path, content, definition: validation.data,
 			sourceDigest: `sha256:${createHash('sha256').update(content).digest('hex')}` };
 	});
-	if (new Set(files.map((file) => file.definition.agentClass)).size !== files.length) throw new CapacityOperationError(409,
-		'agent_team_class_ambiguous', 'Multiple agent definitions select the same class.');
+	const identities = files.map((file) => file.definition.id);
+	const slugs = identities.map((identity) => identity.split('/').at(-1));
+	if (new Set(identities).size !== files.length || new Set(slugs).size !== files.length) throw new CapacityOperationError(409,
+		'agent_team_definition_duplicate', 'Multiple agent definitions use the same identity.');
 	return { commit, files };
 }
