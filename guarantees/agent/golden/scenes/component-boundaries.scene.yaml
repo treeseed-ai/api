@@ -1020,6 +1020,15 @@ workflow:
   - id: architecture-dependency-admission-native-5
     action: { verifier: api.golden.architecture-dependency-admission-native-5 }
     expect: { status: passed }
+  - id: architecture-rework-admission-native
+    action: { verifier: api.golden.architecture-rework-admission-native }
+    expect: { status: passed }
+  - id: architecture-rework-admission-incomplete
+    action: { verifier: api.golden.architecture-rework-admission-incomplete }
+    expect: { status: passed }
+  - id: architecture-rework-admission-returned
+    action: { verifier: api.golden.architecture-rework-admission-returned }
+    expect: { status: passed }
   - id: architecture-relation-scheduling-unit-1
     action: { verifier: api.golden.architecture-relation-scheduling-unit-1 }
     expect: { status: passed }

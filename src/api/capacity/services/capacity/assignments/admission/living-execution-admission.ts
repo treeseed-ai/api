@@ -136,21 +136,60 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		requestedSeconds: assignment.limits.maximumSeconds, reservedSeconds: assignment.limits.maximumSeconds,
 		limits: assignment.limits, budget: timing.capacityBudget,
 	};
+	// Request-changes advances the pair's node revisions. Its exact reviewed
+	// product and review remain rework context, never approved downstream work.
 	const predecessorFence = reporting ? '' : predecessorResults.map(() => `AND EXISTS (
 		SELECT 1 FROM capacity_provider_assignments prior
 		JOIN execution_nodes predecessor ON predecessor.team_id=prior.team_id AND predecessor.id=prior.execution_node_id
 		WHERE prior.team_id=node.team_id AND prior.id=? AND prior.status='completed'
 		AND prior.assignment_result_json::jsonb=?::jsonb
-		AND prior.execution_node_revision=predecessor.node_revision AND predecessor.status='completed'
-		AND (predecessor.pair_role IS DISTINCT FROM 'reviewer'
-			OR prior.lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='approved')
+		AND ((prior.execution_node_revision=predecessor.node_revision AND predecessor.status='completed'
+			AND (predecessor.pair_role IS DISTINCT FROM 'reviewer'
+				OR prior.lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='approved'))
+		OR (node.pair_role='actor' AND node.work_item_id IS NOT NULL AND EXISTS (
+			SELECT 1 FROM execution_edges pair
+			JOIN execution_nodes reviewer ON reviewer.team_id=pair.team_id AND reviewer.id=pair.to_node_id
+			JOIN capacity_provider_assignments review_history ON review_history.team_id=reviewer.team_id
+				AND review_history.execution_node_id=reviewer.id AND review_history.status='completed'
+			JOIN capacity_provider_assignments product ON product.team_id=node.team_id
+				AND product.execution_node_id=node.id AND product.status='completed'
+			WHERE pair.team_id=node.team_id AND pair.from_node_id=node.id
+			AND pair.provenance='review-pair' AND pair.graph_revision_removed IS NULL
+			AND pair.source_ref_json::jsonb=node.source_ref_json::jsonb
+			AND reviewer.project_id=node.project_id AND reviewer.work_item_id=node.work_item_id
+			AND reviewer.pair_role='reviewer' AND reviewer.status='blocked'
+			AND reviewer.source_ref_json::jsonb=node.source_ref_json::jsonb
+			AND reviewer.authority_refs_json::jsonb=node.authority_refs_json::jsonb
+			AND product.execution_node_revision<node.node_revision
+			AND review_history.execution_node_revision<reviewer.node_revision
+			AND review_history.lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='request-changes'
+			AND review_history.assignment_attempt_json::jsonb->'predecessorResultIds'
+				@> jsonb_build_array(product.assignment_result_json::jsonb->>'id')
+			AND ?::jsonb @> jsonb_build_array(product.assignment_result_json::jsonb->>'id',review_history.assignment_result_json::jsonb->>'id')
+			AND prior.id IN (product.id,review_history.id)
+			AND product.project_id=node.project_id AND review_history.project_id=node.project_id
+			AND product.decision_id IS NOT DISTINCT FROM review_history.decision_id
+			AND product.decision_id IS NOT DISTINCT FROM (SELECT authority->>'id'
+				FROM jsonb_array_elements(node.authority_refs_json::jsonb) authority WHERE authority->>'model'='decision' LIMIT 1)
+			AND product.assignment_attempt_json::jsonb->'sourceRef'=node.source_ref_json::jsonb
+			AND product.assignment_attempt_json::jsonb->'authorityRefs'=node.authority_refs_json::jsonb
+			AND review_history.assignment_attempt_json::jsonb->'sourceRef'=node.source_ref_json::jsonb
+			AND review_history.assignment_attempt_json::jsonb->'authorityRefs'=node.authority_refs_json::jsonb
+			AND (node.workday_id IS NULL OR (product.work_day_id IN ${workdayLineageSql('node.workday_id', 'node.team_id')}
+				AND review_history.work_day_id IN ${workdayLineageSql('node.workday_id', 'node.team_id')}))
+			AND NOT EXISTS (SELECT 1 FROM capacity_provider_assignments newer
+				WHERE newer.team_id=node.team_id AND newer.status='completed' AND newer.assignment_result_json IS NOT NULL
+				AND ((newer.execution_node_id=node.id AND newer.execution_node_revision>product.execution_node_revision)
+					OR (newer.execution_node_id=reviewer.id AND newer.execution_node_revision>review_history.execution_node_revision))
+				AND (node.workday_id IS NULL OR newer.work_day_id IN ${workdayLineageSql('node.workday_id', 'node.team_id')}))
+		)))
 	)`).join('\n');
 	const nodeAuthority = `node.project_id=? AND (node.workday_id IS NULL OR node.workday_id=?)
 		AND node.agent_class=? AND node.graph_revision_updated<=?
 		AND node.source_ref_json::jsonb=?::jsonb AND node.authority_refs_json::jsonb=?::jsonb ${predecessorFence}`;
 	const common = [assignment.teamId,assignment.nodeId,assignment.nodeRevision, assignment.projectId,assignment.workdayId,
 		assignment.agentClass,assignment.graphRevision,JSON.stringify(assignment.sourceRef),JSON.stringify(assignment.authorityRefs),
-		...(reporting ? [] : predecessorResults.flatMap(result => [result.assignmentId, JSON.stringify(result)]))];
+		...(reporting ? [] : predecessorResults.flatMap(result => [result.assignmentId, JSON.stringify(result), JSON.stringify(assignment.predecessorResultIds)]))];
 	const current = await store.first(`SELECT node.id FROM execution_nodes node
 		WHERE node.team_id=? AND node.id=? AND node.node_revision=? AND node.status='ready' AND ${nodeAuthority}`, common);
 	if (!current) {
