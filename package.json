@@ -76,7 +76,7 @@
     "@react-email/render": "^2.0.8",
     "@treeseed/deployment": "https://github.com/treeseed-ai/deployment/releases/download/0.1.0-rc.321/treeseed-deployment-runtime-0.1.0-rc.321.tgz",
     "@treeseed/identity": "0.1.0-rc.19",
-    "@treeseed/sdk": "git+https://github.com/treeseed-ai/sdk.git#f19cfabe70db9caa0d5888ca369609d4f56effa0",
+    "@treeseed/sdk": "git+https://github.com/treeseed-ai/sdk.git#75badffa8f9bdda1e165437ecbbee6b72436b6e2",
     "@treeseed/treedx": "0.3.0-rc.18",
     "drizzle-orm": "^0.45.2",
     "hono": "4.13.3",
