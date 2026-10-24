@@ -12,7 +12,7 @@ describe('governance catalog read operations', () => {
 			openProposal: vi.fn(async () => ({ id: 'proposal-1', status: 'open' })), startVoting: vi.fn(async () => ({ id: 'proposal-1', status: 'voting' })),
 			vote: vi.fn(async () => ({ id: 'proposal-1' })), evaluate: vi.fn(async () => ({ id: 'proposal-1' })),
 			withdraw: vi.fn(async () => ({ id: 'proposal-1', status: 'withdrawn' })), supersede: vi.fn(async () => ({ id: 'proposal-1', status: 'superseded' })),
-			proposals: vi.fn(async () => ({ items: [] })), proposal: vi.fn(async () => ({ id: 'proposal-1' })),
+			proposals: vi.fn(async () => ({ items: [] })), proposal: vi.fn(async () => ({ id: 'proposal-1', executionPlan: { workItems: [{ id: 'authored' }] } })),
 			proposalEvents: vi.fn(async () => ({ items: [] })), decisions: vi.fn(async () => ({ items: [] })),
 			decision: vi.fn(async () => ({ id: 'decision-1' })), decisionEvents: vi.fn(async () => ({ items: [] })),
 		};
@@ -30,7 +30,8 @@ describe('governance catalog read operations', () => {
 			CONTROL_PLANE_OPERATIONS.governance.decision, CONTROL_PLANE_OPERATIONS.governance.decisionEvents,
 		]);
 		const context = { interface: 'rest' as const, requestId: 'request-1', principal: { id: 'user-1' } };
-		await operations[13].handler({ path: { projectId: 'project-1', proposalId: 'proposal-1' }, query: {}, body: undefined }, context);
+		await expect(operations[13].handler({ path: { projectId: 'project-1', proposalId: 'proposal-1' }, query: {}, body: undefined }, context))
+			.resolves.toEqual({ id: 'proposal-1', executionPlan: { workItems: [{ id: 'authored' }] } });
 		expect(governance.proposal).toHaveBeenCalledWith(context.principal, 'project-1', 'proposal-1');
 		await operations[4].handler({ path: { projectId: 'project-1', proposalId: 'proposal-1' }, query: {}, body: { title: 'Updated' } },
 			{ ...context, ifMatch: '3' });
