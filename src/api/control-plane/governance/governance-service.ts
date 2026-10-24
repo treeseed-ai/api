@@ -5,6 +5,8 @@ import { reconcileExecutionGraph } from '../repositories/capacity/execution/exec
 import { resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
 import { exactEntityReferenceSchema } from '@treeseed/sdk/agent-capacity';
 import { assertGovernanceProposalReady } from '../../store/governance/policy/contracts/governance-proposal-readiness.ts';
+import { readExactProposal } from '../../governance/executable-proposal.ts';
+import { parseFrontmatterDocument } from '../../content/frontmatter.ts';
 
 type Principal = { id: string; roles?: string[]; permissions?: string[]; metadata?: Record<string, unknown> } | undefined;
 
@@ -296,7 +298,10 @@ export function createGovernanceService(store: any, discussions: { create: (prin
 		async proposal(principal: Principal, projectId: string, proposalId: string) {
 			await projectFor(store, principal, projectId);
 			const proposal = await proposalFor(store, projectId, proposalId);
-			return { ...proposal, votes: await store.listGovernanceProposalVotes(proposal.id),
+			const exact = await readExactProposal(store, proposal);
+			const authored = parseFrontmatterDocument(exact.source).frontmatter;
+			return { ...proposal, executionPlan: Object.hasOwn(authored, 'executionPlan') ? authored.executionPlan : null,
+				votes: await store.listGovernanceProposalVotes(proposal.id),
 				events: await store.listGovernanceEvents({ proposalId: proposal.id, limit: 100 }),
 				readiness: await store.governanceProposalReadiness(proposal.id),
 				decision: proposal.decisionId ? await store.getGovernanceDecision(proposal.decisionId) : null };

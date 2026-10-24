@@ -3132,6 +3132,10 @@ workflow:
     action: { verifier: api.golden.proposal-contract-authority-native }
     expect: { status: passed }
 
+  - id: proposal-plan-readback-native
+    action: { verifier: api.golden.proposal-plan-readback-native }
+    expect: { status: passed }
+
   - id: stopped-reporter-history
     action: { verifier: api.golden.stopped-reporter-history }
     expect: { status: passed }
