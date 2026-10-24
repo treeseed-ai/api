@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: retired-class-profile-unit
+    action: { verifier: api.golden.retired-class-profile-unit }
+    expect: { status: passed }
   - id: standalone-chat-tick-unit
     action: { verifier: api.golden.standalone-chat-tick-unit }
     expect: { status: passed }

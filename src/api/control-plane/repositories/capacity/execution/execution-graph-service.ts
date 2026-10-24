@@ -104,6 +104,9 @@ async function loadProfiles(store: any, teamId: string): Promise<Record<string, 
 	const profiles: Record<string, AgentDefinition> = {};
 	for (const row of rows) for (const candidate of array(record(row.handler_refs_json).agents)) {
 		const validation = validateAgentDefinitionModel(candidate);
+		// Retired class history can retain non-agent references. A declared agent
+		// must still validate; allocation status never excludes a valid definition.
+		if (row.status === 'archived' && !('id' in record(candidate)) && !('schemaVersion' in record(candidate))) continue;
 		if (!validation.ok || !validation.data) throw Object.assign(
 			new CapacityOperationError(409, 'agent_profile_invalid',
 				`Agent profile ${text(record(candidate).id) || '(missing)'} in ${text(row.project_id)}/${text(row.id)} (${text(row.status)}) is invalid: ${validation.diagnostics.map(entry => entry.path).join(', ')}.`),

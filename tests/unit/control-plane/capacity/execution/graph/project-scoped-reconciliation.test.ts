@@ -7,17 +7,21 @@ vi.mock('../../../../../../src/api/capacity/policy/execution/workday-execution-p
 
 describe('project-scoped reconciliation during another project workday', () => {
 	it('identifies the owning persisted class and profile when malformed authority blocks live reconciliation', async () => {
-		const store = { all: async (sql: string) => sql.includes('FROM project_agent_classes') ? [{
-			project_id: 'agent-project', id: 'retained-planning-class', status: 'active', handler_refs_json: {
-				agents: [{ id: 'agent/retained-planner', schemaVersion: 'retired' }],
-			},
-		}] : [], first: async () => null };
-		await expect(reconcileExecutionGraph(store, 'team', { plan: true })).rejects.toMatchObject({
-			code: 'agent_profile_invalid', message: expect.stringContaining('agent-project/retained-planning-class'),
-		});
-		await expect(reconcileExecutionGraph(store, 'team', { plan: true })).rejects.toMatchObject({
-			message: expect.stringContaining('agent/retained-planner'),
-		});
+		for (const status of ['active', 'paused', 'archived']) for (const candidate of [
+			{ id: 'agent/retained-planner', schemaVersion: 'retired' }, { id: '' }, { schemaVersion: '' },
+		]) {
+			const store = { all: async (sql: string) => sql.includes('FROM project_agent_classes') ? [{
+				project_id: 'agent-project', id: 'retained-planning-class', status, handler_refs_json: {
+					agents: [candidate],
+				},
+			}] : [], first: async () => null };
+			await expect(reconcileExecutionGraph(store, 'team', { plan: true })).rejects.toMatchObject({
+				code: 'agent_profile_invalid', message: expect.stringContaining('agent-project/retained-planning-class'),
+			});
+			await expect(reconcileExecutionGraph(store, 'team', { plan: true })).rejects.toMatchObject({
+				message: expect.stringContaining(candidate.id || '(missing)'),
+			});
+		}
 	});
 	it('indexes every configured subscriber by identity and refuses duplicate identities without a class winner', async () => {
 		const definition = (name: string) => ({ schemaVersion: 'treeseed.agent/v1', id: `sdk/${name}`, name,
@@ -28,9 +32,12 @@ describe('project-scoped reconciliation during another project workday', () => {
 			} });
 		const first = definition('technical-writer'), second = definition('tester');
 		projectWorkdays.mockReturnValue({ nodes: [], edges: [], changedSourceRefs: [] });
-		for (const agents of [[first, second], [first, first]]) {
+		for (const status of ['active', 'paused', 'archived']) for (const agents of [[first, second], [first, first]]) {
+			const rows = [{ project_id: 'sdk', status, handler_refs_json: { agents } },
+				{ project_id: 'treedx', id: 'retired-architecture', status: 'archived', handler_refs_json: { agents: [{ name: 'Legacy reference' }] } }];
+			const original = structuredClone(rows);
 			const store = { all: async (sql: string) => sql.includes('FROM project_agent_classes')
-				? [{ project_id: 'sdk', handler_refs_json: { agents } }]
+				? rows
 				: sql.includes('FROM capacity_workday_runs') ? [{ id: 'workday', team_id: 'team', parameters_json: { appliedPlan: {} } }] : [],
 				first: async () => null };
 			const pending = reconcileExecutionGraph(store, 'team', { plan: true });
@@ -41,6 +48,7 @@ describe('project-scoped reconciliation during another project workday', () => {
 					'sdk:sdk/technical-writer': first, 'sdk:sdk/tester': second,
 				} }));
 			}
+			expect(rows).toEqual(original);
 		}
 	});
 	it('keeps workday projection authoritative even when its source is a proposal', async () => {

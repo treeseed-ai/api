@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.retired-class-profile-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/project-scoped-reconciliation.test.ts
+    testName: "indexes every configured subscriber by identity and refuses duplicate identities without a class winner"
   api.golden.standalone-chat-tick-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
