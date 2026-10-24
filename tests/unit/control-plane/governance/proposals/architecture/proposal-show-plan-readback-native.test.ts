@@ -2,15 +2,25 @@ import { describe, expect, it } from 'vitest';
 import { createGovernanceService } from '../../../../../../src/api/control-plane/governance/governance-service.ts';
 import { readExactProposal } from '../../../../../../src/api/governance/executable-proposal.ts';
 import { proposalNativeFixture } from './proposal-native-fixture.ts';
-import { readyContributionProposal } from './ready-proposal-fixture.ts';
 
 describe('native shared proposal detail read', () => {
 	it('returns the authored plan from the exact TreeDX source and distinguishes absence, source failure, and project denial', async () => {
 		const native = await proposalNativeFixture();
 		try {
-			const definition = readyContributionProposal();
-			const item = definition.executionPlan.workItems[0] as Record<string, unknown>;
-			delete item.requiredCapabilities;
+			const item: Record<string, unknown> = {
+				id: 'verify-boundary', activity: 'acting', workspace: 'read-only', review: 'required',
+				objective: 'Independently verify the exact governed boundary.', dependsOn: [],
+				requestedPermissions: { content: { read: ['proposal'], write: [] }, tools: [] },
+				acceptanceCriteria: ['Read back the exact source and record independent verification.'],
+				estimate: { expectedSeconds: 30, maximumSeconds: 60, rationale: 'Controlled own implementation estimate.' },
+				reviewEstimate: { expectedSeconds: 10, maximumSeconds: 20, rationale: 'Controlled own independent review estimate.' },
+				maximumReviewCycles: 2,
+			};
+			const definition: Record<string, unknown> = {
+				schemaVersion: 'treeseed.proposal/v2', id: 'proposal', projectId: 'project', title: 'Governed boundary',
+				request: 'Verify the exact governed boundary.', summary: 'One bounded, independently reviewed work item.',
+				status: 'draft', groupIds: ['portfolio-runtime'], executionPlan: { workItems: [item] },
+			};
 			item.estimateRef = { store: 'postgresql', model: 'assignment-attempt', id: 'authored-estimate', revision: 7 };
 			const authoredPlan = structuredClone(definition.executionPlan);
 			let exact = await native.publish(definition);
