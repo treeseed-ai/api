@@ -4,7 +4,7 @@ import{readExecutionNodeStates,recordExecutionNodeObservations}from'../../../../
 import {capacityTransaction} from '../../../../transaction.ts';
 import {ProviderAssignmentRepository} from '../../../../repositories/capacity/assignments/assignment.ts';
 import {CapacityWorkdayEventRepository,type CapacityWorkdayEventWrite} from '../../../../repositories/capacity/workdays/workday-event.ts';
-import type { AssignmentAttempt, CapabilityAccountingLimits, calculateAssignmentAllocation, allocateWorkdayCapacity, selectFairReadyNode } from '@treeseed/sdk/agent-capacity';
+import type { AssignmentAttempt, AssignmentResult, CapabilityAccountingLimits, calculateAssignmentAllocation, allocateWorkdayCapacity, selectFairReadyNode } from '@treeseed/sdk/agent-capacity';
 import { appliedWorkdaySchema, assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
@@ -433,6 +433,12 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 	});
 }
 
+export function predecessorArtifactMatches(reference: AssignmentResult['references'][number], ref: AssignmentAttempt['contextRefs'][number]) {
+	return (reference.kind === 'git' || reference.kind === 'treedx') && ref.store === reference.kind
+		&& ref.repository === reference.repository && ref.commit === reference.commit
+		&& (reference.kind === 'git' || ref.path === reference.path);
+}
+
 /** One canonical predecessor contract, shared by compilation and final admission. */
 export function assignmentPredecessors(assignment: AssignmentAttempt, values: unknown[]) {
 	const predecessorIds = new Set(assignment.predecessorResultIds), predecessorAttempts = new Set<string>();
@@ -449,9 +455,7 @@ export function assignmentPredecessors(assignment: AssignmentAttempt, values: un
 		predecessorAttempts.add(parsed.data.assignmentId); results.push(parsed.data);
 		for (const reference of parsed.data.references) {
 			if (reference.kind !== 'git' && reference.kind !== 'treedx') continue;
-			const matches = (ref: AssignmentAttempt['contextRefs'][number]) => ref.store === reference.kind
-				&& ref.repository === reference.repository && ref.commit === reference.commit
-				&& (reference.kind === 'git' || ref.path === reference.path);
+			const matches = (ref: AssignmentAttempt['contextRefs'][number]) => predecessorArtifactMatches(reference, ref);
 			if (!assignment.contextRefs.some(matches)
 				|| (reference.kind === 'git' ? !assignment.grant.sourceRead.includes(reference.repository)
 					: !assignment.grant.contentRead.some(matches))) throw new CapacityGovernanceError(

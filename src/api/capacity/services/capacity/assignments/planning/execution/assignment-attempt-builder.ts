@@ -21,7 +21,7 @@ import type { DurableCapacityWorkdayRun } from '../../../../../repositories/capa
 import { workdayTreeDxWorkspaceId } from '../../../workdays/treedx/workday-treedx-workspace-service.ts';
 import { compileAssignmentTimeBudget } from '../assignment-time-budget.ts';
 import type { LivingAllocationInputs } from '../../admission/living-allocation-inputs.ts';
-import { assignmentPredecessors } from '../../admission/living-execution-admission.ts';
+import { assignmentPredecessors, predecessorArtifactMatches } from '../../admission/living-execution-admission.ts';
 
 const stable = (value: unknown): string => {
 	if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
@@ -67,8 +67,10 @@ function uniqueReferences(values: ExactEntityReference[]): ExactEntityReference[
 }
 
 function assignmentScope(candidate: ReadyExecutionNode): ExactEntityReference[] {
+	const inherited = candidate.contextRefs.filter(reference => reference.store === 'treedx'
+		&& candidate.predecessorResults.some(result => result.references.some(artifact => predecessorArtifactMatches(artifact, reference))));
 	return uniqueReferences([candidate.node.sourceRef, ...(candidate.node.authorityRefs ?? [])
-		.filter(reference => reference.model === 'decision')].filter(reference => reference.store === 'treedx'));
+		.filter(reference => reference.model === 'decision'), ...inherited].filter(reference => reference.store === 'treedx'));
 }
 
 function communicationWritePaths(path: string | undefined) {

@@ -27,6 +27,9 @@ workflow:
   - id: git-assignment-scope
     action: { verifier: api.golden.git-assignment-scope }
     expect: { status: passed }
+  - id: reviewed-predecessor-read-scope
+    action: { verifier: api.golden.reviewed-predecessor-read-scope }
+    expect: { status: passed }
   - id: estimate-branch-contention
     action: { verifier: api.golden.estimate-branch-contention }
     expect: { status: passed }
