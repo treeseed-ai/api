@@ -51,6 +51,11 @@ describe('standalone communication exact source admission', () => {
 			await f.left.pool.query(`INSERT INTO agent_invocation_requests (id,team_id,project_id,agent_id,status,execution_id,execution_kind,trigger_kind,mode,scope_hash,available_at,idempotency_key,request_digest,metadata_json,requested_at)
 				VALUES ('invocation','team','project','renamed-guide','admitted','conversation','conversation','discussion','planning','scope',$1,'request','digest',$2,$1)`,
 				[now, JSON.stringify({ sourceMessagePath: 'discussion-messages/smoke/request.mdx', sourceCommit: 'b'.repeat(40), productiveSeconds: 180 })]);
+			await f.left.pool.query("INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('retired-project','team','retired','Retired',$1,$1)", [now]);
+			await f.left.pool.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,status,handler_refs_json,created_at,updated_at)
+				VALUES ('retired-architecture','team','retired-project','architecture','Retired architecture','archived',$1,$2,$2)`, [JSON.stringify({ agents: [{ name: 'Legacy reference' }] }), now]);
+			await f.left.pool.query("UPDATE project_agent_classes SET status='archived' WHERE id='configured-guide'");
+			const classes = (await f.left.pool.query('SELECT * FROM project_agent_classes ORDER BY id')).rows;
 			const result = await store.tickCapacityWorkdayRun('team', 'conversation', now, 'initial-conversation');
 			expect(result).toMatchObject({ lifecycle: { changed: false, plan: null, status: 'running' },
 				executionGraph: { schemaVersion: 'treeseed.graph-revision/v1', revision: 1,
@@ -67,6 +72,7 @@ describe('standalone communication exact source admission', () => {
 			expect(after.assignments).toEqual([]); expect(after.reservations).toEqual([]);
 			expect(await store.tickCapacityWorkdayRun('team', 'conversation', new Date(Date.now() + 1_000).toISOString(), 'initial-conversation')).toEqual(result);
 			expect(await f.snapshot()).toEqual(after); expect((await f.left.pool.query('SELECT * FROM capacity_workday_events ORDER BY id')).rows).toEqual(events);
+			expect((await f.left.pool.query('SELECT * FROM project_agent_classes ORDER BY id')).rows).toEqual(classes);
 			await f.left.pool.query("UPDATE capacity_provider_team_memberships SET status='suspended'");
 			await expect(store.tickCapacityWorkdayRun('team', 'conversation', now, 'denied-conversation')).rejects.toMatchObject({ code: 'capacity_workday_membership_not_approved' });
 			expect(await f.snapshot()).toEqual(after); expect((await f.left.pool.query('SELECT * FROM capacity_workday_events ORDER BY id')).rows).toEqual(events);

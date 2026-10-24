@@ -28,9 +28,12 @@ describe('project-scoped reconciliation during another project workday', () => {
 			} });
 		const first = definition('technical-writer'), second = definition('tester');
 		projectWorkdays.mockReturnValue({ nodes: [], edges: [], changedSourceRefs: [] });
-		for (const agents of [[first, second], [first, first]]) {
+		for (const status of ['active', 'paused', 'archived']) for (const agents of [[first, second], [first, first]]) {
+			const rows = [{ project_id: 'sdk', status, handler_refs_json: { agents } },
+				{ project_id: 'treedx', id: 'retired-architecture', status: 'archived', handler_refs_json: { agents: [{ name: 'Legacy reference' }] } }];
+			const original = structuredClone(rows);
 			const store = { all: async (sql: string) => sql.includes('FROM project_agent_classes')
-				? [{ project_id: 'sdk', handler_refs_json: { agents } }]
+				? rows
 				: sql.includes('FROM capacity_workday_runs') ? [{ id: 'workday', team_id: 'team', parameters_json: { appliedPlan: {} } }] : [],
 				first: async () => null };
 			const pending = reconcileExecutionGraph(store, 'team', { plan: true });
@@ -41,6 +44,7 @@ describe('project-scoped reconciliation during another project workday', () => {
 					'sdk:sdk/technical-writer': first, 'sdk:sdk/tester': second,
 				} }));
 			}
+			expect(rows).toEqual(original);
 		}
 	});
 	it('keeps workday projection authoritative even when its source is a proposal', async () => {
