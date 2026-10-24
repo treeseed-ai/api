@@ -4,26 +4,23 @@ import {
 	assignmentResultSchema,
 	assignmentAttemptSchema,
 	appliedWorkdaySchema,
-	effectiveActivityProfileSchema,
 	workdayPlanningEndsAt,
 	workdayPhase,
-	validateAgentDefinitionModel,
 	type AssignmentResult,
 	type EffectiveActivityProfile,
 	type ExecutionNode,
 	type ExactEntityReference,
 } from '@treeseed/sdk/agent-capacity';
-import { validatePortableContentData } from '@treeseed/sdk/content-validation';
 import type { DurableCapacityWorkdayRun } from '../../repositories/capacity/workdays/workday-run.ts';
 import type { WorkdayProject } from '../capacity/workdays/policy/workday-project-policy.ts';
 import { decodeExecutionNode } from '../../../control-plane/repositories/capacity/execution/execution-graph-storage.ts';
 import { CapacityGovernanceError } from '../../database.ts';
-import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
 import { selectAssignmentSourceRepository } from '../capacity/assignments/context/source-repository.ts';
 import { readExactProposal } from '../../../governance/executable-proposal.ts';
 import { workdayLineageSql } from '../capacity/workdays/scheduling/workday-continuation.ts';
 import { resolveGitHubSourceAuthority } from '../../../../security/provider-credential-authority.ts';
 import { resolveAuthorizedSourceCommit } from '../../../control-plane/repositories/providers/source/source-pin.ts';
+import { effectiveProfile } from './execution-node-profile.ts';
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {
 	if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row;
@@ -140,6 +137,13 @@ async function projectSourceContext(store: any, node: ExecutionNode, resolved: E
 	return resolved;
 }
 
+async function readExecutionProposal(store: any, owner: Row, source: ExactEntityReference) {
+	const exact = await readExactProposal(store, owner, source);
+	if (exact.definition.schemaVersion !== 'treeseed.proposal/v2') throw new CapacityGovernanceError(
+		'execution_node_source_version_unsupported', 'Fresh proposal work requires subscriber-owned group contributions; issued legacy attempts retain their original authority.', 409);
+	return exact;
+}
+
 export async function workItemContext(store: any, node: ExecutionNode): Promise<ExactEntityReference[]> {
 	const source = node.sourceRef;
 	if (node.kind === 'communication' && source.store === 'treedx' && source.repository && source.commit) {
@@ -196,7 +200,7 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 			if (!proposal || text(proposal.teamId ?? proposal.team_id) !== node.teamId) throw new CapacityGovernanceError(
 				'execution_node_workday_source_missing', `Node ${node.id} selected proposal is unavailable.`, 409);
 			if (text(proposal.projectId ?? proposal.project_id) !== node.projectId) continue;
-			const exact = await readExactProposal(store, proposal, reference as ExactEntityReference);
+			const exact = await readExecutionProposal(store, proposal, reference as ExactEntityReference);
 			const workItemRefs = array(record(exact.definition.executionPlan).workItems)
 				.flatMap(item => array(record(item).contextRefs));
 			resolved.push(exact.ref, ...await canonicalProposalContextRefs(store, node, workItemRefs));
@@ -206,24 +210,13 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 	if (source.store !== 'treedx' || !source.repository || !source.commit || !source.path) {
 		throw new CapacityGovernanceError('execution_node_source_invalid', `Node ${node.id} lacks exact proposal provenance.`, 409);
 	}
-	const owner = node.kind === 'planning' ? await store.getGovernanceProposal(source.id) : null;
-	const sourceProjectId = owner && text(owner.teamId, owner.team_id) === node.teamId ? text(owner.projectId, owner.project_id) : node.projectId;
-	const connection = await resolveKnowledgeGatewayConnection(store, {
-		projectId: sourceProjectId, write: false, relationPaths: true, readRefs: [source.commit],
-	});
-	if (!connection || connection.repositoryId !== source.repository) throw new CapacityGovernanceError(
-		'execution_node_source_repository_changed', `Node ${node.id} proposal repository changed.`, 409);
-	const response = record(await connection.client.readRepositoryFile({
-		repoId: source.repository, ref: source.commit, path: source.path,
-		encoding: 'utf8', parseFrontmatter: true, allowProtected: true,
-	}));
-	if (text(response.resolvedRef) !== source.commit) throw new CapacityGovernanceError(
-		'execution_node_source_moved', `Node ${node.id} proposal source moved.`, 409);
-	const file = record(response.file ?? (Array.isArray(response.files) ? response.files[0] : null));
-	const validation = validatePortableContentData('proposal', record(file.frontmatter));
-	if (!validation.ok) throw new CapacityGovernanceError('execution_node_source_invalid', `Node ${node.id} proposal is no longer valid.`, 409);
+	const owner = await store.getGovernanceProposal(source.id);
+	if (!owner || text(owner.teamId, owner.team_id) !== node.teamId) throw new CapacityGovernanceError(
+		'execution_node_source_invalid', `Node ${node.id} proposal is unavailable to this team.`, 409);
+	const sourceProjectId = text(owner.projectId, owner.project_id);
+	const exact = await readExecutionProposal(store, owner, source);
 	if (!node.workItemId && (node.kind === 'planning' || node.kind === 'estimating')) {
-		const proposal = record(validation.data);
+		const proposal = exact.definition;
 		const refs = [source, ...await canonicalProposalContextRefs(store, { ...node, projectId: sourceProjectId }, [
 			...array(proposal.objectiveRefs), ...array(proposal.evidenceRefs),
 			...(proposal.discussionRef ? [proposal.discussionRef] : []),
@@ -231,63 +224,12 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 		])];
 		return sourceProjectId !== node.projectId ? projectSourceContext(store, node, refs) : refs;
 	}
-	const workItems = array(record(record(validation.data).executionPlan).workItems).map(record);
+	const workItems = array(record(exact.definition.executionPlan).workItems).map(record);
 	const workItem = workItems.find((candidate) => text(candidate.id) === node.workItemId);
 	if (!workItem) throw new CapacityGovernanceError('execution_node_work_item_missing', `Node ${node.id} work item is missing.`, 409);
-	return array(workItem.contextRefs) as ExactEntityReference[];
+	return canonicalProposalContextRefs(store, { ...node, projectId: sourceProjectId }, array(workItem.contextRefs));
 }
 
-async function effectiveProfile(store: any, node: ExecutionNode): Promise<{ projectAgentClassId: string; profile: EffectiveActivityProfile }> {
-	const rows = await store.all(`SELECT id,handler_refs_json,metadata_json FROM project_agent_classes
-		WHERE project_id=? AND status='active' ORDER BY id`, [node.projectId]);
-	for (const row of rows) for (const [index, candidate] of array(record(row.handler_refs_json).agents).entries()) {
-		const validation = validateAgentDefinitionModel(candidate);
-		if (!validation.ok || !validation.data || validation.data.agentClass !== node.agentClass) continue;
-		const activity = node.kind === 'communication' ? 'chat' : node.kind;
-		if (!['planning','estimating','acting','reviewing','reporting','chat'].includes(activity)) continue;
-		const metadata = record(row.metadata_json);
-		const commit = text(metadata.immutableRef);
-		const path = text(array(metadata.definitionPaths)[index]);
-		if (metadata.source !== 'project-library' || !/^[a-f0-9]{40}$/u.test(commit) || !path) {
-			throw new CapacityGovernanceError('execution_node_agent_profile_unpinned',
-				`Agent class ${text(row.id)} lacks an exact project-library definition.`, 409);
-		}
-		const connection = await resolveKnowledgeGatewayConnection(store, {
-			projectId: node.projectId, write: false, readRefs: [commit], workspacePaths: [path],
-		});
-		if (!connection) throw new CapacityGovernanceError('execution_node_agent_profile_unavailable',
-			`Agent class ${text(row.id)} project library is unavailable.`, 409);
-		const response = record(await connection.client.readRepositoryFile({
-			repoId: connection.repositoryId, ref: commit, path,
-			encoding: 'utf8', parseFrontmatter: true, allowProtected: true,
-		}));
-		const file = record(response.file ?? (Array.isArray(response.files) ? response.files[0] : null));
-		const exact = validateAgentDefinitionModel(record(file.frontmatter));
-		if (text(response.resolvedRef) !== commit || text(file.path) !== path
-			|| !exact.ok || !exact.data || stable(exact.data) !== stable(validation.data)) {
-			throw new CapacityGovernanceError('execution_node_agent_profile_moved',
-				`Agent class ${text(row.id)} differs from its exact project-library definition.`, 409);
-		}
-		const selected = exact.data.activityProfiles[activity as keyof typeof exact.data.activityProfiles];
-		if (!selected) continue;
-		return {
-			projectAgentClassId: text(row.id),
-			profile: effectiveActivityProfileSchema.parse({
-				handler: selected.handler,
-				prompt: selected.prompt,
-				...(selected.additionalContext ? { additionalContext: selected.additionalContext } : {}),
-				...(selected.parameters ? { parameters: selected.parameters } : {}),
-				profileRef: { store: 'treedx', model: 'agent', id: exact.data.id,
-					repository: connection.repositoryId, commit, path },
-				activity,
-				handlerOrigin: selected.handler.includes('/') ? 'project-runtime' : 'agent-package',
-				permissionCeiling: selected.permissions,
-			}),
-		};
-	}
-	throw new CapacityGovernanceError('execution_node_agent_profile_missing',
-		`Ready node ${node.id} has no exact active ${node.agentClass} ${node.kind} profile.`, 409);
-}
 
 async function predecessorContext(store: any, node: ExecutionNode, sourceRepository?: string): Promise<{ results: AssignmentResult[]; contentRefs: ExactEntityReference[]; lineageSourceCommit?: string; directPredecessorSourceCommit?: string }> {
 	const decisionId = (node.authorityRefs ?? []).find((reference) => reference.model === 'decision')?.id;

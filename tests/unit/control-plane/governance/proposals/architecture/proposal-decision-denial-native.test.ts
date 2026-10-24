@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { relationAuthoringDatabase } from '../../../knowledge/workspaces/architecture/relation-authoring-fixture.ts';
 import { validateDecisionAuthority, type DecisionAuthorityDatabase } from '../../../../../../src/api/governance/decision-authority.ts';
 import { proposalNativeFixture } from './proposal-native-fixture.ts';
-import { readyProposal } from './ready-proposal-fixture.ts';
+import { readyProposal, readyContributionProposal } from './ready-proposal-fixture.ts';
+import { subscriberSourceFixture, subscriberSourceProposal } from './native-subscriber-inputs.ts';
 import { ControlPlaneStore } from '../../../../../../src/api/persistence/store.ts';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
 import { loadTeamExecutableProposalSources } from '../../../../../../src/api/capacity/services/capacity/execution/executable-proposal-source.ts';
@@ -13,9 +14,9 @@ import { executionNodeSchema } from '@treeseed/sdk/agent-capacity';
 import { candidate } from '../../../capacity/execution/fixtures/assignment-attempt-fixtures.ts';
 
 async function operationalDecision() {
-	const fixture = await proposalNativeFixture();
+	const fixture = await subscriberSourceFixture();
 	try {
-		const source = await fixture.publish(readyProposal());
+		const source = await fixture.publishCurrent(subscriberSourceProposal(readyContributionProposal()));
 		await fixture.query("UPDATE governance_proposals SET status='accepted',active_version=2 WHERE id='proposal'");
 		const proposalRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 2, digest: `sha256:${source.digest}`,
 			repository: 'repository', commit: source.commit, path: 'proposals/proposal.mdx' };
@@ -29,10 +30,28 @@ async function operationalDecision() {
 }
 
 describe('native proposal Decision authority', () => {
+	it('refuses fresh legacy proposal context hidden behind a Workday source without mutating retained authority', async () => {
+		const f = await proposalNativeFixture();
+		try {
+			const published = await f.publish(readyProposal());
+			const frozen = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
+				digest: `sha256:${published.digest}`, repository: 'repository', commit: published.commit, path: 'proposals/proposal.mdx' };
+			const parameters = { workdayContextByProjectId: { project: { ...frozen, model: 'book', path: 'books/core.md' } },
+				planningSourceByProposalId: { proposal: frozen } };
+			await f.query(`INSERT INTO capacity_workday_runs (id,team_id,scenario_id,environment,parameters_json,created_at,updated_at)
+				VALUES ('run','team','legacy-context','local',?,'2026-10-08T09:00:00.000Z','2026-10-08T09:00:00.000Z')`, [JSON.stringify(parameters)]);
+			const store = { ...f.store, getGovernanceProposal: (id: string) => f.store.first('SELECT * FROM governance_proposals WHERE id=?', [id]) };
+			const node = executionNodeSchema.parse({ ...candidate.node, kind: 'planning', pairRole: null, workItemId: undefined,
+				workdayId: 'run', workspace: 'treedx', sourceRef: { store: 'postgresql', model: 'workday', id: 'run' } });
+			const before = await f.snapshot();
+			await expect(workItemContext(store, node)).rejects.toMatchObject({ status: 409, code: 'execution_node_source_version_unsupported' });
+			expect(await f.snapshot()).toEqual(before);
+		} finally { await f.close(); }
+	});
 	it('native workday planning reads frozen Proposal source bytes and denies moved or denied content without changing SQL history', async () => {
 		const f = await proposalNativeFixture();
 		try {
-			const definition = readyProposal(), git = { store: 'git', model: 'repository', id: 'source', repository: 'example/project', commit: 'a'.repeat(40) };
+			const definition = readyContributionProposal(), git = { store: 'git', model: 'repository', id: 'source', repository: 'example/project', commit: 'a'.repeat(40) };
 			Object.assign(definition.executionPlan.workItems[0]!, { contextRefs: [git] });
 			const published = await f.publish(definition), frozen = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
 				digest: `sha256:${published.digest}`, repository: 'repository', commit: published.commit, path: 'proposals/proposal.mdx' };
@@ -71,7 +90,7 @@ describe('native proposal Decision authority', () => {
 						message: 'The accepted decision lacks exact classed TreeDX content.' });
 				}
 			}
-			expect(f.requests).toHaveLength(3);
+			expect(f.requests).toHaveLength(21);
 			expect(f.requests.every(request => request.path === 'proposals/proposal.mdx')).toBe(true);
 			expect(await f.snapshot()).toEqual(before);
 		} finally { await f.close(); }
@@ -134,7 +153,7 @@ describe('native proposal Decision authority', () => {
 	});
 	it('owning native proposal evaluation denies incomplete plans and exact unresolved feedback before electorate or decision writes without rewriting retained history', async () => {
 		for (const scenario of ['plan', 'blocker']) {
-			const fixture = await proposalNativeFixture(), writes: string[] = [];
+			const fixture = await subscriberSourceFixture(), writes: string[] = [];
 			const store = new ControlPlaneStore(fixture.store.config, {
 				prepare: (sql: string) => ({ bind: (...parameters: unknown[]) => ({
 					first: async () => (await fixture.query(sql, parameters)).rows[0] ?? null,
@@ -146,11 +165,13 @@ describe('native proposal Decision authority', () => {
 			store.initializationPromise = Promise.resolve();
 			// The bound library is a supplied input; SQL, exact native Git bytes,
 			// official HTTP reads, readiness and evaluation are the original owners.
-			Object.assign(store, { getProjectTreeDxLibrary: fixture.store.getProjectTreeDxLibrary });
+			Object.assign(store, { getProjectTreeDxLibrary: fixture.store.getProjectTreeDxLibrary,
+				listTeamProjects: fixture.store.listTeamProjects });
 			try {
-				const declaration = readyProposal();
+				const declaration = subscriberSourceProposal(readyContributionProposal());
 				if (scenario === 'plan') Object.assign(declaration.executionPlan.workItems[0]!, { estimate: undefined });
-				const supplied = structuredClone(declaration), source = await fixture.publish(declaration);
+				const supplied = structuredClone(declaration), source = scenario === 'blocker'
+					? await fixture.publishCurrent(declaration) : await fixture.publish(declaration);
 				await fixture.query("UPDATE governance_proposals SET status='open' WHERE id='proposal'");
 				if (scenario === 'blocker') {
 					const proposalRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,

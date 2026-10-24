@@ -46,7 +46,20 @@ export async function snapshotAgentDefinitions(value: KnowledgeGatewayConnection
 		return { path, content, definition: validation.data,
 			sourceDigest: `sha256:${createHash('sha256').update(content).digest('hex')}` };
 	});
-	if (new Set(files.map((file) => file.definition.agentClass)).size !== files.length) throw new CapacityOperationError(409,
-		'agent_team_class_ambiguous', 'Multiple agent definitions select the same class.');
+	if (new Set(files.map((file) => file.definition.id)).size !== files.length) throw new CapacityOperationError(409,
+		'agent_team_identity_ambiguous', 'Multiple agent definitions declare the same identity.');
 	return { commit, files };
+}
+
+/** Allocation classes contain all of their configured agents, in exact path order. */
+export function agentDefinitionClasses(files: readonly Pick<AgentDefinitionSourceFile, 'path' | 'definition'>[]) {
+	const grouped = new Map<string, Array<Pick<AgentDefinitionSourceFile, 'path' | 'definition'>>>();
+	for (const file of [...files].sort((left, right) => left.path.localeCompare(right.path))) {
+		const group = grouped.get(file.definition.agentClass) ?? [];
+		group.push(file); grouped.set(file.definition.agentClass, group);
+	}
+	return [...grouped].sort(([left], [right]) => left.localeCompare(right)).map(([slug, entries]) => ({
+		slug, name: entries.length === 1 ? entries[0]!.definition.name : slug,
+		handlerRefs: { agents: entries.map(entry => entry.definition) }, definitionPaths: entries.map(entry => entry.path),
+	}));
 }

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { executionNodeSchema, type AgentDefinition, type ExecutionNode, type ExactEntityReference } from '@treeseed/sdk/agent-capacity';
 import { modelTurnEstimate } from './model-turn-estimate.ts';
+import { agentProfileReference } from './agent-profile-reference.ts';
 
 type Row = Record<string, unknown>;
 const text = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
@@ -56,7 +57,7 @@ export function projectCommunicationInvocations(input: {
 		nodes.push(executionNodeSchema.parse({
 			schemaVersion: 'treeseed.execution-node/v1', id: `communication:${source.id}:${source.workdayId}`,
 			teamId: source.teamId, projectId: source.projectId, workdayId: source.workdayId,
-			kind: 'communication', pairRole: null, sourceRef, authorityRefs: [sourceRef],
+			kind: 'communication', pairRole: null, sourceRef, authorityRefs: [sourceRef, agentProfileReference(definition)],
 			ruleRevision: 1, nodeRevision: 1, agentClass: definition.agentClass, status: 'ready',
 			estimate: modelTurnEstimate(source.durationSeconds),
 			requiredCapabilities: ['treeseed.coordination.conversation'], requestedPermissions: profile.permissions,

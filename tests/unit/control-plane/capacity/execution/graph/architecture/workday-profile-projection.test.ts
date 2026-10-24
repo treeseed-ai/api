@@ -2,8 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { profile, project, reconcile } from './workday-profile-fixture.ts';
 import { compileWorkday, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { projectActiveWorkdays } from '../../../../../../../src/api/capacity/policy/execution/workday-execution-projector.ts';
+import { selectWorkdayReportingAgents } from '../../../../../../../src/api/capacity/policy/execution/workday-participants.ts';
 
 describe('governed activity lifecycle projection', () => {
+	it('projects every frozen subscribed closeout contribution without selecting a single actor', () => {
+		const definitions = [profile('closeout-author'), profile('audit-author')];
+		const before = structuredClone(definitions), graph = project(definitions);
+		expect(graph.nodes.filter(node => node.kind === 'reporting').map(node => node.agentClass).sort())
+			.toEqual(['audit-author', 'closeout-author']);
+		expect(project([...definitions].reverse()).nodes.filter(node => node.kind === 'reporting'))
+			.toEqual(graph.nodes.filter(node => node.kind === 'reporting'));
+		expect(definitions).toEqual(before);
+	});
 	it('projects reporting from a governed profile independently of the agent class name', () => {
 		for (const name of ['reporter', 'closeout-author']) {
 			const definition = profile(name);
@@ -21,8 +31,9 @@ describe('governed activity lifecycle projection', () => {
 		}
 	});
 
-	it('rejects ambiguous closeout selection instead of manufacturing multiple workday reports', () => {
-		expect(() => project([profile('closeout-author'), profile('audit-author')]))
+	it('rejects an ambiguous retained single-reporter authority rather than changing issued work', () => {
+		const definition = profile('closeout-author');
+		expect(() => selectWorkdayReportingAgents([{ projectId: 'one', definition }, { projectId: 'two', definition }], definition.id))
 			.toThrow(/report|closeout|select|ambiguous/iu);
 	});
 
@@ -43,8 +54,9 @@ describe('governed activity lifecycle projection', () => {
 		expect(graph.edges).toContainEqual(expect.objectContaining({ fromNodeId: condition!.id,
 			toNodeId: planning.id, provenance: 'profile-event' }));
 		expect(reconcile(graph).nodes.find(node => node.id === planning.id)?.status).toBe('blocked');
-		expect(reconcile(project([profile('planner', { reporting: false, planningClosing: true })], 'closing'))
-			.nodes.find(node => node.id === planning.id)?.status).toBe('ready');
+		const closing = reconcile(project([profile('planner', { reporting: false, planningClosing: true })], 'closing'));
+		expect(closing.nodes.find(node => node.id === condition!.id)?.status).toBe('completed');
+		expect(closing.nodes.find(node => node.id === planning.id)?.status).toBe('cancelled');
 	});
 
 	it('does not manufacture reporting work for disabled profiles or mutate governed profile bytes', () => {

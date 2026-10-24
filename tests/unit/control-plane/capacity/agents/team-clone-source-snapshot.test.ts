@@ -43,9 +43,13 @@ describe('exact TreeDX agent-team source snapshot', () => {
 				details: { path: 'agents/invalid.mdx', diagnostics: validateAgentDefinitionModel({ id: 'invalid' }).diagnostics } });
 	});
 
-	it('rejects two definitions that would overwrite the same target agent class', async () => {
+	it('retains distinct subscribers sharing an allocation class and rejects duplicate agent identities', async () => {
 		const files = ['first', 'second'].map((name) => ({ path: `agents/${name}.mdx`,
 			content: serializeFrontmatterDocument({ ...definition, id: `sdk/${name}` }) }));
-		await expect(snapshotAgents(connection(files))).rejects.toMatchObject({ code: 'agent_team_class_ambiguous' });
+		const result = await snapshotAgents(connection(files));
+		expect(result.files.map(file => file.definition.id)).toEqual(['sdk/first', 'sdk/second']);
+		expect(result.files.map(file => file.definition.agentClass)).toEqual(['architect', 'architect']);
+		const duplicate = files.map(file => ({ ...file, content: serializeFrontmatterDocument(definition) }));
+		await expect(snapshotAgents(connection(duplicate))).rejects.toMatchObject({ code: 'agent_team_identity_ambiguous' });
 	});
 });

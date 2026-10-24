@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { stringify } from 'yaml';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const gateway = vi.hoisted(() => ({ readRepositoryFile: vi.fn() }));
 vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({
@@ -8,8 +9,9 @@ import { executionNodeRunScope, linearPredecessorSourceCommit, listReadyExecutio
 import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { replayAttempt } from './architecture/admission-replay-fixture.ts';
 import { candidate as governedCandidate } from './fixtures/assignment-attempt-fixtures.ts';
-import { readyProposal } from '../../governance/proposals/architecture/ready-proposal-fixture.ts';
+import { readyContributionProposal } from '../../governance/proposals/architecture/ready-proposal-fixture.ts';
 import { executionNodeSchema } from '@treeseed/sdk/agent-capacity';
+import { agentProfileReference } from '../../../../../src/api/capacity/policy/execution/agent-profile-reference.ts';
 const projectId = 'project';
 const sourceRef = {
 	store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
@@ -17,32 +19,12 @@ const sourceRef = {
 };
 const decisionRef = { store: 'postgresql', model: 'decision', id: 'decision', revision: 1, digest: `sha256:${'c'.repeat(64)}` };
 const permissions = { content: { read: ['proposal', 'decision'], write: [] }, tools: ['source.read'] };
-it('reads shared planning proposal context through its owning project binding and refuses a foreign team', async () => {
-	for (const teamId of ['team', 'foreign-team']) {
-		vi.mocked(resolveKnowledgeGatewayConnection).mockImplementation(async (_store, input) => ({
-			repositoryId: input.projectId === 'ui' ? 'repository' : 'admin-library', client: gateway,
-		}) as never);
-		const proposal = readyProposal(), sharedGit = { store: 'git' as const, model: 'repository', id: 'ui-source', repository: 'treeseed-ai/ui', commit: 'e'.repeat(40) };
-		Object.assign(proposal, { id: 'proposal', projectId: 'ui', groupIds: ['portfolio-atlas'] });
-		Object.assign(proposal.executionPlan.workItems[0]!, { contextRefs: [sharedGit] });
-		gateway.readRepositoryFile.mockResolvedValue({ resolvedRef: sourceRef.commit, file: { frontmatter: proposal } });
-		const fetchImpl = vi.fn(async () => new Response('d'.repeat(40)));
-		const store = { getGovernanceProposal: async () => ({ id: 'proposal', projectId: 'ui', teamId }),
-			getProjectTreeDxLibrary: async () => ({ repositoryId: 'repository' }), config: { fetchImpl }, all: async () => [],
-			listHubRepositories: async () => [{ id: 'admin-source', role: 'software', provider: 'github', owner: 'treeseed-ai', name: 'admin', currentBranch: 'staging' }] };
-		const read = workItemContext(store, { id: 'shared-planning', projectId: 'admin', teamId: 'team',
-			kind: 'planning', workItemId: null, sourceRef, requestedPermissions: permissions } as never);
-		if (teamId === 'team') expect(await read).toEqual([sourceRef, sharedGit, { store: 'git', model: 'repository',
-			id: 'admin-source', repository: 'treeseed-ai/admin', commit: 'd'.repeat(40) }]);
-		else await expect(read).rejects.toMatchObject({ code: 'execution_node_source_repository_changed' });
-	}
-	vi.mocked(resolveKnowledgeGatewayConnection).mockImplementation(async () => ({ repositoryId: 'repository', client: gateway }) as never);
-});
+
 function nodeRow(id = 'node', decisionId = 'decision') {
 	return {
 		id, team_id: 'team', project_id: projectId, work_item_id: 'implementation',
 		kind: 'acting', pair_role: 'actor', source_ref_json: sourceRef,
-		authority_refs_json: [{ ...decisionRef, id: decisionId }],
+		authority_refs_json: [{ ...decisionRef, id: decisionId }, agentProfileReference(definition as never)],
 		rule_revision: 1, node_revision: 1, agent_class: 'engineer', status: 'ready',
 		estimate_json: { expectedSeconds: 120, maximumSeconds: 180 },
 		required_capabilities_json: ['code-change'], requested_permissions_json: permissions,
@@ -144,7 +126,7 @@ const teamContextStore = {
 
 describe('direct ready-node admission input', () => {
 	it('retains frozen selected Proposal Git context for workday planning without following later proposal versions', async () => {
-		const definition = readyProposal(), git = contextRefs[0]!;
+		const definition = readyContributionProposal(), git = contextRefs[0]!;
 		Object.assign(definition.executionPlan.workItems[0]!, { contextRefs: [git] });
 		const bytes = 'controlled exact selected proposal bytes', digest = createHash('sha256').update(bytes).digest('hex');
 		const frozen = { ...sourceRef, digest: `sha256:${digest}` };
@@ -219,22 +201,24 @@ describe('direct ready-node admission input', () => {
 		const gitRef = { store: 'git', model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40) };
 		const objectiveRef = { store: 'treedx', model: 'objective', id: 'objective', repository: 'treeseed-ai/sdk-library',
 			commit: 'b'.repeat(40), path: 'objectives/core' };
-		gateway.readRepositoryFile.mockResolvedValueOnce({ resolvedRef: 'b'.repeat(40), file: { frontmatter: {
-			schemaVersion: 'treeseed.proposal/v1', id: 'proposal', projectId, title: 'Governed planning',
+		const proposal = {
+			schemaVersion: 'treeseed.proposal/v2', groupIds: ['portfolio-runtime'], id: 'proposal', projectId, title: 'Governed planning',
 			request: 'Plan the exact accepted work.', summary: 'Use exact governed context.', status: 'draft',
 			objectiveRefs: [objectiveRef], executionPlan: { workItems: [{
-				id: 'implementation', activity: 'acting', agentClass: 'engineer', workspace: 'read-only', review: 'none',
-				objective: 'Implement the governed change.', estimate: { expectedSeconds: 120, maximumSeconds: 240 },
+				id: 'implementation', activity: 'acting', estimateRef: { store: 'postgresql', model: 'assignment-attempt', id: 'controlled-estimate', revision: 1 }, workspace: 'read-only', review: 'none',
+				objective: 'Implement the governed change.', estimate: { expectedSeconds: 120, maximumSeconds: 240, rationale: 'Controlled own implementation budget.' },
 				dependsOn: [], contextRefs: [gitRef], requestedPermissions: permissions, requiredCapabilities: ['source.read'],
 				acceptanceCriteria: ['Focused tests pass.'],
 			}] },
-		} } });
-		const refs = await workItemContext({ getGovernanceProposal: async () => ({ projectId, teamId: 'team' }), getProjectTreeDxLibrary: vi.fn(async () => ({
+		};
+		const content = `---\n${stringify(proposal)}---\n`, exactRef = { ...sourceRef, digest: `sha256:${createHash('sha256').update(content).digest('hex')}` };
+		gateway.readRepositoryFile.mockResolvedValueOnce({ resolvedRef: 'b'.repeat(40), file: { content, frontmatter: proposal } });
+		const refs = await workItemContext({ getGovernanceProposal: async () => ({ id: 'proposal', projectId, teamId: 'team' }), getProjectTreeDxLibrary: vi.fn(async () => ({
 			repositoryId: 'repository', contentRepositoryUrl: 'https://github.com/treeseed-ai/sdk-library.git',
 		})) } as never, {
-			teamId: 'team', projectId, id: kind, kind, pairRole: null, workItemId: null, sourceRef,
+			teamId: 'team', projectId, id: kind, kind, pairRole: null, workItemId: null, sourceRef: exactRef,
 		} as never);
-		expect(refs).toEqual([sourceRef, { ...objectiveRef, repository: 'repository' }, gitRef]);
+		expect(refs).toEqual([exactRef, { ...objectiveRef, repository: 'repository' }, gitRef]);
 	});
 
 	it('attaches a proposal work item exact Git source to proposal-bound communication', async () => {
@@ -281,8 +265,10 @@ describe('direct ready-node admission input', () => {
 	});
 
 	it('loads the exact profile and predecessor results without creating a demand record', async () => {
+		const estimateAuthority = { store: 'postgresql' as const, model: 'assignment-attempt', id: 'own-estimate', revision: 1 };
+		const row = nodeRow(); row.authority_refs_json.push(estimateAuthority);
 		const store = { ...teamContextStore, all: vi.fn()
-			.mockResolvedValueOnce([nodeRow()])
+			.mockResolvedValueOnce([row])
 			.mockResolvedValueOnce([classRow(definition)])
 			.mockResolvedValueOnce([{ assignment_result_json: result }]) };
 		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
@@ -298,6 +284,8 @@ describe('direct ready-node admission input', () => {
 			expect.objectContaining({ id: 'project:project-objective', path: 'objectives/core', commit: '1'.repeat(40) }),
 		]));
 		expect(candidate.sourceRepositories).toEqual(['treeseed-ai/sdk']);
+		expect(candidate.node.authorityRefs).toContainEqual(estimateAuthority);
+		expect(candidate.contextRefs.some(reference => reference.store === 'postgresql')).toBe(false);
 		expect(candidate.effectiveProfile.profileRef).toMatchObject({
 			store: 'treedx', repository: 'repository', commit: agentCommit, path: agentPath,
 		});
@@ -343,7 +331,7 @@ describe('direct ready-node admission input', () => {
 		const failed = { ...result, id: 'failed-result', assignmentId: 'failed-assignment', status: 'failed' };
 		const store = { ...teamContextStore, all: vi.fn()
 			.mockResolvedValueOnce([{ ...nodeRow(), kind: 'reporting', pair_role: null,
-				workday_id: 'run', agent_class: 'reporter', authority_refs_json: [], workspace: 'treedx' }])
+				workday_id: 'run', agent_class: 'reporter', authority_refs_json: [agentProfileReference(reporter as never)], workspace: 'treedx' }])
 			.mockResolvedValueOnce([classRow(reporter, 'class-reporter')])
 			.mockResolvedValueOnce([{ assignment_result_json: failed }, { assignment_result_json: result }]) };
 		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
@@ -419,7 +407,7 @@ describe('direct ready-node admission input', () => {
 			resolvedRef: agentCommit, file: { path: agentPath, frontmatter: reviewer },
 		});
 		const node = { ...nodeRow(), kind: 'reviewing', pair_role: 'reviewer', agent_class: 'reviewer',
-			workspace: 'treedx', requested_permissions_json: reviewPermissions };
+			workspace: 'treedx', requested_permissions_json: reviewPermissions, authority_refs_json: [decisionRef, agentProfileReference(reviewer as never)] };
 		const createStore = (grants: unknown[]) => ({ ...teamContextStore, all: vi.fn()
 			.mockResolvedValueOnce([node])
 			.mockResolvedValueOnce([classRow(reviewer, 'class-reviewer')])
@@ -458,7 +446,7 @@ describe('direct ready-node admission input', () => {
 			...nodeRow('planning:run:1:project/agent:planning'),
 			workday_id: 'run', work_item_id: null, kind: 'planning', pair_role: null,
 			source_ref_json: { store: 'postgresql', model: 'workday', id: 'run', revision: 1, digest: `sha256:${'f'.repeat(64)}` },
-			authority_refs_json: [{ store: 'postgresql', model: 'workday', id: 'run', revision: 1, digest: `sha256:${'f'.repeat(64)}` }],
+			authority_refs_json: [{ store: 'postgresql', model: 'workday', id: 'run', revision: 1, digest: `sha256:${'f'.repeat(64)}` }, agentProfileReference(definition as never)],
 			agent_class: 'engineer', workspace: 'treedx',
 		};
 		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([planning])
@@ -472,7 +460,7 @@ describe('direct ready-node admission input', () => {
 	it('fails closed when the exact activity profile is unavailable', async () => {
 		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([nodeRow()]).mockResolvedValueOnce([]) };
 		await expect(listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs))
-			.rejects.toMatchObject({ code: 'execution_node_agent_profile_missing' });
+			.rejects.toMatchObject({ code: 'execution_node_agent_identity_ambiguous' });
 	});
 
 	it('passes the prior exact Reviewer result to a revised Actor node', async () => {

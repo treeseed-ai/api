@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
-import { appliedWorkdaySchema, executionEdgeSchema, executionNodeSchema,
+import { appliedWorkdaySchema, executionEdgeSchema, executionNodeSchema, validateAgentDefinitionModel,
 	type AgentDefinition, type ExecutionEdge, type ExecutionNode, type ExactEntityReference } from '@treeseed/sdk/agent-capacity';
-import { workdayParticipants, selectWorkdayReportingAgent, type WorkdayParticipant } from './workday-participants.ts';
+import { workdayParticipants, declaredWorkdayParticipants, selectWorkdayReportingAgents, type WorkdayParticipant } from './workday-participants.ts';
 import { modelTurnEstimate } from './model-turn-estimate.ts';
+import { agentProfileReference } from './agent-profile-reference.ts';
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
@@ -50,7 +51,7 @@ function edge(teamId: string, fromNodeId: string, toNodeId: string, provenance: 
 /** Project the applied workday plan into ordinary living-graph nodes. */
 export function projectActiveWorkdays(input: { teamId: string; revision: number;
 	sources: ActiveWorkdayProjectionSource[]; profiles: Record<string, AgentDefinition>;
-	decisionNodes?: ExecutionNode[]; retainedNodes?: readonly ExecutionNode[]; issuedNodeIds?: readonly string[] }) {
+	decisionNodes?: ExecutionNode[]; retainedNodes?: readonly ExecutionNode[]; retainedEdges?: readonly ExecutionEdge[]; issuedNodeIds?: readonly string[] }) {
 	const nodes: ExecutionNode[] = [], edges: ExecutionEdge[] = [], changedSourceRefs: ExactEntityReference[] = [];
 	const retainedById = new Map((input.retainedNodes ?? []).map(node => [node.id, node]));
 	const issuedIds = new Set(input.issuedNodeIds ?? []);
@@ -84,23 +85,25 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 		const planningSources = record(source.parameters.planningSourceByProposalId);
 		const participation = { ...source.parameters, proposalsByProjectId: source.proposalsByProjectId };
 		const participants = workdayParticipants(participation);
-		const requiredIds = new Set(participants.map(participant => participant.id));
-		// Closing keeps every original planned identity. Exact completed estimates
-		// can cancel a never-admitted obsolete turn, never an issued attempt.
+		const declaredIds = new Set(workday.planningRounds.flatMap(round => round.assignmentIds.map(id => {
+			const prefix = `planning:${workday.id}:${round.round}:`;
+			if (!id.startsWith(prefix)) throw new Error('Frozen planning identity differs from its Workday round');
+			return id.slice(prefix.length);
+		})));
 		const plannedParticipants = workday.state === 'closing'
-			? [...new Map([
-				...workdayParticipants(participation, { includeEstimated: true }),
-				// The first group candidate compiled unqualified planning IDs. Close
-				// those original unissued turns through the graph; never rewrite its
-				// frozen plan or manufacture an assignment/result to finish a round.
-				...workdayParticipants({ ...participation, groupIds: [] }, { includeEstimated: true }),
-			].map(participant => [participant.id, participant])).values()] : participants;
+			? declaredWorkdayParticipants(participation, declaredIds) : participants;
 		changedSourceRefs.push(reference);
 		const projectIds = array(source.parameters.scheduledProjectIds).map(text).filter(Boolean).sort();
 		const roundNodes = new Map<number, ExecutionNode[]>();
 		for (const { round } of workday.planningRounds) {
 			const plannedIds = new Set(workday.planningRounds.find((candidate) => candidate.round === round)?.assignmentIds ?? []);
 			const current: ExecutionNode[] = [];
+			for (const id of plannedIds) if (issuedIds.has(id)) {
+				const retained = retainedById.get(id)!;
+				if (retained.teamId !== input.teamId || retained.workdayId !== workday.id
+					|| !['planning', 'estimating'].includes(retained.kind)) throw new Error('Original issued planning node custody differs.');
+				current.push(retained); nodes.push(retained);
+			}
 			for (const participant of plannedParticipants.filter((candidate) => projectIds.includes(candidate.projectId))) {
 				const { projectId, definition, activity } = participant;
 				const planningSource = record(planningSources[participant.proposalId ?? '']);
@@ -108,39 +111,26 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 					&& planningSource.model === 'proposal' ? planningSource as ExactEntityReference : reference;
 				const plannedId = `planning:${workday.id}:${round}:${participant.id}`;
 				if (!plannedIds.has(plannedId)) continue;
-				const obsolete = activity === 'estimating' && !requiredIds.has(participant.id);
-				if (obsolete) {
-					const retained = retainedById.get(plannedId);
-					if (retained) {
-						if (retained.teamId !== input.teamId || retained.projectId !== projectId || retained.workdayId !== workday.id
-							|| retained.kind !== 'estimating' || retained.agentClass !== definition.agentClass) throw new Error('Original planned node custody differs.');
-						current.push(retained); nodes.push(retained); continue;
-					}
-					if (issuedIds.has(plannedId)) throw new Error('Missing original node for an issued planning turn');
-					if (planningSource.store !== 'treedx' || planningSource.model !== 'proposal' || planningSource.id !== participant.proposalId)
-						throw new Error('Exact original estimating proposal authority required.');
+				if (issuedIds.has(plannedId)) continue;
+				const obsolete = workday.state === 'closing';
+				if (activity === 'estimating' && (planningSource.store !== 'treedx' || planningSource.model !== 'proposal'
+					|| planningSource.id !== participant.proposalId)) throw new Error('Exact original estimating proposal authority required.');
+				if (obsolete && retainedById.has(plannedId)) {
+					const retained = retainedById.get(plannedId)!;
+					if (retained.teamId !== input.teamId || retained.workdayId !== workday.id || retained.kind !== activity
+						|| retained.projectId !== projectId) throw new Error('Original planned node custody differs.');
+					if (['assigned', 'running'].includes(retained.status)) throw new Error('Active planned node lacks issued authority');
+					const closed = ['completed', 'failed', 'cancelled', 'stale'].includes(retained.status) ? retained
+						: { ...retained, status: 'cancelled' as const, graphRevisionUpdated: input.revision };
+					current.push(closed); nodes.push(closed); continue;
 				}
 				const profile = definition.activityProfiles[activity]!;
-				const proposal = source.proposalsByProjectId?.[projectId]?.find((candidate) => text(candidate.id) === participant.proposalId);
-				const workItems = array(record(proposal?.executionPlan).workItems).map(record);
-				const workItem = activity === 'estimating' && definition.agentClass !== 'reviewer'
-					? workItems.filter((item) => text(item.agentClass) === definition.agentClass
-						&& (obsolete || Object.keys(record(item.estimate)).length === 0)) : [];
-				if (activity === 'estimating' && (!workItems.length
-					|| (definition.agentClass !== 'reviewer' && !workItem.length))) throw new Error(
-					`Estimating ${definition.agentClass} requires proposal work items owned by that class.`);
-				const estimatingCriteria = definition.agentClass === 'reviewer'
-					? workItems.filter((item) => item.review === 'required'
-						&& (obsolete || Object.keys(record(item.reviewEstimate)).length === 0)).map((item) =>
-						`Estimate the generated review of work item ${text(item.id)} independently: expectedSeconds, maximumSeconds, and rationale.`)
-					: workItem.flatMap((item) => [`Estimate work item ${text(item.id)}: expectedSeconds, maximumSeconds, and rationale.`,
-						...array(item.acceptanceCriteria).map(text)]);
+				const proposal = Object.values(source.proposalsByProjectId ?? {}).flat().find(candidate => text(candidate.id) === participant.proposalId);
+				const estimatingCriteria = obsolete ? ['Original planned estimating turn cancelled before assignment.'] : [text(proposal?.request)];
 				const proposalStatus = source.proposalStatusesByProposalId?.[participant.proposalId ?? ''];
 				const node = executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1', id: plannedId,
 					teamId: input.teamId, projectId, workdayId: workday.id, kind: activity, pairRole: null,
-					...(activity === 'estimating' && definition.agentClass !== 'reviewer' && workItem.length === 1
-						? { workItemId: text(workItem[0]?.id) } : {}),
-					sourceRef: nodeSource, authorityRefs: [reference], ruleRevision: 1, nodeRevision: 1,
+					sourceRef: nodeSource, authorityRefs: [reference, agentProfileReference(definition)], ruleRevision: 1, nodeRevision: 1,
 						agentClass: definition.agentClass,
 					status: obsolete ? 'cancelled' : activity === 'estimating' && proposalStatus
 						&& !['draft', 'submitted', 'open'].includes(proposalStatus)
@@ -156,7 +146,7 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 			roundNodes.set(round, current);
 		}
 		for (const [round, current] of roundNodes) {
-			for (const estimator of current.filter(node => node.kind === 'estimating')) {
+			for (const estimator of current.filter(node => node.kind === 'estimating' && !issuedIds.has(node.id))) {
 				// Estimate after this agent's own contribution. Other agents' planning
 				// turns are independent; their explicit profile dependencies still apply.
 				const participant = participants.find(value => value.activity === 'estimating'
@@ -166,40 +156,19 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 						&& (value.proposalId === participant.proposalId || value.proposalId === undefined));
 					const ownContribution = contribution && current.find(node => node.id === `planning:${workday.id}:${round}:${contribution.id}`);
 				if (ownContribution) edges.push(edge(input.teamId, ownContribution.id, estimator.id, 'work-item', reference, input.revision));
-				if (estimator.agentClass === 'reviewer') for (const owner of current.filter(node => node.kind === 'estimating'
-					&& node.projectId === estimator.projectId && node.sourceRef.id === estimator.sourceRef.id
-					&& node.agentClass !== 'reviewer')) {
-					edges.push(edge(input.teamId, owner.id, estimator.id, 'work-item', reference, input.revision));
-				}
+
 			}
-			for (const node of current) for (const predecessor of roundNodes.get(round - 1) ?? []) {
+			for (const node of current.filter(node => !issuedIds.has(node.id))) for (const predecessor of roundNodes.get(round - 1) ?? []) {
 				edges.push(edge(input.teamId, predecessor.id, node.id, 'work-item', reference, input.revision));
 			}
 			for (const participant of participants) {
 				const node = current.find((candidate) => candidate.id === `planning:${workday.id}:${round}:${participant.id}`);
-				if (!node) continue;
+				if (!node || issuedIds.has(node.id)) continue;
 				for (const dependency of participant.definition.activityProfiles[participant.activity]?.dependsOn?.agents ?? []) {
-					const upstream = participants.filter((candidate) => candidate.projectId === participant.projectId
-						&& candidate.activity === participant.activity
-						&& candidate.proposalId === participant.proposalId
-						&& (candidate.definition.id === dependency || candidate.definition.agentClass === dependency));
-					if (!upstream.length) {
-						const frozenAgents = array(record(record(source.parameters.agentProfilesByProjectId)[participant.projectId]).agents)
-							.map((entry) => record(record(entry).definition));
-						const dependencyDefinition = frozenAgents.find((definition) => text(definition.id) === dependency
-							|| text(definition.agentClass) === dependency);
-						const dependencyClass = text(dependencyDefinition?.agentClass);
-						const selectedProposal = source.proposalsByProjectId?.[participant.projectId]?.find((proposal) => text(proposal.id) === participant.proposalId);
-						const proposalItems = array(record(selectedProposal?.executionPlan).workItems).map(record);
-						const ownedItems = dependencyClass === 'reviewer'
-							? proposalItems.filter((item) => item.review === 'required')
-							: proposalItems.filter((item) => text(item.agentClass) === dependencyClass);
-						const alreadyEstimated = participant.activity === 'estimating' && ownedItems.length > 0
-							&& ownedItems.every((item) => Object.keys(record(dependencyClass === 'reviewer'
-								? item.reviewEstimate : item.estimate)).length > 0);
-						if (alreadyEstimated) continue;
-						throw new Error(`Planning dependency ${dependency} is not selected for ${participant.id}.`);
-					}
+					const upstream = participants.filter(candidate => candidate.projectId === participant.projectId
+						&& candidate.activity === participant.activity && candidate.proposalId === participant.proposalId
+						&& [candidate.definition.id, candidate.definition.id.split('/').at(-1), candidate.definition.name].includes(dependency));
+					if (!upstream.length) throw new Error(`Planning dependency ${dependency} is not selected for ${participant.id}.`);
 					for (const predecessor of current.filter((candidate) => upstream.some((agent) =>
 						candidate.id === `planning:${workday.id}:${round}:${agent.id}`))) {
 						edges.push(edge(input.teamId, predecessor.id, node.id, 'profile-agent', reference, input.revision));
@@ -207,20 +176,22 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 				}
 			}
 		}
-		const selectedReporter = selectWorkdayReportingAgent(Object.entries(input.profiles).flatMap(([key, definition]) =>
-			projectIds.filter(projectId => key === `${projectId}:${definition.agentClass}`).map(projectId => ({ projectId, definition }))), workday.reportingAgentId);
-		if (selectedReporter) {
-			const { projectId, definition: reporter } = selectedReporter;
-			if (workday.reportingAgentId !== undefined) {
-				const frozen = array(record(record(source.parameters.agentProfilesByProjectId)[projectId]).agents)
-					.map(entry => record(entry).definition).filter(definition => text(record(definition).id) === workday.reportingAgentId);
-				if (frozen.length !== 1 || stable(frozen[0]) !== stable(reporter)) throw new Error('The selected reporting profile differs from its frozen Workday authority.');
-			}
+		const reportingAgents = selectWorkdayReportingAgents(projectIds.flatMap(projectId =>
+			array(record(record(source.parameters.agentProfilesByProjectId)[projectId]).agents).flatMap(entry => {
+				const checked = validateAgentDefinitionModel(record(entry).definition);
+				if (!checked.ok || !checked.data) throw new Error('The frozen reporting profile is invalid.');
+				if (!checked.data.activityProfiles.reporting) return [];
+				const definition = checked.data;
+				const current = Object.entries(input.profiles).filter(([key, candidate]) => key.startsWith(`${projectId}:`) && candidate.id === definition.id);
+				if (current.length !== 1 || stable(current[0]![1]) !== stable(definition)) throw new Error('The reporting profile differs from its frozen Workday authority.');
+				return [{ projectId, definition }];
+			})), workday.reportingAgentId);
+		for (const { projectId, definition: reporter } of reportingAgents) {
 			const reporting = reporter.activityProfiles.reporting!;
 			const reporterId = `reporting:${workday.id}:${projectId}/${reporter.id}`;
 			const report = executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1', id: reporterId,
 				teamId: input.teamId, projectId, workdayId: workday.id, kind: 'reporting', pairRole: null,
-				sourceRef: reference, authorityRefs: [reference], ruleRevision: 1, nodeRevision: 1, agentClass: reporter.agentClass,
+				sourceRef: reference, authorityRefs: [reference, agentProfileReference(reporter)], ruleRevision: 1, nodeRevision: 1, agentClass: reporter.agentClass,
 				status: 'blocked', estimate: { expectedSeconds: 5, maximumSeconds: 30 },
 				// Reporting is deterministic, but admission still requires a provider that
 				// explicitly offers the standard reporting execution capability.
@@ -229,6 +200,25 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 				graphRevisionCreated: input.revision, graphRevisionUpdated: input.revision });
 			lifecycleDependencies(report, reporting.dependsOn?.events); nodes.push(report);
 		}
+		const preserved = new Set([...issuedIds].filter(id => declaredPlanningIds.has(id))), queue = [...preserved];
+		for (let index = 0; index < queue.length; index++) for (const prior of input.retainedEdges ?? []) {
+			if (prior.toNodeId !== queue[index]) continue;
+			if (prior.teamId !== input.teamId) throw new Error('Original issued planning predecessor custody differs.');
+			const ancestor = retainedById.get(prior.fromNodeId);
+			if (!ancestor || ancestor.teamId !== input.teamId || ancestor.workdayId !== workday.id)
+				throw new Error('Original issued planning predecessor custody differs.');
+			if (!preserved.has(ancestor.id)) { preserved.add(ancestor.id); queue.push(ancestor.id); }
+		}
+		for (const id of preserved) {
+			const prior = retainedById.get(id)!;
+			if (!issuedIds.has(id) && prior.kind !== 'condition' && !['completed', 'failed', 'cancelled', 'stale'].includes(prior.status))
+				throw new Error('Original issued predecessor has no terminal or issued authority');
+			const currentIndex = nodes.findIndex(node => node.id === id);
+			if (currentIndex < 0) nodes.push(prior);
+			else if (prior.kind !== 'condition') nodes[currentIndex] = prior;
+		}
+		edges.push(...(input.retainedEdges ?? []).filter(prior => preserved.has(prior.fromNodeId) && preserved.has(prior.toNodeId)));
+
 	}
 	return { nodes, edges: [...new Map(edges.map((candidate) => [candidate.id, candidate])).values()], changedSourceRefs };
 }

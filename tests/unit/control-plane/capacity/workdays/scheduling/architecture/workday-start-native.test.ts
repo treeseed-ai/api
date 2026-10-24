@@ -229,7 +229,7 @@ describe('first manual and recurring admission through the same public owning pa
 			if (!row || typeof row.response_json !== 'string') throw new Error('Native stored preflight bytes required');
 			const raw = row.response_json;
 			const stored: { intent: typeof f.intent; receipt: typeof planned; runInput: Record<string, unknown> } = JSON.parse(raw);
-			const expectedIntentBytes = JSON.stringify({ durationSeconds: original.durationSeconds, executionMode: original.executionMode,
+			const expectedIntentBytes = JSON.stringify({ durationSeconds: original.durationSeconds, executionMode: original.executionMode, groupIds: original.groupIds,
 				operatorConstraints: { maxConcurrency: 1, providerIds: ['provider'] }, planningOnly: true, profileId: original.profileId,
 				projects: original.projects, schemaVersion: original.schemaVersion, startsAt: original.startsAt, teamId: original.teamId });
 			const hash = (bytes: string) => `sha256:${createHash('sha256').update(bytes).digest('base64url')}`;

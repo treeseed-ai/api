@@ -3,11 +3,12 @@ import { appliedWorkdaySchema, assignmentResultSchema, compilePlanningRounds, wo
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import { workdayParticipants } from '../../../../policy/execution/workday-participants.ts';
-import { hasCompleteExecutablePlan, readExactProposal } from '../../../../../governance/executable-proposal.ts';
+import { readExactProposal } from '../../../../../governance/executable-proposal.ts';
 import { reconcileAssignmentContent } from '../../assignments/lifecycle/assignment-content-readback.ts';
 import { runtimeWorkdayPhase } from '../../../build/ready-execution-node.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { isDeepStrictEqual } from 'node:util';
+import { loadProposalGroupContributions } from '../../execution/proposal-contributions.ts';
 
 type Row = Record<string, unknown>;
 const terminalNodeStates = new Set(['completed', 'failed', 'cancelled', 'stale']);
@@ -16,31 +17,37 @@ const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.st
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
 
 async function completedReportRef(store: CapacityGovernanceDatabase, run: DurableCapacityWorkdayRun, reports: Row[], now: string): Promise<Extract<AssignmentResult['references'][number], { kind: 'treedx' }> | null> {
-	if (reports.length !== 1 || reports[0]!.status !== 'completed') return null;
-	const rows = await store.all(`SELECT assignment.id,assignment.assignment_result_json,
-		audit.created_at AS integrated_at,audit.data_json AS integration_json
-		FROM capacity_provider_assignments assignment LEFT JOIN audit_events audit
-		ON audit.target_id=assignment.id AND audit.target_type='capacity_provider_assignment'
-		AND audit.event_type='assignment.content.integrated'
-		WHERE assignment.team_id=? AND assignment.work_day_id=? AND assignment.execution_node_id=? AND assignment.status='completed'
-		ORDER BY assignment.completed_at DESC,assignment.id DESC`, [run.teamId, run.id, reports[0]!.id]);
-	if (rows.length !== 1) return null;
-	let value: unknown = rows[0]!.assignment_result_json;
-	if (typeof value === 'string') try { value = JSON.parse(value); } catch { return null; }
-	const parsed = assignmentResultSchema.safeParse(value);
-	if (!parsed.success || parsed.data.status !== 'completed' || parsed.data.assignmentId !== rows[0]!.id
-		|| !Number.isFinite(Date.parse(now)) || Date.parse(parsed.data.completedAt) > Date.parse(now)) return null;
-	const references = parsed.data.references;
-	if (references.length !== 1 || references[0]!.kind !== 'treedx') return null;
-	const integratedAt = Date.parse(String(rows[0]!.integrated_at));
-	if (!Number.isFinite(integratedAt) || integratedAt > Date.parse(now)) return null;
-	let integration: unknown = rows[0]!.integration_json;
-	if (typeof integration === 'string') try { integration = JSON.parse(integration); } catch { return null; }
-	if (record(integration).resultId !== parsed.data.id || !isDeepStrictEqual(record(integration).references, references)) return null;
-	return references[0]!;
+	if (!reports.length || reports.some(report => report.status !== 'completed')) return null;
+	const completed: Extract<AssignmentResult['references'][number], { kind: 'treedx' }>[] = [];
+	for (const report of [...reports].sort((left,right)=>String(left.id).localeCompare(String(right.id)))) {
+		const rows = await store.all(`SELECT assignment.id,assignment.assignment_result_json,
+			audit.created_at AS integrated_at,audit.data_json AS integration_json
+			FROM capacity_provider_assignments assignment LEFT JOIN audit_events audit
+			ON audit.target_id=assignment.id AND audit.target_type='capacity_provider_assignment'
+			AND audit.event_type='assignment.content.integrated'
+			WHERE assignment.team_id=? AND assignment.work_day_id=? AND assignment.execution_node_id=? AND assignment.status='completed'
+			ORDER BY assignment.completed_at DESC,assignment.id DESC`, [run.teamId, run.id, report.id]);
+		if (rows.length !== 1) return null;
+		let value: unknown = rows[0]!.assignment_result_json;
+		if (typeof value === 'string') try { value = JSON.parse(value); } catch { return null; }
+		const parsed = assignmentResultSchema.safeParse(value);
+		if (!parsed.success || parsed.data.status !== 'completed' || parsed.data.assignmentId !== rows[0]!.id
+			|| !Number.isFinite(Date.parse(now)) || Date.parse(parsed.data.completedAt) > Date.parse(now)) return null;
+		const references = parsed.data.references;
+		if (references.length !== 1 || references[0]!.kind !== 'treedx') return null;
+		const integratedAt = Date.parse(String(rows[0]!.integrated_at));
+		if (!Number.isFinite(integratedAt) || integratedAt > Date.parse(now)) return null;
+		let integration: unknown = rows[0]!.integration_json;
+		if (typeof integration === 'string') try { integration = JSON.parse(integration); } catch { return null; }
+		if (record(integration).resultId !== parsed.data.id || !isDeepStrictEqual(record(integration).references, references)) return null;
+		completed.push(references[0]!);
+	}
+	// Preserve the existing singular entry point; every report remains authoritative
+	// on its assignment and every integration receipt above must be present.
+	return completed[0]!;
 }
 
-async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: DurableCapacityWorkdayRun, plan: AppliedWorkday) {
+async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: DurableCapacityWorkdayRun) {
 	const selectedProposalIds = [...new Set(Array.isArray(run.parameters.proposalIds)
 		? run.parameters.proposalIds.filter((id): id is string => typeof id === 'string' && Boolean(id)) : [])];
 	const decisionIds = [...new Set(Array.isArray(run.parameters.decisionIds)
@@ -59,9 +66,7 @@ async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: 
 		.filter(([id]) => !selected.size || selected.has(id)));
 	const proposalsByProjectId: Record<string, Row[]> = {};
 	let hasPlanningProposals = false;
-	const first = plan.planningRounds[0]!;
-	const prefix = `planning:${plan.id}:${first.round}:`;
-	const initialAgentIds = first.assignmentIds.map((id) => id.slice(prefix.length));
+	const groups = new Set(Array.isArray(run.parameters.groupIds) ? run.parameters.groupIds : []);
 	const projectIds = Array.isArray(run.parameters.scheduledProjectIds) ? run.parameters.scheduledProjectIds : [];
 	for (const projectId of projectIds) {
 		if (typeof projectId !== 'string') continue;
@@ -70,11 +75,13 @@ async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: 
 			${selected.size ? `AND id IN (${scopedProposalIds.map(() => '?').join(',')})` : ''}
 			ORDER BY id LIMIT 101`, [run.teamId, projectId, ...scopedProposalIds]);
 		if (candidates.length > 100) throw new Error(`planning_proposal_inventory_too_large:${projectId}`);
-		hasPlanningProposals ||= candidates.length > 0;
 		proposalsByProjectId[projectId] = [];
 		for (const proposal of candidates) {
 			try {
 				const exact = await readExactProposal(store, proposal);
+				if (exact.definition.schemaVersion !== 'treeseed.proposal/v2'
+					|| !Array.isArray(exact.definition.groupIds) || !exact.definition.groupIds.some(id => groups.has(id))) continue;
+				hasPlanningProposals = true;
 				const proposalId = String(exact.definition.id);
 				sources[proposalId] = exact.ref;
 				proposalsByProjectId[projectId].push(exact.definition);
@@ -84,20 +91,25 @@ async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: 
 			}
 		}
 	}
-	const proposalsNeedingEstimates = Object.fromEntries(Object.entries(proposalsByProjectId)
-		.map(([projectId, proposals]) => [projectId, proposals.filter((proposal) =>
-			!hasCompleteExecutablePlan(proposal) && proposal.status !== 'withdrawn')]));
-	const estimators = Object.values(proposalsNeedingEstimates).some((proposals) => proposals.length)
-		? workdayParticipants({ ...run.parameters, proposalsByProjectId: proposalsNeedingEstimates })
-			.filter((participant) => participant.activity === 'estimating' && projectIds.includes(participant.projectId))
-			.map((participant) => participant.id) : [];
+	const proposalsNeedingEstimates = Object.fromEntries(await Promise.all(Object.entries(proposalsByProjectId)
+		.map(async ([projectId, proposals]) => [projectId, (await Promise.all(proposals.map(async proposal => {
+			if (proposal.status === 'withdrawn') return null;
+			const participation = await loadProposalGroupContributions(store as never,
+				{ id: proposal.id, teamId: run.teamId, projectId }, proposal);
+			return participation.current ? null : proposal;
+		}))).filter((proposal): proposal is Row => proposal !== null)] as const)));
+	const participants = workdayParticipants({ ...run.parameters, proposalsByProjectId: proposalsNeedingEstimates })
+		.filter(participant => projectIds.includes(participant.projectId)).map(participant => participant.id);
+	const proposals = Object.values(proposalsByProjectId).flat();
+	const groupContributionsReady = selected.size > 0 && proposals.length > 0 && proposals.every(proposal => proposal.schemaVersion === 'treeseed.proposal/v2')
+		&& Object.values(proposalsNeedingEstimates).every(proposals => proposals.length === 0);
 	return { sources, proposalIds: selectedProposalIds.sort(),
 		// Terminal explicit scope is not autonomous proposal discovery. Keep the
 		// initial phase window, but do not repeat already-decided planning work.
-		// Estimators are dynamic: only the current exact proposal can select them;
-		// falling back to the initial estimator IDs creates unmaterializable rounds.
-		agentIds: selected.size && !hasPlanningProposals ? []
-			: [...new Set([...initialAgentIds.filter(id => id.endsWith(':planning')), ...estimators])].sort() };
+		// Every new turn is derived from the current group audience and exact
+		// proposal. Initial IDs are historical authority, not new turn selectors.
+		agentIds: (selected.size && !hasPlanningProposals) || groupContributionsReady ? []
+			: [...new Set(participants)].sort() };
 }
 
 function advanceRounds(plan: AppliedWorkday, states: Map<string, string>, now: string): AppliedWorkday {
@@ -131,7 +143,7 @@ export async function advanceLivingWorkday(store: CapacityGovernanceDatabase & {
 	if (!requestClose && next.state === 'active' && await runtimeWorkdayPhase(store, run, now) === 'planning'
 		&& planningWindowEnd - Date.parse(now) >= next.policySnapshot.planningTurnMaximumSeconds * 1_000
 		&& next.planningRounds.length && next.planningRounds.every((round) => round.state === 'complete')) {
-		const { sources, proposalIds, agentIds } = await nextPlanningParticipants(store, run, next);
+		const { sources, proposalIds, agentIds } = await nextPlanningParticipants(store, run);
 		if (agentIds.length) {
 			const round = next.planningRounds.at(-1)!.round + 1;
 			const turns = compilePlanningRounds(next.id, agentIds, next.policySnapshot.planningTurnMaximumSeconds, round);

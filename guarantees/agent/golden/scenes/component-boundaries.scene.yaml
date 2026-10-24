@@ -3,6 +3,102 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: legacy-graph-condition
+    action: { verifier: api.golden.legacy-graph-condition }
+    expect: { status: passed }
+  - id: legacy-graph-issued
+    action: { verifier: api.golden.legacy-graph-issued }
+    expect: { status: passed }
+  - id: legacy-graph-unissued
+    action: { verifier: api.golden.legacy-graph-unissued }
+    expect: { status: passed }
+  - id: subscriber-execution-context-owner
+    action: { verifier: api.golden.subscriber-execution-context-owner }
+    expect: { status: passed }
+  - id: decision-group-admission
+    action: { verifier: api.golden.decision-group-admission }
+    expect: { status: passed }
+  - id: legacy-proposal-admission
+    action: { verifier: api.golden.legacy-proposal-admission }
+    expect: { status: passed }
+  - id: contribution-prerequisite-readiness
+    action: { verifier: api.golden.contribution-prerequisite-readiness }
+    expect: { status: passed }
+  - id: contribution-cross-project-identity
+    action: { verifier: api.golden.contribution-cross-project-identity }
+    expect: { status: passed }
+  - id: contribution-readiness-counter
+    action: { verifier: api.golden.contribution-readiness-counter }
+    expect: { status: passed }
+  - id: contribution-execution-ownership
+    action: { verifier: api.golden.contribution-execution-ownership }
+    expect: { status: passed }
+  - id: contribution-execution-denials
+    action: { verifier: api.golden.contribution-execution-denials }
+    expect: { status: passed }
+  - id: contribution-cohort-lifecycle
+    action: { verifier: api.golden.contribution-cohort-lifecycle }
+    expect: { status: passed }
+  - id: subscriber-identity-binding
+    action: { verifier: api.golden.subscriber-identity-binding }
+    expect: { status: passed }
+  - id: subscriber-profile-native
+    action: { verifier: api.golden.subscriber-profile-native }
+    expect: { status: passed }
+  - id: shared-class-publication
+    action: { verifier: api.golden.shared-class-publication }
+    expect: { status: passed }
+  - id: subscriber-contribution-ownership
+    action: { verifier: api.golden.subscriber-contribution-ownership }
+    expect: { status: passed }
+  - id: subscriber-contribution-readback
+    action: { verifier: api.golden.subscriber-contribution-readback }
+    expect: { status: passed }
+  - id: subscriber-contribution-order-replay
+    action: { verifier: api.golden.subscriber-contribution-order-replay }
+    expect: { status: passed }
+  - id: subscriber-source-participant-denial
+    action: { verifier: api.golden.subscriber-source-participant-denial }
+    expect: { status: passed }
+  - id: workday-legacy-source-context-denial
+    action: { verifier: api.golden.workday-legacy-source-context-denial }
+    expect: { status: passed }
+  - id: workday-group-authority-required
+    action: { verifier: api.golden.workday-group-authority-required }
+    expect: { status: passed }
+  - id: workday-subscribed-autonomous-audience
+    action: { verifier: api.golden.workday-subscribed-autonomous-audience }
+    expect: { status: passed }
+  - id: workday-legacy-class-demand-denial
+    action: { verifier: api.golden.workday-legacy-class-demand-denial }
+    expect: { status: passed }
+  - id: workday-issued-plan-storage-custody
+    action: { verifier: api.golden.workday-issued-plan-storage-custody }
+    expect: { status: passed }
+  - id: subscriber-cross-project-readback
+    action: { verifier: api.golden.subscriber-cross-project-readback }
+    expect: { status: passed }
+  - id: subscriber-cross-project-workspace
+    action: { verifier: api.golden.subscriber-cross-project-workspace }
+    expect: { status: passed }
+  - id: subscriber-workspace-owner-bound
+    action: { verifier: api.golden.subscriber-workspace-owner-bound }
+    expect: { status: passed }
+  - id: subscriber-workspace-owner-missing
+    action: { verifier: api.golden.subscriber-workspace-owner-missing }
+    expect: { status: passed }
+  - id: subscriber-workspace-owner-ambiguous
+    action: { verifier: api.golden.subscriber-workspace-owner-ambiguous }
+    expect: { status: passed }
+  - id: subscriber-contribution-readiness
+    action: { verifier: api.golden.subscriber-contribution-readiness }
+    expect: { status: passed }
+  - id: subscriber-contribution-audience
+    action: { verifier: api.golden.subscriber-contribution-audience }
+    expect: { status: passed }
+  - id: subscriber-contribution-projection
+    action: { verifier: api.golden.subscriber-contribution-projection }
+    expect: { status: passed }
   - id: group-workday-native
     action: { verifier: api.golden.group-workday-native }
     expect: { status: passed }
@@ -2933,6 +3029,21 @@ workflow:
   - id: reporting-selection-native
     action: { verifier: api.golden.reporting-selection-native }
     expect: { status: passed }
+  - id: group-closeout-projection
+    action: { verifier: api.golden.group-closeout-projection }
+    expect: { status: passed }
+  - id: group-closeout-sql-complete
+    action: { verifier: api.golden.group-closeout-sql-complete }
+    expect: { status: passed }
+  - id: group-closeout-sql-missing-integration
+    action: { verifier: api.golden.group-closeout-sql-missing-integration }
+    expect: { status: passed }
+  - id: group-closeout-sql-pending
+    action: { verifier: api.golden.group-closeout-sql-pending }
+    expect: { status: passed }
+  - id: group-closeout-sql-unsettled
+    action: { verifier: api.golden.group-closeout-sql-unsettled }
+    expect: { status: passed }
   - id: reporting-selection-admission-seal-native
     action: { verifier: api.golden.reporting-selection-admission-seal-native }
     expect: { status: passed }
@@ -3083,4 +3194,10 @@ workflow:
     expect: { status: passed }
   - id: mcp-schema-constraints-unit
     action: { verifier: api.golden.mcp-schema-constraints-unit }
+    expect: { status: passed }
+  - id: workday-group-round-continuation
+    action: { verifier: api.golden.workday-group-round-continuation }
+    expect: { status: passed }
+  - id: native-scheduling-subscriber-inputs
+    action: { verifier: api.golden.native-scheduling-subscriber-inputs }
     expect: { status: passed }

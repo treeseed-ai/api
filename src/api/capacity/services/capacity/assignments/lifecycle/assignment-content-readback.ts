@@ -1,9 +1,10 @@
-import { assignmentResultSchema, type AssignmentResult } from '@treeseed/sdk/agent-capacity';
-import { CapacityGovernanceError } from '../../../../database.ts';
+import { assignmentAttemptSchema, assignmentResultSchema, type AssignmentAttempt, type AssignmentResult } from '@treeseed/sdk/agent-capacity';
+import { CapacityGovernanceError, type CapacityGovernanceDatabase } from '../../../../database.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../knowledge/gateway-treedx-connection.ts';
+import { readAssignmentEstimateProposal } from '../planning/estimates/integration.ts';
 
 type Store = { run(sql: string, params?: unknown[]): Promise<unknown>; all(sql: string, params?: unknown[]): Promise<Record<string, unknown>[]> };
-type Scope = { id: string; teamId: string; projectId: string };
+type Scope = { id: string; teamId: string; projectId: string; agentId?: string | null; assignmentAttempt?: AssignmentAttempt | null };
 type Reference = Extract<AssignmentResult['references'][number], { kind: 'treedx' }>;
 
 /** Operational integration consumes exact results; it does not publish their authoring branches. */
@@ -20,8 +21,14 @@ export async function verifyAssignmentContent(store: Store, scope: Scope, result
 		'assignment_content_result_invalid', 'Content read-back requires this assignment’s completed canonical result.', 409);
 	const references = result.references.filter((reference): reference is Reference => reference.kind === 'treedx');
 	for (const reference of references) {
-		if (reference.projectId !== scope.projectId) throw new CapacityGovernanceError(
-			'assignment_content_project_mismatch', 'Result content cannot cross its assignment project.', 409);
+		if (reference.projectId !== scope.projectId) {
+			if (!scope.agentId || !scope.assignmentAttempt || scope.assignmentAttempt.effectiveProfile.activity !== 'estimating'
+				|| result.references.length !== 1) throw new CapacityGovernanceError(
+				'assignment_content_project_mismatch', 'Foreign content requires its actual admitted proposal contribution authority.', 409);
+			await readAssignmentEstimateProposal(store as CapacityGovernanceDatabase, { id: scope.id, teamId: scope.teamId,
+				projectId: scope.projectId, agentId: scope.agentId, assignmentAttempt: scope.assignmentAttempt }, result);
+			continue;
+		}
 		const observed = await read(reference);
 		if (observed.resolvedRef !== reference.commit || !observed.files?.some((file) =>
 			file.path === reference.path && typeof file.content === 'string')) throw new CapacityGovernanceError(
@@ -43,7 +50,7 @@ export async function recordAssignmentContentIntegration(store: Store, scope: Sc
 
 /** Retry the same result read-back after a crash between canonical completion and its receipt. */
 export async function reconcileAssignmentContent(store: Store, teamId: string, workdayId?: string) {
-	const rows = await store.all(`SELECT assignment.id,assignment.project_id,assignment.assignment_result_json
+	const rows = await store.all(`SELECT assignment.id,assignment.project_id,assignment.agent_id,assignment.assignment_attempt_json,assignment.assignment_result_json
 		FROM capacity_provider_assignments assignment WHERE assignment.team_id=? AND assignment.status='completed'
 		AND EXISTS (SELECT 1 FROM jsonb_array_elements(assignment.assignment_result_json::jsonb->'references') reference WHERE reference->>'kind'='treedx')
 		${workdayId ? 'AND assignment.work_day_id=?' : `AND EXISTS (SELECT 1 FROM agent_invocation_requests invocation
@@ -54,7 +61,10 @@ export async function reconcileAssignmentContent(store: Store, teamId: string, w
 	for (const row of rows) {
 		const value = typeof row.assignment_result_json === 'string' ? JSON.parse(row.assignment_result_json) : row.assignment_result_json;
 		const result = assignmentResultSchema.parse(value);
-		const scope = { id: String(row.id), teamId, projectId: String(row.project_id) };
+		const attempt = assignmentAttemptSchema.safeParse(typeof row.assignment_attempt_json === 'string'
+			? JSON.parse(row.assignment_attempt_json) : row.assignment_attempt_json);
+		const scope: Scope = { id: String(row.id), teamId, projectId: String(row.project_id),
+			agentId: typeof row.agent_id === 'string' ? row.agent_id : null, assignmentAttempt: attempt.success ? attempt.data : null };
 		const references = await verifyAssignmentContent(store, scope, result);
 		await recordAssignmentContentIntegration(store, scope, result, references);
 	}

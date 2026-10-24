@@ -45,13 +45,30 @@ function fixture(acceptedDecision = false) {
 			if (args[2] === 'workday.preflight') stored = JSON.parse(String(args[7]));
 			else replay = { request_digest: args[4], response_json: args[7] };
 		}),
-		preflightCapacityWorkdayRunRequest: vi.fn(async (): Promise<Record<string, unknown>> => ({ availableSeconds: 600, projects: [{ id: 'project-sdk', agents: [{ slug: 'reviewer', agentClass: 'assurance', classSlug: 'assurance', activityTypes: ['reviewing'] }] }], executionNodeDemands: [{ graph_revision: 5, ...executionNodeRow({ id: 'node-review', kind: 'reviewing', agentClass: 'assurance', digest: 'sha256:source', expectedSeconds: 120, decisionRevision: 1 }) }] })),
+		preflightCapacityWorkdayRunRequest: vi.fn(async (): Promise<Record<string, unknown>> => ({ availableSeconds: 600, groupIds: ['portfolio-atlas'], projects: [{ id: 'project-sdk', agents: [{ slug: 'reviewer', agentClass: 'assurance', classSlug: 'assurance', activityTypes: ['reviewing'] }] }], executionNodeDemands: [{ graph_revision: 5, ...executionNodeRow({ id: 'node-review', kind: 'reviewing', agentClass: 'assurance', digest: 'sha256:source', expectedSeconds: 120, decisionRevision: 1 }) }] })),
 		createCapacityWorkdayRun: vi.fn(async (_team: string, value: any) => ({ id: value.id, startedAt: value.startedAt })),
 	};
 	return { store, service: new WorkdayPreflightService(store as any), stored: () => stored };
 }
 
 describe('public workday selection custody', () => {
+	it('persists derived proposal groups with frozen profiles through preflight and start without changing caller intent', async () => {
+		const f = fixture(true), { groupIds: _groups, ...body } = { ...input(), decisionIds: ['decision'] };
+		const intent = parsePublicWorkdayIntent('team', body), original = structuredClone(intent);
+		const projection = await f.store.preflightCapacityWorkdayRunRequest();
+		const profiles = { 'project-sdk': { revision: 'exact-profile', agents: [] } };
+		f.store.preflightCapacityWorkdayRunRequest.mockResolvedValue({ ...projection,
+			groupIds: ['portfolio-ui', 'provider-runtime'], agentProfilesByProjectId: profiles });
+		const receipt = await f.service.preflight('team', intent, 'actor');
+		expect(f.stored().runInput.parameters).toMatchObject({ groupIds: ['portfolio-ui', 'provider-runtime'],
+			agentProfilesByProjectId: profiles });
+		await f.service.start('team', { preflightId: receipt.id, preflightDigest: receipt.preflightDigest,
+			idempotencyKey: 'derived-group-start' }, 'actor');
+		expect(f.store.createCapacityWorkdayRun).toHaveBeenCalledWith('team', expect.objectContaining({
+			parameters: expect.objectContaining({ groupIds: ['portfolio-ui', 'provider-runtime'], agentProfilesByProjectId: profiles }),
+		}));
+		expect(intent).toEqual(original); expect(body).not.toHaveProperty('groupIds');
+	});
 	it('denies missing selected demand revision or source digest before storing any derived preflight authority', async () => {
 		for (const missing of ['revision', 'digest']) {
 			const f = fixture(), node = executionNodeRow({ id: 'node-review', kind: 'reviewing', agentClass: 'assurance', digest: 'source', expectedSeconds: 120, decisionRevision: 1 });

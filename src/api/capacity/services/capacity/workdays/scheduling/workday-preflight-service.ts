@@ -37,7 +37,7 @@ function digest(value:unknown):string { return `sha256:${sha256(canonicalJson(va
 function diagnosticsError(code:string,message:string,diagnostics:unknown):never { throw new CapacityGovernanceError(code,message,400,{diagnostics}); }
 
 export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):WorkdayIntent {
-	const allowed=new Set(['schemaVersion','teamId','profileId','projects','executionMode','startsAt','endsAt','durationSeconds','objectiveFilters','planningOnly','proposalIds','decisionIds','groupIds','continueFromWorkdayId','operatorConstraints','agentSelection','allocation','reportingAgentId']);
+	const allowed=new Set(['schemaVersion','teamId','profileId','projects','executionMode','startsAt','endsAt','durationSeconds','objectiveFilters','planningOnly','proposalIds','decisionIds','groupIds','continueFromWorkdayId','operatorConstraints','agentSelection','allocation']);
 	const forbidden=Object.keys(input).filter((key)=>!allowed.has(key));
 	if(forbidden.length) diagnosticsError('workday_intent_derived_fields_forbidden','Workday preflight accepts high-level intent only.',forbidden.map((path)=>({code:'field_forbidden',path})));
 	if(input.teamId!==undefined&&text(input.teamId)!==teamId) diagnosticsError('workday_intent_team_mismatch','Workday intent team must match the route team.',[{code:'team_mismatch',path:'teamId'}]);
@@ -66,7 +66,6 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 		...(Array.isArray(input.objectiveFilters)?{objectiveFilters:input.objectiveFilters.map(text).filter(Boolean)}:{}),
 		...(input.planningOnly!==undefined?{planningOnly:input.planningOnly as boolean}:{}),
 		...(input.continueFromWorkdayId!==undefined?{continueFromWorkdayId:input.continueFromWorkdayId as string}:{}),
-		...(input.reportingAgentId!==undefined?{reportingAgentId:input.reportingAgentId as string}:{}),
 		...(input.groupIds!==undefined?{groupIds:input.groupIds as WorkdayIntent['groupIds']}:{}),
 		...(Array.isArray(input.proposalIds)?{proposalIds:[...new Set(input.proposalIds.map(text).filter(Boolean))].sort()}:input.proposalIds!==undefined?{proposalIds:input.proposalIds as string[]}:{}),
 		...(Array.isArray(input.decisionIds)?{decisionIds:[...new Set(input.decisionIds.map(text).filter(Boolean))].sort()}:input.decisionIds!==undefined?{decisionIds:input.decisionIds as string[]}:{}),
@@ -139,7 +138,6 @@ export class WorkdayPreflightService {
 				projects:intent.projects==='all'?[]:intent.projects,durationSeconds,maximumConcurrency:maxConcurrency,
 				...(intent.agentSelection?{agentSelection:intent.agentSelection}:{}),
 				...(intent.groupIds?{groupIds:intent.groupIds}:{}),
-				...(intent.reportingAgentId === undefined ? {} : { reportingAgentId:intent.reportingAgentId }),
 				...(intent.proposalIds?.length?{proposalIds:intent.proposalIds}:{}),
 				...(intent.decisionIds?.length?{decisionIds:intent.decisionIds}:{}),
 				...(intent.continueFromWorkdayId?{continueFromWorkdayId:intent.continueFromWorkdayId}:{}),
@@ -211,8 +209,10 @@ export class WorkdayPreflightService {
 			allocatedSeconds:selectedDemands.filter((entry)=>entry.classSlug===classSlug).reduce((sum,entry)=>sum+entry.requestedSeconds,0),
 			idleSeconds:0,reservedSeconds:0,activeSeconds:0,releasedSeconds:0,overrunSeconds:0}));
 		const appliedPlan=record(projection.appliedPlan);
-		// Retain the resolved choice before creation can observe another configured profile.
-		if(appliedPlan.reportingAgentId!==undefined) record(runInput.parameters).reportingAgentId=appliedPlan.reportingAgentId;
+		// Freeze the existing complete profile authority, including every closeout
+		// contributor, before creation can observe a changed group or definition.
+		record(runInput.parameters).agentProfilesByProjectId=projection.agentProfilesByProjectId;
+		record(runInput.parameters).groupIds=projection.groupIds;
 		const profileGeneration=integer(appliedPlan.policyRevision,1);
 		const state:WorkdayPreflightObservation={
 			profileGeneration, profileDigest:digest({profileId:intent.profileId,policy:appliedPlan.policySnapshot,reportingAgentId:appliedPlan.reportingAgentId,

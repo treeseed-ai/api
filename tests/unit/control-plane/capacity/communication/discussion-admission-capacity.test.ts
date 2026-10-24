@@ -3,6 +3,7 @@ import { admitDiscussionInvocations, conversationRunDurationSeconds } from '../.
 import { compileWorkdayAgentProfileSnapshot } from '../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-profile-policy.ts';
 import { compileCapacityWorkdayRunRecord } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 import { normalizeWorkdayAgentSelection } from '@treeseed/sdk/operator-contracts';
+import { preflightCapacityWorkdayRun } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-scheduling-service.ts';
 
 const permissions = { content: { read: ['knowledge', 'discussion'], write: ['discussion'] }, tools: ['discussion', 'source.read'] };
 const agent = (slug: string) => ({
@@ -13,6 +14,46 @@ const agent = (slug: string) => ({
 });
 
 describe('discussion invocation capacity admission', () => {
+	it('preflights a persisted addressed conversation without inventing proposal group membership', async () => {
+		const source = { invocationId: 'invocation', discussionId: 'discussion', messageId: 'message',
+			messagePath: 'discussion-messages/message.mdx', commitSha: 'c'.repeat(40) };
+		const definition = agent('renamed-guide'), revision = 'a'.repeat(40);
+		const invocation = { id: source.invocationId, team_id: 'team', project_id: 'project', execution_id: 'conversation',
+			execution_kind: 'conversation', status: 'admitted', project_agent_class_id: 'class', agent_id: 'renamed-guide', agent_revision: revision,
+			metadata_json: { discussionId: source.discussionId, sourceMessageId: source.messageId,
+				sourceMessagePath: source.messagePath, sourceCommit: source.commitSha } };
+		const store = { ensureInitialized: async () => {}, all: async () => [],
+			first: vi.fn(async (sql: string) => sql.includes('capacity_provider_team_memberships') ? { id: 'membership' } : invocation),
+			listTeamProjects: async () => [{ id: 'project', slug: 'agent' }],
+			getProjectTreeDxLibrary: async () => ({ repositoryId: 'library', contentPath: '.', metadata: { resolvedRef: revision } }),
+			listProjectAgentClassesPage: async () => ({ items: [{ id: 'class', slug: 'configured-guide', metadata: { immutableRef: revision },
+				handlerRefs: { agents: [definition, { id: 'outside', invalid: 'Unaddressed profiles must not be admitted' }] } }], page: { hasMore: false } }) };
+		const run = compileCapacityWorkdayRunRecord('team', { id: 'conversation', capacityProviderId: 'provider', executionMode: 'simulation',
+			executionKind: 'conversation', parameters: { projects: ['agent'], durationSeconds: 240,
+				agentSelection: { activityTypes: ['chat'] }, discussion: source } });
+		const held = structuredClone(run);
+		const result = await preflightCapacityWorkdayRun(store as never, run);
+		expect(result).toMatchObject({ groupIds: [], projects: [{ agents: [{ slug: definition.id, activityTypes: ['chat'] }] }] });
+		expect(result.agentProfilesByProjectId.project.agents.map(entry => entry.definition.id)).toEqual([definition.id]);
+		expect(run).toEqual(held);
+		for (const change of [{ messageId: 'forged' }, { commitSha: 'b'.repeat(40) }, { invocationId: '' }]) {
+			await expect(preflightCapacityWorkdayRun(store as never, { ...run, parameters: { ...run.parameters,
+				discussion: { ...source, ...change } } })).rejects.toMatchObject({ code: 'capacity_workday_discussion_authority_invalid' });
+		}
+		const original = structuredClone(invocation);
+		for (const change of [{ team_id: 'foreign' }, { project_id: 'foreign' }, { execution_id: 'foreign' },
+			{ status: 'completed' }, { execution_kind: 'workday' }, { project_agent_class_id: 'foreign' },
+			{ agent_id: 'unaddressed' }, { agent_revision: 'b'.repeat(40) }, { metadata_json: '{broken' }]) {
+			Object.assign(invocation, original, change);
+			await expect(preflightCapacityWorkdayRun(store as never, run)).rejects.toMatchObject({ code: 'capacity_workday_discussion_authority_invalid' });
+		}
+		Object.assign(invocation, original);
+		await expect(preflightCapacityWorkdayRun(store as never, { ...run, parameters: { ...run.parameters,
+			agentSelection: { activityTypes: ['planning'] } } })).rejects.toMatchObject({ code: 'capacity_workday_discussion_authority_invalid' });
+		await expect(preflightCapacityWorkdayRun(store as never, { ...run, parameters: { ...run.parameters,
+			agentSelection: { activityTypes: ['acting'] } } })).rejects.toMatchObject({ name: 'ZodError' });
+		expect(run).toEqual(held);
+	});
 	it('reserves infrastructure preparation outside the productive conversation budget', () => {
 		expect(conversationRunDurationSeconds(180)).toBe(240);
 	});

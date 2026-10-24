@@ -15,6 +15,20 @@ const classes = [
 ];
 
 describe('exact activity selection before living-node admission', () => {
+	it('admits every v2 group subscriber to estimating before a contribution plan exists regardless of class or project', () => {
+		const snapshot = (project: string, name: string, groupIds = ['provider-runtime']) => ({ agents: [{
+			definition: { ...definition(name, 'maintenance', { planning: profile('writer'), estimating: profile('writer') }), id: `${project}/${name}`, groupIds },
+			activities: ['planning', 'estimating'],
+		}] });
+		const parameters = { groupIds: ['provider-runtime'], agentProfilesByProjectId: {
+			agent: snapshot('agent', 'technical-writer'), api: snapshot('api', 'tester'),
+			other: snapshot('other', 'engineer', ['another-group']),
+		}, proposalsByProjectId: { agent: [{ schemaVersion: 'treeseed.proposal/v2', id: 'opaque-runner', groupIds: ['provider-runtime'] }] } };
+		const before = structuredClone(parameters), result = workdayParticipants(parameters);
+		expect(result.filter(row => row.activity === 'estimating').map(row => row.definition.id)).toEqual(['agent/technical-writer', 'api/tester']);
+		expect(result.filter(row => row.activity === 'planning').map(row => row.definition.id)).toEqual(['agent/technical-writer', 'api/tester']);
+		expect(result.every(row => row.proposalId === 'opaque-runner')).toBe(true); expect(parameters).toEqual(before);
+	});
 	it('rejects hidden agent or allocation-class selectors at the internal snapshot boundary', () => {
 		for (const field of ['agentSlugs', 'classIds', 'classSlugs']) {
 			expect(() => compileWorkdayAgentProfileSnapshot(classes, { activityTypes: ['planning'], [field]: ['architect'] }))
@@ -37,7 +51,7 @@ describe('exact activity selection before living-node admission', () => {
 		expect(compileWorkdayAgentProfileSnapshot(rows, undefined, ['provider-runtime']).agents.map(entry => entry.definition.id))
 			.toEqual(['sdk/architect', 'sdk/reviewer']);
 	});
-	it('brings subscribed project teams to the same proposal while estimates stay with its owning project', () => {
+	it('brings every subscribed project agent to the shared proposal for its own estimate', () => {
 		const agents = (project: string, agentClass: string, group = 'portfolio-atlas') => ({ agents: [{
 			definition: { ...definition(agentClass, agentClass, { planning: profile('writer'), estimating: profile('estimate') }),
 				id: `${project}/${agentClass}`, groupIds: [group] }, activities: ['planning', 'estimating'],
@@ -45,12 +59,12 @@ describe('exact activity selection before living-node admission', () => {
 		const parameters = { groupIds: ['portfolio-atlas'], agentProfilesByProjectId: {
 			ui: agents('ui', 'engineer'), admin: agents('admin', 'engineer'), platform: agents('platform', 'architect'),
 			market: agents('market', 'researcher', 'market-research'),
-		}, proposalsByProjectId: { ui: [{ id: 'complete-snapshots', groupIds: ['portfolio-atlas'],
+		}, proposalsByProjectId: { ui: [{ schemaVersion: 'treeseed.proposal/v2', id: 'complete-snapshots', groupIds: ['portfolio-atlas'],
 			executionPlan: { workItems: [{ id: 'snapshot-replacement', agentClass: 'engineer', review: 'required' }] } }] } };
 		const before = structuredClone(parameters), result = workdayParticipants(parameters);
 		expect(result.filter(item => item.activity === 'planning').map(item => item.definition.id))
 			.toEqual(['admin/engineer', 'platform/architect', 'ui/engineer']);
-		expect(result.filter(item => item.activity === 'estimating').map(item => item.definition.id)).toEqual(['ui/engineer']);
+		expect(result.filter(item => item.activity === 'estimating').map(item => item.definition.id)).toEqual(['admin/engineer', 'platform/architect', 'ui/engineer']);
 		expect(result.every(item => item.proposalId === 'complete-snapshots')).toBe(true);
 		expect(parameters).toEqual(before);
 	});

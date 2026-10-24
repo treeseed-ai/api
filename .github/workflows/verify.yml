@@ -51,7 +51,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: treeseed-ai/platform
-          ref: e4c4cad1e526f53d3549c8fc27c3e60122b20ee4
+          ref: 28df04061cbed62d5ef8f94ad3e40532f9a19c63
           path: .treeseed/tools/platform
           submodules: false
       - uses: dtolnay/rust-toolchain@stable
@@ -77,7 +77,7 @@ jobs:
       - name: Build the verified native TreeDX engine
         working-directory: .treeseed/tools/treedx/apps/api
         run: MIX_ENV=dev mix compile
-      - uses: treeseed-ai/sdk/.github/actions/install-exact-sdk@7d506324179cdaafc7b922efff18b2b06e40ed74
+      - uses: treeseed-ai/sdk/.github/actions/install-exact-sdk@75badffa8f9bdda1e165437ecbbee6b72436b6e2
         env:
           NODE_ENV: production
         with:

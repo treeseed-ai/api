@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-content-readback.ts', () => ({
 	reconcileAssignmentContent: vi.fn(async () => undefined),
 }));
@@ -6,6 +6,14 @@ import { advanceLivingWorkday } from '../../../../../src/api/capacity/services/c
 import { DEFAULT_WORKDAY_POLICY, appliedWorkdaySchema, compileWorkday, validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
 import { runtimeWorkdayPhase } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import { compileCapacityWorkdayRunRecord } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
+import { readExactProposal } from '../../../../../src/api/governance/executable-proposal.ts';
+const contributionProof = vi.hoisted(() => vi.fn());
+vi.mock('../../../../../src/api/capacity/services/capacity/execution/proposal-contributions.ts', () => ({ loadProposalGroupContributions: contributionProof }));
+beforeEach(() => {
+	// Controlled cohort boundary input, not model evidence.
+	contributionProof.mockReset().mockImplementation(async (_store, proposal) => ({
+		current: ['ready', 'revised'].includes(proposal.id), attempts: [], missing: [] }));
+});
 
 const fluidPlan = { ...compileWorkday({ id: 'fluid-workday', teamId: 'team', policyId: 'default', policyRevision: 1,
 	executionMode: 'simulation', policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 3600, planningPercent: 100 / 3,
@@ -44,8 +52,9 @@ vi.mock('../../../../../src/api/governance/executable-proposal.ts', async (impor
 			{ code: 'proposal_execution_plan_invalid' });
 		return { ref: { store: 'treedx', model: 'proposal', id: proposal.id, revision: 1,
 		digest: `sha256:${'a'.repeat(64)}`, repository: 'project-library', commit: 'b'.repeat(40), path: 'proposals/new.mdx' },
-		definition: { id: proposal.id, status: proposal.id === 'ready' ? 'ready' : proposal.id === 'revised' ? 'discussing' : 'draft',
-			executionPlan: { workItems: [{ id: 'research', agentClass: 'researcher', review: 'required',
+		definition: { schemaVersion: 'treeseed.proposal/v2', id: proposal.id, groupIds: ['portfolio'],
+			status: proposal.id === 'ready' ? 'ready' : proposal.id === 'revised' ? 'discussing' : 'draft',
+			executionPlan: { workItems: [{ id: 'research', review: 'required',
 				...(proposal.id === 'ready' || proposal.id === 'revised' ? {
 					estimate: { expectedSeconds: 30, maximumSeconds: 60 },
 					reviewEstimate: { expectedSeconds: 10, maximumSeconds: 20 },
@@ -58,7 +67,7 @@ const policy = { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 60, maximumConcurre
 	communicationConcurrency: 1, projectPercentages: { project: 100 }, agentClassPercentages: { project: { architect: 100 } } };
 const planningPermissions = { content: { read: ['proposal'], write: ['proposal'] }, tools: ['discussion'] };
 const planningAgent = (agentClass: string) => ({ schemaVersion: 'treeseed.agent/v1', id: `project/${agentClass}`,
-	name: agentClass, agentClass, purpose: 'Estimate governed work.', responsibilities: ['Return exact results.'],
+	name: agentClass, agentClass: 'maintenance', groupIds: ['portfolio'], purpose: 'Estimate governed work.', responsibilities: ['Return exact results.'],
 	capabilities: ['reasoning'], context: { include: ['project-objectives'] }, activityProfiles: {
 		planning: { handler: 'writer', permissions: planningPermissions, prompt: { system: 'Plan useful governed work for this project.' } },
 		estimating: { handler: 'estimate', permissions: planningPermissions, prompt: { system: 'Estimate exact proposal work for this project.' } },
@@ -78,6 +87,71 @@ const reportResult = { schemaVersion: 'treeseed.assignment-result/v1', id: 'resu
 	usage: { elapsedSeconds: 1 }, diagnostics: [], completedAt: now };
 
 describe('living workday lifecycle', () => {
+	it.each(['missing-group', 'legacy-class', 'other-group'])('does not create a new scoped round from %s authority', async condition => {
+		const proposal = { id: 'not-admitted', schemaVersion: condition === 'legacy-class' ? 'treeseed.proposal/v1' : 'treeseed.proposal/v2',
+			groupIds: [condition === 'other-group' ? 'elsewhere' : 'portfolio'], executionPlan: { workItems: [{ id: 'old', agentClass: 'maintenance' }] } };
+		vi.mocked(readExactProposal).mockResolvedValueOnce({ definition: proposal,
+			ref: { store: 'treedx', model: 'proposal', id: proposal.id, revision: 1 } } as never);
+		const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z', policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
+		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'], proposalIds: [proposal.id],
+			groupIds: condition === 'missing-group' ? [] : ['portfolio'], agentProfilesByProjectId: { project: { agents: [
+				{ definition: planningAgent('author'), activities: ['planning', 'estimating'] }] } } } };
+		const store = { all: async (sql: string) => sql.includes('FROM governance_proposals') ? [{ id: proposal.id }]
+			: currentPlan.planningRounds.flatMap(round => round.assignmentIds.map(id => ({ id, kind: 'planning', status: 'completed' }))),
+			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
+		const result = await advanceLivingWorkday(store as never, currentRun as never, '2026-09-13T15:03:00Z');
+		expect(result.plan.planningRounds).toHaveLength(2);
+		expect(result.plan.planningRounds.map(round => round.assignmentIds)).toEqual(currentPlan.planningRounds.map(round => round.assignmentIds));
+		expect(result.plan.endsAt).toBe(currentPlan.endsAt);
+		expect(contributionProof).not.toHaveBeenCalled();
+	});
+	it('rebuilds later rounds from current group contributions instead of initial planning ID suffixes', async () => {
+		contributionProof.mockResolvedValueOnce({ current: false, attempts: [], missing: ['project/project/author'] });
+		const proposal = { schemaVersion: 'treeseed.proposal/v2', id: 'group-repair', groupIds: ['portfolio'], status: 'discussing' };
+		vi.mocked(readExactProposal).mockResolvedValueOnce({ definition: proposal, ref: {
+			store: 'treedx', model: 'proposal', id: proposal.id, revision: 2, digest: `sha256:${'a'.repeat(64)}`,
+			repository: 'project-library', commit: 'b'.repeat(40), path: 'proposals/group-repair.mdx' } } as never);
+		const definition = { ...planningAgent('maintenance'), id: 'project/author', name: 'Author', groupIds: ['portfolio'] };
+		const identities = ['planning', 'estimating'].map(activity => `project/project/author:${activity}:group-repair`);
+		const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z',
+			policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 },
+			planningRounds: [{ round: 1, state: 'active', assignmentIds: identities.map(id => `planning:workday:1:${id}`) }] };
+		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
+			proposalIds: [proposal.id], groupIds: ['portfolio'],
+			agentProfilesByProjectId: { project: { agents: [{ definition, activities: ['planning', 'estimating'] }] } } } };
+		const store = { first: async () => null, all: async (sql: string) => sql.includes('FROM governance_proposals')
+			? [{ id: proposal.id, team_id: 'team', project_id: 'project' }]
+			: currentPlan.planningRounds.flatMap(round => round.assignmentIds.map(id => ({ id, kind: 'planning', status: 'completed' }))),
+			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
+		const next = await advanceLivingWorkday(store as never, currentRun as never, '2026-09-13T15:03:00Z');
+		expect(next.plan.planningRounds.at(-1)!.assignmentIds).toEqual(identities.sort().map(id => `planning:workday:2:${id}`));
+		expect(next.plan.planningRounds[0]!.assignmentIds).toEqual(currentPlan.planningRounds[0]!.assignmentIds);
+		expect(next.plan.endsAt).toBe(currentPlan.endsAt);
+	});
+	it('continues group estimating after the first structurally complete contribution until the shared cohort reader verifies everyone', async () => {
+		const partial = { schemaVersion: 'treeseed.proposal/v2', id: 'partial-group', groupIds: ['portfolio'], status: 'discussing',
+			executionPlan: { workItems: [{ id: 'document-runner', estimate: { expectedSeconds: 30, maximumSeconds: 60 },
+				review: 'required', reviewEstimate: { expectedSeconds: 20, maximumSeconds: 40 } }] } };
+		const agents = ['technical-writer', 'tester'].map(name => ({ definition: { ...planningAgent('maintenance'),
+			id: `project/${name}`, name, groupIds: ['portfolio'] }, activities: ['estimating'] }));
+		for (const current of [false, true]) {
+			contributionProof.mockResolvedValue({ current, attempts: [], missing: current ? [] : ['project/project/tester'] });
+			vi.mocked(readExactProposal).mockResolvedValueOnce({ definition: partial, ref: {
+				store: 'treedx', model: 'proposal', id: partial.id, revision: 2, digest: `sha256:${'a'.repeat(64)}`,
+				repository: 'project-library', commit: 'b'.repeat(40), path: 'proposals/partial-group.mdx' } } as never);
+			const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z', policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
+			const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
+				proposalIds: [partial.id], groupIds: ['portfolio'], agentProfilesByProjectId: { project: { agents } } } };
+			const store = { first: async () => null, all: async (sql: string) => sql.includes('FROM governance_proposals')
+				? [{ id: partial.id, team_id: 'team', project_id: 'project' }]
+				: currentPlan.planningRounds.flatMap(round => round.assignmentIds.map(id => ({ id, kind: 'planning', status: 'completed' }))),
+				updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
+			const next = await advanceLivingWorkday(store as never, currentRun as never, '2026-09-13T15:03:00Z');
+			expect(next.plan.planningRounds).toHaveLength(current ? 2 : 3);
+			if (!current) expect(next.plan.planningRounds.at(-1)!.assignmentIds.filter(id => id.includes(':estimating:'))).toHaveLength(2);
+			expect(next.plan.endsAt).toBe(currentPlan.endsAt); expect(next.plan.policySnapshot).toEqual(currentPlan.policySnapshot);
+		}
+	});
 	it('cancels an explicitly stopped conversation without waiting for or fabricating a Reporter result', async () => {
 		const conversation = { ...run, executionKind: 'conversation' } as never;
 		const store = { all: vi.fn(async () => []), updateCapacityWorkdayRun: vi.fn(async () => conversation) };
@@ -92,19 +166,20 @@ describe('living workday lifecycle', () => {
 		const startsAt = '2026-09-13T15:00:00Z';
 		const currentPlan = { ...plan, startsAt, endsAt: '2026-09-13T16:00:00Z',
 			policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
-		const currentRun = { ...run, parameters: { appliedPlan: currentPlan } } as never;
-		const store = { all: vi.fn(async () => currentPlan.planningRounds.map((round) =>
+		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, groupIds: ['portfolio'], scheduledProjectIds: ['project'],
+			agentProfilesByProjectId: { project: { agents: [{ definition: planningAgent('architect'), activities: ['planning'] }] } } } } as never;
+		const store = { all: vi.fn(async (sql: string) => sql.includes('FROM governance_proposals') ? [] : currentPlan.planningRounds.map((round) =>
 			({ id: round.assignmentIds[0], kind: 'planning', status: 'completed' }))),
 			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
 		const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:02:00Z');
 		expect(result.plan.planningRounds.at(-1)).toMatchObject({ round: 3, state: 'active',
-			assignmentIds: ['planning:workday:3:project/architect:planning'] });
+			assignmentIds: ['planning:workday:3:project/project/architect:planning'] });
 	});
-	it('adds a newly created proposal owner and Reviewer to the next round without replacing the frozen planning agents', async () => {
+	it('adds every frozen group subscriber to a newly discovered proposal without class or Reviewer preference', async () => {
 		const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z',
 			policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
 		expect(validateAgentDefinitionModel(planningAgent('researcher')).ok).toBe(true);
-		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
+		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, groupIds: ['portfolio'], scheduledProjectIds: ['project'],
 			agentProfilesByProjectId: { project: { agents: ['architect', 'researcher', 'reviewer'].map((agentClass) =>
 				({ definition: planningAgent(agentClass), activities: ['planning', 'estimating'] })) } } } } as never;
 		const store = { all: vi.fn(async (sql: string) => sql.includes('execution_nodes')
@@ -113,11 +188,8 @@ describe('living workday lifecycle', () => {
 				{ id: 'new-proposal', team_id: 'team', project_id: 'project' }]),
 			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
 		const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:02:00Z');
-		expect(result.plan.planningRounds.at(-1)?.assignmentIds).toEqual([
-			'planning:workday:3:project/architect:planning',
-			'planning:workday:3:project/project/researcher:estimating:new-proposal',
-			'planning:workday:3:project/project/reviewer:estimating:new-proposal',
-		]);
+		expect(result.plan.planningRounds.at(-1)?.assignmentIds).toEqual(['architect', 'researcher', 'reviewer']
+			.flatMap(name => ['estimating', 'planning'].map(activity => `planning:workday:3:project/project/${name}:${activity}:new-proposal`)).sort());
 		expect(store.updateCapacityWorkdayRun).toHaveBeenCalledWith('team', 'workday', expect.objectContaining({
 			parameters: expect.objectContaining({ proposalIds: [], planningSourceByProposalId: { 'new-proposal': expect.objectContaining({ id: 'new-proposal' }) } }),
 		}));
@@ -147,7 +219,7 @@ describe('living workday lifecycle', () => {
 			expect(again.plan.planningRounds).toHaveLength(2);
 		}
 	});
-	it('keeps incomplete scoped proposals planning even when exact executable-plan parsing is not ready', async () => {
+	it('does not regenerate historical planning IDs for an unreadable scoped proposal', async () => {
 		const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z',
 			policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
 		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
@@ -157,13 +229,14 @@ describe('living workday lifecycle', () => {
 			: currentPlan.planningRounds.flatMap(round => round.assignmentIds.map(id => ({ id, kind: 'planning', status: 'completed' })))),
 			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
 		const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:03:00Z');
-		expect(result.plan.planningRounds.at(-1)?.assignmentIds).toEqual(['planning:workday:3:project/architect:planning']);
+		expect(result.plan.planningRounds).toHaveLength(2);
+		expect(result.plan.planningRounds.every(round => round.state === 'complete')).toBe(true);
 	});
 	it('keeps one or several explicit proposals while ignoring unrelated open proposals', async () => {
 		for (const selected of [['new-proposal'], ['new-proposal', 'other-proposal']]) {
 			const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z',
 			policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
-			const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
+			const currentRun = { ...run, parameters: { appliedPlan: currentPlan, groupIds: ['portfolio'], scheduledProjectIds: ['project'],
 			proposalIds: selected, agentProfilesByProjectId: { project: { agents: ['architect', 'researcher', 'reviewer']
 				.map((agentClass) => ({ definition: planningAgent(agentClass), activities: ['planning', 'estimating'] })) } } } } as never;
 			const inventory = ['new-proposal', 'other-proposal', 'unrelated'].map((id) => ({ id, team_id: 'team', project_id: 'project' }));
@@ -173,7 +246,8 @@ describe('living workday lifecycle', () => {
 			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
 			const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:02:00Z');
 			const next = result.plan.planningRounds.at(-1)!;
-			expect(next.assignmentIds).toHaveLength(1 + selected.length * 2);
+			expect(next.assignmentIds).toEqual(selected.flatMap(proposalId => ['architect', 'researcher', 'reviewer']
+				.flatMap(name => ['planning', 'estimating'].map(activity => `planning:workday:3:project/project/${name}:${activity}:${proposalId}`))).sort());
 			expect(next.assignmentIds.every((id) => !id.includes('unrelated'))).toBe(true);
 			expect(store.all).toHaveBeenCalledWith(expect.stringContaining(`AND id IN (${selected.map(() => '?').join(',')})`),
 			['team', 'project', ...selected]);
@@ -187,7 +261,7 @@ describe('living workday lifecycle', () => {
 		for (const proposalIds of [[], ['explicit']]) {
 			const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z',
 				policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
-			const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
+			const currentRun = { ...run, parameters: { appliedPlan: currentPlan, groupIds: ['portfolio'], scheduledProjectIds: ['project'],
 				decisionIds: ['decision', 'second'], proposalIds, continueFromWorkdayId: 'settled',
 				agentProfilesByProjectId: { project: { agents: ['architect', 'researcher', 'reviewer'].map(agentClass =>
 					({ definition: planningAgent(agentClass), activities: ['planning', 'estimating'] })) } } } } as never;
@@ -206,7 +280,7 @@ describe('living workday lifecycle', () => {
 				['team', 'project', ...proposalIds, 'ready', 'revised']);
 			expect(result.plan.planningRounds.at(-1)?.assignmentIds.some(id => id.includes('unrelated'))).toBe(false);
 			expect(result.plan.planningRounds.at(-1)?.assignmentIds.filter(id => id.includes(':estimating:')))
-				.toHaveLength(proposalIds.length * 2);
+				.toHaveLength(proposalIds.length * 3);
 			expect(store.updateCapacityWorkdayRun).toHaveBeenCalledWith('team', 'workday', expect.objectContaining({
 				parameters: expect.objectContaining({ proposalIds, decisionIds: ['decision', 'second'] }) }));
 		}
@@ -232,8 +306,8 @@ describe('living workday lifecycle', () => {
 				startedAt: '2026-09-13T15:00:00Z', completedAt: '2026-09-13T15:01:00Z' },
 		], policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
 		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
-			proposalIds: [proposalId], agentProfilesByProjectId: { project: { agents: ['researcher', 'reviewer'].map(agentClass =>
-				({ definition: planningAgent(agentClass), activities: ['estimating'] })) } } } } as never;
+			groupIds: ['portfolio'], proposalIds: [proposalId], agentProfilesByProjectId: { project: { agents: ['researcher', 'reviewer'].map(agentClass =>
+				({ definition: planningAgent(agentClass), activities: ['estimating'] })) } } } };
 		const store = { all: vi.fn(async (sql: string) => sql.includes('execution_nodes')
 			? [{ id: initialId, kind: 'estimating', status: 'completed' }]
 			: [{ id: proposalId, team_id: 'team', project_id: 'project' }]),
@@ -259,12 +333,13 @@ describe('living workday lifecycle', () => {
 			policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
 		const permissions = { content: { read: ['proposal'], write: ['proposal'] }, tools: ['discussion'] };
 		const agent = (agentClass: string) => ({ schemaVersion: 'treeseed.agent/v1', id: `project/${agentClass}`,
-			name: agentClass, agentClass, purpose: 'Plan governed work.', responsibilities: ['Return exact results.'],
+			name: agentClass, agentClass: 'maintenance', groupIds: ['portfolio'], purpose: 'Plan governed work.', responsibilities: ['Return exact results.'],
 			capabilities: ['reasoning'], context: { include: ['project-objectives'] }, activityProfiles: {
 				planning: { handler: 'writer', permissions, prompt: { system: 'Plan useful governed work.' } },
 				estimating: { handler: 'estimate', permissions, prompt: { system: 'Estimate exact work.' } },
 			} });
 		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
+			groupIds: ['portfolio'],
 			planningSourceByProposalId: { ready: { store: 'treedx', model: 'proposal', id: 'ready', revision: 1,
 				digest: `sha256:${'a'.repeat(64)}`, repository: 'project-library', commit: 'b'.repeat(40), path: 'proposals/ready.mdx' } },
 			agentProfilesByProjectId: { project: { agents: ['architect', 'researcher', 'reviewer'].map((agentClass) =>
@@ -274,11 +349,11 @@ describe('living workday lifecycle', () => {
 			: [{ id: 'ready', team_id: 'team', project_id: 'project' }]), getGovernanceProposal: vi.fn(async () => ({ id: 'ready', team_id: 'team', project_id: 'project' })),
 			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
 		const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:02:00Z');
-		expect(result.plan.planningRounds.at(-1)?.assignmentIds).toEqual([
-			'planning:workday:2:project/project/architect:planning',
-		]);
+		expect(result.plan.planningRounds.at(-1)?.assignmentIds).toEqual(['architect', 'researcher', 'reviewer']
+			.map(name => `planning:workday:2:project/project/${name}:planning`));
 	});
-	it.each(['ready', 'revised'])('keeps planning a fully estimated %s proposal until external approval yields acting work', async proposalId => {
+	it.each(['ready', 'revised'])('keeps planning a populated %s proposal until genuine group participation is current', async proposalId => {
+		contributionProof.mockResolvedValue({ current: false, attempts: [], missing: ['project/project/architect'] });
 		const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z', planningRounds: [
 			{ round: 1, state: 'complete', assignmentIds: ['planning:workday:1:project/project/architect:planning'],
 				startedAt: '2026-09-13T15:00:00Z', completedAt: '2026-09-13T15:01:00Z' },
@@ -286,14 +361,18 @@ describe('living workday lifecycle', () => {
 				startedAt: '2026-09-13T15:01:00Z', completedAt: '2026-09-13T15:02:00Z' },
 		], policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
 		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
+			proposalIds: [proposalId], groupIds: ['portfolio'],
+			agentProfilesByProjectId: { project: { agents: [{ definition: planningAgent('architect'), activities: ['planning', 'estimating'] }] } },
 			planningSourceByProposalId: { [proposalId]: { store: 'treedx', model: 'proposal', id: proposalId, revision: 1,
 				digest: `sha256:${'a'.repeat(64)}`, repository: 'project-library', commit: 'b'.repeat(40), path: 'proposals/ready.mdx' } } } } as never;
 		const store = { all: vi.fn(async (sql: string) => sql.includes('execution_nodes')
 			? currentPlan.planningRounds.flatMap((round) => round.assignmentIds.map((id) => ({ id, kind: 'planning', status: 'completed' })))
-			: []), getGovernanceProposal: vi.fn(async () => ({ id: proposalId, team_id: 'team', project_id: 'project' })),
+			: [{ id: proposalId, team_id: 'team', project_id: 'project' }]), getGovernanceProposal: vi.fn(async () => ({ id: proposalId, team_id: 'team', project_id: 'project' })),
 			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
 		const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:03:00Z');
 		expect(result.plan.planningRounds).toHaveLength(3);
+		expect(result.plan.planningRounds.at(-1)!.assignmentIds).toEqual(['estimating', 'planning']
+			.map(activity => `planning:workday:3:project/project/architect:${activity}:${proposalId}`));
 	});
 	it('completes planning rounds and enters closing without consulting demand or envelope storage', async () => {
 		const updateCapacityWorkdayRun = vi.fn(async () => run);
@@ -357,6 +436,29 @@ describe('living workday lifecycle', () => {
 		expect(updateCapacityWorkdayRun).toHaveBeenCalledWith('team', 'workday', expect.objectContaining({
 			parameters: expect.objectContaining({ appliedPlan: expect.objectContaining({ reportRef: reportReference }) }) }));
 		expect(updateCapacityWorkdayRun.mock.calls[0]?.[2]).not.toHaveProperty('reportRefs');
+	});
+	it.each(['complete', 'missing-second', 'failed-second', 'unsettled'])('requires every group closeout receipt before ending a multi-project workday: %s', async mode => {
+		const closingRun = { ...run, parameters: { appliedPlan: { ...plan, state: 'closing', closingAt: now } } } as never;
+		const reports = [{ id: 'project-report', kind: 'reporting', status: 'completed' },
+			{ id: 'other-report', kind: 'reporting', status: mode === 'failed-second' ? 'failed' : 'completed' }];
+		const store = { all: vi.fn(async (sql: string, parameters: unknown[]) => {
+			if (sql.includes('SELECT id,kind,status')) return reports;
+			if (sql.includes('assignment_result_json')) {
+				const second = parameters[2] === 'other-report';
+				if (second && mode === 'missing-second') return [];
+				const value = { ...reportResult, id: second ? 'other-result' : reportResult.id,
+					assignmentId: second ? 'other-assignment' : reportResult.assignmentId,
+					references: [{ ...reportReference, ...(second ? { projectId: 'other', path: 'notes/other-report.md' } : {}) }] };
+				return [{ id: value.assignmentId, assignment_result_json: JSON.stringify(value), integrated_at: now,
+					integration_json: JSON.stringify({ resultId: value.id, references: value.references, publication: false }) }];
+			}
+			if (sql.includes('SELECT DISTINCT provider_session_id')) return [];
+			return [{ state: mode === 'unsettled' ? 'reserved' : 'consumed' }];
+		}), updateCapacityWorkdayRun: vi.fn(async () => closingRun) };
+		const result = await advanceLivingWorkday(store as never, closingRun, now);
+		expect(result.status).toBe(mode === 'complete' ? 'completed' : mode === 'unsettled' ? 'running' : 'failed');
+		if (mode === 'complete') expect(result.plan).toMatchObject({ state: 'ended', reportRef: { ...reportReference, projectId: 'other', path: 'notes/other-report.md' } });
+		else expect(result.plan).not.toHaveProperty('reportRef');
 	});
 	it.each(['missing', 'duplicate', 'invalid', 'wrong-assignment', 'wrong-store', 'future-completion', 'missing-integration',
 		'future-integration', 'wrong-result-integration', 'wrong-reference-integration', 'invalid-integration-time', 'invalid-integration-json'])('rejects %s Reporter evidence despite a completed graph node', async failure => {

@@ -90,7 +90,9 @@ function projectTreeDxWorkspaceReference(candidate: ReadyExecutionNode, run: Dur
 	// each contributor writes its Note only in its own project library.
 	const source = candidate.node.kind === 'planning' && subject?.model === 'proposal'
 		&& subject.repository !== candidate.projectContentRepositoryId ? undefined : subject;
-	if (source && source.repository !== candidate.projectContentRepositoryId) throw new CapacityGovernanceError(
+	const sharedEstimate = candidate.node.kind === 'estimating' && source?.model === 'proposal'
+		&& candidate.contextRefs.some(reference => stable(reference) === stable(source));
+	if (source && source.repository !== candidate.projectContentRepositoryId && !sharedEstimate) throw new CapacityGovernanceError(
 		'assignment_content_project_mismatch', 'Writable TreeDX content must belong to the assignment project library.', 409);
 	if (source) return source;
 	if (candidate.node.kind === 'reporting' && candidate.node.sourceRef.store === 'postgresql' && candidate.node.sourceRef.model === 'workday') {

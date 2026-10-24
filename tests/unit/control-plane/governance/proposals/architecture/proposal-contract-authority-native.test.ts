@@ -6,7 +6,7 @@ import { relationAuthoringDatabase, object } from '../../../knowledge/workspaces
 import { commitProposalVersionContent } from '../../../../../../src/api/control-plane/governance/proposal-version-content.ts';
 import { requireTreeDxOperation } from '../../../../../../src/api/control-plane/treedx/upstream-operation.ts';
 import { parseFrontmatterDocument } from '../../../../../../src/api/content/frontmatter.ts';
-import { readyProposal } from './ready-proposal-fixture.ts';
+import { readyContributionProposal } from './ready-proposal-fixture.ts';
 
 // Real signed TreeDX and the original store on disposable native PostgreSQL.
 // The selected library ref, type bytes and local retained file are controlled
@@ -45,7 +45,7 @@ describe('governed proposal contract authority with divergent native authoring',
 			await expect(read('refs/heads/staging',typePath)).rejects.toMatchObject({status:404});
 			const input={store:f.store,principal:{id:'operator-fixture'},initial:true,proposal:{id:'native-schema-proposal',teamId:'team',projectId,
 				title:'Native schema custody',body:'Create this request without replacing retained local work.',proposalTypes:['implementation']},
-				update:{groupIds:['provider-runtime'],executionPlan:readyProposal().executionPlan}};
+				update:{groupIds:['provider-runtime'],executionPlan:readyContributionProposal().executionPlan}};
 			const created=await commitProposalVersionContent(input);
 			expect(created.receipt.changedPaths).toEqual(['proposals/governance/native-schema-custody.mdx']);
 			expect(created.receipt.branchName).toBe('refs/heads/staging');
@@ -61,8 +61,8 @@ describe('governed proposal contract authority with divergent native authoring',
 			// remains the exact existing governed context frozen at activation.
 			const workdayId='workday-'+randomUUID(),now=new Date().toISOString();
 			const held={store:'treedx',model:'knowledge',id:projectId+':project-context',repository:repoId,commit:published.commitSha,path:'README.md'};
-			const plan=compileWorkday({id:workdayId,teamId:'team',policyId:'default',policyRevision:1,executionMode:'simulation',startsAt:now,agentIds:[projectId+'/configured-estimator'],policy:{...DEFAULT_WORKDAY_POLICY,durationSeconds:3600,maximumConcurrency:1}});
-			const parameters={appliedPlan:{...plan,state:'active',activatedAt:now},scheduledProjectIds:[projectId],proposalIds:[input.proposal.id],workdayContextByProjectId:{[projectId]:held}};
+			const plan=compileWorkday({id:workdayId,teamId:'team',policyId:'default',policyRevision:1,executionMode:'simulation',startsAt:now,agentIds:[],policy:{...DEFAULT_WORKDAY_POLICY,durationSeconds:3600,maximumConcurrency:1}});
+			const parameters={groupIds:input.update.groupIds,appliedPlan:{...plan,state:'active',activatedAt:now},scheduledProjectIds:[projectId],proposalIds:[input.proposal.id],workdayContextByProjectId:{[projectId]:held}};
 			await f.query('INSERT INTO capacity_workday_runs (id,team_id,execution_kind,execution_mode,status,parameters_json,started_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',[workdayId,'team','workday','simulation','running',JSON.stringify(parameters),now,now,now]);
 			// Moving current library authority cannot replace the original freeze.
 			await f.store.upsertProjectTreeDxLibrary(projectId,{contentRepositoryRef:'refs/heads/main'});

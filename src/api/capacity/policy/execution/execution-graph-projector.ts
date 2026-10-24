@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto';
+import { agentProfileReference } from './agent-profile-reference.ts';
+import { contributionBindings } from './contribution-bindings.ts';
 import {
 	executionNodeSchema,
 	graphRevisionSchema,
 	validateExecutionGraph,
 	type AgentDefinition,
+	type AssignmentAttempt,
 	type ExecutionEdge,
 	type ExecutionNode,
 	type ExactEntityReference,
@@ -22,6 +25,7 @@ export interface ExecutableProposalSource {
 	digest: string;
 	proposalRevision: number;
 	frontmatter: Row;
+	estimatingAttempts?: AssignmentAttempt[];
 	feedback?: Array<{ id: string; kind: 'concern' | 'question'; resolved: boolean; sourceRef: ExactEntityReference }>;
 	decision: { id: string; revision: number; digest: string; current: boolean; repository?: string; commit?: string; path?: string } | null;
 }
@@ -80,11 +84,13 @@ function decisionRef(source: ExecutableProposalSource): ExactEntityReference | n
 }
 
 function profileFor(profiles: Record<string, AgentDefinition>, projectId: string, agentClass: string, activity: 'acting' | 'reviewing') {
-	const profile = profiles[`${projectId}:${agentClass}`]?.activityProfiles[activity];
+	const matches = Object.entries(profiles).filter(([key, definition]) => key.startsWith(`${projectId}:`) && definition.agentClass === agentClass);
+	if (matches.length !== 1) throw Object.assign(new Error(`Historical agent class ${agentClass} is not a unique contributor.`), { code: 'execution_profile_ambiguous' });
+	const definition = matches[0]![1], profile = definition.activityProfiles[activity];
 	if (!profile) throw Object.assign(new Error(`Agent class ${agentClass} has no ${activity} profile.`), {
 		code: 'execution_profile_missing', agentClass, activity,
 	});
-	return profile;
+	return { ...profile, agentReference: agentProfileReference(definition), projectId, agentClass, definition };
 }
 
 function requestedPermissions(workItem: Row, profile: ReturnType<typeof profileFor>, pairRole: 'actor' | 'reviewer') {
@@ -118,26 +124,33 @@ function workNode(input: {
 	source: ExecutableProposalSource;
 	workItem: Row;
 	profile: ReturnType<typeof profileFor>;
+	estimateAuthority?: ExactEntityReference;
+	peerEstimate?: Row;
+	reviewBudgetId?: string;
 	revision: number;
 	pairRole: 'actor' | 'reviewer';
 }): ExecutionNode {
 	const sourceRef = proposalRef(input.source);
 	const itemId = text(input.workItem.id);
 	const reviewed = text(input.workItem.review) === 'required';
-	const agentClass = input.pairRole === 'reviewer' ? 'reviewer' : text(input.workItem.agentClass);
-	const estimate = record(input.pairRole === 'reviewer' ? input.workItem.reviewEstimate : input.workItem.estimate);
+	const contributions = input.source.frontmatter.schemaVersion === 'treeseed.proposal/v2';
+	const agentClass = input.profile.agentClass;
+	const estimate = input.peerEstimate ?? record(input.pairRole === 'reviewer' ? input.workItem.reviewEstimate : input.workItem.estimate);
 	const kind = input.pairRole === 'reviewer' ? 'reviewing' : 'acting';
 	const authority = decisionRef(input.source);
 	const id = deterministicId('node', [
 		input.source.teamId, input.source.projectId, sourceRef.id, sourceRef.revision, sourceRef.digest,
 		RULE_REVISION, itemId, kind, agentClass, input.pairRole,
+		...(contributions ? [input.profile.agentReference, input.estimateAuthority, input.reviewBudgetId ?? null] : []),
 	]);
 	return executionNodeSchema.parse({
 		schemaVersion: 'treeseed.execution-node/v1', id,
-		teamId: input.source.teamId, projectId: input.source.projectId,
+		teamId: input.source.teamId, projectId: input.profile.projectId,
 		workItemId: itemId, kind, pairRole: input.pairRole, sourceRef,
 		...(input.workItem.priority !== undefined ? { priority: input.workItem.priority } : {}),
-		authorityRefs: authority ? [authority] : [],
+		authorityRefs: [...(authority ? [authority] : []), input.profile.agentReference,
+			...(input.estimateAuthority ? [input.estimateAuthority] : []),
+			...(input.reviewBudgetId ? [{ ...sourceRef, anchor: `work-item/${input.reviewBudgetId}` }] : [])],
 		ruleRevision: RULE_REVISION, nodeRevision: 1, agentClass,
 		status: authority ? 'blocked' : 'proposed',
 		estimate, requiredCapabilities: input.pairRole === 'reviewer'
@@ -218,20 +231,25 @@ export function projectTeamExecutionGraph(input: {
 				provenance: 'governance', sourceRef }, input.revision));
 		}
 		const workItems = rows(record(proposal.executionPlan).workItems);
+		const contributions = proposal.schemaVersion === 'treeseed.proposal/v2'
+			? contributionBindings(exactSource, input.profiles) : null;
 		const actorByItem = new Map<string, ExecutionNode>();
 		const completionByItem = new Map<string, ExecutionNode>();
 
 		for (const workItem of workItems) {
 			const actor = workNode({ source: exactSource, workItem,
-				profile: profileFor(input.profiles, source.projectId, text(workItem.agentClass), 'acting'),
+				profile: contributions ? contributions.acting.get(text(workItem.id))! : profileFor(input.profiles, source.projectId, text(workItem.agentClass), 'acting'),
+				...(contributions ? { estimateAuthority: contributions.acting.get(text(workItem.id))!.estimateAuthority } : {}),
 				revision: input.revision, pairRole: 'actor' });
 			nodes.push(actor);
 			edges.push(edge({ teamId: source.teamId, fromNodeId: authority.id, toNodeId: actor.id,
 				provenance: 'governance', sourceRef }, input.revision));
 			actorByItem.set(text(workItem.id), actor);
 			if (text(workItem.review) === 'required') {
+				const peer = contributions?.reviewing.get(text(workItem.id));
 				const reviewer = workNode({ source: exactSource, workItem,
-					profile: profileFor(input.profiles, source.projectId, 'reviewer', 'reviewing'),
+					profile: contributions ? peer!.profile : profileFor(input.profiles, source.projectId, 'reviewer', 'reviewing'),
+					...(peer ? { estimateAuthority: peer.profile.estimateAuthority, peerEstimate: peer.estimate, reviewBudgetId: peer.budgetId } : {}),
 					revision: input.revision, pairRole: 'reviewer' });
 				nodes.push(reviewer);
 				completionByItem.set(text(workItem.id), reviewer);
@@ -251,15 +269,21 @@ export function projectTeamExecutionGraph(input: {
 				edges.push(edge({ teamId: source.teamId, fromNodeId: predecessor.id, toNodeId: actor.id,
 					provenance: 'work-item', sourceRef }, input.revision));
 			}
-			const profile = profileFor(input.profiles, source.projectId, text(workItem.agentClass), 'acting');
+			const profile = contributions ? contributions.acting.get(text(workItem.id))! : profileFor(input.profiles, source.projectId, text(workItem.agentClass), 'acting');
 			for (const dependencyClass of profile.dependsOn?.agents ?? []) {
-				const dependencyItems = workItems.filter((candidate) => text(candidate.agentClass) === dependencyClass);
+				const dependencyItems = workItems.filter((candidate) => contributions
+					? [contributions.acting.get(text(candidate.id))!.definition.id, contributions.acting.get(text(candidate.id))!.definition.name,
+						contributions.acting.get(text(candidate.id))!.definition.id.split('/').at(-1)].includes(dependencyClass)
+					: text(candidate.agentClass) === dependencyClass);
 				for (const dependencyItem of dependencyItems) {
 					const predecessor = completionByItem.get(text(dependencyItem.id));
 					if (predecessor && predecessor.id !== actor.id) edges.push(edge({ teamId: source.teamId,
 						fromNodeId: predecessor.id, toNodeId: actor.id, provenance: 'profile-agent', sourceRef }, input.revision));
 				}
 				if (!dependencyItems.length) {
+					if (contributions) throw Object.assign(new Error(`Contributor ${profile.definition.id} requires a contribution from ${dependencyClass} before approval.`), {
+						code: 'execution_profile_dependency_missing',
+					});
 					const conditionId = deterministicId('node', [source.teamId,source.projectId,sourceRef.id,
 						sourceRef.revision,text(workItem.id),'missing-agent',dependencyClass]);
 					if (!nodes.some((candidate) => candidate.id === conditionId)) nodes.push(executionNodeSchema.parse({

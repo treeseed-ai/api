@@ -1,10 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { appliedWorkdaySchema } from '@treeseed/sdk/agent-capacity';
-import { schedulingInputs } from './relation-scheduling-fixture.ts';
+import { schedulingInputs, schedulingSubscriberInputs } from './relation-scheduling-fixture.ts';
+import { relationInputs } from '../../../capacity/execution/graph/architecture/relations/relation-fixture.ts';
+import { validatePortableContentData } from '@treeseed/sdk/content-validation';
+import { validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
 import { buildAssignmentAttempt } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import { canonicalOfferBuildInput } from '../../../capacity/execution/fixtures/assignment-attempt-fixtures.ts';
 
 describe('cross-project dependent assignment construction', () => {
+	it('uses distinct group-owned subscriber inputs for fresh native scheduling while retaining original dependency anchors and historical fixtures', () => {
+		const input = relationInputs(), original = structuredClone(input.sources);
+		const cohorts = schedulingSubscriberInputs(input);
+		for (const [index, source] of input.sources.entries()) {
+			expect(validatePortableContentData('proposal', source.frontmatter)).toMatchObject({ ok: true });
+			expect(source.frontmatter.groupIds).toEqual([`${source.projectId}-delivery`]);
+			const items = (source.frontmatter.executionPlan as { workItems: Array<Record<string, unknown>> }).workItems;
+			expect(items.map(item => [item.id, item.dependsOn])).toEqual([['first', []], ['next', ['first']]]);
+			for (const [ordinal, item] of items.entries()) {
+				expect(item).not.toHaveProperty('agentClass');
+				expect(item.estimateRef).toEqual({ store: 'postgresql', model: 'assignment-attempt',
+					id: `controlled-estimate-${source.frontmatter.id}-${ordinal}`, revision: 1 });
+			}
+			for (const profile of cohorts[index]!.profileInputs) expect(validateAgentDefinitionModel(profile.definition)).toMatchObject({ ok: true });
+			expect(cohorts[index]!.subscribers.map(profile => profile.definition.groupIds)).toEqual([source.frontmatter.groupIds, source.frontmatter.groupIds]);
+		}
+		expect(input.link).toEqual(relationInputs().link);
+		expect(relationInputs().sources).toEqual(original);
+	});
 	it('retains the original UTC day and phase bounds for positive whole-second supply and denies subsecond supply without changing governed inputs', () => {
 		for (const [now, seconds, deadline] of [
 			['2026-10-04T12:00:00.000Z', 3, '2026-10-04T12:00:40.000Z'],

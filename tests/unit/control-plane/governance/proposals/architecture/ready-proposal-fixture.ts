@@ -17,6 +17,17 @@ export function readyProposal() {
 		status: 'draft', executionPlan: { workItems: [readyWorkItem()] } };
 }
 
+/** Current contribution content INPUT; no estimating execution is claimed. */
+export function readyContributionProposal() {
+	const base = readyProposal(), { agentClass: _class, ...item } = base.executionPlan.workItems[0]!;
+	return { ...base, schemaVersion: 'treeseed.proposal/v2', groupIds: ['portfolio-runtime'],
+		executionPlan: { workItems: [{ ...item,
+			estimateRef: { store: 'postgresql', model: 'assignment-attempt', id: 'controlled-estimate', revision: 1 },
+			estimate: { ...item.estimate, rationale: 'Controlled own implementation estimate.' },
+			reviewEstimate: { ...item.reviewEstimate, rationale: 'Controlled own independent review estimate.' },
+		}] } };
+}
+
 /** Exact controlled library inputs; the original native test publishes and reads these bytes. */
 export function nativeProposalProfileInputs(configured: Record<string, AgentDefinition>, projectId: string, canonicalSupply: boolean) {
 	const profiles = Object.values(configured).filter(value => configured[`${projectId}:${value.agentClass}`] === value)

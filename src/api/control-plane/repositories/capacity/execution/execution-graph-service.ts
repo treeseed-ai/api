@@ -100,7 +100,7 @@ async function readGraph(store: any, teamId: string): Promise<TeamGraph> {
 
 async function loadProfiles(store: any, teamId: string): Promise<Record<string, AgentDefinition>> {
 	const rows = await store.all(`SELECT project_id,handler_refs_json FROM project_agent_classes
-		WHERE team_id = ? AND status = 'active' ORDER BY project_id,id`, [teamId]);
+		WHERE team_id = ? ORDER BY project_id,id`, [teamId]);
 	const profiles: Record<string, AgentDefinition> = {};
 	for (const row of rows) for (const candidate of array(record(row.handler_refs_json).agents)) {
 		const validation = validateAgentDefinitionModel(candidate);
@@ -108,9 +108,9 @@ async function loadProfiles(store: any, teamId: string): Promise<Record<string, 
 			new CapacityOperationError(409, 'agent_profile_invalid', 'An active project agent class does not contain a valid minimal agent definition.'),
 			{ diagnostics: validation.diagnostics },
 		);
-		const key = `${text(row.project_id)}:${validation.data.agentClass}`;
-		if (profiles[key] && stable(profiles[key]) !== stable(validation.data)) {
-			throw new CapacityOperationError(409, 'agent_profile_conflict', `Project ${row.project_id} has conflicting ${validation.data.agentClass} definitions.`);
+		const key = `${text(row.project_id)}:${validation.data.id}`;
+		if (profiles[key]) {
+			throw new CapacityOperationError(409, 'agent_profile_conflict', `Project ${row.project_id} has duplicate ${validation.data.id} identities.`);
 		}
 		profiles[key] = validation.data;
 	}
@@ -242,11 +242,14 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 		const runId = decisionRun(node);
 		return runId ? { ...node, workdayId: runId } : node;
 	});
+	const issuedNodeIds = new Set([...activeAssignmentRows, ...terminalAssignmentRows].map((row: Row) => text(row.execution_node_id)));
 	const workdayProjection = projectActiveWorkdays({ teamId, revision, sources: workdays, profiles,
-		decisionNodes: proposalProjection?.nodes ?? [], retainedNodes: current.nodes,
-		issuedNodeIds: [...activeAssignmentRows, ...terminalAssignmentRows].map((row: Row) => text(row.execution_node_id)) });
+		decisionNodes: proposalProjection?.nodes ?? [], retainedNodes: current.nodes, retainedEdges: current.edges,
+		issuedNodeIds: [...issuedNodeIds] });
 	const communicationProjection = projectCommunicationInvocations({ teamId, revision, sources: communications, profiles });
-	const frozenNodes = current.nodes.filter((node) => frozenInvalid.has(`${node.sourceRef.id}\u0000${node.sourceRef.digest}`));
+	const currentProjectionIds = new Set([...(proposalProjection?.nodes ?? []), ...workdayProjection.nodes, ...communicationProjection.nodes].map(node => node.id));
+	const frozenNodes = current.nodes.filter((node) => !currentProjectionIds.has(node.id) && (node.kind === 'condition' || issuedNodeIds.has(node.id))
+		&& frozenInvalid.has(`${node.sourceRef.id}\u0000${node.sourceRef.digest}`));
 	const frozenNodeIds = new Set(frozenNodes.map((node) => node.id));
 	const nodes = scope === 'communication'
 		? [...current.nodes.filter((node) => node.kind !== 'communication'), ...communicationProjection.nodes]

@@ -10,11 +10,13 @@ capacityWorkdayRequestedProjectReferences,
 resolveCapacityWorkdayProjects,
 type WorkdayProject,
 } from '../policy/workday-project-policy.ts';
-import { resolveWorkdayAgentProfileSnapshot } from '../policy/workday-agent-profile-policy.ts';
+import { resolveWorkdayAgentProfileSnapshot, resolveDiscussionAgentProfileSnapshot } from '../policy/workday-agent-profile-policy.ts';
 import { reconcileTreeDxRefSignals } from '../../../treedx/repositories/treedx-ref-signal-reconciler.ts';
 import { reconcileCommunicationExecutionGraph, reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
-import { workdayParticipants, selectWorkdayReportingAgent } from '../../../../policy/execution/workday-participants.ts';
+import { workdayParticipants, selectWorkdayReportingAgents } from '../../../../policy/execution/workday-participants.ts';
+import { isDeepStrictEqual } from 'node:util';
 import { readExactProposal } from '../../../../../governance/executable-proposal.ts';
+import { validateDecisionAuthority } from '../../../../../governance/decision-authority.ts';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -119,17 +121,27 @@ async function resolveCapacityWorkdayPreflight(
 		if (!['draft','submitted','open','voting'].includes(text(proposal.status))) throw new CapacityGovernanceError(
 			'capacity_workday_proposal_not_plannable', `Workday proposal ${proposalId} is not open for cooperative planning.`, 409, { proposalId });
 		const exact = await readExactProposal(store, proposal);
+		if (exact.definition.schemaVersion !== 'treeseed.proposal/v2') throw new CapacityGovernanceError(
+			'capacity_workday_proposal_version_unsupported', 'New work requires subscriber-owned group contributions; retained class-targeted proposals remain history.', 409, { proposalId });
 		return { proposalId, projectId: text(proposal.projectId), ref: exact.ref, definition: exact.definition };
 	}));
-	const proposalGroups = selectedProposals.flatMap(proposal => Array.isArray(proposal.definition.groupIds)
-		? proposal.definition.groupIds.map(value => text(value)).filter(Boolean) : []);
-	const groupIds = [...new Set(Array.isArray(parameters.groupIds) ? parameters.groupIds.map(value => text(value)) : proposalGroups)].sort();
-	for (const proposal of selectedProposals) {
-		const groups = Array.isArray(proposal.definition.groupIds) ? proposal.definition.groupIds.map(value => text(value)) : [];
-		if (!groups.some(id => groupIds.includes(id))) throw new CapacityGovernanceError('capacity_workday_proposal_group_required',
-			'Proposal planning requires shared proposal groups and subscribed project agents.', 409, { proposalId: proposal.proposalId });
-	}
-	if (groupIds.length) parameters = { ...parameters, groupIds };
+	const selectedDecisionIds = Array.isArray(parameters.decisionIds) ? parameters.decisionIds.map(value => text(value)).filter(Boolean) : [];
+	const decisionProposals = await Promise.all(selectedDecisionIds.map(async decisionId => {
+		const authority = await validateDecisionAuthority(store, decisionId, { teamId: run.teamId, projectId: projects.map(project => project.id) });
+		if (!authority.valid || !authority.current) throw new CapacityGovernanceError(authority.code!, authority.message!, 409);
+		const proposal = await store.getGovernanceProposal(authority.current.proposalId);
+		if (!proposal) throw new CapacityGovernanceError('capacity_workday_proposal_not_found', 'The accepted decision proposal is unavailable.', 404);
+		const exact = await readExactProposal(store, proposal, { store: 'treedx', model: 'proposal', ...authority.current.proposalRef });
+		if (exact.definition.schemaVersion !== 'treeseed.proposal/v2') throw new CapacityGovernanceError(
+			'capacity_workday_proposal_version_unsupported', 'New work requires subscriber-owned group contributions; retained class-targeted decisions remain history.', 409, { decisionId });
+		return exact.definition;
+	}));
+	const proposalGroups = [...selectedProposals.map(proposal => proposal.definition), ...decisionProposals].flatMap(definition => Array.isArray(definition.groupIds)
+		? definition.groupIds.map(value => text(value)).filter(Boolean) : []);
+	const groupIds = [...new Set([...proposalGroups, ...(Array.isArray(parameters.groupIds) ? parameters.groupIds.map(value => text(value)).filter(Boolean) : [])])].sort();
+	if (!groupIds.length && run.executionKind !== 'conversation') throw new CapacityGovernanceError('capacity_workday_group_required',
+		'New work requires shared groups or exact proposals or decisions that supply their groups.', 409);
+	parameters = { ...parameters, groupIds };
 	const agentProfiles = new Map<string, Awaited<ReturnType<typeof resolveWorkdayAgentProfileSnapshot>>>();
 	for (const project of projects) {
 		const library = await store.getProjectTreeDxLibrary(project.id);
@@ -145,12 +157,19 @@ async function resolveCapacityWorkdayPreflight(
 		const contentRoot = text(library?.contentPath).replace(/^\/+|\/+$/gu, '');
 		const immutableRef = acceptedLibraryRevision(library ?? {}, project.id);
 		contexts.set(project.id, { contentRoot: contentRoot || capacityWorkdayContentRoot(project), repositoryId, immutableRef });
-		const profileSnapshot=await resolveWorkdayAgentProfileSnapshot(store, project.id, parameters.agentSelection, groupIds.length ? groupIds : undefined);
+		const profileSnapshot=run.executionKind === 'conversation'
+			? await resolveDiscussionAgentProfileSnapshot(store, run, project.id)
+			: await resolveWorkdayAgentProfileSnapshot(store, project.id, parameters.agentSelection, groupIds);
 		agentProfiles.set(project.id,profileSnapshot);
 		const projectProposals = selectedProposals.filter((proposal) => proposal.projectId === project.id);
 		for (const proposal of projectProposals) proposalContexts.set(proposal.proposalId, proposal.ref);
 	}
 	const selectedProjectIds = new Set(projects.map((project) => project.id));
+	if (parameters.agentProfilesByProjectId !== undefined
+		&& !isDeepStrictEqual(parameters.agentProfilesByProjectId, Object.fromEntries(agentProfiles))) {
+		throw new CapacityGovernanceError('capacity_workday_profile_authority_changed',
+			'The subscribed profiles differ from the frozen workday preflight authority.', 409);
+	}
 	const outsideSelection = selectedProposals.filter((proposal) => !selectedProjectIds.has(proposal.projectId));
 	if (outsideSelection.length) throw new CapacityGovernanceError('capacity_workday_proposal_project_mismatch',
 		'Every selected proposal must belong to a selected workday project.', 409,
@@ -164,10 +183,10 @@ async function resolveCapacityWorkdayPreflight(
 		proposalsByProjectId: Object.fromEntries(projects.map(project => [project.id,
 			selectedProposals.filter(proposal => proposal.projectId === project.id).map(proposal => proposal.definition)])),
 	}).map((participant) => participant.id);
-	const reportingAgent = run.executionKind === 'workday' ? selectWorkdayReportingAgent([...agentProfiles].flatMap(([projectId, snapshot]) =>
-		snapshot.agents.map(({ definition }) => ({ projectId, definition }))), parameters.reportingAgentId) : null;
-	if (run.executionKind === 'workday' && !reportingAgent) throw new CapacityGovernanceError(
-		'capacity_workday_reporting_selection_invalid', 'A Workday requires one eligible configured closeout Reporter before activation.', 409);
+	const reportingAgents = run.executionKind === 'workday' ? selectWorkdayReportingAgents([...agentProfiles].flatMap(([projectId, snapshot]) =>
+		snapshot.agents.map(({ definition }) => ({ projectId, definition })))) : [];
+	if (run.executionKind === 'workday' && !reportingAgents.length) throw new CapacityGovernanceError(
+		'capacity_workday_reporting_selection_invalid', 'A Workday requires subscribed configured closeout profiles before activation.', 409);
 	const appliedPlan = compileWorkday({ id: run.id, teamId: run.teamId,
 		executionMode,
 		activityTypes: Array.isArray(record(parameters.agentSelection).activityTypes)
@@ -179,7 +198,7 @@ async function resolveCapacityWorkdayPreflight(
 			planningTurnMaximumSeconds: Number(parameters.planningTurnMaximumSeconds ?? 180),
 			communicationConcurrency: Math.max(1, Number(parameters.communicationConcurrency ?? 1)),
 			...canonicalWorkdayShares(parameters, projects) },
-		agentIds, startsAt: startedAt, ...(reportingAgent ? { reportingAgentId: reportingAgent.definition.id } : {}) });
+		agentIds, startsAt: startedAt });
 	// Turn ceilings are not reservations. Admission sizes each turn against supply.
 	return { parameters,executionMode,providerId,startedAt,environment,membership,projects,contexts,proposalContexts,agentProfiles,time,appliedPlan };
 }
@@ -200,6 +219,7 @@ export async function preflightCapacityWorkdayRun(store: WorkdayScheduleStore, r
 		ok: true,
 		teamId: run.teamId,
 		providerId: resolved.providerId,
+		groupIds: resolved.parameters.groupIds,
 		projects: resolved.projects.map((project) => ({
 			id: project.id,
 			slug: project.slug ?? project.id,
@@ -218,6 +238,7 @@ export async function preflightCapacityWorkdayRun(store: WorkdayScheduleStore, r
 		availableSeconds: resolved.time.availableSeconds,
 		executionNodeDemands,
 		appliedPlan: resolved.appliedPlan,
+		agentProfilesByProjectId: Object.fromEntries(resolved.agentProfiles),
 	};
 }
 

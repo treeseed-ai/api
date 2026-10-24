@@ -1,6 +1,176 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.legacy-graph-condition:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/executable-proposal-source.test.ts
+    testName: "preserves legacy authority and condition history while retiring unissued work: condition"
+  api.golden.legacy-graph-issued:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/executable-proposal-source.test.ts
+    testName: "preserves legacy authority and condition history while retiring unissued work: issued"
+  api.golden.legacy-graph-unissued:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/executable-proposal-source.test.ts
+    testName: "preserves legacy authority and condition history while retiring unissued work: unissued"
+  api.golden.subscriber-execution-context-owner:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/contributions/proposal-source-context-native.test.ts
+    testName: "reads acting and reviewing context from the exact shared proposal owner while preserving worker identity and refusing foreign moved or corrupt authority"
+  api.golden.decision-group-admission:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/proposal-admission/decision-group-admission.test.ts
+    testName: "derives every accepted proposal group from exact decision authority without importing outsiders or narrowing to an explicit subset"
+  api.golden.legacy-proposal-admission:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/proposal-admission/legacy-proposal-admission.test.ts
+    testName: "refuses new work from retained class-targeted proposals before selecting profiles while preserving exact source history"
+  api.golden.contribution-prerequisite-readiness:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/contributions/readiness.test.ts
+    testName: "refuses approval when a configured contributor prerequisite has no contribution in the group plan"
+  api.golden.contribution-cross-project-identity:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/contributions/contribution-graph.test.ts
+    testName: "keeps cross-project subscribers with the same configured name independent without a hidden project filter"
+  api.golden.contribution-readiness-counter:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/contributions/readiness.test.ts
+    testName: "keeps execution readiness false when actual contributor profile dependencies create a cycle despite complete estimates"
+  api.golden.contribution-execution-ownership:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/contributions/contribution-graph.test.ts
+    testName: "binds each same-class author to its own acting work and another author own review budget in documentation-first dependency order"
+  api.golden.contribution-execution-denials:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/contributions/contribution-graph.test.ts
+    testName: "refuses missing forged moved foreign or unsubscribed contributor authority and infeasible independent review"
+  api.golden.contribution-cohort-lifecycle:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: "continues group estimating after the first structurally complete contribution until the shared cohort reader verifies everyone"
+  api.golden.subscriber-identity-binding:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/agents/execution-node-profile.test.ts
+    testName: "binds the addressed subscriber among peers sharing a class and rejects missing conflicting or moved identity authority"
+  api.golden.subscriber-profile-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/subscriber-profile-native.test.ts
+    testName: "native governed shared-class subscribers retain both YAML profiles through publication group discovery and exact addressed execution binding"
+  api.golden.shared-class-publication:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/treedx-change-projector.test.ts
+    testName: "publishes all subscribers in one allocation class without overwriting a peer or class allocation settings"
+  api.golden.subscriber-contribution-ownership:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/contributions/estimate-ownership.test.ts
+    testName: "merges distinct subscribers sharing one class without a winner or lost concurrent contribution"
+  api.golden.subscriber-contribution-readback:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/contributions/estimate-readback.test.ts
+    testName: "reads actual estimator source and stored attempt ownership while preserving a concurrent peer through moved denied and altered-source observations"
+  api.golden.subscriber-contribution-order-replay:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/contributions/estimate-ownership.test.ts
+    testName: "keeps an already integrated contribution current when the proposal orders work by workflow rather than alphabetically"
+  api.golden.subscriber-source-participant-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-native-readiness.test.ts
+    testName: "admits bounded current subscriber content while rejecting named participant fields at exact source intake"
+  api.golden.workday-legacy-source-context-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-denial-native.test.ts
+    testName: "refuses fresh legacy proposal context hidden behind a Workday source without mutating retained authority"
+  api.golden.workday-group-authority-required:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/audience/current-admission.test.ts
+    testName: "requires group authority for new autonomous planning rather than treating an arbitrary snapshot as an audience"
+  api.golden.workday-subscribed-autonomous-audience:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/audience/current-admission.test.ts
+    testName: "admits only subscribed autonomous planners even when the frozen inventory contains another group"
+  api.golden.workday-legacy-class-demand-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/audience/current-admission.test.ts
+    testName: "never derives new estimator work from legacy class or privileged reviewer selectors"
+  api.golden.workday-issued-plan-storage-custody:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/contributions/issued-workday-custody.test.ts
+    testName: "original SQL graph storage retains the exact issued nodes edges and observations through role-free replay"
+  api.golden.workday-group-round-continuation:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: "rebuilds later rounds from current group contributions instead of initial planning ID suffixes"
+  api.golden.native-scheduling-subscriber-inputs:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-authority.test.ts
+    testName: "uses distinct group-owned subscriber inputs for fresh native scheduling while retaining original dependency anchors and historical fixtures"
+  api.golden.subscriber-cross-project-readback:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/contributions/cross-project-estimate-readback.test.ts
+    testName: "reads a subscriber contribution from the proposal owner library while retaining the contributor project and denying foreign ownership or missing write authority"
+  api.golden.subscriber-cross-project-workspace:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/reporting/assignment-workday-workspace.test.ts
+    testName: "gives a subscribed estimator the exact shared proposal workspace without changing its allocation project"
+  api.golden.subscriber-workspace-owner-bound:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/living-execution-assignment-paths.test.ts
+    testName: "creates a shared proposal estimate workspace only through its unique team library owner: bound"
+  api.golden.subscriber-workspace-owner-missing:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/living-execution-assignment-paths.test.ts
+    testName: "creates a shared proposal estimate workspace only through its unique team library owner: missing"
+  api.golden.subscriber-workspace-owner-ambiguous:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/living-execution-assignment-paths.test.ts
+    testName: "creates a shared proposal estimate workspace only through its unique team library owner: ambiguous"
+  api.golden.subscriber-contribution-readiness:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/contributions/readiness.test.ts
+    testName: "does not accept discussion completions as each subscriber own estimate"
+  api.golden.subscriber-contribution-audience:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/selection.test.ts
+    testName: "admits every v2 group subscriber to estimating before a contribution plan exists regardless of class or project"
+  api.golden.subscriber-contribution-projection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "projects every v2 group estimator without class-owned work or a privileged Reviewer ordering"
   api.golden.group-workday-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -605,7 +775,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-native-readiness.test.ts
-    testName: "real executable proposal intake retains invalid committed work-item inventories through repeated denial before exact bounded source retry"
+    testName: "legacy exact intake retains malformed inventory history and valid bounded bytes without admitting fresh class-targeted work"
   api.golden.execution-profile-signal-cutover-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -3115,7 +3285,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-native.test.ts
-    testName: "original governance acceptance publishes one native classed Decision for the exact proposal and preserves that content and original history through decision creation replay"
+    testName: "original governance accepts both group subscriber contributions into one exact native Decision and preserves content and history through replay"
   api.golden.execution-provider-offer-unit-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -3255,7 +3425,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-profile-projection.test.ts
-    testName: "rejects ambiguous closeout selection instead of manufacturing multiple workday reports"
+    testName: "rejects an ambiguous retained single-reporter authority rather than changing issued work"
   api.golden.architecture-reporting-event-denial:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -3635,12 +3805,12 @@ verifiers:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
     testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
-    testName: keeps incomplete scoped proposals planning even when exact executable-plan parsing is not ready
+    testName: does not regenerate historical planning IDs for an unreadable scoped proposal
   api.golden.unscoped-proposal-discovery:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
     testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
-    testName: adds a newly created proposal owner and Reviewer to the next round without replacing the frozen planning agents
+    testName: adds every frozen group subscriber to a newly discovered proposal without class or Reviewer preference
   api.golden.decision-proposal-selection:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
@@ -3715,7 +3885,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
     testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
-    testName: keeps planning a fully estimated ready proposal until external approval yields acting work
+    testName: keeps planning a populated ready proposal until genuine group participation is current
   api.golden.parallel-proposals:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
@@ -3900,17 +4070,17 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
-    testName: "automatically admits only proposal work owners and Reviewer to estimating; autonomous planning remains valid"
+    testName: "admits every model group subscriber to estimation until genuine cohort completion"
   api.golden.estimating-missing-only:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
-    testName: "projects estimates only for missing owner and reviewer measurements"
+    testName: "does not treat populated item estimates as completed subscriber participation"
   api.golden.estimating-six-owners:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
-    testName: "projects six work-owner contributions, including multiple items for Engineer, and one Reviewer"
+    testName: "projects all seven subscribed contributors without manufacturing a privileged Reviewer dependency"
   api.golden.estimating-target-selection:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -4953,12 +5123,37 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
-    testName: "denies omitted ambiguous foreign duplicate and moved reporting authority without replacing the captured selection"
+    testName: "denies foreign duplicate and moved retained reporting authority without replacing the captured selection"
   api.golden.reporting-selection-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/reporting/reporting-selection-native.test.ts
-    testName: "native public preflight and start retain one configured joint Reporter before activation and preserve exact selection through denial and replay"
+    testName: "native public preflight and start freeze all subscribed project closeout profiles and reject actor selectors through denial and replay"
+  api.golden.group-closeout-projection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-profile-projection.test.ts
+    testName: "projects every frozen subscribed closeout contribution without selecting a single actor"
+  api.golden.group-closeout-sql-complete:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/closeout/group-closeout-persistence.test.ts
+    testName: "requires all project report receipts and settlements at the owning SQL boundary: complete"
+  api.golden.group-closeout-sql-missing-integration:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/closeout/group-closeout-persistence.test.ts
+    testName: "requires all project report receipts and settlements at the owning SQL boundary: missing-integration"
+  api.golden.group-closeout-sql-pending:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/closeout/group-closeout-persistence.test.ts
+    testName: "requires all project report receipts and settlements at the owning SQL boundary: pending"
+  api.golden.group-closeout-sql-unsettled:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/closeout/group-closeout-persistence.test.ts
+    testName: "requires all project report receipts and settlements at the owning SQL boundary: unsettled"
   api.golden.reporting-selection-admission-seal-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

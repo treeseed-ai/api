@@ -2,6 +2,7 @@ import { CapacityOperationError } from '../../../../control-plane/repositories/c
 import { hasCompleteExecutablePlan, readExactDecision, readExactProposal } from '../../../../governance/executable-proposal.ts';
 import type { ExecutableProposalSource } from '../../../policy/execution/execution-graph-projector.ts';
 import { loadProposalBlockingFeedback } from './proposal-planning-source.ts';
+import { loadProposalGroupContributions } from './proposal-contributions.ts';
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {
@@ -83,6 +84,14 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 			409, 'proposal_execution_plan_invalid', 'An accepted decision references an incomplete or withdrawn execution plan.');
 		if (accepted && stable(recordedRef) !== stable(exact.ref)) throw new CapacityOperationError(
 			409, 'proposal_decision_ref_stale', 'The accepted decision does not match the current exact proposal revision.');
+		const contributions = exact.definition.schemaVersion === 'treeseed.proposal/v2'
+			? await loadProposalGroupContributions(store, { id: row.proposal_id, teamId, projectId: row.project_id }, exact.definition) : null;
+		if (contributions && !contributions.current) {
+			if (!accepted) continue;
+			throw new CapacityOperationError(409, 'proposal_contributions_unverified',
+				'Accepted work requires every subscriber contribution and its actual estimating source to remain verified.',
+				{ missing: contributions.missing });
+		}
 		const selectedProjectId = text(row.project_id);
 		let decision: Awaited<ReturnType<typeof readExactDecision>> | null = null;
 		if (accepted) {
@@ -94,10 +103,15 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 					error instanceof Error ? error.message : 'The accepted Decision could not be read.');
 			}
 		}
+		if (exact.definition.schemaVersion !== 'treeseed.proposal/v2') {
+			if (state?.count && onFrozenInvalid) onFrozenInvalid({ id: text(row.proposal_id), digest: `sha256:${text(row.active_content_hash)}` });
+			continue;
+		}
 		sources.push({
 			teamId, projectId: selectedProjectId, repository: exact.ref.repository!, path: exact.ref.path!, commit: exact.ref.commit!,
 			digest: exact.ref.digest!, proposalRevision: Number(accepted ? row.proposal_version : row.active_version),
 			frontmatter: exact.definition,
+			...(contributions ? { estimatingAttempts: contributions.attempts } : {}),
 			feedback: await loadProposalBlockingFeedback(store, text(row.proposal_id)),
 			decision: accepted ? {
 				id: decision!.ref.id, revision: Number(decision!.ref.revision), digest: decision!.ref.digest!,

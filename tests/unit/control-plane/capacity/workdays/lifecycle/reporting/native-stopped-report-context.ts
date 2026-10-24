@@ -17,8 +17,9 @@ export async function proveNativeStoppedReportContext(owner:CapacityGovernanceDa
  if(!checked.ok||!checked.data)throw new Error('Exact controlled profile required: '+JSON.stringify(checked.diagnostics));expect(checked.ok).toBe(true);
  const snapshot={project:{agents:[{definition:checked.data,activities:['estimating']}]}};
  const draft={id:proposalId,executionPlan:{workItems:[{id:'controlled-work',agentClass:'configured-owner',review:'none',acceptanceCriteria:['Preserve exact source.']}]}};
- const participants=workdayParticipants({agentProfilesByProjectId:snapshot,proposalsByProjectId:{project:[draft]}});expect(participants).toHaveLength(1);
- const turn=`planning:${id}:1:${participants[0]!.id}`;
+ expect(workdayParticipants({agentProfilesByProjectId:snapshot,proposalsByProjectId:{project:[draft]}})).toEqual([]);
+ // Original pre-cutover round identity is historical input, never new admission.
+ const turn=`planning:${id}:1:project/native/configured-estimator:estimating:${proposalId}`;
  const reference={store:'treedx',model:'proposal',id:proposalId,revision:6,digest:'sha256:'+'a'.repeat(64),repository:'controlled-native-library',commit:'b'.repeat(40),path:'proposals/controlled-work.mdx'};
  const estimated={...draft,executionPlan:{workItems:[{...draft.executionPlan.workItems[0]!,estimate:{expectedSeconds:10,maximumSeconds:20,rationale:'Controlled original source input; no model result claimed.'}}]}};
  const reads=new CapacityWorkdayRunRepository(owner),writes=new CapacityWorkdayRunWriteRepository(owner),original=(await reads.get('team',originalId))!;

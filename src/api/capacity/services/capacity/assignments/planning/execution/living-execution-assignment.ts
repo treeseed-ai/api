@@ -77,7 +77,10 @@ async function issueLivingTreeDxAuthority(store: LivingExecutionStore, run: Para
 	})));
 	const boundRepositoryId = ({ binding }: (typeof projectBindings)[number]) => String(binding?.repositoryId
 		?? record(record(record(binding?.topology).contentRepository).treeDx).repositoryId ?? '');
-	const repositoryProjectId = String(projectBindings.find((entry) => boundRepositoryId(entry) === repositoryId)?.project.id ?? '');
+	const owners = projectBindings.filter(entry => boundRepositoryId(entry) === repositoryId);
+	const repositoryProjectId = owners.length === 1 ? String(owners[0]!.project.id) : '';
+	if (assignment.workspace.mode === 'treedx' && !repositoryProjectId) throw new CapacityGovernanceError(
+		'assignment_content_project_mismatch', 'A writable workspace requires one exact library owner in the admitted team.', 409);
 	const readRepositories = projectBindings.flatMap(({ project, binding }) => {
 		const candidateRepositoryId = String(binding?.repositoryId
 			?? record(record(record(binding?.topology).contentRepository).treeDx).repositoryId ?? '');
@@ -96,7 +99,7 @@ async function issueLivingTreeDxAuthority(store: LivingExecutionStore, run: Para
 	});
 	let workspace: Record<string, unknown> = {};
 	if (assignment.workspace.mode === 'treedx') {
-		workspace = await store.createCapacityWorkdayTreeDxWorkspace({ id: assignment.projectId }, run, {
+		workspace = await store.createCapacityWorkdayTreeDxWorkspace({ id: repositoryProjectId }, run, {
 			workspaceId: assignment.workspace.workspaceId,
 			repositoryId: assignment.workspace.repository,
 			assignmentId: assignment.id,

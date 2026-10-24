@@ -16,6 +16,38 @@ import { ControlPlaneStore } from '../../../../../../src/api/persistence/store.t
 import { createCapacityControlPlane } from '../../../../../../src/api/capacity/control-plane.ts';
 
 describe('living execution TreeDX path authority', () => {
+	it.each(['bound', 'missing', 'ambiguous'])('creates a shared proposal estimate workspace only through its unique team library owner: %s', async mode => {
+		const input = canonicalOfferBuildInput(), candidate = structuredClone(input.candidate);
+		candidate.node.kind = 'estimating'; candidate.node.pairRole = null; delete candidate.node.workItemId; candidate.node.workspace = 'treedx';
+		candidate.node.sourceRef = { ...candidate.node.sourceRef, repository: 'ui-library' };
+		candidate.node.requestedPermissions = { content: { read: ['proposal'], write: ['proposal'] }, tools: ['source.read'] };
+		candidate.effectiveProfile.activity = 'estimating'; candidate.effectiveProfile.permissionCeiling = candidate.node.requestedPermissions;
+		candidate.contextRefs = [candidate.node.sourceRef]; candidate.projectContentRepositoryId = 'worker-library';
+		const plan = input.run.parameters.appliedPlan;
+		const run = { ...input.run, parameters: { ...input.run.parameters, projects: [candidate.node.projectId],
+			scheduledProjectIds: [candidate.node.projectId], appliedPlan: { ...plan,
+				planningRounds: plan.planningRounds.map((round,index)=>({ ...round, state: index === 0 ? 'active' : 'pending' })) } } };
+		const host = new ControlPlaneStore({}, { prepare: () => { throw new Error('Unexpected SQL in controlled admission UNIT'); } });
+		host.ensureInitialized = vi.fn(); host.all = vi.fn().mockResolvedValue([]); host.first = vi.fn().mockResolvedValue(null);
+		host.listTeamProjects = vi.fn().mockResolvedValue([{ id: candidate.node.projectId, slug: candidate.node.projectId },
+			...(mode === 'missing' ? [] : [{ id: 'ui', slug: 'ui' }]), ...(mode === 'ambiguous' ? [{ id: 'duplicate-owner', slug: 'duplicate-owner' }] : [])]);
+		host.getProjectByTeamAndSlug = vi.fn().mockResolvedValue(null);
+		host.getProjectTreeDxLibrary = vi.fn(async (id: string) => ({ repositoryId: id === candidate.node.projectId ? 'worker-library' : 'ui-library' })) as never;
+		const store = createCapacityControlPlane(host);
+		const createWorkspace = vi.spyOn(store, 'createCapacityWorkdayTreeDxWorkspace').mockResolvedValue({ baseCommitSha: candidate.node.sourceRef.commit });
+		boundary.runs.mockResolvedValue([run]); boundary.ready.mockResolvedValue([candidate]); boundary.allocation.mockResolvedValue(input.allocationInputs);
+		boundary.admit.mockReset().mockImplementation(async (_store, value) => ({ id: value.assignment.id, assignmentAttempt: value.assignment }));
+		const execute = () => assignNextReadyExecutionNode(store, input.principal, input.providerSessionId, input.providers, input.now);
+		if (mode === 'bound') {
+			const result = await execute(); expect(result.assignment?.assignmentAttempt?.projectId).toBe(candidate.node.projectId);
+			expect(createWorkspace).toHaveBeenCalledWith({ id: 'ui' }, run,
+				expect.objectContaining({ repositoryId: 'ui-library', baseRef: candidate.node.sourceRef.commit }));
+			expect(boundary.admit.mock.calls[0]![1].treedxProxyHandle).toMatchObject({ projectId: candidate.node.projectId, repositoryProjectId: 'ui' });
+		} else {
+			await expect(execute()).rejects.toMatchObject({ code: 'assignment_content_project_mismatch' });
+			expect(createWorkspace).not.toHaveBeenCalled(); expect(boundary.admit).not.toHaveBeenCalled();
+		}
+	});
 	it('ranks only fully provider-qualified candidates and records the exact eligible inventory without changing rejected high-priority input', async () => {
 		const input = canonicalOfferBuildInput(), qualified = { ...input.candidate, node: { ...input.candidate.node, id: 'qualified', priority: 1 } };
 		const denied = { ...qualified, node: { ...qualified.node, id: 'denied', priority: 100, requiredCapabilities: ['unavailable-capability'] } };
