@@ -58,18 +58,18 @@
     },
     "identity": {
       "repository": "https://github.com/treeseed-ai/identity.git",
-      "commit": "7fcdf481ba0a17bebc2a969efab3e4db5a5b84fa",
-      "sha256": "966a75ef5a4bf8e5fe9d5a90361cc52c8b7aae9c12ccafcfeef4d6f7b91b1781"
+      "commit": "5085c1887d56daab4440c8c2b47ea712388a4393",
+      "sha256": "ef75add5b4a563b1a37794c6b79fdd40cdb7d0561895f320e4e09c2556e05283"
     },
     "admin": {
       "repository": "https://github.com/treeseed-ai/admin.git",
-      "commit": "6376e2f5492d6f2d2010c7a9c221c19e0565ed53",
-      "sha256": "46ec80cf6ad9cdca4880920fb677b93a92970b81e5f477e94b3941d3a24c0d60"
+      "commit": "6416f3741a8dbbf294e2edb757d0c57fcb182a3b",
+      "sha256": "acbad5fe017601fba175e68ecab35c7d52224e9d0779bd8aeb869ca0d9d3067d"
     },
     "deployment": {
       "repository": "https://github.com/treeseed-ai/deployment.git",
-      "commit": "29d16c98d7e7edf7fbfa7f39b1a34477984097f3",
-      "sha256": "dbd6909878933b09372d7f4073cb8877a979b2e8e8690993b0b4da9920e0600e"
+      "commit": "497da1a7f07169520d95e1f78cdd07781f1fdb07",
+      "sha256": "83e8b50ab068f38b7d55edf2ca1c44e478f56fdebe0a7a706d07e1e2827c48a0"
     }
   },
   "cordis": {
