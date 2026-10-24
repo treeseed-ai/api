@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { compileWorkday, DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { describe, expect, it } from 'vitest';
 import { relationAuthoringDatabase, object } from '../../../knowledge/workspaces/architecture/relation-authoring-fixture.ts';
@@ -66,13 +66,26 @@ describe('governed proposal contract authority with divergent native authoring',
 			await f.query('INSERT INTO capacity_workday_runs (id,team_id,execution_kind,execution_mode,status,parameters_json,started_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',[workdayId,'team','workday','simulation','running',JSON.stringify(parameters),now,now,now]);
 			// Moving current library authority cannot replace the original freeze.
 			await f.store.upsertProjectTreeDxLibrary(projectId,{contentRepositoryRef:'refs/heads/main'});
-			const revision={...input,initial:false,proposal:{...input.proposal,activeVersion:1,metadata:{contentProvenance:{repositoryId:repoId,contentPath:created.receipt.path,commitSha:created.receipt.commitSha}}},update:{workdayId,request:'Genuine estimate revision on exact prior private source.'}};
+			const revision={...input,initial:false,proposal:{...input.proposal,activeVersion:1,activeContentHash:created.receipt.digest,metadata:{contentProvenance:{repositoryId:repoId,contentPath:created.receipt.path,commitSha:created.receipt.commitSha,digest:created.receipt.digest}}},update:{workdayId,request:'Genuine estimate revision on exact prior private source.'}};
 			const revised=await commitProposalVersionContent(revision);
 			expect(revised.update.body).toBe(revision.update.request);
 			const revisedSource=object((await read(revised.receipt.commitSha,revised.receipt.path)).file).content;
 			const revisedDefinition=parseFrontmatterDocument(String(revisedSource)).frontmatter;
 			expect(revisedDefinition.executionPlan).toEqual(input.update.executionPlan);
 			expect(revisedDefinition.groupIds).toEqual(input.update.groupIds);
+			// Retained TreeDX commit exists but SQL still indexes the old source:
+			// replay the real authoring boundary, not a hand-coded base=head retry.
+			const heldRevision=structuredClone(revision),beforeReplay=await f.query('SELECT * FROM capacity_provider_assignments');
+			const recovered=await commitProposalVersionContent(revision);
+			expect(recovered.receipt.commitSha).toBe(revised.receipt.commitSha);
+			expect(recovered.receipt.changedPaths).toEqual([]);
+			expect(revision).toEqual(heldRevision);
+			expect(await f.query('SELECT * FROM capacity_provider_assignments')).toEqual(beforeReplay);
+			const recoveredRead=await read(recovered.receipt.commitSha,recovered.receipt.path);
+			expect(createHash('sha256').update(String(object(recoveredRead.file).content)).digest('hex')).toBe(recovered.receipt.digest);
+			const replayWorkspace=String(recovered.receipt.changeset.workspaceId??'');
+			expect(replayWorkspace).not.toBe('');
+			expect(object(await f.client.workspaces.get(replayWorkspace)).status).toBe('closed');
 			expect((await read(revised.receipt.commitSha,retainedPath)).file).toMatchObject({content:retained});
 			await expect(read(revised.receipt.commitSha,typePath)).rejects.toMatchObject({status:404});
 			expect(await head()).toBe(created.receipt.commitSha);

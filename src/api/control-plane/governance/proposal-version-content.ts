@@ -10,6 +10,7 @@ import { treeDxWorkspaceId } from '../../knowledge/workspaces/identity.ts';
 import { CapacityWorkdayRunRepository } from '../../capacity/repositories/capacity/workdays/workday-run.ts';
 import { parseFrontmatterDocument } from '../../content/frontmatter.ts';
 import { readExactProposal } from '../../governance/executable-proposal.ts';
+import { branchMovedConflict } from '../../discussions/discussion-workspace.ts';
 
 type Row = Record<string, unknown>;
 function object(value: unknown): Row { if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row; if (typeof value === 'string') try { return object(JSON.parse(value)); } catch { return {}; } return {}; }
@@ -56,8 +57,18 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 	const types = list(input.update.proposalTypes).length ? list(input.update.proposalTypes) : list(input.proposal.proposalTypes ?? input.proposal.proposal_types_json);
 	const proposalSlug = text(input.proposal.contentProposalSlug, input.proposal.content_proposal_slug) || slug(title);
 	const path = text(provenance.contentPath) || projectLibraryPath(connection.contentPath, 'proposals/governance', `${slug(proposalSlug)}.mdx`); const branchName = simulationRef ?? `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
-	const baseRef = simulation ? sourceCommit : branchName;
-	const workspace = await connection.client.createWorkspace({ workspaceId: treeDxWorkspaceId(randomUUID()), repoId: connection.repositoryId, baseRef, branchName, mode: 'writable', allowedPaths: simulation ? [path] : connection.allowedPaths, ttlSeconds: 600 });
+	let baseRef = simulation ? sourceCommit : branchName;
+	const request = { workspaceId: treeDxWorkspaceId(randomUUID()), repoId: connection.repositoryId, baseRef, branchName, mode: 'writable' as const, allowedPaths: simulation ? [path] : connection.allowedPaths, ttlSeconds: 600 };
+	let workspace;
+	try { workspace = await connection.client.createWorkspace(request); }
+	catch (error) {
+		if (!simulation || !branchMovedConflict(error)) throw error;
+		// TreeDX may have committed before SQL publication completed. Reopen only
+		// this workday/proposal's owned branch; canonical fields still come from
+		// the exact SQL source below, never from an unaccepted private revision.
+		baseRef = branchName;
+		workspace = await connection.client.createWorkspace({ ...request, baseRef });
+	}
 	const expectedBase = text(input.update.expectedTreeDxBase);
 	if (expectedBase && expectedBase !== workspace.baseCommitSha) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw Object.assign(new Error('The proposal content branch changed. Compare and rebase before publishing.'), { status: 409, code: 'proposal_treedx_base_stale', currentBase: workspace.baseCommitSha }); }
 	if (!types.length) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw Object.assign(new Error('Select at least one repository proposal type before publishing.'), { status: 422, code: 'proposal_type_required' }); }
@@ -128,7 +139,7 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 		if (before === source) {
 			await connection.client.closeWorkspace(workspace.workspaceId);
 			return { receipt: { path, commitSha: workspace.baseCommitSha, branchName, changedPaths: [], digest: expectedDigest,
-				proposalVersion: version, changeset: { files: [], resultCommitSha: workspace.baseCommitSha } },
+				proposalVersion: version, changeset: { workspaceId: workspace.workspaceId, files: [], resultCommitSha: workspace.baseCommitSha } },
 				update: { ...input.update, title, summary, body, proposalTypes: types, metadata: nextMetadata,
 					contentProvenance: { repositoryId: connection.repositoryId, contentPath: path, commitSha: workspace.baseCommitSha, digest: expectedDigest } } };
 		}
