@@ -1,0 +1,139 @@
+{
+  "name": "@treeseed-cordis/api",
+  "version": "0.0.0-cordis.1",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "packageManager": "bun@1.4.4",
+  "engines": {
+    "node": ">=24.19.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/container.d.ts",
+      "default": "./dist/src/container.js"
+    },
+    "./container": {
+      "types": "./dist/src/container.d.ts",
+      "default": "./dist/src/container.js"
+    }
+  },
+  "files": [
+    "dist/src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "check": "bun node_modules/@treeseed-cordis/sdk/dist/src/source-policy.js check",
+    "build": "bun node_modules/@treeseed-cordis/sdk/dist/src/source-policy.js build && bun dist/src/container.js --metadata",
+    "test:unit": "bun test ./tests --test-name-pattern '^unit:'",
+    "test:integration": "bun test ./tests --test-name-pattern '^integration:'",
+    "test:smoke": "bun test ./tests --test-name-pattern '^smoke:'",
+    "verify": "bun run check && bun run build && bun run test:unit && bun run test:integration && bun run test:smoke"
+  },
+  "peerDependencies": {
+    "@treeseed-cordis/sdk": "0.0.0-cordis.4"
+  },
+  "devDependencies": {
+    "@treeseed-cordis/sdk": "file:vendor/sdk.tgz",
+    "typescript": "5.9.3",
+    "@types/bun": "1.4.4",
+    "@types/node": "24.10.1"
+  },
+  "dependencies": {
+    "cordis": "4.0.0-rc.12"
+  },
+  "cordisCandidate": {
+    "sdk": {
+      "repository": "https://github.com/treeseed-ai/sdk.git",
+      "commit": "c03a2b0eab89786439eddea3cff8161e85676b3e",
+      "sha256": "d6d0f2f4379d2d95403a226d20899ad22a78a11ccdbb4106116ef0a925295d1b"
+    }
+  },
+  "cordis": {
+    "id": "node-api",
+    "pluginId": "node-api",
+    "capability": "container.api",
+    "contractVersion": "0.3.0-cordis.1",
+    "target": "deployment",
+    "provide": [
+      "container.api"
+    ],
+    "inject": [
+      "deployment.engine",
+      "container.database",
+      "container.identity"
+    ]
+  },
+  "cordisService": {
+    "role": "api",
+    "service": {
+      "command": [
+        "--serve",
+        "--configuration",
+        "/run/secrets/api-config"
+      ],
+      "user": "installation-owner",
+      "workerSocket": true,
+      "volumes": [],
+      "secrets": [
+        {
+          "source": "api-config",
+          "target": "/run/secrets/api-config"
+        }
+      ],
+      "portTarget": null
+    },
+    "slots": {
+      "api-config": {
+        "kind": "json",
+        "value": {
+          "installationId": {
+            "$installationId": true
+          },
+          "origin": {
+            "$origin": ""
+          },
+          "issuer": {
+            "$origin": "/identity/realms/cordis"
+          },
+          "identityInternalOrigin": "http://identity:8080",
+          "clientId": "cordis-admin",
+          "clientSecret": {
+            "$secret": "oidc-client"
+          },
+          "databaseUrl": {
+            "$template": [
+              "postgresql://cordis:",
+              {
+                "$secret": "database-password"
+              },
+              "@database:5432/cordis"
+            ]
+          },
+          "bootstrapSubject": {
+            "$secret": "bootstrap-subject"
+          },
+          "workerSocket": "/run/cordis-host/worker.sock",
+          "assetDigest": {
+            "$assetDigest": true
+          }
+        }
+      }
+    },
+    "readiness": {
+      "kind": "http-json",
+      "path": "/health/ready",
+      "expected": {
+        "ready": true,
+        "installationId": {
+          "$installationId": true
+        },
+        "assetDigest": {
+          "$assetDigest": true
+        },
+        "nativeComposition": true
+      }
+    }
+  }
+}
