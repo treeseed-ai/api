@@ -70,7 +70,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/contributions/contribution-graph.test.ts
-    testName: "keeps cross-project subscribers with the same configured name independent without a hidden project filter"
+    testName: "keeps each cross-project subscriber bound to its own review when configured names coincide"
   api.golden.contribution-readiness-counter:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -80,7 +80,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/contributions/contribution-graph.test.ts
-    testName: "binds each same-class author to its own acting work and another author own review budget in documentation-first dependency order"
+    testName: "binds each same-class author to its own acting and reviewing profiles and budgets in documentation-first dependency order"
   api.golden.contribution-current-profile-custody:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -90,7 +90,7 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/contributions/contribution-graph.test.ts
-    testName: "refuses missing forged moved foreign or unsubscribed contributor authority and infeasible independent review"
+    testName: "refuses missing forged moved foreign or unsubscribed contributor authority and missing own review budgets"
   api.golden.contribution-cohort-lifecycle:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
