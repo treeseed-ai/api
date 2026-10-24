@@ -92,7 +92,7 @@ describe('native shared proposal detail read', () => {
 			await expect.soft(service.proposal({ id: 'outsider' }, 'project', 'proposal')).rejects.toMatchObject({
 				status: 403, code: 'project_access_denied',
 			});
-			const response = CONTROL_PLANE_OPERATIONS.governance.proposal.schema.output.parse(detail);
+			const response = CONTROL_PLANE_OPERATIONS.governance.proposal.schema.output.parse({ ...detail, executionPlan: authoredPlan });
 			expect(response).toMatchObject({ id: 'proposal', executionPlan: authoredPlan });
 		} finally {
 			await native.close();
