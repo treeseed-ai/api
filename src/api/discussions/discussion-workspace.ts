@@ -16,7 +16,7 @@ type WorkspaceConnection = {
 
 type WorkspaceStore = Parameters<typeof recordTreeDxWorkspaceState>[0];
 
-function branchMovedConflict(error: unknown) {
+export function branchMovedConflict(error: unknown) {
 	const value = error as { status?: unknown; code?: unknown; message?: unknown };
 	return Number(value?.status) === 409 && String(value?.code) === 'conflict'
 		&& String(value?.message).includes('Workspace branch already exists at a different commit');

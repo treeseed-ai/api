@@ -5,7 +5,7 @@ import {describe,expect,it} from 'vitest';
 import {assignmentAttemptSchema,assignmentResultSchema} from '@treeseed/sdk/agent-capacity';
 import {assignment as sourceAttempt} from '../execution/fixtures/assignment.ts';
 import {serializeProviderAssignmentRow} from '../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
-import {integrateAssignmentEstimate} from '../../../../../src/api/capacity/services/capacity/assignments/planning/estimates/integration.ts';
+import {integrateAssignmentEstimate,retryEstimateContention} from '../../../../../src/api/capacity/services/capacity/assignments/planning/estimates/integration.ts';
 import {relationAuthoringDatabase,object} from '../../knowledge/workspaces/architecture/relation-authoring-fixture.ts';
 import {readyContributionProposal} from '../../governance/proposals/architecture/ready-proposal-fixture.ts';
 
@@ -31,6 +31,21 @@ describe('native estimate fixed-source custody',()=>{
    const result=assignmentResultSchema.parse({schemaVersion:'treeseed.assignment-result/v1',id:'result-'+id,assignmentId:attempt.id,status:'completed',summary:'Controlled native integration input; no model execution or genuine estimate claimed.',references:[{kind:'treedx',projectId,repository,workspaceId:candidate.workspaceId,commit:candidate.commitSha,path}],verification:[],diagnostics:[],usage:{elapsedSeconds:0},completedAt:now});
    const snapshot=async()=>({proposal:await f.store.getGovernanceProposal(id),versions:await f.store.all('SELECT * FROM governance_proposal_versions WHERE proposal_id=? ORDER BY version',[id]),events:await f.store.all('SELECT * FROM governance_events WHERE proposal_id=? ORDER BY id',[id]),refs:await f.client.repositories.refs(repository)});
    const setCurrent=async(value:Record<string,unknown>)=>{const content=await publish(value,candidate.commitSha),current=await f.store.getGovernanceProposal(id);expect(current).toBeDefined();await f.store.updateGovernanceProposalDraft(f.principal,id,{title:value.title,summary:value.summary,body:value.request,expectedProposalVersion:current!.activeVersion,changeReason:'Controlled fixed-authority input',contentProvenance:{repositoryId:repository,contentPath:path,commitSha:content.commitSha,digest:content.digest}});};
+   const branchName='refs/heads/estimate-contention-'+randomUUID();
+   const seed=object(await f.client.workspaces.create(repository,{baseRef:frozen.commitSha,branchName,mode:'writable',allowedPaths:[path]}));open.add(String(seed.workspaceId));
+   await f.client.files.write(String(seed.workspaceId),{path,content:candidate.raw});
+   const moved=object(await f.client.files.commit(String(seed.workspaceId),{message:'Controlled concurrent estimate publication',author:{name:'Estimate fixture',email:'estimate-fixture@example.invalid'}}));
+   await f.client.workspaces.close(String(seed.workspaceId));open.delete(String(seed.workspaceId));
+   let publications=0;
+   await retryEstimateContention(async()=>{
+    publications+=1;const currentRefs=object(await f.client.repositories.refs(repository));
+    const head=(currentRefs.refs as unknown[]).map(object).find(value=>value.name===branchName);expect(head).toBeDefined();
+    const baseRef=publications===1?frozen.commitSha:String(head!.target??head!.sha);
+    const workspace=object(await f.client.workspaces.create(repository,{baseRef,branchName,mode:'writable',allowedPaths:[path]}));
+    open.add(String(workspace.workspaceId));expect(String(workspace.baseCommitSha??workspace.baseCommit)).toBe(String(moved.commitSha));
+    await f.client.workspaces.close(String(workspace.workspaceId));open.delete(String(workspace.workspaceId));
+   },{deadlineMs:Date.now()+10_000});
+   expect(publications).toBe(2);
    const held=structuredClone({original,result});
    for(const changed of[{title:'Different fixed title'},{request:'Different fixed request'},{summary:'Different fixed summary'}]){await setCurrent({...candidateDefinition,...changed});const before=await snapshot();await expect(integrateAssignmentEstimate(f.store,original,result)).rejects.toMatchObject({code:'assignment_estimate_source_changed',status:409});expect(await snapshot()).toEqual(before);expect({original,result}).toEqual(held);}
    await setCurrent(candidateDefinition);const before=await snapshot();expect(f.peerStore).toBeDefined();await Promise.all([integrateAssignmentEstimate(f.store,original,result),integrateAssignmentEstimate(f.peerStore!,original,result)]);expect(await snapshot()).toEqual(before);expect({original,result}).toEqual(held);

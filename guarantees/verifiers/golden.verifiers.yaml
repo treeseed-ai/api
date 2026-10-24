@@ -36,6 +36,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/contributions/proposal-source-context-native.test.ts
     testName: "reads acting and reviewing context from the exact shared proposal owner while preserving worker identity and refusing foreign moved or corrupt authority"
+  api.golden.git-assignment-scope:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/contributions/shared-proposal-context.test.ts
+    testName: "includes exact accepted scope for Git-only work without general content authority"
+  api.golden.estimate-branch-contention:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/assignment-estimate-integration.test.ts
+    testName: "re-reads after a concurrent estimate moves the writable branch within the original bound"
   api.golden.decision-group-admission:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

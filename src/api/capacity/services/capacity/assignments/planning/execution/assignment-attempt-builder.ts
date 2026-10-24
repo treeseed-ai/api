@@ -66,6 +66,11 @@ function uniqueReferences(values: ExactEntityReference[]): ExactEntityReference[
 	return [...new Map(values.map((reference) => [stable(reference), reference])).values()];
 }
 
+function assignmentScope(candidate: ReadyExecutionNode): ExactEntityReference[] {
+	return uniqueReferences([candidate.node.sourceRef, ...(candidate.node.authorityRefs ?? [])
+		.filter(reference => reference.model === 'decision')].filter(reference => reference.store === 'treedx'));
+}
+
 function communicationWritePaths(path: string | undefined) {
 	const normalized = path?.replace(/\\/gu, '/').replace(/^\.\//u, '') ?? '';
 	const marker = 'discussion-messages/';
@@ -131,6 +136,9 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string, run: Durable
 	};
 	if (denied.read.length || denied.write.length || denied.tools.length) throw new CapacityGovernanceError(
 		'assignment_permission_ceiling_exceeded', 'Ready node requests authority outside its effective activity profile.', 409, denied);
+	const scope = assignmentScope(candidate);
+	if (scope.some(reference => !ceiling.content.read.includes(reference.model as never))) throw new CapacityGovernanceError(
+		'assignment_permission_ceiling_exceeded', 'Exact assignment scope exceeds its effective activity profile.', 409);
 	if (candidate.node.workspace === 'git' && !requested.tools.includes('source.write')) throw new CapacityGovernanceError(
 		'assignment_source_write_required', 'A Git workspace requires source.write authority.', 409);
 	if (candidate.node.workspace !== 'git' && requested.tools.includes('source.write')) throw new CapacityGovernanceError(
@@ -167,9 +175,9 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string, run: Durable
 					repository: treeDxBase.repository, commit: treeDxBase.commit,
 					path: `${model}s/${assignmentId}.mdx` })]) : [];
 	return {
-		contentRead: uniqueReferences([candidate.node.sourceRef, ...communicationDiscussionReference(candidate),
+		contentRead: uniqueReferences([...scope, ...[candidate.node.sourceRef, ...communicationDiscussionReference(candidate),
 			...(candidate.node.authorityRefs ?? []), ...contentRefs]
-			.filter((reference) => reference.store === 'treedx' && readableModels.has(reference.model))),
+			.filter((reference) => reference.store === 'treedx' && readableModels.has(reference.model))]),
 		contentWrite,
 		sourceRead,
 		sourceWrite: candidate.node.workspace === 'git' && requested.tools.includes('source.write')
@@ -297,7 +305,7 @@ export function buildAssignmentAttempt(input: {
 	const exactGrant = grant(candidate, assignmentId, input.run);
 	if (candidate.node.kind === 'reporting') exactGrant.contentRead.push(candidate.node.sourceRef);
 	const contentRead = new Set(exactGrant.contentRead.map(stable));
-	const contextRefs = uniqueReferences([...candidate.contextRefs, candidate.effectiveProfile.profileRef]).filter((reference) => reference.store === 'treedx'
+	const contextRefs = uniqueReferences([...candidate.contextRefs, ...assignmentScope(candidate), candidate.effectiveProfile.profileRef]).filter((reference) => reference.store === 'treedx'
 		? contentRead.has(stable(reference)) : reference.store === 'git' && Boolean(reference.repository && exactGrant.sourceRead.includes(reference.repository)));
 	if (candidate.node.kind === 'reporting') contextRefs.push(candidate.node.sourceRef);
 	const assignment = assignmentAttemptSchema.parse({
