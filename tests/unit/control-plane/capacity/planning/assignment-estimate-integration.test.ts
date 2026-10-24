@@ -14,6 +14,18 @@ const candidate = { ...frozen, executionPlan: { workItems: [
 ] } };
 
 describe('exact estimator result integration', () => {
+	it('re-reads after a concurrent estimate moves the writable branch within the original bound', async () => {
+		const conflict = Object.assign(new Error('Workspace branch already exists at a different commit.'), { status: 409, code: 'conflict' });
+		const write = vi.fn().mockRejectedValueOnce(conflict).mockResolvedValueOnce(undefined), wait = vi.fn(async () => undefined);
+		await retryEstimateContention(write, { deadlineMs: 1_000, now: () => 0, wait });
+		expect(write).toHaveBeenCalledTimes(2); expect(wait).toHaveBeenCalledExactlyOnceWith(250);
+		for (const error of [conflict, Object.assign(new Error(conflict.message), { status: 409, code: 'source_changed' }),
+			Object.assign(new Error(conflict.message), { status: 503, code: 'conflict' })]) {
+			const denied = vi.fn(async () => { throw error; });
+			await expect(retryEstimateContention(denied, { deadlineMs: error === conflict ? 250 : 1_000, now: () => 0, wait })).rejects.toBe(error);
+			expect(denied).toHaveBeenCalledOnce();
+		}
+	});
 	it('denies an estimator result after current fixed proposal authority changes while retaining allowed estimate refinements and original observations',()=>{
 		for(const changed of [{title:'Different fixed title'},{request:'Different fixed request'},{summary:'Different fixed summary'},{projectId:'foreign-project'},{id:'foreign-proposal'}]){
 			const input={frozen,candidate,current:{...frozen,...changed},agentClass:'engineer'},held=structuredClone(input);

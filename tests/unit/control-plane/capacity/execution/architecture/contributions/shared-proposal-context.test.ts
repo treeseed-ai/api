@@ -8,9 +8,27 @@ vi.mock('../../../../../../../src/api/knowledge/gateway-treedx-connection.ts', (
 import { resolveKnowledgeGatewayConnection } from '../../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { workItemContext } from '../../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import { readyContributionProposal, readyProposal } from '../../../../governance/proposals/architecture/ready-proposal-fixture.ts';
+import { buildAssignmentAttempt } from '../../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
+import { canonicalOfferBuildInput, candidate, gitRef, permissions as grantedPermissions, sourceRef as assignmentSource } from '../../fixtures/assignment-attempt-fixtures.ts';
 const sourceRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
  digest: `sha256:${'a'.repeat(64)}`, repository: 'repository', commit: 'b'.repeat(40), path: 'proposals/one.mdx' };
 const permissions = { content: { read: ['proposal', 'decision'], write: [] }, tools: ['source.read'] };
+it('includes exact accepted scope for Git-only work without general content authority', () => {
+	const exact = structuredClone(candidate), decision = { ...assignmentSource, model: 'decision', id: 'accepted', path: 'decisions/accepted.mdx' };
+	exact.node.requestedPermissions.content.read = [];
+	exact.node.authorityRefs = [decision];
+	exact.effectiveProfile.permissionCeiling.content.read = ['proposal', 'decision'];
+	const input = { ...canonicalOfferBuildInput(), candidate: exact }, held = structuredClone(exact);
+	const issued = buildAssignmentAttempt(input).assignment;
+	expect(issued.contextRefs).toEqual([gitRef, assignmentSource, decision]);
+	expect(issued.grant.contentRead).toEqual([assignmentSource, decision]);
+	expect(issued.grant.contentWrite).toEqual([]); expect(issued.grant.tools).toEqual(grantedPermissions.tools);
+	expect(exact).toEqual(held);
+	for (const read of [[], ['proposal'], ['decision']]) {
+		exact.effectiveProfile.permissionCeiling.content.read = read as never;
+		expect(() => buildAssignmentAttempt(input)).toThrow('Exact assignment scope exceeds its effective activity profile.');
+	}
+});
 // Controlled UNIT content; native SQL/HTTP/Git owner proof is adjacent.
 it('reads shared planning proposal context through its owning project binding and refuses a foreign team', async () => {
 	for (const kind of ['planning', 'estimating']) for (const teamId of ['team', 'foreign-team']) {

@@ -1,5 +1,6 @@
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
 import { setTimeout as delay } from 'node:timers/promises';
+import { branchMovedConflict } from '../../../../../../discussions/discussion-workspace.ts';
 import type { AssignmentResult, ExactEntityReference } from '@treeseed/sdk/agent-capacity';
 import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError } from '../../../../../database.ts';
@@ -152,7 +153,7 @@ export async function retryEstimateContention(write: () => Promise<void>, input:
 		try { await write(); return; }
 		catch (error) {
 			const failure = error as { status?: number; message?: string };
-			if (failure.status !== 409 || !/\bconflict: writable lease already exists for /u.test(String(failure.message ?? ''))
+			if (!(branchMovedConflict(error) || (failure.status === 409 && /\bconflict: writable lease already exists for /u.test(String(failure.message ?? ''))))
 				|| now() + 250 >= input.deadlineMs) throw error;
 			await wait(250);
 		}

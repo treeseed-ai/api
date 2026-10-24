@@ -47,6 +47,27 @@ it('reads acting and reviewing context from the exact shared proposal owner whil
 		const observed = await connection!.client.readRepositoryFile({ repoId: own.repository, ref: own.commit, path: own.path, encoding: 'utf8', parseFrontmatter: true, allowProtected: true }) as { resolvedRef: string; file: { content: string; frontmatter: unknown } };
 		expect(observed.resolvedRef).toBe(own.commit); expect(observed.file.content).toBe(written.source); expect(observed.file.frontmatter).toEqual(profile);
 		expect(exact).toEqual(heldInput);
+		// Git-only contributions still require their exact accepted scope, even
+		// when they request no supplementary TreeDX reading or writing.
+		const accepted = f.publishContent('decisions/accepted.mdx', { id: 'accepted', proposalId: 'proposal', status: 'accepted' });
+		const decision = { store: 'treedx' as const, model: 'decision', id: 'accepted', repository: 'repository',
+			commit: accepted.commit, path: 'decisions/accepted.mdx' };
+		const acting = structuredClone(input.candidate);
+		acting.node.sourceRef = sourceRef; acting.node.authorityRefs = [decision];
+		acting.node.requestedPermissions.content.read = [];
+		acting.effectiveProfile.permissionCeiling.content.read = ['proposal', 'decision'];
+		const actingHeld = structuredClone(acting), worker = buildAssignmentAttempt({ ...input, candidate: acting }).assignment;
+		expect(worker.grant.contentRead).toEqual([sourceRef, decision]);
+		expect(worker.contextRefs).toEqual([...acting.contextRefs, sourceRef, decision]);
+		expect(worker.grant.contentWrite).toEqual([]); expect(worker.grant.tools).toEqual(acting.node.requestedPermissions.tools);
+		const scopeConnection = await resolveKnowledgeGatewayConnection(f.store, { projectId: 'project', write: false,
+			relationPaths: true, readRefs: worker.grant.contentRead.map(reference => reference.commit!) });
+		for (const reference of worker.grant.contentRead) {
+			const read = await scopeConnection!.client.readRepositoryFile({ repoId: reference.repository!, ref: reference.commit!,
+				path: reference.path!, encoding: 'utf8', parseFrontmatter: true, allowProtected: true }) as { resolvedRef: string; file: { frontmatter: { id: string } } };
+			expect(read.resolvedRef).toBe(reference.commit); expect(read.file.frontmatter.id).toBe(reference.id);
+		}
+		expect(acting).toEqual(actingHeld);
 		const before = await f.snapshot();
 		for (const kind of ['acting', 'reviewing']) {
 			const node = { teamId: 'team', projectId: 'worker', id: `${kind}-contribution`, kind, workItemId: item.id, sourceRef };
