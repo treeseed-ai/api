@@ -36,7 +36,7 @@ describe('native shared proposal detail read', () => {
 				...native.store,
 				getProjectDetails: async () => ({ project: { id: 'project', teamId: 'team' } }),
 				principalCanAccessTeam: async (principal: { id?: string }, teamId: string) => principal.id === 'reader' && teamId === 'team',
-				getGovernanceProposal: getGovernanceProposalMethod.bind(proposalStore),
+				getGovernanceProposal: getGovernanceProposalMethod.bind(proposalStore as never),
 				listGovernanceProposalVotes: async () => [],
 				listGovernanceEvents: async () => [],
 				governanceProposalReadiness: async () => ({ contentReady: true }),
