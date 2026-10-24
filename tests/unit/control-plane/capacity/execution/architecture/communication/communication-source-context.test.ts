@@ -8,6 +8,8 @@ import { ControlPlaneStore } from '../../../../../../../src/api/persistence/stor
 import { readyProposal } from '../../../../governance/proposals/architecture/ready-proposal-fixture.ts';
 import { postgresGraph } from '../../graph/architecture/living/living-postgres-fixture.ts';
 import { reconcileCommunicationExecutionGraph } from '../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { createCapacityControlPlane } from '../../../../../../../src/api/capacity/control-plane.ts';
+import { createWorkdayService } from '../../../../../../../src/api/control-plane/repositories/capacity/workday-service.ts';
 
 const gateway = vi.hoisted(() => ({ readRepositoryFile: vi.fn() }));
 vi.mock('../../../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({
@@ -130,6 +132,20 @@ describe('standalone communication exact source admission', () => {
 			});
 			expect((await f.left.pool.query('SELECT * FROM project_agent_classes ORDER BY id')).rows).toEqual(classes);
 			expect(await snapshot()).toEqual(before); expect(calls).toHaveLength(6);
+			const parameters = { durationSeconds: 180, deadlineAt: new Date(Date.now() + 180_000).toISOString() };
+			await f.left.pool.query(`INSERT INTO capacity_workday_runs (id,team_id,status,execution_kind,execution_mode,trigger_kind,
+				parameters_json,started_at,created_at,updated_at) VALUES ('conversation','team','running','conversation','production','discussion',$1,$2,$2,$2)`,
+				[JSON.stringify(parameters), now]);
+			const stop = createWorkdayService(createCapacityControlPlane(store));
+			const stopped = await stop.stop({ id: 'operator', roles: ['platform_admin'] }, 'team', 'conversation', { reason: 'invalid profile prevents admission' });
+			expect(stopped).toMatchObject({ run: { status: 'cancelled', parameters }, lifecycle: { plan: null },
+				terminalization: { assignmentCount: 0, unfinishedAssignmentCount: 0, settlementErrorCount: 0 },
+				reconciliation: { status: 'deferred', code: 'agent_profile_invalid' } });
+			expect(stopped.run.parameters).not.toHaveProperty('appliedPlan'); expect(stopped.run.reportRefs).toEqual({});
+			await expect(stop.stop({ id: 'operator', roles: ['platform_admin'] }, 'team', 'conversation', {}))
+				.rejects.toMatchObject({ code: 'workday_not_active' });
+			expect(await snapshot()).toEqual(before); expect(calls).toHaveLength(6);
+			expect((await f.left.pool.query('SELECT * FROM project_agent_classes ORDER BY id')).rows).toEqual(classes);
 			// Native owning context/SQL/HTTP boundary with controlled upstream source;
 			// not authenticated GitHub, issued provider execution, charge or physical closure.
 		} finally {

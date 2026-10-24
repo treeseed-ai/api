@@ -59,7 +59,14 @@ export function createWorkdayService(store: any, diagnosticEnvelopes?: Diagnosti
 				if (!run) throw new CapacityOperationError(404, 'workday_not_found', 'Workday not found.');
 				if (run.status !== 'running') throw new CapacityOperationError(409, 'workday_not_active', 'Only an active workday can enter closeout.');
 				const now = new Date().toISOString();
-				const lifecycle = await advanceLivingWorkday(store, run, now, true);
+				let lifecycle;
+				if (run.executionKind === 'conversation' && run.parameters.appliedPlan === undefined) {
+					// Failed discussion admission may precede plan creation. Fence its
+					// existing run through the canonical writer before terminalization.
+					const stopped = await store.updateCapacityWorkdayRun(teamId, runId, { status: 'cancelled', completedAt: now });
+					if (!stopped) throw new CapacityOperationError(404, 'workday_not_found', 'Conversation not found during stop.');
+					lifecycle = { changed: true, plan: null, status: stopped.status };
+				} else lifecycle = await advanceLivingWorkday(store, run, now, true);
 				const reason = String(body.reason ?? 'Workday stopped by an authorized operator.');
 				const terminalization = await store.terminalizeCapacityWorkdayAssignments(teamId, runId, {
 					now, settlementKeyPrefix: 'workday-operator-stop', source: 'capacity_workday_operator_stop',
