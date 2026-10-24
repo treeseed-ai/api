@@ -99,13 +99,14 @@ async function readGraph(store: any, teamId: string): Promise<TeamGraph> {
 }
 
 async function loadProfiles(store: any, teamId: string): Promise<Record<string, AgentDefinition>> {
-	const rows = await store.all(`SELECT project_id,handler_refs_json FROM project_agent_classes
+	const rows = await store.all(`SELECT project_id,handler_refs_json,id,status FROM project_agent_classes
 		WHERE team_id = ? ORDER BY project_id,id`, [teamId]);
 	const profiles: Record<string, AgentDefinition> = {};
 	for (const row of rows) for (const candidate of array(record(row.handler_refs_json).agents)) {
 		const validation = validateAgentDefinitionModel(candidate);
 		if (!validation.ok || !validation.data) throw Object.assign(
-			new CapacityOperationError(409, 'agent_profile_invalid', 'An active project agent class does not contain a valid minimal agent definition.'),
+			new CapacityOperationError(409, 'agent_profile_invalid',
+				`Agent profile ${text(record(candidate).id) || '(missing)'} in ${text(row.project_id)}/${text(row.id)} (${text(row.status)}) is invalid: ${validation.diagnostics.map(entry => entry.path).join(', ')}.`),
 			{ diagnostics: validation.diagnostics },
 		);
 		const key = `${text(row.project_id)}:${validation.data.id}`;

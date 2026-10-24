@@ -22,6 +22,22 @@ describe('workday stop when graph reconciliation fails', () => {
 		mocks.advance.mockReset();
 		mocks.reconcile.mockReset();
 	});
+	it('stops a partially admitted conversation without inventing a workday plan or bypassing canonical terminalization', async () => {
+		let run = { id: 'run-1', executionKind: 'conversation', status: 'running', parameters: { deadlineAt: '2026-10-24T01:00:00.000Z' } };
+		const held = structuredClone(run.parameters), terminalization = { assignmentCount: 0, settlementErrorCount: 0 };
+		const store = { getCapacityWorkdayRun: vi.fn(async () => run),
+			updateCapacityWorkdayRun: vi.fn(async (_team: string, _id: string, input: Record<string, unknown>) => {
+				run = { ...run, ...input } as typeof run; return run;
+			}), terminalizeCapacityWorkdayAssignments: vi.fn(async () => terminalization) };
+		mocks.advance.mockRejectedValue(new Error('No applied plan exists for this failed admission.'));
+		mocks.reconcile.mockRejectedValue(Object.assign(new Error('Invalid unrelated profile'), { code: 'agent_profile_invalid' }));
+		const response = await createWorkdayService(store).stop(principal, 'team-1', 'run-1', { reason: 'stop failed admission' });
+		expect(response).toMatchObject({ run: { status: 'cancelled' }, lifecycle: { changed: true, plan: null, status: 'cancelled' },
+			terminalization, reconciliation: { status: 'deferred', code: 'agent_profile_invalid' } });
+		expect(run.parameters).toEqual(held); expect(mocks.advance).not.toHaveBeenCalled();
+		expect(store.terminalizeCapacityWorkdayAssignments).toHaveBeenCalledOnce();
+		await expect(createWorkdayService(store).stop(principal, 'team-1', 'run-1', {})).rejects.toMatchObject({ code: 'workday_not_active' });
+	});
 	it('operator stop retains canonical closing authority without inventing an ended report and permits an unchanged closeout retry', async () => {
 		const plan = compileWorkday({ id: 'run-1', teamId: 'team-1', policyId: 'default', policyRevision: 1,
 			executionMode: 'simulation', startsAt: '2026-10-08T09:00:00.000Z', agentIds: [], policy: DEFAULT_WORKDAY_POLICY });
