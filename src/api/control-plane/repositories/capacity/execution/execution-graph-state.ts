@@ -45,8 +45,11 @@ export function applyOperationalState(current: TeamGraph, projected: TeamGraph, 
 		// the caller rejects it when a newer Actor candidate has completed.
 		// Historical review-return evidence must not replace a newer admitted
 		// attempt's running state: exact lifecycle closeout requires that state.
+		// Paired Actor history can also derive ready/blocked at that same revision;
+		// it is scheduling evidence, not a terminal result for the active attempt.
 		const applicableTerminal = !freshSimulationAttempt && terminal
-			&& !(activeAttempt && terminal.nodeRevision < prior.nodeRevision) && (prior?.pairRole !== 'reviewer'
+			&& !(activeAttempt && (terminal.nodeRevision < prior.nodeRevision
+				|| terminal.nodeRevision === prior.nodeRevision && ['ready', 'blocked'].includes(terminal.status))) && (prior?.pairRole !== 'reviewer'
 			|| terminal.status === 'completed' || terminal.nodeRevision >= prior.nodeRevision) ? terminal : undefined;
 		// The caller has already reconciled paired review chronology. Applying the
 		// selected terminal state across a projection revision repairs transient

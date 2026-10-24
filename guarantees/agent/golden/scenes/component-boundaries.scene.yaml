@@ -1152,6 +1152,12 @@ workflow:
   - id: architecture-rework-admission-incomplete
     action: { verifier: api.golden.architecture-rework-admission-incomplete }
     expect: { status: passed }
+  - id: architecture-rework-reviewer-moved-decision
+    action: { verifier: api.golden.architecture-rework-reviewer-moved-decision }
+    expect: { status: passed }
+  - id: architecture-rework-reviewer-missing-decision
+    action: { verifier: api.golden.architecture-rework-reviewer-missing-decision }
+    expect: { status: passed }
   - id: architecture-rework-admission-returned
     action: { verifier: api.golden.architecture-rework-admission-returned }
     expect: { status: passed }

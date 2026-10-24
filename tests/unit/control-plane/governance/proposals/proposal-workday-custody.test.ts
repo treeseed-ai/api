@@ -6,8 +6,8 @@ import { CapacityWorkdayRunRepository } from '../../../../../src/api/capacity/re
 import { recordTreeDxAuthoringState } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { projectTreeDxCommitSignals } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-change-projector.ts';
 import { serializeProposalDocument } from '../../../../../src/api/governance/proposal-document.ts';
-import { serializeFrontmatterDocument } from '../../../../../src/api/content/frontmatter.ts';
-import { readyProposal } from './architecture/ready-proposal-fixture.ts';
+import { parseFrontmatterDocument, serializeFrontmatterDocument } from '../../../../../src/api/content/frontmatter.ts';
+import { readyContributionProposal, readyProposal } from './architecture/ready-proposal-fixture.ts';
 
 vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', async original => ({
 	...await original<typeof import('../../../../../src/api/knowledge/gateway-treedx-connection.ts')>(), resolveKnowledgeGatewayConnection: vi.fn(),
@@ -143,6 +143,76 @@ describe('workday-scoped proposal authoring', () => {
 		expect(firstRequest.branchName).toBe(secondRequest.branchName);
 		expect(secondRequest.baseRef).toBe('b'.repeat(40));
 		expect(first.update.contentProvenance.commitSha).toBe(second.update.contentProvenance.commitSha);
+	});
+	it('recovers a retained private publication head without changing canonical source or escaping the owned proposal branch', async () => {
+		const { input, client, base, path } = fixture(), retained = 'c'.repeat(40), held = structuredClone(input);
+		const conflict = Object.assign(new Error('Workspace branch already exists at a different commit.'), { status: 409, code: 'conflict' });
+		client.createWorkspace.mockRejectedValueOnce(conflict).mockImplementationOnce(async () => ({ workspaceId: 'workspace-1', baseCommitSha: retained }));
+		client.readRepositoryFile.mockResolvedValue({ resolvedRef: retained, file: { content: 'before' } });
+		// Canonical bytes remain pinned even though the retained branch is ahead.
+		const proposal = { ...readyProposal(), id: input.proposal.id, projectId: input.proposal.projectId };
+		const source = serializeFrontmatterDocument(proposal, '');
+		input.proposal = { ...input.proposal, activeContentHash: createHash('sha256').update(source).digest('hex') } as typeof input.proposal;
+		Object.assign(input.proposal.metadata.contentProvenance, { repositoryId: 'repository-1', digest: createHash('sha256').update(source).digest('hex') });
+		client.readRepositoryFile.mockImplementation(async request => request.ref === base
+			? { resolvedRef: base, file: { content: source, frontmatter: proposal } }
+			: { resolvedRef: retained, file: { content: 'before' } });
+		const expectedInput = structuredClone(input), result = await commitProposalVersionContent(input);
+		const branchName = `refs/heads/workday-1-proposal-${createHash('sha256').update('proposal-1').digest('hex').slice(0, 16)}`;
+		expect(client.createWorkspace).toHaveBeenNthCalledWith(1, expect.objectContaining({ baseRef: base, branchName, allowedPaths: [path] }));
+		expect(client.createWorkspace).toHaveBeenNthCalledWith(2, expect.objectContaining({ baseRef: branchName, branchName, allowedPaths: [path] }));
+		expect(serializeProposalDocument).toHaveBeenLastCalledWith(expect.objectContaining({ executionPlan: proposal.executionPlan }));
+		expect(result.update.contentProvenance.commitSha).toBe('b'.repeat(40));
+		expect(input).toEqual(expectedInput); expect(input.proposal.metadata.contentProvenance.commitSha).toEqual(held.proposal.metadata.contentProvenance.commitSha);
+		expect(client.closeWorkspace).toHaveBeenCalledExactlyOnceWith('workspace-1');
+		expect(recordTreeDxAuthoringState).not.toHaveBeenCalled(); expect(projectTreeDxCommitSignals).not.toHaveBeenCalled();
+	});
+	it('retains identical authored bytes after recovery rather than serializing validator defaults into a new commit', async () => {
+		const { input, client, base, path } = fixture(), retained='c'.repeat(40);
+		const actual=await vi.importActual<typeof import('../../../../../src/api/governance/proposal-document.ts')>('../../../../../src/api/governance/proposal-document.ts');
+		const definition={...readyContributionProposal(),id:input.proposal.id,projectId:input.proposal.projectId};
+		const source=actual.serializeProposalDocument({...definition,status:'draft'});
+		const after=actual.serializeProposalDocument({...definition,request:'Revised own contribution.',status:'draft'});
+		const digest=createHash('sha256').update(source).digest('hex');
+		const proposal={...input.proposal,title:definition.title,summary:definition.summary,body:definition.request,activeContentHash:digest,
+			metadata:{contentProvenance:{repositoryId:'repository-1',contentPath:path,commitSha:base,digest}}};
+		client.createWorkspace.mockRejectedValueOnce(Object.assign(new Error('Workspace branch already exists at a different commit.'),{status:409,code:'conflict'}))
+			.mockResolvedValueOnce({workspaceId:'workspace-1',baseCommitSha:retained});
+		client.readRepositoryFile.mockImplementation(async request=>request.ref===base
+			?{resolvedRef:base,file:{content:source,frontmatter:parseFrontmatterDocument(source).frontmatter}}
+			:{resolvedRef:retained,file:{content:after}});
+		vi.mocked(serializeProposalDocument).mockImplementation(actual.serializeProposalDocument);
+		try {
+			const result=await commitProposalVersionContent({...input,proposal,update:{...input.update,request:'Revised own contribution.'}});
+			expect(result.receipt.commitSha).toBe(retained); expect(result.receipt.changedPaths).toEqual([]);
+			expect(result.receipt.digest).toBe(createHash('sha256').update(after).digest('hex'));
+			expect(client.commit).not.toHaveBeenCalled(); expect(client.closeWorkspace).toHaveBeenCalledExactlyOnceWith('workspace-1');
+		} finally { vi.mocked(serializeProposalDocument).mockImplementation(()=>'next'); }
+	});
+	it.each([
+		['production',409,'conflict','Workspace branch already exists at a different commit.'],
+		['simulation',403,'forbidden','Workspace branch already exists at a different commit.'],
+		['simulation',409,'foreign-conflict','Workspace branch already exists at a different commit.'],
+		['simulation',409,'conflict','conflict: writable lease already exists for this branch'],
+	] as const)('does not reinterpret %s/%s/%s authoring failures', async (mode,status,code,message) => {
+		const { input, client } = fixture(mode), failure=Object.assign(new Error(message),{status,code});
+		client.createWorkspace.mockRejectedValueOnce(failure);
+		await expect(commitProposalVersionContent(input)).rejects.toBe(failure);
+		expect(client.createWorkspace).toHaveBeenCalledTimes(1); expect(client.commit).not.toHaveBeenCalled();
+	});
+	it('does not reset or create another branch when owned-head recovery also conflicts', async () => {
+		const { input, client } = fixture(), failure=Object.assign(new Error('Workspace branch already exists at a different commit.'),{status:409,code:'conflict'});
+		client.createWorkspace.mockRejectedValue(failure);
+		await expect(commitProposalVersionContent(input)).rejects.toBe(failure);
+		expect(client.createWorkspace).toHaveBeenCalledTimes(2);
+		expect(client.createWorkspace.mock.calls[0]?.[0].branchName).toBe(client.createWorkspace.mock.calls[1]?.[0].branchName);
+		expect(client.commit).not.toHaveBeenCalled();
+	});
+	it('closes recovery without publication when its private head moves before read-back', async () => {
+		const { input, client } = fixture(),failure=Object.assign(new Error('Workspace branch already exists at a different commit.'),{status:409,code:'conflict'});
+		client.createWorkspace.mockRejectedValueOnce(failure).mockResolvedValueOnce({workspaceId:'workspace-1',baseCommitSha:'c'.repeat(40)});
+		await expect(commitProposalVersionContent(input)).rejects.toMatchObject({code:'proposal_content_base_stale'});
+		expect(client.closeWorkspace).toHaveBeenCalledExactlyOnceWith('workspace-1'); expect(client.commit).not.toHaveBeenCalled();
 	});
 	it.each(['missing', 'terminal', 'project', 'proposal', 'expired'])('rejects %s workday scope before issuing a workspace', async invalid => {
 		const { run, input, client } = fixture();

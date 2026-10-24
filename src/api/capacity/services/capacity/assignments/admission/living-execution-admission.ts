@@ -166,7 +166,12 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 			AND reviewer.project_id=node.project_id AND reviewer.work_item_id=node.work_item_id
 			AND reviewer.pair_role='reviewer' AND reviewer.status='blocked'
 			AND reviewer.source_ref_json::jsonb=node.source_ref_json::jsonb
-			AND reviewer.authority_refs_json::jsonb=node.authority_refs_json::jsonb
+			-- Independent contributors retain their own profile and estimate authority.
+			-- Only their exact accepted Decision is shared across the review pair.
+			AND (SELECT jsonb_agg(authority ORDER BY authority::text)
+				FROM jsonb_array_elements(reviewer.authority_refs_json::jsonb) authority WHERE authority->>'model'='decision')
+				= (SELECT jsonb_agg(authority ORDER BY authority::text)
+				FROM jsonb_array_elements(node.authority_refs_json::jsonb) authority WHERE authority->>'model'='decision')
 			AND product.execution_node_revision<node.node_revision
 			AND review_history.execution_node_revision<reviewer.node_revision
 			AND review_history.lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='request-changes'
@@ -181,7 +186,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 			AND product.assignment_attempt_json::jsonb->'sourceRef'=node.source_ref_json::jsonb
 			AND product.assignment_attempt_json::jsonb->'authorityRefs'=node.authority_refs_json::jsonb
 			AND review_history.assignment_attempt_json::jsonb->'sourceRef'=node.source_ref_json::jsonb
-			AND review_history.assignment_attempt_json::jsonb->'authorityRefs'=node.authority_refs_json::jsonb
+			AND review_history.assignment_attempt_json::jsonb->'authorityRefs'=reviewer.authority_refs_json::jsonb
 			AND (node.workday_id IS NULL OR (product.work_day_id IN ${workdayLineageSql('node.workday_id', 'node.team_id')}
 				AND review_history.work_day_id IN ${workdayLineageSql('node.workday_id', 'node.team_id')}))
 			AND NOT EXISTS (SELECT 1 FROM capacity_provider_assignments newer
