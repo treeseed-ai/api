@@ -4,4 +4,4 @@
 
 ### Added
 
-- Installed API root and container provider (#617).
+- Add native API container provider and exact service definition (#617).
