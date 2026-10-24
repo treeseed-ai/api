@@ -51,6 +51,9 @@ workflow:
   - id: contribution-execution-ownership
     action: { verifier: api.golden.contribution-execution-ownership }
     expect: { status: passed }
+  - id: contribution-current-profile-custody
+    action: { verifier: api.golden.contribution-current-profile-custody }
+    expect: { status: passed }
   - id: contribution-execution-denials
     action: { verifier: api.golden.contribution-execution-denials }
     expect: { status: passed }

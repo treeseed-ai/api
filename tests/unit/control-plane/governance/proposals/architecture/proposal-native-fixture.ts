@@ -44,7 +44,7 @@ export async function proposalNativeFixture() {
 		git('config', 'user.email', 'architecture-fixture@example.invalid');
 		mkdirSync(join(root, 'proposals'));
 		const initial = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
-		for (const table of ['governance_proposals', 'governance_decisions', 'governance_events', 'capacity_provider_assignments', 'capacity_workday_runs']) {
+		for (const table of ['governance_proposals', 'governance_decisions', 'governance_events', 'capacity_provider_assignments', 'capacity_workday_runs', 'project_agent_classes']) {
 			const statements = initial.filter(sql => sql.startsWith(`CREATE TABLE "${table}" (`));
 			if (statements.length !== 1) throw new Error(`Missing original DDL: ${table}`);
 			await db.exec(statements[0]!);
@@ -80,7 +80,7 @@ export async function proposalNativeFixture() {
 		};
 		const snapshot = async () => {
 			const rows: Record<string, unknown> = {};
-			for (const table of ['governance_proposals', 'governance_decisions', 'governance_events', 'execution_nodes', 'execution_edges', 'capacity_provider_assignments', 'capacity_workday_runs']) {
+			for (const table of ['governance_proposals', 'governance_decisions', 'governance_events', 'execution_nodes', 'execution_edges', 'capacity_provider_assignments', 'capacity_workday_runs', 'project_agent_classes']) {
 				rows[table] = (await query(`SELECT * FROM ${table} ORDER BY id`)).rows;
 			}
 			return { rows, head: git('rev-parse', 'HEAD'), status: git('status', '--porcelain') };
