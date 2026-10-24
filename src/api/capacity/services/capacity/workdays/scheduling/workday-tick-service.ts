@@ -41,8 +41,9 @@ export async function tickCapacityWorkdayRun(
 		'capacity_workday_membership_not_approved', 'Workday tick requires one approved provider membership.', 409,
 		{ runId, providerId: run.capacityProviderId, matchCount: memberships.length },
 	);
-	const plan = appliedWorkdaySchema.parse(run.parameters.appliedPlan);
-	if (plan.state === 'closing' || await runtimeWorkdayPhase(store, run, now) !== 'planning') {
+	const plan = run.executionKind === 'conversation' && run.parameters.appliedPlan === undefined
+		? null : appliedWorkdaySchema.parse(run.parameters.appliedPlan);
+	if (plan && (plan.state === 'closing' || await runtimeWorkdayPhase(store, run, now) !== 'planning')) {
 		const turns = await store.all(`SELECT assignment.id FROM capacity_provider_assignments assignment
 			JOIN execution_nodes node ON node.team_id=assignment.team_id AND node.id=assignment.execution_node_id
 			WHERE node.team_id=? AND node.workday_id=? AND node.kind IN ('planning','estimating')
@@ -58,7 +59,7 @@ export async function tickCapacityWorkdayRun(
 			await recordExecutionNodeObservations(transaction,beforeNodes,await readExecutionNodeStates(transaction,teamId,runId,ids),'planning-boundary:'+runId+':'+(eventId??now),now);
 		});
 	}
-	const lifecycle = await advanceLivingWorkday(store, run, now);
+	const lifecycle = plan ? await advanceLivingWorkday(store, run, now) : { changed: false, plan: null, status: run.status };
 	const executionGraph = run.executionKind === 'conversation'
 		? await reconcileCommunicationExecutionGraph(store, teamId)
 		: await reconcileExecutionGraph(store, teamId, {}, `workday-tick:${runId}:${eventId ?? now}`);

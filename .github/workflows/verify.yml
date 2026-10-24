@@ -77,7 +77,7 @@ jobs:
       - name: Build the verified native TreeDX engine
         working-directory: .treeseed/tools/treedx/apps/api
         run: MIX_ENV=dev mix compile
-      - uses: treeseed-ai/sdk/.github/actions/install-exact-sdk@75badffa8f9bdda1e165437ecbbee6b72436b6e2
+      - uses: treeseed-ai/sdk/.github/actions/install-exact-sdk@8e07d9adaf45ff75e9ea16de691b90d182aa30f8
         env:
           NODE_ENV: production
         with:

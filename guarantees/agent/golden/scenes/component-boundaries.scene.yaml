@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: standalone-chat-tick-unit
+    action: { verifier: api.golden.standalone-chat-tick-unit }
+    expect: { status: passed }
+  - id: standalone-chat-tick-native
+    action: { verifier: api.golden.standalone-chat-tick-native }
+    expect: { status: passed }
   - id: legacy-graph-condition
     action: { verifier: api.golden.legacy-graph-condition }
     expect: { status: passed }

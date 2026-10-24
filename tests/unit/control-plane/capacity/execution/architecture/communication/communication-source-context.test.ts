@@ -18,12 +18,15 @@ vi.mock('../../../../../../../src/api/knowledge/gateway-treedx-connection.ts', (
 
 const commit = 'a'.repeat(40);
 const repository = { id: 'software', role: 'software', provider: 'github', owner: 'example', name: 'project', currentBranch: 'staging' };
-function communication(tools = ['discussion', 'source.read']) {
-	const profile = agentDefinitionSchema.parse({ schemaVersion: 'treeseed.agent/v1', id: 'configured/renamed-guide',
+function communicationProfile(tools = ['discussion', 'source.read']) {
+	return agentDefinitionSchema.parse({ schemaVersion: 'treeseed.agent/v1', id: 'configured/renamed-guide',
 		name: 'Renamed guide', agentClass: 'configured-guide', purpose: 'Answer bounded questions.',
 		responsibilities: ['Use only authorized exact context.'], capabilities: ['reasoning'], context: { include: ['project'] },
 		activityProfiles: { chat: { handler: 'writer', permissions: { content: { read: ['discussion'], write: ['discussion'] }, tools },
 			prompt: { system: 'Answer the addressed message.' } } } });
+}
+function communication(tools = ['discussion', 'source.read']) {
+	const profile = communicationProfile(tools);
 	return projectCommunicationInvocations({ teamId: 'team', revision: 1, profiles: { 'project:configured-guide': profile },
 		sources: [{ id: 'invocation', teamId: 'team', projectId: 'project', workdayId: 'conversation', agentId: 'renamed-guide',
 			repository: 'library', commit: 'b'.repeat(40), path: 'discussion-messages/smoke/request.mdx', durationSeconds: 180 }] }).nodes[0]!;
@@ -31,6 +34,44 @@ function communication(tools = ['discussion', 'source.read']) {
 const sourceRef = { store: 'git', model: 'repository', id: 'software', repository: 'example/project', commit };
 
 describe('standalone communication exact source admission', () => {
+	it('native PostgreSQL initial conversation tick projects the exact addressed Chat node without a workday plan and replays only its original event', async () => {
+		const f = await postgresGraph(), now = new Date().toISOString();
+		try {
+			const host = new ControlPlaneStore({}, f.left); host.initializationPromise = Promise.resolve();
+			const store = createCapacityControlPlane(host), parameters = { durationSeconds: 180, deadlineAt: new Date(Date.now() + 180_000).toISOString() };
+			await f.left.pool.query("INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('project','team','configured','Configured',$1,$1)", [now]);
+			await f.left.pool.query("INSERT INTO capacity_providers (id,fingerprint,public_jwk_json,display_name,created_at,updated_at) VALUES ('provider','fingerprint','{}','Provider',$1,$1)", [now]);
+			await f.left.pool.query("INSERT INTO capacity_provider_team_memberships (id,team_id,capacity_provider_id,approved_at,approved_by_id,created_at,updated_at) VALUES ('membership','team','provider',$1,'operator',$1,$1)", [now]);
+			await f.left.pool.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,handler_refs_json,created_at,updated_at)
+				VALUES ('configured-guide','team','project','configured-guide','Configured guide',$1,$2,$2)`, [JSON.stringify({ agents: [communicationProfile()] }), now]);
+			await f.left.pool.query(`INSERT INTO treedx_project_libraries (id,team_id,project_id,instance_id,library_id,repository_id,content_path,created_at,updated_at)
+				VALUES ('binding','team','project','instance','library','library','',$1,$1)`, [now]);
+			await f.left.pool.query(`INSERT INTO capacity_workday_runs (id,team_id,capacity_provider_id,status,execution_kind,execution_mode,trigger_kind,
+				parameters_json,started_at,created_at,updated_at) VALUES ('conversation','team','provider','running','conversation','production','discussion',$1,$2,$2,$2)`, [JSON.stringify(parameters), now]);
+			await f.left.pool.query(`INSERT INTO agent_invocation_requests (id,team_id,project_id,agent_id,status,execution_id,execution_kind,trigger_kind,mode,scope_hash,available_at,idempotency_key,request_digest,metadata_json,requested_at)
+				VALUES ('invocation','team','project','renamed-guide','admitted','conversation','conversation','discussion','planning','scope',$1,'request','digest',$2,$1)`,
+				[now, JSON.stringify({ sourceMessagePath: 'discussion-messages/smoke/request.mdx', sourceCommit: 'b'.repeat(40), productiveSeconds: 180 })]);
+			const result = await store.tickCapacityWorkdayRun('team', 'conversation', now, 'initial-conversation');
+			expect(result).toMatchObject({ lifecycle: { changed: false, plan: null, status: 'running' },
+				executionGraph: { schemaVersion: 'treeseed.graph-revision/v1', revision: 1,
+					changes: { added: ['communication:invocation:conversation'], changed: [], completed: [], blocked: [], stale: [], removedEdges: [], addedEdges: [] } } });
+			const after = await f.snapshot(), events = (await f.left.pool.query('SELECT * FROM capacity_workday_events ORDER BY id')).rows;
+			expect(after.nodes).toHaveLength(1);
+			expect(after.nodes[0]).toMatchObject({ id: 'communication:invocation:conversation', team_id: 'team', project_id: 'project', workday_id: 'conversation', kind: 'communication', status: 'ready', agent_class: 'configured-guide' });
+			expect(JSON.parse(String(after.nodes[0]!.source_ref_json))).toMatchObject({ store: 'treedx', model: 'discussion', id: 'invocation', repository: 'library', commit: 'b'.repeat(40), path: 'discussion-messages/smoke/request.mdx' });
+			const run = await store.getCapacityWorkdayRun('team', 'conversation');
+			expect(run?.parameters).toEqual(parameters); expect(run?.parameters).not.toHaveProperty('appliedPlan');
+			expect(events.map(event => event.event_type).sort()).toEqual(['execution.node.state', 'workday.tick']);
+			expect(JSON.parse(String(events.find(event => event.event_type === 'execution.node.state')!.context_json)))
+				.toMatchObject({ nodeId: 'communication:invocation:conversation', status: 'ready', nodeRevision: 1 });
+			expect(after.assignments).toEqual([]); expect(after.reservations).toEqual([]);
+			expect(await store.tickCapacityWorkdayRun('team', 'conversation', new Date(Date.now() + 1_000).toISOString(), 'initial-conversation')).toEqual(result);
+			expect(await f.snapshot()).toEqual(after); expect((await f.left.pool.query('SELECT * FROM capacity_workday_events ORDER BY id')).rows).toEqual(events);
+			await f.left.pool.query("UPDATE capacity_provider_team_memberships SET status='suspended'");
+			await expect(store.tickCapacityWorkdayRun('team', 'conversation', now, 'denied-conversation')).rejects.toMatchObject({ code: 'capacity_workday_membership_not_approved' });
+			expect(await f.snapshot()).toEqual(after); expect((await f.left.pool.query('SELECT * FROM capacity_workday_events ORDER BY id')).rows).toEqual(events);
+		} finally { await f.close(); }
+	}, 30_000);
 	it('reads an attached same-team proposal across topic project streams with contributor source context and the pinned version', async () => {
 		const bytes = 'exact attached Admin proposal', digest = createHash('sha256').update(bytes).digest('hex');
 		const proposal = readyProposal(), sharedGit = { store: 'git', model: 'repository', id: 'producer', repository: 'example/producer', commit: 'c'.repeat(40) };

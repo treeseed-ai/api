@@ -53,7 +53,9 @@ describe('MCP JSON Schema dialect', () => {
 	});
 	it('compiles every declared MCP tool input and output with the official client validator', () => {
 		const exposed = bindings(CONTROL_PLANE_OPERATIONS).filter(binding => binding.descriptor.surfaces.includes('mcp_tool'));
-		expect(exposed.map(binding => binding.descriptor.operationId)).toContain('communications.send');
+		expect(exposed.map(binding => binding.descriptor.operationId)).toEqual(expect.arrayContaining([
+			'communications.send', 'agents.classes.list', 'agents.classes.show',
+		]));
 		const validator = new AjvJsonSchemaValidator(), failures: string[] = [];
 		for (const binding of exposed) {
 			for (const [kind, document] of [['input', sdkOperationInputStandardSchema(binding)['~standard'].jsonSchema.input()],
