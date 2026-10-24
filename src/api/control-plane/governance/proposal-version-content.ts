@@ -122,7 +122,9 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 		// active proposal, including estimates on a private simulation commit.
 		const prior = input.initial === true || before === null ? {}
 			: sourceCommit && sourceCommit !== workspace.baseCommitSha
-				? (await readExactProposal(input.store, input.proposal)).definition
+				// Validate exact canonical custody, then preserve authored presence:
+				// validator defaults must not change bytes on an identical replay.
+				? parseFrontmatterDocument((await readExactProposal(input.store, input.proposal)).source).frontmatter
 				: parseFrontmatterDocument(before).frontmatter;
 		const field = (key: string) => Object.hasOwn(input.update, key) ? input.update[key] : prior[key];
 		const schemaVersion = prior.schemaVersion ?? 'treeseed.proposal/v2';

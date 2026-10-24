@@ -6,8 +6,8 @@ import { CapacityWorkdayRunRepository } from '../../../../../src/api/capacity/re
 import { recordTreeDxAuthoringState } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { projectTreeDxCommitSignals } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-change-projector.ts';
 import { serializeProposalDocument } from '../../../../../src/api/governance/proposal-document.ts';
-import { serializeFrontmatterDocument } from '../../../../../src/api/content/frontmatter.ts';
-import { readyProposal } from './architecture/ready-proposal-fixture.ts';
+import { parseFrontmatterDocument, serializeFrontmatterDocument } from '../../../../../src/api/content/frontmatter.ts';
+import { readyContributionProposal, readyProposal } from './architecture/ready-proposal-fixture.ts';
 
 vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', async original => ({
 	...await original<typeof import('../../../../../src/api/knowledge/gateway-treedx-connection.ts')>(), resolveKnowledgeGatewayConnection: vi.fn(),
@@ -166,6 +166,28 @@ describe('workday-scoped proposal authoring', () => {
 		expect(input).toEqual(expectedInput); expect(input.proposal.metadata.contentProvenance.commitSha).toEqual(held.proposal.metadata.contentProvenance.commitSha);
 		expect(client.closeWorkspace).toHaveBeenCalledExactlyOnceWith('workspace-1');
 		expect(recordTreeDxAuthoringState).not.toHaveBeenCalled(); expect(projectTreeDxCommitSignals).not.toHaveBeenCalled();
+	});
+	it('retains identical authored bytes after recovery rather than serializing validator defaults into a new commit', async () => {
+		const { input, client, base, path } = fixture(), retained='c'.repeat(40);
+		const actual=await vi.importActual<typeof import('../../../../../src/api/governance/proposal-document.ts')>('../../../../../src/api/governance/proposal-document.ts');
+		const definition={...readyContributionProposal(),id:input.proposal.id,projectId:input.proposal.projectId};
+		const source=actual.serializeProposalDocument({...definition,status:'draft'});
+		const after=actual.serializeProposalDocument({...definition,request:'Revised own contribution.',status:'draft'});
+		const digest=createHash('sha256').update(source).digest('hex');
+		const proposal={...input.proposal,title:definition.title,summary:definition.summary,body:definition.request,activeContentHash:digest,
+			metadata:{contentProvenance:{repositoryId:'repository-1',contentPath:path,commitSha:base,digest}}};
+		client.createWorkspace.mockRejectedValueOnce(Object.assign(new Error('Workspace branch already exists at a different commit.'),{status:409,code:'conflict'}))
+			.mockResolvedValueOnce({workspaceId:'workspace-1',baseCommitSha:retained});
+		client.readRepositoryFile.mockImplementation(async request=>request.ref===base
+			?{resolvedRef:base,file:{content:source,frontmatter:parseFrontmatterDocument(source).frontmatter}}
+			:{resolvedRef:retained,file:{content:after}});
+		vi.mocked(serializeProposalDocument).mockImplementation(actual.serializeProposalDocument);
+		try {
+			const result=await commitProposalVersionContent({...input,proposal,update:{...input.update,request:'Revised own contribution.'}});
+			expect(result.receipt.commitSha).toBe(retained); expect(result.receipt.changedPaths).toEqual([]);
+			expect(result.receipt.digest).toBe(createHash('sha256').update(after).digest('hex'));
+			expect(client.commit).not.toHaveBeenCalled(); expect(client.closeWorkspace).toHaveBeenCalledExactlyOnceWith('workspace-1');
+		} finally { vi.mocked(serializeProposalDocument).mockImplementation(()=>'next'); }
 	});
 	it.each([
 		['production',409,'conflict','Workspace branch already exists at a different commit.'],
