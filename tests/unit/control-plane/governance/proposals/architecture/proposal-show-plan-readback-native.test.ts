@@ -42,24 +42,29 @@ describe('native shared proposal detail read', () => {
 			exact = await native.publish(withoutPlan);
 			row = { ...row, activeContentHash: exact.digest, metadata: { contentProvenance: { repositoryId: 'repository',
 				contentPath: 'proposals/proposal.mdx', commitSha: exact.commit, digest: exact.digest } } };
-			await expect(service.proposal(principal, 'project', 'proposal')).resolves.toMatchObject({ executionPlan: null });
+			await expect.soft(service.proposal(principal, 'project', 'proposal')).resolves.toMatchObject({ executionPlan: null });
+
+			row = { ...row, metadata: {} };
+			await expect.soft(service.proposal(principal, 'project', 'proposal')).rejects.toMatchObject({ code: 'proposal_exact_source_missing' });
+			row = { ...row, metadata: { contentProvenance: { repositoryId: 'repository', contentPath: 'proposals/proposal.mdx',
+				commitSha: exact.commit, digest: exact.digest } } };
 
 			for (const fault of ['denied', 'moved'] as const) {
 				native.setFault(fault);
-				await expect(service.proposal(principal, 'project', 'proposal')).rejects.toThrow();
+				await expect.soft(service.proposal(principal, 'project', 'proposal')).rejects.toThrow();
 			}
 			native.setFault('none');
 			row = { ...row, activeContentHash: 'f'.repeat(64) };
-			await expect(service.proposal(principal, 'project', 'proposal')).rejects.toMatchObject({ code: 'proposal_digest_mismatch' });
+			await expect.soft(service.proposal(principal, 'project', 'proposal')).rejects.toMatchObject({ code: 'proposal_digest_mismatch' });
 			row = { ...row, activeContentHash: exact.digest };
 			const invalid = { ...definition, executionPlan: { workItems: [] } };
 			exact = await native.publish(invalid);
 			row = { ...row, activeContentHash: exact.digest, metadata: { contentProvenance: { repositoryId: 'repository',
 				contentPath: 'proposals/proposal.mdx', commitSha: exact.commit, digest: exact.digest } } };
-			await expect(service.proposal(principal, 'project', 'proposal')).rejects.toMatchObject({
+			await expect.soft(service.proposal(principal, 'project', 'proposal')).rejects.toMatchObject({
 				status: 422, code: 'proposal_execution_plan_invalid',
 			});
-			await expect(service.proposal({ id: 'outsider' }, 'project', 'proposal')).rejects.toMatchObject({
+			await expect.soft(service.proposal({ id: 'outsider' }, 'project', 'proposal')).rejects.toMatchObject({
 				status: 403, code: 'project_access_denied',
 			});
 		} finally {
