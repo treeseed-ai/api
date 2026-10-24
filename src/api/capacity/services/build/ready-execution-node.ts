@@ -34,6 +34,11 @@ const array = (value: unknown): unknown[] => {
 };
 const text = (...values: unknown[]): string => values.map((value) => typeof value === 'string' ? value.trim() : '').find(Boolean) ?? '';
 const exactCommit = (...values: unknown[]): string => values.map(text).find((value) => /^[a-f0-9]{40}$/u.test(value)) ?? '';
+const proposalContextRefs = (proposal: Row) => [
+	...array(proposal.objectiveRefs), ...array(proposal.evidenceRefs),
+	...(proposal.discussionRef ? [proposal.discussionRef] : []),
+	...array(record(proposal.executionPlan).workItems).flatMap(item => array(record(item).contextRefs)),
+];
 const stable = (value: unknown): string => {
 	if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
 	if (value && typeof value === 'object') return `{${Object.entries(value as Row).sort(([a], [b]) => a.localeCompare(b))
@@ -180,9 +185,8 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 				repository: text(record(record(proposal.metadata ?? proposal.metadata_json).contentProvenance).repositoryId, source.repository), commit: text(reference.immutableRef),
 				path: text(reference.path), digest: text(reference.digest),
 			});
-			const workItemRefs = array(record(exact.definition.executionPlan).workItems)
-				.flatMap((workItem) => array(record(workItem).contextRefs));
-			resolved.push(exact.ref, ...await canonicalProposalContextRefs(store, { ...node, projectId: text(reference.projectId) }, workItemRefs));
+			resolved.push(exact.ref, ...await canonicalProposalContextRefs(store,
+				{ ...node, projectId: text(reference.projectId) }, proposalContextRefs(exact.definition)));
 		}
 
 		return projectSourceContext(store, node, resolved);
@@ -217,11 +221,8 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 	const exact = await readExecutionProposal(store, owner, source);
 	if (!node.workItemId && (node.kind === 'planning' || node.kind === 'estimating')) {
 		const proposal = exact.definition;
-		const refs = [source, ...await canonicalProposalContextRefs(store, { ...node, projectId: sourceProjectId }, [
-			...array(proposal.objectiveRefs), ...array(proposal.evidenceRefs),
-			...(proposal.discussionRef ? [proposal.discussionRef] : []),
-			...array(record(proposal.executionPlan).workItems).flatMap((item) => array(record(item).contextRefs)),
-		])];
+		const refs = [source, ...await canonicalProposalContextRefs(store,
+			{ ...node, projectId: sourceProjectId }, proposalContextRefs(proposal))];
 		return sourceProjectId !== node.projectId ? projectSourceContext(store, node, refs) : refs;
 	}
 	const workItems = array(record(exact.definition.executionPlan).workItems).map(record);

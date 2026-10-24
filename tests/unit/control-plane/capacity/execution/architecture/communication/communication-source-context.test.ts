@@ -90,7 +90,10 @@ describe('standalone communication exact source admission', () => {
 	it('reads an attached same-team proposal across topic project streams with contributor source context and the pinned version', async () => {
 		const bytes = 'exact attached Admin proposal', digest = createHash('sha256').update(bytes).digest('hex');
 		const proposal = readyProposal(), sharedGit = { store: 'git', model: 'repository', id: 'producer', repository: 'example/producer', commit: 'c'.repeat(40) };
+		const peerResponse = { store: 'treedx', model: 'discussion-message', id: 'writer-response', repository: 'proposal-library', commit: 'd'.repeat(40), path: 'discussion-messages/recovery/writer-response.mdx' };
+		const ownProfile = { store: 'treedx', model: 'agent', id: 'configured/maintenance', repository: 'proposal-library', commit: 'e'.repeat(40), path: 'agents/maintenance.mdx' };
 		Object.assign(proposal, { id: 'shared', projectId: 'proposal-project', groupIds: ['portfolio-atlas'] });
+		Object.assign(proposal, { evidenceRefs: [peerResponse, ownProfile] });
 		Object.assign(proposal.executionPlan.workItems[0]!, { contextRefs: [sharedGit] });
 		gateway.readRepositoryFile.mockResolvedValue({ resolvedRef: 'b'.repeat(40), file: { content: bytes, frontmatter: proposal } });
 		const frozen = { kind: 'proposal', id: 'shared', projectId: 'proposal-project', immutableRef: 'b'.repeat(40), path: 'proposals/shared.mdx', digest: `sha256:${digest}` };
@@ -104,7 +107,7 @@ describe('standalone communication exact source admission', () => {
 					: { content_refs_json: [frozen], requested_at: '2026-10-20T12:00:00.000Z' } };
 			const read = workItemContext(store, node);
 			if (teamId === 'team' && owner === frozen.projectId) expect(await read).toEqual([
-				expect.objectContaining({ store: 'treedx', model: 'proposal', id: 'shared', repository: 'proposal-library', commit: frozen.immutableRef, revision: 1 }), sharedGit, sourceRef,
+				expect.objectContaining({ store: 'treedx', model: 'proposal', id: 'shared', repository: 'proposal-library', commit: frozen.immutableRef, revision: 1 }), peerResponse, ownProfile, sharedGit, sourceRef,
 			]);
 			else await expect(read).rejects.toMatchObject({ code: 'communication_proposal_context_stale' });
 			expect(node).toEqual(held); expect(frozen).toEqual(ref);

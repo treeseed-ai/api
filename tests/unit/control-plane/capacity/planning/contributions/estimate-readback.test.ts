@@ -120,6 +120,35 @@ describe('own contribution through owning SQL public HTTP client and native Git'
 				expect(await isCurrentSubscriberContribution(f.store as never, proposal, current, input.assignment, input.result)).toBe(true);
 			}
 			expect(await f.snapshot()).toEqual(before);
+			// An accepted author stays current when a peer later refreshes its own work.
+			// These are supplied proposal/attempt inputs, not live agent completions.
+			const writer = inputs[0]!, peer = inputs[1]!;
+			const frozenPeer = f.publishContent(path, current);
+			const refreshedAttempt = assignmentAttemptSchema.parse({ ...writer.assignment.assignmentAttempt,
+				id: 'refreshed-writer', sourceRef: { ...sourceRef, commit: frozenPeer.commit, digest: `sha256:${frozenPeer.digest}` } });
+			const ownRef = { store: 'postgresql', model: 'assignment-attempt', id: refreshedAttempt.id, revision: refreshedAttempt.attempt };
+			const owned = { ...writer.candidate.executionPlan.workItems[0]!, estimateRef: ownRef };
+			const candidate = { ...current, executionPlan: { workItems: [owned, peer.candidate.executionPlan.workItems[0]!] } };
+			const published = f.publishContent(path, candidate);
+			const refreshed = { ...writer.assignment, id: refreshedAttempt.id, assignmentAttempt: refreshedAttempt };
+			const result = assignmentResultSchema.parse({ ...writer.result, id: 'result-refreshed-writer', assignmentId: refreshed.id,
+				references: [{ ...writer.result.references[0]!, commit: published.commit }] });
+			await f.query(`INSERT INTO capacity_provider_assignments
+				(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,mode,status,agent_id,
+				assignment_attempt_json,assignment_result_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				[refreshed.id, 'controlled-membership', 'team', 'project', 'controlled-provider', 'maintenance', 'planning', 'completed',
+					refreshed.agentId, JSON.stringify(refreshedAttempt), JSON.stringify(result), original.createdAt, original.createdAt]);
+			const changedPeer = { ...candidate, executionPlan: { workItems: [owned,
+				{ ...peer.candidate.executionPlan.workItems[0]!, estimateRef: { ...ownRef, id: 'newer-peer-attempt' } }] } };
+			const held = await f.snapshot();
+			expect(await isCurrentSubscriberContribution(f.store as never, proposal, changedPeer, refreshed, result)).toBe(true);
+			for (const changedOwn of [{ ...owned, dependsOn: ['engineer-work'] }, { ...owned, objective: 'Changed own scope.' }])
+				expect(await isCurrentSubscriberContribution(f.store as never, proposal,
+					{ ...changedPeer, executionPlan: { workItems: [changedOwn, changedPeer.executionPlan.workItems[1]!] } }, refreshed, result)).toBe(false);
+			expect(mergeAssignmentEstimate({ frozen: current, current: changedPeer, candidate,
+				assignment: refreshed, ownedEstimateRefs: [writer.candidate.executionPlan.workItems[0]!.estimateRef] } as never))
+				.toEqual(changedPeer);
+			expect(await f.snapshot()).toEqual(held);
 			// Actual owning SQL, SDK HTTP transport and committed Git are exercised.
 			// The existing isolated endpoint is not a native TreeDX server or managed
 			// execution/approval/permission proof. Those layers remain required.
