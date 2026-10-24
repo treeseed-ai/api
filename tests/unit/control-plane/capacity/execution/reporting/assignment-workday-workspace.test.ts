@@ -12,6 +12,18 @@ describe('frozen Workday workspace authority',()=>{
   const before=structuredClone(exact),result=buildAssignmentAttempt({...input,candidate:exact}).assignment;
   expect(result.projectId).toBe(exact.node.projectId);expect(result.workspace).toMatchObject({mode:'treedx',repository:'ui-library',baseCommit:sourceRef.commit});
   expect(result.grant.contentWrite).toEqual([exact.node.sourceRef]);expect(exact).toEqual(before);
+  const own={store:'treedx' as const,model:'agent',id:'renamed/maintenance',repository:'sdk-library',commit:'f'.repeat(40),path:'agents/maintenance.mdx'};
+  exact.effectiveProfile.profileRef=own;
+  exact.node.requestedPermissions.content.read.push('agent');
+  exact.effectiveProfile.permissionCeiling=exact.node.requestedPermissions;
+  const held=structuredClone(exact),withProfile=buildAssignmentAttempt({...input,candidate:exact}).assignment;
+  expect(withProfile.contextRefs).toContainEqual(own);expect(withProfile.grant.contentRead).toContainEqual(own);
+  expect(withProfile.grant.sourceWrite).toEqual([]);expect(withProfile.grant.tools).toEqual(['source.read']);
+  expect(withProfile.grant.contentWrite).toEqual([exact.node.sourceRef]);expect(exact).toEqual(held);
+  exact.node.requestedPermissions.content.read=['proposal'];
+  exact.effectiveProfile.permissionCeiling=exact.node.requestedPermissions;
+  const denied=buildAssignmentAttempt({...input,candidate:exact}).assignment;
+  expect(denied.contextRefs).not.toContainEqual(own);expect(denied.grant.contentRead).not.toContainEqual(own);
  });
  it('keeps a lifecycle workspace on its held workday project context when the governed library advances before issuance',()=>{
   const input=canonicalOfferBuildInput(),exact=structuredClone(input.candidate),held={store:'treedx' as const,model:'knowledge',id:exact.node.projectId+':project-context',repository:exact.projectContentRepositoryId,commit:'d'.repeat(40),path:'README.md',revision:1,digest:'sha256:'+'4'.repeat(64)};

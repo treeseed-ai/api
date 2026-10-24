@@ -142,7 +142,8 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string, run: Durable
 		? [...new Set([...sourceRefs.map((reference) => reference.repository), ...candidate.sourceRepositories]
 			.filter((value): value is string => Boolean(value)))]
 		: [];
-	const contentRefs = candidate.contextRefs.filter((reference) => reference.store === 'treedx');
+	const contentRefs = uniqueReferences([...candidate.contextRefs, candidate.effectiveProfile.profileRef])
+		.filter((reference) => reference.store === 'treedx');
 	const readableModels = new Set<string>(requested.content.read);
 	const treeDxBase = candidate.node.workspace === 'treedx' ? projectTreeDxWorkspaceReference(candidate, run) : undefined;
 	const bookRef = contentRefs.find((reference) => reference.model === 'book'
@@ -296,7 +297,7 @@ export function buildAssignmentAttempt(input: {
 	const exactGrant = grant(candidate, assignmentId, input.run);
 	if (candidate.node.kind === 'reporting') exactGrant.contentRead.push(candidate.node.sourceRef);
 	const contentRead = new Set(exactGrant.contentRead.map(stable));
-	const contextRefs = candidate.contextRefs.filter((reference) => reference.store === 'treedx'
+	const contextRefs = uniqueReferences([...candidate.contextRefs, candidate.effectiveProfile.profileRef]).filter((reference) => reference.store === 'treedx'
 		? contentRead.has(stable(reference)) : reference.store === 'git' && Boolean(reference.repository && exactGrant.sourceRead.includes(reference.repository)));
 	if (candidate.node.kind === 'reporting') contextRefs.push(candidate.node.sourceRef);
 	const assignment = assignmentAttemptSchema.parse({
