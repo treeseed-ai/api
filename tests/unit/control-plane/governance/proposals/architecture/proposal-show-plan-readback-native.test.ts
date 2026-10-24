@@ -52,12 +52,13 @@ describe('native shared proposal detail read', () => {
 			const operation = createGovernanceOperations({ governance: service }).find(candidate =>
 				candidate.binding.descriptor.operationId === 'governance.proposals.show')!;
 			const rest = operation.binding.descriptor.rest!;
+			const route = rest.path.replace('{projectId}', ':projectId').replace('{proposalId}', ':proposalId');
 			const app = new Hono();
-			app.on(rest.method, rest.path, createOperationHttpHandler(operation, async () => ({ token: 'test-token',
+			app.on(rest.method, route, createOperationHttpHandler(operation, async () => ({ token: 'test-token',
 				clientId: 'client', scopes: [...operation.binding.descriptor.oauthScopes],
 				extra: { principal: { id: 'reader', roles: ['member'] } },
 			}), 'sha256:test'));
-			const response = await app.request(rest.path.replace(':projectId', 'project').replace(':proposalId', 'proposal'), {
+			const response = await app.request(route.replace(':projectId', 'project').replace(':proposalId', 'proposal'), {
 				headers: { authorization: 'Bearer test-token' },
 			});
 			expect(response.status).toBe(200);
