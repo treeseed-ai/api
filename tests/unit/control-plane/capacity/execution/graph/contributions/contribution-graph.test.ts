@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { assignmentAttemptSchema, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
 import { projectTeamExecutionGraph } from '../../../../../../../src/api/capacity/policy/execution/execution-graph-projector.ts';
+import { agentProfileReference } from '../../../../../../../src/api/capacity/policy/execution/agent-profile-reference.ts';
 import { assignment as original } from '../../fixtures/assignment.ts';
 
 function input() {
@@ -45,10 +46,16 @@ it('binds each same-class author to its own acting work and another author own r
 	for (const item of items) {
 		const actor = graph.nodes.find(node => node.workItemId === item.id && node.kind === 'acting')!;
 		const review = graph.nodes.find(node => node.workItemId === item.id && node.kind === 'reviewing')!;
-		const actorId = actor.authorityRefs!.find(ref => ref.model === 'agent')!.id;
-		const reviewerId = review.authorityRefs!.find(ref => ref.model === 'agent')!.id;
+		const actorReference = actor.authorityRefs!.find(ref => ref.model === 'agent')!;
+		const reviewerReference = review.authorityRefs!.find(ref => ref.model === 'agent')!;
+		const actorId = actorReference.id;
+		const reviewerId = reviewerReference.id;
 		expect(actorId).toBe(`project/${item.id.replace(/-work$/u, '')}`);
 		expect(reviewerId).not.toBe(actorId); expect(actor.agentClass).toBe('maintenance'); expect(review.agentClass).toBe('maintenance');
+		const actorDefinition = Object.values(supplied.profiles).find(definition => definition.id === actorId)!;
+		const reviewerDefinition = Object.values(supplied.profiles).find(definition => definition.id === reviewerId)!;
+		expect(actorReference).toEqual(agentProfileReference(actorDefinition));
+		expect(reviewerReference).toEqual(agentProfileReference(reviewerDefinition));
 		expect(actor.estimate).toEqual(item.estimate);
 		const budget = items.find(candidate => `project/${candidate.id.replace(/-work$/u, '')}` === reviewerId)!;
 		expect(review.estimate).toEqual(budget.reviewEstimate);
