@@ -75,11 +75,12 @@ describe('governed proposal contract authority with divergent native authoring',
 			expect(revisedDefinition.groupIds).toEqual(input.update.groupIds);
 			// Retained TreeDX commit exists but SQL still indexes the old source:
 			// replay the real authoring boundary, not a hand-coded base=head retry.
-			const heldRevision=structuredClone(revision),beforeReplay=await f.query('SELECT * FROM capacity_provider_assignments');
+			const {store:authorityStore,...revisionData}=revision;
+			const heldRevision=structuredClone(revisionData),beforeReplay=await f.query('SELECT * FROM capacity_provider_assignments');
 			const recovered=await commitProposalVersionContent(revision);
 			expect(recovered.receipt.commitSha).toBe(revised.receipt.commitSha);
 			expect(recovered.receipt.changedPaths).toEqual([]);
-			expect(revision).toEqual(heldRevision);
+			expect(revision).toEqual({store:authorityStore,...heldRevision});
 			expect(await f.query('SELECT * FROM capacity_provider_assignments')).toEqual(beforeReplay);
 			const recoveredRead=await read(recovered.receipt.commitSha,recovered.receipt.path);
 			expect(createHash('sha256').update(String(object(recoveredRead.file).content)).digest('hex')).toBe(recovered.receipt.digest);
