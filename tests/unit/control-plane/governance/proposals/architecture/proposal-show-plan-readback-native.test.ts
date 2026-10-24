@@ -19,7 +19,7 @@ describe('native shared proposal detail read', () => {
 			const store = {
 				...native.store,
 				getProjectDetails: async () => ({ project: { id: 'project', teamId: 'team' } }),
-				principalCanAccessTeam: async (_principal: unknown, teamId: string) => teamId === 'team',
+				principalCanAccessTeam: async (principal: { id?: string }, teamId: string) => principal.id === 'reader' && teamId === 'team',
 				getGovernanceProposal: async () => row,
 				listGovernanceProposalVotes: async () => [],
 				listGovernanceEvents: async () => [],
