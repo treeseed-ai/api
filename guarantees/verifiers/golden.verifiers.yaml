@@ -31,6 +31,26 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/executable-proposal-source.test.ts
     testName: "preserves legacy authority and condition history while retiring unissued work: unissued"
+  api.golden.retained-contribution-inactive:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/contributions/contribution-history.test.ts
+    testName: "isolates retained contribution drift without weakening issued or unmaterialized authority: inactive"
+  api.golden.retained-contribution-active:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/contributions/contribution-history.test.ts
+    testName: "isolates retained contribution drift without weakening issued or unmaterialized authority: active"
+  api.golden.retained-contribution-unmaterialized:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/contributions/contribution-history.test.ts
+    testName: "isolates retained contribution drift without weakening issued or unmaterialized authority: unmaterialized"
+  api.golden.retained-contribution-no-callback:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/contributions/contribution-history.test.ts
+    testName: "isolates retained contribution drift without weakening issued or unmaterialized authority: no-callback"
   api.golden.subscriber-execution-context-owner:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

@@ -88,6 +88,13 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 			? await loadProposalGroupContributions(store, { id: row.proposal_id, teamId, projectId: row.project_id }, exact.definition) : null;
 		if (contributions && !contributions.current) {
 			if (!accepted) continue;
+			// Team growth must not let non-admissible retained history block other
+			// objectives. Reuse the existing exact-revision freeze; active or never
+			// materialized authority must still fail rather than disappear.
+			if (state?.count && state.active === 0 && onFrozenInvalid) {
+				onFrozenInvalid({ id: text(row.proposal_id), digest: `sha256:${text(row.active_content_hash)}` });
+				continue;
+			}
 			throw new CapacityOperationError(409, 'proposal_contributions_unverified',
 				'Accepted work requires every subscriber contribution and its actual estimating source to remain verified.',
 				{ missing: contributions.missing });
