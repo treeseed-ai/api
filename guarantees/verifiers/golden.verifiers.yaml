@@ -5298,6 +5298,12 @@ verifiers:
     testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-contract-authority-native.test.ts
     testName: "creates from the selected governed schema without replacing local products and denies unpublished local-only types"
 
+  api.golden.proposal-plan-readback-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/proposal-show-plan-readback-native.test.ts
+    testName: "returns the authored plan from the exact TreeDX source and distinguishes absence, source failure, and project denial"
+
   api.golden.stopped-reporter-history:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
