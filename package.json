@@ -68,8 +68,8 @@
     },
     "deployment": {
       "repository": "https://github.com/treeseed-ai/deployment.git",
-      "commit": "497da1a7f07169520d95e1f78cdd07781f1fdb07",
-      "sha256": "83e8b50ab068f38b7d55edf2ca1c44e478f56fdebe0a7a706d07e1e2827c48a0"
+      "commit": "ae3185362374a05dff07eaa1951e2c81d132609a",
+      "sha256": "b4ae6d339931ea72afdaee2104ff76da20f96e8cd6a76dace194624569dbd409"
     }
   },
   "cordis": {
