@@ -67,8 +67,11 @@ function uniqueReferences(values: ExactEntityReference[]): ExactEntityReference[
 }
 
 function assignmentScope(candidate: ReadyExecutionNode): ExactEntityReference[] {
+	const inherited = candidate.contextRefs.filter(reference => reference.store === 'treedx'
+		&& candidate.predecessorResults.some(result => result.references.some(artifact => artifact.kind === 'treedx'
+			&& reference.repository === artifact.repository && reference.commit === artifact.commit && reference.path === artifact.path)));
 	return uniqueReferences([candidate.node.sourceRef, ...(candidate.node.authorityRefs ?? [])
-		.filter(reference => reference.model === 'decision')].filter(reference => reference.store === 'treedx'));
+		.filter(reference => reference.model === 'decision'), ...inherited].filter(reference => reference.store === 'treedx'));
 }
 
 function communicationWritePaths(path: string | undefined) {

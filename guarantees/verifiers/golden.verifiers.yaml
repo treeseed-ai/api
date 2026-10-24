@@ -41,6 +41,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/contributions/shared-proposal-context.test.ts
     testName: "includes exact accepted scope for Git-only work without general content authority"
+  api.golden.reviewed-predecessor-read-scope:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/contributions/proposal-source-context-native.test.ts
+    testName: "reads required reviewed predecessor artifacts through native scope without supplementary model reads or unrelated authority"
   api.golden.estimate-branch-contention:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

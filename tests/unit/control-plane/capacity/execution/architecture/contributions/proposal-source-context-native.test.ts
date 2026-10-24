@@ -5,6 +5,7 @@ import { workItemContext } from '../../../../../../../src/api/capacity/services/
 import { buildAssignmentAttempt } from '../../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { canonicalOfferBuildInput } from '../../fixtures/assignment-attempt-fixtures.ts';
+import { assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 
 // Committed native Git, original SQL and the official HTTP reader; configured
 // nodes are controlled inputs. No model execution or authenticated grant claim.
@@ -87,5 +88,60 @@ it('reads acting and reviewing context from the exact shared proposal owner whil
 			sourceRef: { ...sourceRef, commit: legacy.commit, digest: `sha256:${legacy.digest}` },
 		} as never)).rejects.toMatchObject({ code: 'execution_node_source_version_unsupported' });
 		expect(await f.snapshot()).toEqual(retained);
+	} finally { await f.close(); vi.unstubAllEnvs(); }
+});
+
+// Actual native Git/SQL/official HTTP reads, with supplied predecessor facts;
+// this does not represent a live model review, provider usage or admission campaign.
+it('reads required reviewed predecessor artifacts through native scope without supplementary model reads or unrelated authority', async () => {
+	vi.stubEnv('TREESEED_TREEDX_URL', ''); vi.stubEnv('TREESEED_TREEDX_BASE_URL', ''); vi.stubEnv('TREESEED_ENVIRONMENT', 'test');
+	const f = await proposalNativeFixture();
+	try {
+		const frozen = await f.publish(readyProposal());
+		expect(() => f.publishContent('../notes/escaped.mdx', { id: 'escape' })).toThrow('Unsafe fixture path');
+		const noteFile = f.publishContent('notes/reviewed.mdx', { id: 'review-note', classification: 'feedback', summary: 'Controlled predecessor evidence.' });
+		const decisionFile = f.publishContent('decisions/reviewed.mdx', { id: 'review-decision', disposition: 'approved', summary: 'Supplied review fact, not model execution.' });
+		const note = { store: 'treedx' as const, model: 'note', id: 'review-note', repository: 'repository', commit: noteFile.commit, path: 'notes/reviewed.mdx' };
+		const decision = { ...note, model: 'decision', id: 'review-decision', commit: decisionFile.commit, path: 'decisions/reviewed.mdx' };
+		const unrelated = { ...note, model: 'knowledge', id: 'unrelated', path: 'knowledge/unrelated.md' };
+		const input = structuredClone(canonicalOfferBuildInput());
+		input.candidate.node.sourceRef = { store: 'treedx', model: 'proposal', id: 'proposal', repository: 'repository', commit: frozen.commit,
+			path: 'proposals/proposal.mdx', revision: 1, digest: `sha256:${frozen.digest}` };
+		input.candidate.node.requestedPermissions!.content.read = [];
+		input.candidate.effectiveProfile.permissionCeiling.content.read = ['proposal', 'note', 'decision', 'knowledge'];
+		input.candidate.contextRefs.push(note, decision, unrelated);
+		input.candidate.predecessorResults = [assignmentResultSchema.parse({ schemaVersion: 'treeseed.assignment-result/v1',
+			id: 'review-result', assignmentId: 'review-attempt', status: 'completed', summary: 'Supplied completed review.',
+			references: [note, decision].map(ref => ({ kind: 'treedx', projectId: 'project', repository: ref.repository, commit: ref.commit, path: ref.path })),
+			verification: [], usage: { elapsedSeconds: 1 }, diagnostics: [], completedAt: input.now })];
+		const held = structuredClone(input), before = await f.snapshot();
+		const issued = buildAssignmentAttempt(input).assignment;
+		expect(issued.grant.contentRead).toEqual([input.candidate.node.sourceRef, note, decision]);
+		expect(issued.contextRefs).toContainEqual(note); expect(issued.contextRefs).toContainEqual(decision);
+		expect(issued.contextRefs).not.toContainEqual(unrelated); expect(issued.grant.contentWrite).toEqual([]);
+		expect(issued.grant.tools).toEqual(input.candidate.node.requestedPermissions!.tools);
+		const connection = await resolveKnowledgeGatewayConnection(f.store, { projectId: 'project', write: false,
+			relationPaths: true, readRefs: issued.grant.contentRead.map(reference => reference.commit!) });
+		if (!connection) throw new Error('Original native artifact reader required.');
+		await expect(connection.client.readRepositoryFile({ repoId: 'repository', ref: note.commit, path: '../notes/escaped.mdx',
+			encoding: 'utf8', parseFrontmatter: true, allowProtected: true })).rejects.toThrow('TreeDX request failed with status 404');
+		for (const [reference, expected] of [[note, noteFile], [decision, decisionFile]] as const) {
+			const observed = await connection.client.readRepositoryFile({ repoId: reference.repository, ref: reference.commit, path: reference.path,
+				encoding: 'utf8', parseFrontmatter: true, allowProtected: true }) as { resolvedRef: string; file: { path: string; content: string; frontmatter: { id: string } } };
+			expect(observed.resolvedRef).toBe(reference.commit); expect(observed.file.path).toBe(reference.path);
+			expect(observed.file.content).toBe(expected.source); expect(observed.file.frontmatter.id).toBe(reference.id);
+		}
+		const explicit = structuredClone(input); explicit.candidate.node.requestedPermissions!.content.read = ['proposal', 'note', 'decision'];
+		expect(buildAssignmentAttempt(explicit).assignment.grant.contentRead).toEqual(issued.grant.contentRead);
+		for (const model of ['note', 'decision']) {
+			const denied = structuredClone(input); denied.candidate.effectiveProfile.permissionCeiling.content.read = ['proposal', 'note', 'decision'].filter(value => value !== model) as never;
+			expect(() => buildAssignmentAttempt(denied)).toThrow('Exact assignment scope exceeds its effective activity profile.');
+		}
+		for (const patch of [null, { commit: 'a'.repeat(40) }, { path: 'notes/foreign.mdx' }]) {
+			const moved = structuredClone(input); moved.candidate.contextRefs = moved.candidate.contextRefs.filter(ref => ref.id !== note.id);
+			if (patch) moved.candidate.contextRefs.push({ ...note, ...patch });
+			expect(() => buildAssignmentAttempt(moved)).toThrow('Every predecessor artifact requires its exact context and read grant.');
+		}
+		expect(input).toEqual(held); expect(await f.snapshot()).toEqual(before);
 	} finally { await f.close(); vi.unstubAllEnvs(); }
 });
