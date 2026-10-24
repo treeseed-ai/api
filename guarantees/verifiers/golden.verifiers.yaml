@@ -81,6 +81,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/contributions/contribution-graph.test.ts
     testName: "binds each same-class author to its own acting work and another author own review budget in documentation-first dependency order"
+  api.golden.contribution-current-profile-custody:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/contributions/contribution-profile-custody-native.test.ts
+    testName: "resolves current contribution fingerprints through native profile custody while retaining historical estimate authority"
   api.golden.contribution-execution-denials:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

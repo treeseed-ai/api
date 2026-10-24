@@ -1,4 +1,5 @@
 import { type AgentDefinition, type AssignmentAttempt, type ExactEntityReference } from '@treeseed/sdk/agent-capacity';
+import { agentProfileReference } from './agent-profile-reference.js';
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
@@ -39,7 +40,7 @@ export function contributionBindings(source: { teamId: string; frontmatter: Row;
 		const owner = owners.get(text(item.id))!, profile = owner.definition.activityProfiles[activity];
 		if (!profile) return deny(`Contributor ${owner.definition.id} must configure ${activity} before approval.`);
 		return { ...profile, definition: owner.definition, agentClass: owner.definition.agentClass,
-			projectId: owner.attempt.projectId, agentReference: owner.attempt.effectiveProfile.profileRef,
+			projectId: owner.attempt.projectId, agentReference: agentProfileReference(owner.definition),
 			estimateAuthority: owner.estimateAuthority };
 	};
 	const acting = new Map(items.map(item => [text(item.id), bind(item, 'acting')]));
