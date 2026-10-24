@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { createGovernanceService } from '../../../../../../src/api/control-plane/governance/governance-service.ts';
 import { readExactProposal } from '../../../../../../src/api/governance/executable-proposal.ts';
+import { getGovernanceProposalMethod } from '../../../../../../src/api/store/governance/policy/queries/proposals/get-governance-proposal.ts';
 import { proposalNativeFixture } from './proposal-native-fixture.ts';
 
 describe('native shared proposal detail read', () => {
@@ -23,20 +25,18 @@ describe('native shared proposal detail read', () => {
 			};
 			item.estimateRef = { store: 'postgresql', model: 'assignment-attempt', id: 'authored-estimate', revision: 7 };
 			const authoredPlan = structuredClone(definition.executionPlan);
+			const proposalStore = { ...native.store, ensureInitialized: async () => undefined };
 			let exact = await native.publish(definition);
-			type ProposalRow = { id: string; projectId: string; teamId: string; activeVersion: number; activeContentHash: string;
-				metadata: { contentProvenance?: { repositoryId: string; contentPath: string; commitSha: string; digest: string } } };
-			let row: ProposalRow = { id: 'proposal', projectId: 'project', teamId: 'team', activeVersion: 1,
-				activeContentHash: exact.digest, metadata: { contentProvenance: { repositoryId: 'repository',
-					contentPath: 'proposals/proposal.mdx', commitSha: exact.commit, digest: exact.digest } } };
-			const exactRead = await readExactProposal(native.store, row);
+			const row = await getGovernanceProposalMethod.call(proposalStore as never, 'proposal');
+			expect(row).toMatchObject({ id: 'proposal', projectId: 'project', activeContentHash: exact.digest });
+			const exactRead = await readExactProposal(native.store, row!);
 			expect(exactRead.source).toBe(exact.source);
 			expect(exactRead.ref).toMatchObject({ revision: 1, commit: exact.commit, digest: `sha256:${exact.digest}` });
 			const store = {
 				...native.store,
 				getProjectDetails: async () => ({ project: { id: 'project', teamId: 'team' } }),
 				principalCanAccessTeam: async (principal: { id?: string }, teamId: string) => principal.id === 'reader' && teamId === 'team',
-				getGovernanceProposal: async () => row,
+				getGovernanceProposal: getGovernanceProposalMethod.bind(proposalStore),
 				listGovernanceProposalVotes: async () => [],
 				listGovernanceEvents: async () => [],
 				governanceProposalReadiness: async () => ({ contentReady: true }),
@@ -56,41 +56,44 @@ describe('native shared proposal detail read', () => {
 			const withoutPlan = { ...definition };
 			delete (withoutPlan as Record<string, unknown>).executionPlan;
 			exact = await native.publish(withoutPlan);
-			row = { ...row, activeContentHash: exact.digest, metadata: { contentProvenance: { repositoryId: 'repository',
-				contentPath: 'proposals/proposal.mdx', commitSha: exact.commit, digest: exact.digest } } };
-			const noPlanSource = await readExactProposal(native.store, row);
+			const noPlanRow = await getGovernanceProposalMethod.call(proposalStore as never, 'proposal');
+			const noPlanSource = await readExactProposal(native.store, noPlanRow!);
 			expect(noPlanSource.source).toBe(exact.source);
 			expect(noPlanSource.source).not.toContain('executionPlan:');
 			await expect.soft(service.proposal(principal, 'project', 'proposal')).resolves.toMatchObject({ executionPlan: null });
 
-			row = { ...row, metadata: {} };
+			await native.query("UPDATE governance_proposals SET metadata_json='{}' WHERE id='proposal'");
 			await expect.soft(service.proposal(principal, 'project', 'proposal')).rejects.toMatchObject({ code: 'proposal_exact_source_missing' });
-			row = { ...row, metadata: { contentProvenance: { repositoryId: 'repository', contentPath: 'proposals/proposal.mdx',
-				commitSha: exact.commit, digest: exact.digest } } };
-			row = { ...row, activeVersion: 0 };
-			await expect(readExactProposal(native.store, row)).rejects.toMatchObject({ code: 'proposal_exact_source_missing' });
+			await native.query('UPDATE governance_proposals SET metadata_json=? WHERE id=?', [JSON.stringify({ contentProvenance: {
+				repositoryId: 'repository', contentPath: 'proposals/proposal.mdx', commitSha: exact.commit, digest: exact.digest } }), 'proposal']);
+			await native.query('UPDATE governance_proposals SET active_version=0 WHERE id=?', ['proposal']);
+			const wrongVersionRow = await getGovernanceProposalMethod.call(proposalStore as never, 'proposal');
+			await expect(readExactProposal(native.store, wrongVersionRow!)).rejects.toMatchObject({ code: 'proposal_exact_source_missing' });
 			await expect.soft(service.proposal(principal, 'project', 'proposal')).rejects.toMatchObject({ code: 'proposal_exact_source_missing' });
-			row = { ...row, activeVersion: 1 };
+			await native.query('UPDATE governance_proposals SET active_version=1 WHERE id=?', ['proposal']);
 
 			for (const fault of ['denied', 'moved'] as const) {
 				native.setFault(fault);
 				await expect.soft(service.proposal(principal, 'project', 'proposal')).rejects.toThrow();
 			}
 			native.setFault('none');
-			row = { ...row, activeContentHash: 'f'.repeat(64) };
+			await native.query('UPDATE governance_proposals SET active_content_hash=? WHERE id=?', ['f'.repeat(64), 'proposal']);
 			await expect.soft(service.proposal(principal, 'project', 'proposal')).rejects.toMatchObject({ code: 'proposal_digest_mismatch' });
-			row = { ...row, activeContentHash: exact.digest };
+			await native.query('UPDATE governance_proposals SET active_content_hash=? WHERE id=?', [exact.digest, 'proposal']);
 			const invalid = { ...definition, executionPlan: { workItems: [] } };
 			exact = await native.publish(invalid);
-			row = { ...row, activeContentHash: exact.digest, metadata: { contentProvenance: { repositoryId: 'repository',
-				contentPath: 'proposals/proposal.mdx', commitSha: exact.commit, digest: exact.digest } } };
-			await expect(readExactProposal(native.store, row)).rejects.toMatchObject({ status: 422, code: 'proposal_execution_plan_invalid' });
+			await native.query('UPDATE governance_proposals SET active_content_hash=?,metadata_json=? WHERE id=?', [exact.digest,
+				JSON.stringify({ contentProvenance: { repositoryId: 'repository', contentPath: 'proposals/proposal.mdx', commitSha: exact.commit, digest: exact.digest } }), 'proposal']);
+			const invalidRow = await getGovernanceProposalMethod.call(proposalStore as never, 'proposal');
+			await expect(readExactProposal(native.store, invalidRow!)).rejects.toMatchObject({ status: 422, code: 'proposal_execution_plan_invalid' });
 			await expect.soft(service.proposal(principal, 'project', 'proposal')).rejects.toMatchObject({
 				status: 422, code: 'proposal_execution_plan_invalid',
 			});
 			await expect.soft(service.proposal({ id: 'outsider' }, 'project', 'proposal')).rejects.toMatchObject({
 				status: 403, code: 'project_access_denied',
 			});
+			const response = CONTROL_PLANE_OPERATIONS.governance.proposal.schema.output.parse(detail);
+			expect(response).toMatchObject({ id: 'proposal', executionPlan: authoredPlan });
 		} finally {
 			await native.close();
 		}
