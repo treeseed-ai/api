@@ -2071,6 +2071,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/rework-admission-native.test.ts
     testName: "requires both exact rework results rather than admitting just the old product"
+  api.golden.architecture-rework-reviewer-moved-decision:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/rework-admission-native.test.ts
+    testName: "denies internally consistent reviewer custody with moved Decision"
+  api.golden.architecture-rework-reviewer-missing-decision:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/rework-admission-native.test.ts
+    testName: "denies internally consistent reviewer custody with missing Decision"
   api.golden.architecture-rework-admission-returned:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
