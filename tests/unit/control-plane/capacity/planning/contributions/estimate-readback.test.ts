@@ -8,6 +8,7 @@ import { splitPostgresSqlStatements } from '../../../../../../src/api/persistenc
 import { loadProposalGroupContributions } from '../../../../../../src/api/capacity/services/capacity/execution/proposal-contributions.ts';
 import { projectTeamExecutionGraph } from '../../../../../../src/api/capacity/policy/execution/execution-graph-projector.ts';
 import { effectiveProfile } from '../../../../../../src/api/capacity/services/build/execution-node-profile.ts';
+import { hasCompleteExecutablePlan, readExactProposal } from '../../../../../../src/api/governance/executable-proposal.ts';
 import { loadTeamExecutableProposalSources } from '../../../../../../src/api/capacity/services/capacity/execution/executable-proposal-source.ts';
 import { verifyAssignmentContent, recordAssignmentContentIntegration } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-content-readback.ts';
 
@@ -29,10 +30,19 @@ describe('own contribution through owning SQL public HTTP client and native Git'
 				activityProfiles: { estimating: { ...profile, permissions: { content: { read: ['proposal'], write: ['proposal'] }, tools: ['source.read'] } },
 					acting: profile, reviewing: { ...profile, permissions: { content: { read: ['proposal', 'decision'], write: ['decision'] }, tools: ['source.read', 'verification'] } } } }));
 			for (const definition of definitions) f.publishContent(`agents/${definition.name}.mdx`, definition);
+			const discussed = definitions.map(definition => ({ id: `${definition.name}-work`, activity: 'acting',
+				objective: `Own ${definition.name} provider runtime repair.`, workspace: 'git', review: 'required', maximumReviewCycles: 2,
+				dependsOn: [], acceptanceCriteria: ['Deliver the accepted source boundary repair.'],
+				requestedPermissions: { content: { read: ['proposal'], write: [] }, tools: ['source.read', 'source.write', 'verification'] },
+				contextRefs: [{ store: 'git', model: 'repository', id: 'agent', repository: 'treeseed-ai/agent', commit: 'a'.repeat(40) }] }));
 			const draft = { schemaVersion: 'treeseed.proposal/v2', id: 'proposal', projectId: 'project', groupIds: ['provider-runtime'],
 				title: 'Preserve prepared workload inputs', request: 'Document and repair the actual model request handoff.',
-				summary: 'Own documentation and engineering contributions to the opaque runner repair.', status: 'discussing' };
+				summary: 'Own documentation and engineering contributions to the opaque runner repair.', status: 'discussing',
+				executionPlan: { workItems: discussed } };
 			const frozen = await f.publish(draft), path = 'proposals/proposal.mdx';
+			const initialRow = (await f.query('SELECT * FROM governance_proposals')).rows[0]!;
+			expect((await readExactProposal(f.store, initialRow)).definition.executionPlan).toEqual(draft.executionPlan);
+			expect(hasCompleteExecutablePlan(draft)).toBe(false);
 			const sourceRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1, repository: 'repository',
 				commit: frozen.commit, digest: `sha256:${frozen.digest}`, path };
 			const inputs = ['technical-writer', 'engineer'].map(name => {
@@ -44,12 +54,11 @@ describe('own contribution through owning SQL public HTTP client and native Git'
 					workspace: { mode: 'treedx', workspaceId: `workspace-${name}`, repository: 'repository', baseCommit: frozen.commit, writablePaths: [path] },
 					grant: { contentRead: [sourceRef], contentWrite: [sourceRef], sourceRead: [], sourceWrite: [], tools: [] } });
 				const estimate = { expectedSeconds: 120, maximumSeconds: 240, rationale: 'Controlled bounded contribution input, not measured agent work.' };
-				const item = { id: `${name}-work`, activity: 'acting', objective: `Own ${name} provider runtime repair.`, workspace: 'git',
-					review: 'required', maximumReviewCycles: 2, dependsOn: [], estimateRef: { store: 'postgresql', model: 'assignment-attempt', id, revision: attempt.attempt },
-					estimate, reviewEstimate: estimate, acceptanceCriteria: ['Deliver the accepted source boundary repair.'],
-					requestedPermissions: { content: { read: ['proposal'], write: [] }, tools: ['source.read', 'source.write', 'verification'] },
-					contextRefs: [{ store: 'git', model: 'repository', id: 'agent', repository: 'treeseed-ai/agent', commit: 'a'.repeat(40) }] };
-				const candidate = { ...draft, executionPlan: { workItems: [item] } }, committed = f.publishContent(path, candidate);
+				const planned = discussed.find(item => item.id === `${name}-work`)!;
+				const item = { ...planned, estimateRef: { store: 'postgresql', model: 'assignment-attempt', id, revision: attempt.attempt },
+					estimate, reviewEstimate: estimate };
+				const candidate = { ...draft, executionPlan: { workItems: [item, ...discussed.filter(peer => peer.id !== item.id)] } },
+					committed = f.publishContent(path, candidate);
 				const result = assignmentResultSchema.parse({ schemaVersion: 'treeseed.assignment-result/v1', id: `result-${name}`, assignmentId: id,
 					status: 'completed', summary: 'Controlled native component input; no live agent completion claimed.',
 					references: [{ kind: 'treedx', projectId: 'project', repository: 'repository', commit: committed.commit, path, workspaceId: attempt.workspace.mode === 'treedx' ? attempt.workspace.workspaceId : '' }],
@@ -62,8 +71,11 @@ describe('own contribution through owning SQL public HTTP client and native Git'
 				[assignment.id, 'controlled-membership', 'team', 'project', 'controlled-provider', 'maintenance', 'planning', 'completed',
 					assignment.agentId, JSON.stringify(assignment.assignmentAttempt), JSON.stringify(result), original.createdAt, original.createdAt]);
 			let current: Record<string, unknown> = draft;
-			for (const input of inputs) current = mergeAssignmentEstimate({ frozen: draft, current, candidate: input.candidate,
-				assignment: input.assignment, ownedEstimateRefs: [] });
+			for (const [index, input] of inputs.entries()) {
+				current = mergeAssignmentEstimate({ frozen: draft, current, candidate: input.candidate,
+					assignment: input.assignment, ownedEstimateRefs: [] });
+				expect(hasCompleteExecutablePlan(current)).toBe(index === inputs.length - 1);
+			}
 			await f.publish(current);
 			const proposal = (await f.query('SELECT * FROM governance_proposals')).rows[0]!;
 			await f.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,handler_refs_json,metadata_json,created_at,updated_at)

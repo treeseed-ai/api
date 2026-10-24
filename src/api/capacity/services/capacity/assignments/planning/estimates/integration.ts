@@ -2,7 +2,7 @@ import { validatePortableContentData } from '@treeseed/sdk/content-validation';
 import { setTimeout as delay } from 'node:timers/promises';
 import { branchMovedConflict } from '../../../../../../discussions/discussion-workspace.ts';
 import type { AssignmentResult, ExactEntityReference } from '@treeseed/sdk/agent-capacity';
-import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, estimateSchema } from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError } from '../../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../../repositories/capacity/assignments/assignment.ts';
 import { hasCompleteExecutablePlan, proposalApprovalFingerprint, readExactProposal } from '../../../../../../governance/executable-proposal.ts';
@@ -62,15 +62,27 @@ function mergeSubscriberEstimate(input: EstimateMerge): Row {
 	const own = candidateItems.filter(owns), peers = candidateItems.filter(item => !owns(item));
 	if (!own.length || own.some(item => stable(item.estimateRef) !== stable(ref))) return deny('assignment_estimate_owner_missing',
 		'Each estimating author must submit its own work with the exact current attempt provenance.');
+	if (own.some(item => !estimateSchema.safeParse(item.estimate).success
+		|| (item.review === 'required' && !estimateSchema.safeParse(item.reviewEstimate).success)))
+		return deny('assignment_estimate_work_item_invalid', 'An estimating result must supply its actual estimate and required review estimate.');
 	const ordered = (items: Row[]) => [...items].sort((left, right) => text(left.id).localeCompare(text(right.id)));
-	if (stable(ordered(peers)) !== stable(ordered(frozenItems.filter(item => !owns(item))))) return deny('assignment_estimate_unrelated_change',
+	const firstIds = new Set(own.map(item => text(item.id)));
+	const planning = ['draft', 'discussing'].includes(text(input.frozen.status)) && ['draft', 'discussing'].includes(text(input.current.status));
+	const firstClaim = (item: Row) => planning && firstIds.has(text(item.id)) && item.estimateRef === undefined
+		&& item.estimate === undefined && item.reviewEstimate === undefined;
+	for (const planned of frozenItems.filter(firstClaim)) {
+		const current = currentItems.find(item => item.id === planned.id);
+		if (!current || (firstClaim(current) && stable(current) !== stable(planned))) return deny('assignment_estimate_source_changed',
+			'A newer discussed contribution must not be overwritten or restored by a stale first claim.');
+	}
+	if (stable(ordered(peers)) !== stable(ordered(frozenItems.filter(item => !owns(item) && !firstClaim(item))))) return deny('assignment_estimate_unrelated_change',
 		'An estimator cannot add, remove or change another subscriber contribution.');
 	// Submitted peer fields stay frozen above; preserve newer peer contributions
 	// from the current plan when merging only this author's work below.
 	const currentOwn = currentItems.filter(owns);
 	if (stable(ordered(currentOwn)) !== stable(ordered(frozenItems.filter(owns))) && stable(ordered(currentOwn)) !== stable(ordered(own))) return deny(
 		'assignment_estimate_source_changed', 'A newer contribution from this author must not be overwritten.');
-	const merged = { ...input.current, executionPlan: { workItems: ordered([...currentItems.filter(item => !owns(item)), ...own]) } };
+	const merged = { ...input.current, executionPlan: { workItems: ordered([...currentItems.filter(item => !owns(item) && !firstClaim(item)), ...own]) } };
 	if (!validatePortableContentData('proposal', merged).ok) return deny('assignment_estimate_work_item_invalid',
 		'The combined contributions contain conflicting IDs, dependencies or invalid work.');
 	// Workflow order is authored content. An unchanged contribution must remain
