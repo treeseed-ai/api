@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
+import { Hono } from 'hono';
 import { createGovernanceService } from '../../../../../../src/api/control-plane/governance/governance-service.ts';
+import { createGovernanceOperations } from '../../../../../../src/api/control-plane/catalog/governance-operations.ts';
+import { createOperationHttpHandler } from '../../../../../../src/api/control-plane/http/operation-http-handler.ts';
 import { readExactProposal } from '../../../../../../src/api/governance/executable-proposal.ts';
 import { getGovernanceProposalMethod } from '../../../../../../src/api/store/governance/policy/queries/proposals/get-governance-proposal.ts';
 import { proposalNativeFixture } from './proposal-native-fixture.ts';
@@ -47,6 +49,20 @@ describe('native shared proposal detail read', () => {
 
 			const detail = await service.proposal(principal, 'project', 'proposal');
 			expect.soft(detail.executionPlan).toEqual(authoredPlan);
+			const operation = createGovernanceOperations({ governance: service }).find(candidate =>
+				candidate.binding.descriptor.operationId === 'governance.proposals.show')!;
+			const rest = operation.binding.descriptor.rest!;
+			const app = new Hono();
+			app.on(rest.method, rest.path, createOperationHttpHandler(operation, async () => ({ token: 'test-token',
+				clientId: 'client', scopes: [...operation.binding.descriptor.oauthScopes],
+				extra: { principal: { id: 'reader', roles: ['member'] } },
+			}), 'sha256:test'));
+			const response = await app.request(rest.path.replace(':projectId', 'project').replace(':proposalId', 'proposal'), {
+				headers: { authorization: 'Bearer test-token' },
+			});
+			expect(response.status).toBe(200);
+			const envelope = await response.json() as { data: Record<string, unknown> };
+			expect(envelope.data.executionPlan).toEqual(authoredPlan);
 			if (detail.executionPlan) {
 				expect(detail.executionPlan.workItems[0]).not.toHaveProperty('requiredCapabilities');
 				expect(detail.executionPlan.workItems[0].estimateRef).toEqual(item.estimateRef);
@@ -92,8 +108,6 @@ describe('native shared proposal detail read', () => {
 			await expect.soft(service.proposal({ id: 'outsider' }, 'project', 'proposal')).rejects.toMatchObject({
 				status: 403, code: 'project_access_denied',
 			});
-			const response = CONTROL_PLANE_OPERATIONS.governance.proposal.schema.output.parse({ ...detail, executionPlan: authoredPlan });
-			expect(response).toMatchObject({ id: 'proposal', executionPlan: authoredPlan });
 		} finally {
 			await native.close();
 		}
