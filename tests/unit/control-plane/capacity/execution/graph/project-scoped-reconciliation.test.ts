@@ -7,17 +7,21 @@ vi.mock('../../../../../../src/api/capacity/policy/execution/workday-execution-p
 
 describe('project-scoped reconciliation during another project workday', () => {
 	it('identifies the owning persisted class and profile when malformed authority blocks live reconciliation', async () => {
-		const store = { all: async (sql: string) => sql.includes('FROM project_agent_classes') ? [{
-			project_id: 'agent-project', id: 'retained-planning-class', status: 'active', handler_refs_json: {
-				agents: [{ id: 'agent/retained-planner', schemaVersion: 'retired' }],
-			},
-		}] : [], first: async () => null };
-		await expect(reconcileExecutionGraph(store, 'team', { plan: true })).rejects.toMatchObject({
-			code: 'agent_profile_invalid', message: expect.stringContaining('agent-project/retained-planning-class'),
-		});
-		await expect(reconcileExecutionGraph(store, 'team', { plan: true })).rejects.toMatchObject({
-			message: expect.stringContaining('agent/retained-planner'),
-		});
+		for (const status of ['active', 'paused', 'archived']) for (const candidate of [
+			{ id: 'agent/retained-planner', schemaVersion: 'retired' }, { id: '' }, { schemaVersion: '' },
+		]) {
+			const store = { all: async (sql: string) => sql.includes('FROM project_agent_classes') ? [{
+				project_id: 'agent-project', id: 'retained-planning-class', status, handler_refs_json: {
+					agents: [candidate],
+				},
+			}] : [], first: async () => null };
+			await expect(reconcileExecutionGraph(store, 'team', { plan: true })).rejects.toMatchObject({
+				code: 'agent_profile_invalid', message: expect.stringContaining('agent-project/retained-planning-class'),
+			});
+			await expect(reconcileExecutionGraph(store, 'team', { plan: true })).rejects.toMatchObject({
+				message: expect.stringContaining(candidate.id || '(missing)'),
+			});
+		}
 	});
 	it('indexes every configured subscriber by identity and refuses duplicate identities without a class winner', async () => {
 		const definition = (name: string) => ({ schemaVersion: 'treeseed.agent/v1', id: `sdk/${name}`, name,

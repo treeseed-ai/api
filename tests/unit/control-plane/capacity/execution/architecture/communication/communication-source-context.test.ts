@@ -73,6 +73,15 @@ describe('standalone communication exact source admission', () => {
 			expect(await store.tickCapacityWorkdayRun('team', 'conversation', new Date(Date.now() + 1_000).toISOString(), 'initial-conversation')).toEqual(result);
 			expect(await f.snapshot()).toEqual(after); expect((await f.left.pool.query('SELECT * FROM capacity_workday_events ORDER BY id')).rows).toEqual(events);
 			expect((await f.left.pool.query('SELECT * FROM project_agent_classes ORDER BY id')).rows).toEqual(classes);
+			await f.left.pool.query("UPDATE project_agent_classes SET handler_refs_json=$1 WHERE id='retired-architecture'",
+				[JSON.stringify({ agents: [{ id: 'retired/declared-agent', schemaVersion: 'retired' }] })]);
+			const declaredClasses = (await f.left.pool.query('SELECT * FROM project_agent_classes ORDER BY id')).rows;
+			await expect(store.tickCapacityWorkdayRun('team', 'conversation', now, 'invalid-declared-agent'))
+				.rejects.toMatchObject({ code: 'agent_profile_invalid', message: expect.stringContaining('retired/declared-agent') });
+			expect(await f.snapshot()).toEqual(after); expect((await f.left.pool.query('SELECT * FROM capacity_workday_events ORDER BY id')).rows).toEqual(events);
+			expect((await f.left.pool.query('SELECT * FROM project_agent_classes ORDER BY id')).rows).toEqual(declaredClasses);
+			await f.left.pool.query("UPDATE project_agent_classes SET handler_refs_json=$1 WHERE id='retired-architecture'",
+				[classes.find(row => row.id === 'retired-architecture')!.handler_refs_json]);
 			await f.left.pool.query("UPDATE capacity_provider_team_memberships SET status='suspended'");
 			await expect(store.tickCapacityWorkdayRun('team', 'conversation', now, 'denied-conversation')).rejects.toMatchObject({ code: 'capacity_workday_membership_not_approved' });
 			expect(await f.snapshot()).toEqual(after); expect((await f.left.pool.query('SELECT * FROM capacity_workday_events ORDER BY id')).rows).toEqual(events);
