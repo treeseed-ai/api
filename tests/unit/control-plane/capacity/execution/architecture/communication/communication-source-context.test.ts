@@ -7,6 +7,7 @@ import { projectCommunicationInvocations } from '../../../../../../../src/api/ca
 import { ControlPlaneStore } from '../../../../../../../src/api/persistence/store.ts';
 import { readyProposal } from '../../../../governance/proposals/architecture/ready-proposal-fixture.ts';
 import { postgresGraph } from '../../graph/architecture/living/living-postgres-fixture.ts';
+import { reconcileCommunicationExecutionGraph } from '../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 
 const gateway = vi.hoisted(() => ({ readRepositoryFile: vi.fn() }));
 vi.mock('../../../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({
@@ -120,6 +121,15 @@ describe('standalone communication exact source admission', () => {
 			expect(await workItemContext(store, node)).toEqual([{ ...sourceRef, commit: body }]);
 			expect(original).toEqual([sourceRef]); expect(await snapshot()).toEqual(before); expect(node).toEqual(held);
 			expect(calls).toEqual(Array(6).fill('GET /repos/example/project/commits/staging'));
+			await f.left.pool.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,handler_refs_json,created_at,updated_at)
+				VALUES ('retained-planning-class','team','project','retained-planning','Retained planning',$1,$2,$2)`,
+				[JSON.stringify({ agents: [{ id: 'agent/retained-planner', schemaVersion: 'retired' }] }), now]);
+			const classes = (await f.left.pool.query('SELECT * FROM project_agent_classes ORDER BY id')).rows;
+			await expect(reconcileCommunicationExecutionGraph(store, 'team')).rejects.toMatchObject({
+				code: 'agent_profile_invalid', message: expect.stringContaining('project/retained-planning-class'),
+			});
+			expect((await f.left.pool.query('SELECT * FROM project_agent_classes ORDER BY id')).rows).toEqual(classes);
+			expect(await snapshot()).toEqual(before); expect(calls).toHaveLength(6);
 			// Native owning context/SQL/HTTP boundary with controlled upstream source;
 			// not authenticated GitHub, issued provider execution, charge or physical closure.
 		} finally {
