@@ -53,7 +53,7 @@ it('resolves current contribution fingerprints through native profile custody wh
 			const bound = kind === 'acting' ? bindings.acting.get(item.id)! : bindings.reviewing.get(item.id)!.profile;
 			const owner = attempts.find(attempt => attempt.effectiveProfile.profileRef.id === bound.definition.id)!;
 			expect(bound.estimateAuthority.id).toBe(owner.id);
-			if (kind === 'reviewing') expect(bound.definition.id).not.toBe(definitions[index]!.id);
+			if (kind === 'reviewing') expect(bound.definition.id).toBe(definitions[index]!.id);
 			const node = { id: `${kind}-${item.id}`, projectId: 'project', kind, agentClass: 'maintenance', authorityRefs: [bound.agentReference] } as ExecutionNode;
 			const resolved = await effectiveProfile(f.store, node);
 			expect(resolved.profile.profileRef).toEqual({ store: 'treedx', model: 'agent', id: bound.definition.id,

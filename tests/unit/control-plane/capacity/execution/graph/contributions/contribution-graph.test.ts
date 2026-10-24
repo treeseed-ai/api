@@ -40,7 +40,22 @@ function input() {
 	return { teamId: 'team', revision: 1, sources: [source], profiles: Object.fromEntries(definitions.map(definition => [`project:${definition.id}`, definition])) };
 }
 
-it('binds each same-class author to its own acting work and another author own review budget in documentation-first dependency order', () => {
+it('gives a sole subscribed author a distinct review execution using its own profile, budget and provenance', () => {
+	const supplied = input(); supplied.sources[0]!.frontmatter.executionPlan.workItems.splice(1);
+	supplied.sources[0]!.estimatingAttempts.splice(1);
+	const first = Object.entries(supplied.profiles)[0]!; supplied.profiles = { [first[0]]: first[1] };
+	const held = structuredClone(supplied), graph = projectTeamExecutionGraph(supplied);
+	const actor = graph.nodes.find(node => node.kind === 'acting')!, review = graph.nodes.find(node => node.kind === 'reviewing')!;
+	const item = supplied.sources[0]!.frontmatter.executionPlan.workItems[0]!;
+	expect(review.id).not.toBe(actor.id);
+	expect(review.authorityRefs).toContainEqual(actor.authorityRefs!.find(ref => ref.model === 'agent'));
+	expect(review.authorityRefs).toContainEqual(item.estimateRef);
+	expect(review.estimate).toEqual(item.reviewEstimate);
+	expect(graph.edges).toContainEqual(expect.objectContaining({ fromNodeId: actor.id, toNodeId: review.id, provenance: 'review-pair' }));
+	expect(supplied).toEqual(held);
+});
+
+it('binds each same-class author to its own acting and reviewing profiles and budgets in documentation-first dependency order', () => {
 	const supplied = input(), before = structuredClone(supplied), graph = projectTeamExecutionGraph(supplied);
 	const items = supplied.sources[0]!.frontmatter.executionPlan.workItems;
 	for (const item of items) {
@@ -51,7 +66,7 @@ it('binds each same-class author to its own acting work and another author own r
 		const actorId = actorReference.id;
 		const reviewerId = reviewerReference.id;
 		expect(actorId).toBe(`project/${item.id.replace(/-work$/u, '')}`);
-		expect(reviewerId).not.toBe(actorId); expect(actor.agentClass).toBe('maintenance'); expect(review.agentClass).toBe('maintenance');
+		expect(reviewerId).toBe(actorId); expect(actor.agentClass).toBe('maintenance'); expect(review.agentClass).toBe('maintenance');
 		const actorDefinition = Object.values(supplied.profiles).find(definition => definition.id === actorId)!;
 		const reviewerDefinition = Object.values(supplied.profiles).find(definition => definition.id === reviewerId)!;
 		expect(actorReference).toEqual(agentProfileReference(actorDefinition));
@@ -69,21 +84,21 @@ it('binds each same-class author to its own acting work and another author own r
 	expect(supplied).toEqual(before);
 });
 
-it('refuses missing forged moved foreign or unsubscribed contributor authority and infeasible independent review', () => {
-	for (const fault of ['missing', 'forged', 'ordinal', 'foreign', 'unsubscribed', 'self-only'] as const) {
+it('refuses missing forged moved foreign or unsubscribed contributor authority and missing own review budgets', () => {
+	for (const fault of ['missing', 'forged', 'ordinal', 'foreign', 'unsubscribed', 'missing-review'] as const) {
 		const supplied = input(), source = supplied.sources[0]!;
 		if (fault === 'missing') source.estimatingAttempts = [];
 		if (fault === 'forged') source.frontmatter.executionPlan.workItems[0]!.estimateRef.id = 'unverified-attempt';
 		if (fault === 'ordinal') source.frontmatter.executionPlan.workItems[0]!.estimateRef.revision++;
 		if (fault === 'foreign') source.estimatingAttempts[0]!.teamId = 'foreign';
 		if (fault === 'unsubscribed') Object.values(supplied.profiles)[0]!.groupIds = ['another-team'];
-		if (fault === 'self-only') { source.frontmatter.executionPlan.workItems.splice(1); source.estimatingAttempts.splice(1); }
+		if (fault === 'missing-review') Reflect.deleteProperty(source.frontmatter.executionPlan.workItems[0]!, 'reviewEstimate');
 		const before = structuredClone(supplied);
 		expect(() => projectTeamExecutionGraph(supplied)).toThrow(); expect(supplied).toEqual(before);
 	}
 });
 
-it('keeps cross-project subscribers with the same configured name independent without a hidden project filter', () => {
+it('keeps each cross-project subscriber bound to its own review when configured names coincide', () => {
 	const supplied = input(), source = supplied.sources[0]!, projects = ['ui', 'admin'];
 	source.frontmatter.executionPlan.workItems.splice(2); source.estimatingAttempts.splice(2);
 	const definitions = Object.values(supplied.profiles).slice(0, 2);
@@ -97,7 +112,7 @@ it('keeps cross-project subscribers with the same configured name independent wi
 	for (const actor of graph.nodes.filter(node => node.kind === 'acting')) {
 		const reviewId = graph.edges.find(edge => edge.fromNodeId === actor.id && edge.provenance === 'review-pair')!.toNodeId;
 		const reviewer = graph.nodes.find(node => node.id === reviewId)!;
-		expect(reviewer.projectId).not.toBe(actor.projectId);
+		expect(reviewer.projectId).toBe(actor.projectId);
 		expect(reviewer.authorityRefs!.find(ref => ref.model === 'agent')!.id).toBe('shared-worker');
 		expect(actor.authorityRefs!.find(ref => ref.model === 'agent')!.id).toBe('shared-worker');
 	}
