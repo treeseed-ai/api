@@ -64,8 +64,8 @@ function mergeSubscriberEstimate(input: EstimateMerge): Row {
 	const ordered = (items: Row[]) => [...items].sort((left, right) => text(left.id).localeCompare(text(right.id)));
 	if (stable(ordered(peers)) !== stable(ordered(frozenItems.filter(item => !owns(item))))) return deny('assignment_estimate_unrelated_change',
 		'An estimator cannot add, remove or change another subscriber contribution.');
-	for (const peer of frozenItems.filter(item => !owns(item))) if (stable(currentItems.find(item => item.id === peer.id)) !== stable(peer))
-		return deny('assignment_estimate_source_changed', 'A frozen peer contribution changed while this estimate was being prepared.');
+	// Submitted peer fields stay frozen above; preserve newer peer contributions
+	// from the current plan when merging only this author's work below.
 	const currentOwn = currentItems.filter(owns);
 	if (stable(ordered(currentOwn)) !== stable(ordered(frozenItems.filter(owns))) && stable(ordered(currentOwn)) !== stable(ordered(own))) return deny(
 		'assignment_estimate_source_changed', 'A newer contribution from this author must not be overwritten.');

@@ -64,6 +64,16 @@ describe('subscriber-owned estimate contributions', () => {
 		expect((result.executionPlan as { workItems: Row[] }).workItems).toEqual([
 			{ ...next.work, estimate: { ...estimate, expectedSeconds: 150 } }, tester.work,
 		]);
+		const concurrent = input('tester-round-two', 'reproduce-request', both);
+		concurrent.assignment.agentId = tester.assignment.agentId;
+		concurrent.assignment.assignmentAttempt.effectiveProfile.profileRef.id = tester.assignment.agentId;
+		concurrent.ownedEstimateRefs = [tester.ref];
+		concurrent.candidate.executionPlan.workItems = [writer.work, concurrent.work];
+		const unchanged = structuredClone({ concurrent, result });
+		expect(mergeAssignmentEstimate({ ...concurrent, current: result } as never)).toEqual({
+			...result, executionPlan: { workItems: [{ ...next.work, estimate: { ...estimate, expectedSeconds: 150 } }, concurrent.work] },
+		});
+		expect({ concurrent, result }).toEqual(unchanged);
 	});
 	it('rejects forged ownership foreign content and invalid own estimates without changing any supplied input', () => {
 		const author = input('tester', 'reproduce-request');
