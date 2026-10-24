@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createGovernanceService } from '../../../../../../src/api/control-plane/governance/governance-service.ts';
+import { readExactProposal } from '../../../../../../src/api/governance/executable-proposal.ts';
 import { proposalNativeFixture } from './proposal-native-fixture.ts';
 import { readyContributionProposal } from './ready-proposal-fixture.ts';
 
@@ -16,6 +17,9 @@ describe('native shared proposal detail read', () => {
 			let row = { id: 'proposal', projectId: 'project', teamId: 'team', activeVersion: 1,
 				activeContentHash: exact.digest, metadata: { contentProvenance: { repositoryId: 'repository',
 					contentPath: 'proposals/proposal.mdx', commitSha: exact.commit, digest: exact.digest } } };
+			const exactRead = await readExactProposal(native.store, row);
+			expect(exactRead.source).toBe(exact.source);
+			expect(exactRead.ref).toMatchObject({ revision: 1, commit: exact.commit, digest: `sha256:${exact.digest}` });
 			const store = {
 				...native.store,
 				getProjectDetails: async () => ({ project: { id: 'project', teamId: 'team' } }),
@@ -42,6 +46,9 @@ describe('native shared proposal detail read', () => {
 			exact = await native.publish(withoutPlan);
 			row = { ...row, activeContentHash: exact.digest, metadata: { contentProvenance: { repositoryId: 'repository',
 				contentPath: 'proposals/proposal.mdx', commitSha: exact.commit, digest: exact.digest } } };
+			const noPlanSource = await readExactProposal(native.store, row);
+			expect(noPlanSource.source).toBe(exact.source);
+			expect(noPlanSource.source).not.toContain('executionPlan:');
 			await expect.soft(service.proposal(principal, 'project', 'proposal')).resolves.toMatchObject({ executionPlan: null });
 
 			row = { ...row, metadata: {} };
@@ -61,6 +68,7 @@ describe('native shared proposal detail read', () => {
 			exact = await native.publish(invalid);
 			row = { ...row, activeContentHash: exact.digest, metadata: { contentProvenance: { repositoryId: 'repository',
 				contentPath: 'proposals/proposal.mdx', commitSha: exact.commit, digest: exact.digest } } };
+			await expect(readExactProposal(native.store, row)).rejects.toMatchObject({ status: 422, code: 'proposal_execution_plan_invalid' });
 			await expect.soft(service.proposal(principal, 'project', 'proposal')).rejects.toMatchObject({
 				status: 422, code: 'proposal_execution_plan_invalid',
 			});
