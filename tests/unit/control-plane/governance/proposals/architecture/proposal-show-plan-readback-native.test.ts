@@ -67,6 +67,10 @@ describe('native shared proposal detail read', () => {
 			await expect.soft(service.proposal(principal, 'project', 'proposal')).rejects.toMatchObject({ code: 'proposal_exact_source_missing' });
 			row = { ...row, metadata: { contentProvenance: { repositoryId: 'repository', contentPath: 'proposals/proposal.mdx',
 				commitSha: exact.commit, digest: exact.digest } } };
+			row = { ...row, activeVersion: 0 };
+			await expect(readExactProposal(native.store, row)).rejects.toMatchObject({ code: 'proposal_exact_source_missing' });
+			await expect.soft(service.proposal(principal, 'project', 'proposal')).rejects.toMatchObject({ code: 'proposal_exact_source_missing' });
+			row = { ...row, activeVersion: 1 };
 
 			for (const fault of ['denied', 'moved'] as const) {
 				native.setFault(fault);
