@@ -14,7 +14,9 @@ describe('native shared proposal detail read', () => {
 			item.estimateRef = { store: 'postgresql', model: 'assignment-attempt', id: 'authored-estimate', revision: 7 };
 			const authoredPlan = structuredClone(definition.executionPlan);
 			let exact = await native.publish(definition);
-			let row = { id: 'proposal', projectId: 'project', teamId: 'team', activeVersion: 1,
+			type ProposalRow = { id: string; projectId: string; teamId: string; activeVersion: number; activeContentHash: string;
+				metadata: { contentProvenance?: { repositoryId: string; contentPath: string; commitSha: string; digest: string } } };
+			let row: ProposalRow = { id: 'proposal', projectId: 'project', teamId: 'team', activeVersion: 1,
 				activeContentHash: exact.digest, metadata: { contentProvenance: { repositoryId: 'repository',
 					contentPath: 'proposals/proposal.mdx', commitSha: exact.commit, digest: exact.digest } } };
 			const exactRead = await readExactProposal(native.store, row);
@@ -30,7 +32,7 @@ describe('native shared proposal detail read', () => {
 				governanceProposalReadiness: async () => ({ contentReady: true }),
 				getGovernanceDecision: async () => null,
 			};
-			const service = createGovernanceService(store, {});
+			const service = createGovernanceService(store, { create: async () => ({}) });
 			const principal = { id: 'reader', roles: ['member'] };
 
 			const detail = await service.proposal(principal, 'project', 'proposal');
