@@ -7,12 +7,41 @@ import { managedTeamLibrarySeedFiles } from '../../../../../../src/api/teams/man
 import { parseBook } from '../../../../../../src/api/knowledge/runtime/catalog.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { relationPath } from '../../../capacity/execution/graph/architecture/relations/relation-fixture.ts';
+import { commitInboxQuestion } from '../../../../../../src/api/control-plane/inbox/question-content.ts';
 
 // Real native TreeDX workspace/Git/graph/search plus original API store SQL and
 // owning knowledge service. No controlled HTTP substitute, no missing-env pass.
 // This is not a managed provider run, authenticated operator HTTP or whole
 // publication-runner/portfolio acceptance. All resources created inside tests.
 describe('native ordinary relation creation and indexing', () => {
+	it('real native inbox question authoring grants only its question path and retains exact Git bytes and relations', async () => {
+		const f = await relationAuthoringDatabase(); try {
+			const before = await f.snapshot();
+			const authored = await commitInboxQuestion({ store: f.store, principal: f.principal, teamId: 'team', projectId: 'precursor',
+				title: 'Activate reviewed simulation transport', markdown: 'Adopt the reviewed local origin before integration.', severity: 'blocking',
+				relatedObjectives: [], relatedProposals: ['origin-proposal'], relatedDecisions: ['origin-decision'],
+				relatedWorkItems: ['simulated-origin-delivery'] });
+			const scoped = await resolveKnowledgeGatewayConnection(f.store, { projectId: 'precursor', write: false,
+				readRefs: [authored.commitSha], workspacePaths: [authored.path] });
+			if (!scoped) throw new Error('Native exact question scope required');
+			const observed = await scoped.client.readRepositoryFiles({ repoId: authored.repositoryId, ref: authored.commitSha,
+				paths: [authored.path], encoding: 'utf8', parseFrontmatter: false, allowProtected: true });
+			expect(observed.resolvedRef).toBe(authored.commitSha);
+			expect(observed.files).toHaveLength(1); expect(observed.files[0]).toMatchObject({ path: authored.path, content: authored.source });
+			expect(createHash('sha256').update(observed.files[0]!.content).digest('hex')).toBe(authored.digest);
+			expect(authored.source).toContain('simulated-origin-delivery');
+			expect(scoped.allowedPaths.filter(path => !['books/**', 'knowledge/**', 'assets/**'].includes(path))).toEqual([authored.path]);
+			for (const denied of ['questions/another.mdx', 'notes/transport.mdx', 'agents/releaser.yaml']) {
+				await expect(scoped.client.readRepositoryFiles({ repoId: authored.repositoryId, ref: authored.commitSha,
+					paths: [denied], encoding: 'utf8', parseFrontmatter: false, allowProtected: true })).rejects.toThrow();
+			}
+			const binding = await f.store.getProjectTreeDxLibrary('precursor'); expect(binding?.contentRepositoryRef).toBe(authored.commitSha);
+			const after = await f.snapshot(); expect(after.ledger).toEqual(before.ledger);
+			expect(after.reviews).toEqual(before.reviews); expect(after.publications).toEqual(before.publications);
+			// Authoring/readback boundary only. No provider execution, answered
+			// question, graph gate, approval or release is asserted by this case.
+		} finally { await f.close(); }
+	}, 60_000);
 	it('real native Book metadata authoring retains exact legacy and current body bytes without publication or duplicate writes', async () => {
 		const f = await relationAuthoringDatabase(); try {
 			for (const legacy of [true, false]) {

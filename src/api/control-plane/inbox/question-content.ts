@@ -8,10 +8,12 @@ const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/gu, '-')
 
 export async function commitInboxQuestion(input: { store: any; teamId: string; projectId: string; principal: Record<string, any>; title: string; markdown: string;
 	severity: 'blocking' | 'advisory'; relatedObjectives: string[]; relatedProposals: string[]; relatedDecisions: string[]; relatedWorkItems: string[] }) {
-	const connection = await resolveKnowledgeGatewayConnection(input.store, { projectId: input.projectId, write: true });
-	if (!connection) throw Object.assign(new Error('The project TreeDX repository is unavailable for question authoring.'), { status: 503, code: 'inbox_treedx_unavailable' });
+	const library = await input.store.getProjectTreeDxLibrary(input.projectId);
+	if (!library) throw Object.assign(new Error('The project TreeDX repository is unavailable for question authoring.'), { status: 503, code: 'inbox_treedx_unavailable' });
 	const id = `question-${randomUUID()}`, now = new Date().toISOString();
-	const path = projectLibraryPath(connection.contentPath, 'questions', `${slug(input.title)}-${id.slice(-8)}.mdx`);
+	const path = projectLibraryPath(library.contentPath, 'questions', `${slug(input.title)}-${id.slice(-8)}.mdx`);
+	const connection = await resolveKnowledgeGatewayConnection(input.store, { projectId: input.projectId, write: true, workspacePaths: [path] });
+	if (!connection) throw Object.assign(new Error('The project TreeDX repository is unavailable for question authoring.'), { status: 503, code: 'inbox_treedx_unavailable' });
 	const source = serializeFrontmatterDocument({ id, title: input.title, status: 'open', severity: input.severity, questionType: 'strategy',
 		relatedObjectives: input.relatedObjectives, relatedProposals: input.relatedProposals, relatedDecisions: input.relatedDecisions,
 		relatedWorkItems: input.relatedWorkItems,
@@ -21,10 +23,10 @@ export async function commitInboxQuestion(input: { store: any; teamId: string; p
 	try {
 		await applyTextChangeset({ client: connection.client, workspace, changes: [{ path, before: null, after: source }] });
 		const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `question: ${input.title}`, author: { name: input.principal.displayName ?? input.principal.id, email: input.principal.email ?? 'inbox@users.treeseed.local' } });
-		const reader = await resolveKnowledgeGatewayConnection(input.store, { projectId: input.projectId, write: false, readRefs: [commit.commitSha] });
+		const reader = await resolveKnowledgeGatewayConnection(input.store, { projectId: input.projectId, write: false, readRefs: [commit.commitSha], workspacePaths: [path] });
 		if (!reader) throw new Error('TreeDX exact-ref question read-back is unavailable.');
 		const observed = await reader.client.readRepositoryFiles({ repoId: connection.repositoryId, ref: commit.commitSha, paths: [path], encoding: 'utf8', parseFrontmatter: false, allowProtected: true });
-		if (String((observed as any).resolvedRef) !== commit.commitSha || String((observed.files ?? [])[0]?.content ?? '').trimEnd() !== source.trimEnd()) throw Object.assign(new Error('Question did not pass exact TreeDX read-back.'), { status: 502, code: 'inbox_question_readback_failed' });
+		if (String((observed as any).resolvedRef) !== commit.commitSha || observed.files?.length !== 1 || observed.files[0]?.path !== path || observed.files[0]?.content !== source) throw Object.assign(new Error('Question did not pass exact TreeDX read-back.'), { status: 502, code: 'inbox_question_readback_failed' });
 		await recordTreeDxAuthoringState(input.store, 'integrated', { projectId: input.projectId, repositoryId: connection.repositoryId, commitSha: commit.commitSha,
 			ref: commit.branchName, changedPaths: commit.changedPaths, assignmentId: null, actorType: 'user', actorId: input.principal.id });
 		await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined);

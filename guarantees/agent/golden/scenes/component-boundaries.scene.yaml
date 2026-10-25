@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: inbox-question-scope-native
+    action: { verifier: api.golden.inbox-question-scope-native }
+    expect: { status: passed }
   - id: retired-class-profile-unit
     action: { verifier: api.golden.retired-class-profile-unit }
     expect: { status: passed }
