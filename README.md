@@ -79,3 +79,11 @@ in-progress adoption receipt, not a passing API runtime/assembly claim:
 
 API keeps AGPL-3.0 licensing, the restored committer policy and its own source/image producer.
 No cross-checkout source imports or production publication are introduced.
+
+The installed-root acceptance fixture prepares its bundle before planning: pack this API's built
+program, consume the exact vendored owner archives and acquire registry archives only at the
+versions and SRI identities pinned in this owner's lock. No registry request, install, build or
+lifecycle script runs during plan/apply. The genuine database, Keycloak and edge images remain
+separate package-owned plugins. Fixture image production uses this API's public image-context
+interface; recipe materialization and host operations use Deployment's public interfaces.
+CI must run the installed-root gate on Ubuntu 26.04 and fail visibly on missing prerequisites.
