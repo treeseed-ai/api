@@ -98,3 +98,9 @@ retained descriptors. Changes to unrelated sibling files are not runtime content
 ancestor directory entry counts and timestamps are excluded from content identity. Audited file
 bytes, inode, size and change timestamps remain strict, and the installed package/archive trees
 still reject unexpected files and symlinks.
+
+The authenticated application read endpoint preserves the SDK's public application DTO.
+Format-3 private worker records are projected to its declared fields before response validation;
+plan digests, idempotency keys, private sequence/format metadata and acknowledgements do not
+become extra HTTP fields. Legacy public DTOs retain the same shape. Full private read-back stays
+on the installation's owner/observer boundary.
