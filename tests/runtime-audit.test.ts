@@ -6,6 +6,7 @@ import { ServiceReleaseFixture, PreparedReleaseFixture } from '@treeseed-cordis/
 import { PackageArchiveMaterializer } from '@treeseed-cordis/deployment';
 import { CanonicalJson } from '@treeseed-cordis/sdk';
 import { ApiRuntimeAudit } from '../src/runtime-audit.js';
+import { ApiBuild } from '../src/server.js';
 class RuntimeAuditTests {
     async program(): Promise<void> {
         const fixture = await new ServiceReleaseFixture().services();
@@ -23,6 +24,12 @@ class RuntimeAuditTests {
             unlinkSync(entry); symlinkSync(join(source, 'dist/src/server.js'), entry); await expect(ApiRuntimeAudit.inspect(receipt, assetDigest)).rejects.toThrow(); unlinkSync(entry); writeFileSync(entry, original, { mode: 0o644 });
             const held = join(root, 'archives', sha256 + '.tgz'), bytes = readFileSync(held); writeFileSync(held, Buffer.from('ARCHIVE_SECRET_CANARY')); let refused = false; try { await ApiRuntimeAudit.inspect(receipt, assetDigest); } catch (error) { refused = true; expect(String(error)).not.toContain('ARCHIVE_SECRET_CANARY'); } expect(refused).toBe(true); writeFileSync(held, bytes);
             expect(await ApiRuntimeAudit.inspect(receipt, assetDigest)).toEqual({ packageSetDigest, entryDigest });
+            const context = join(fixture.root, 'image-context'); mkdirSync(context, { mode: 0o700 });
+            const prepared = await ApiBuild.imageContext(context, 'node@sha256:' + 'a'.repeat(64), [{ name: '@treeseed-cordis/api', version: '1.0.0', path: archive, sha256 }]);
+            expect(prepared).toEqual({ packageDigest: packageSetDigest, assetDigest, entryDigest });
+            expect(await ApiRuntimeAudit.inspect(join(context, 'runtime/cordis-runtime.json'), assetDigest)).toEqual({ packageSetDigest, entryDigest });
+            expect(readFileSync(join(context, 'Dockerfile'), 'utf8')).toContain('ai.treeseed.cordis.runtime-entry="' + entryDigest + '"');
+            expect(existsSync(join(fixture.root, 'SCRIPT_CANARY'))).toBe(false);
         } finally { fixture.close(); }
     }
 }
