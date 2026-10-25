@@ -380,6 +380,39 @@ it('projects only the selected configured closeout Reporter while preserving eve
  expect.soft(projected.nodes.filter(node=>node.kind==='planning').map(node=>node.projectId).sort()).toEqual(['api','sdk']);expect.soft(projected.nodes.filter(node=>node.kind==='reporting')).toHaveLength(1);expect.soft(projected.nodes.filter(node=>node.kind==='reporting').map(node=>node.projectId)).toEqual(['sdk']);expect(source).toEqual(held);
 });
 
+it('keeps frozen reporting authority when future proposal-group subscriptions change', () => {
+ const frozen = definition('reporter');
+ frozen.activityProfiles = { reporting: frozen.activityProfiles.reporting! };
+ const current = { ...frozen, groupIds: [] };
+ const appliedPlan = compileWorkday({ id: 'retained-reporting-membership', teamId: 'team',
+  policyId: 'default', policyRevision: 1, executionMode: 'simulation', agentIds: [],
+  startsAt: '2026-10-25T23:21:45.494Z',
+  policy: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 3600, maximumConcurrency: 1,
+   communicationConcurrency: 1, projectPercentages: { sdk: 100 }, agentClassPercentages: {} } });
+ const source = { id: appliedPlan.id, teamId: 'team', parameters: {
+  appliedPlan: { ...appliedPlan, state: 'closing', closingAt: '2026-10-25T23:28:15.169Z' },
+  scheduledProjectIds: ['sdk'], groupIds: ['workday-group'],
+  agentProfilesByProjectId: { sdk: { agents: [{ definition: frozen, activities: ['reporting'] }] } },
+ } };
+ const held = structuredClone({ source, current });
+ const original = projectActiveWorkdays({ teamId: 'team', revision: 1,
+  profiles: { 'sdk:reporter': frozen }, sources: [source] });
+ // API625: removing Reporter's future proposal subscriptions blocked unrelated
+ // proposal updates while this old Workday still held its original definition.
+ const reprojected = projectActiveWorkdays({ teamId: 'team', revision: 2,
+  profiles: { 'sdk:reporter': current }, sources: [source] });
+ const before = original.nodes.find(node => node.kind === 'reporting')!;
+ const after = reprojected.nodes.find(node => node.kind === 'reporting')!;
+ expect(after).toBeDefined();
+ expect(after.authorityRefs).toEqual(before.authorityRefs);
+ expect(after.requestedPermissions).toEqual(before.requestedPermissions);
+ expect(after.requiredCapabilities).toEqual(before.requiredCapabilities);
+ expect(reprojected.edges.map(edge => [edge.fromNodeId, edge.toNodeId]))
+  .toEqual(original.edges.map(edge => [edge.fromNodeId, edge.toNodeId]));
+ expect(validateExecutionGraph(reprojected.nodes, reprojected.edges)).toMatchObject({ ok: true });
+ expect({ source, current }).toEqual(held);
+});
+
 it('denies foreign duplicate and moved retained reporting authority without replacing the captured selection',()=>{
  const f=explicitReportingSelection(),profiles={'sdk:digest-writer':f.selected,'api:digest-writer':f.other},parameters={appliedPlan:f.plan,scheduledProjectIds:['sdk','api'],agentProfilesByProjectId:f.snapshot};
  for(const reportingAgentId of ['foreign/digest-writer','sdk/missing']) {
