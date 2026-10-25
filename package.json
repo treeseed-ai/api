@@ -34,8 +34,8 @@
   "peerDependencies": {
     "@treeseed-cordis/sdk": "0.0.0-cordis.12",
     "@treeseed-cordis/identity": "0.0.0-cordis.4",
-    "@treeseed-cordis/admin": "0.0.0-cordis.6",
-    "@treeseed-cordis/deployment": "0.0.0-cordis.33",
+    "@treeseed-cordis/admin": "0.0.0-cordis.7",
+    "@treeseed-cordis/deployment": "0.0.0-cordis.35",
     "@treeseed-cordis/ui": "0.0.0-cordis.14"
   },
   "devDependencies": {
@@ -47,7 +47,8 @@
     "@treeseed-cordis/admin": "file:vendor/admin.tgz",
     "@treeseed-cordis/deployment": "file:vendor/deployment.tgz",
     "@treeseed-cordis/ui": "file:vendor/ui.tgz",
-    "@types/semver": "7.8.0"
+    "@types/semver": "7.8.0",
+    "playwright": "1.64.1"
   },
   "dependencies": {
     "cordis": "4.0.0-rc.12",
@@ -67,13 +68,13 @@
     },
     "admin": {
       "repository": "https://github.com/treeseed-ai/admin.git",
-      "commit": "e3155dc389080d1c48370a3057660ad97e4a7404",
-      "sha256": "98e709ade2c8cda1913f5c65c995334a97056fd5b9d60e78a6261e110576dd1c"
+      "commit": "45abbeeb5e99f368128418168d913a30721fefba",
+      "sha256": "2041d42294bcd5814dc0a481bcc5a95b583ca4ba2a201b46d72a8f0c57979132"
     },
     "deployment": {
       "repository": "https://github.com/treeseed-ai/deployment.git",
-      "commit": "4e5f19cf55cdd9c7d7ee679b5d3f451334b1d4ee",
-      "sha256": "34b9f1080fc5a86a3c193daf5039537b91f4947514b84c9603268183b2bf42b1"
+      "commit": "24ec538241217a9aec3075b94d299aa21c8061dc",
+      "sha256": "2e648ca3dd8f67de107692975efbd62cd1227667d386faf0120d39e9ac4fdc58"
     },
     "ui": {
       "repository": "https://github.com/treeseed-ai/ui.git",
