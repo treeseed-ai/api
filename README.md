@@ -121,3 +121,11 @@ the seven-operation SDK contract, Origin/CSRF refusals, session-cookie protectio
 revocation. Credentials and cookies never enter fixture output. The gate retains the native
 worker and compares resource/credential/TLS identity before and after reads and browser actions.
 This is test-only activation of uniquely scoped disposable resources, not a user installation.
+
+The target-evidence continuation adopts Deployment `.35` from
+`24ec538241217a9aec3075b94d299aa21c8061dc`, archive SHA-256
+`2e648ca3dd8f67de107692975efbd62cd1227667d386faf0120d39e9ac4fdc58`.
+The genuine four-service test reached running containers but failed snapshot publication
+because direct and routed API observations shared one target. Deployment now admits identical
+evidence once and blocks conflicting observations; API retains its owning semantic probes.
+Qualification of the new assembled candidate remains required.
