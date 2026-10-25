@@ -1,6 +1,6 @@
 {
   "name": "@treeseed-cordis/api",
-  "version": "0.0.0-cordis.2",
+  "version": "0.0.0-cordis.3",
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-only",
@@ -24,18 +24,19 @@
     "LICENSE"
   ],
   "scripts": {
-    "check": "bun node_modules/@treeseed-cordis/sdk/dist/src/source-policy.js check",
-    "build": "bun node_modules/@treeseed-cordis/sdk/dist/src/source-policy.js build && bun dist/src/container.js --metadata && bun dist/src/server.js --metadata",
+    "check": "bun scripts/tooling.ts check",
+    "build": "bun scripts/tooling.ts build && bun dist/src/container.js --metadata && bun dist/src/server.js --metadata",
     "test:unit": "bun test ./tests --test-name-pattern '^unit:'",
     "test:integration": "bun test ./tests --test-name-pattern '^integration:'",
     "test:smoke": "bun test ./tests --test-name-pattern '^smoke:'",
     "verify": "bun run check && bun run build && bun run test:unit && bun run test:integration && bun run test:smoke"
   },
   "peerDependencies": {
-    "@treeseed-cordis/sdk": "0.0.0-cordis.4",
-    "@treeseed-cordis/identity": "0.0.0-cordis.1",
-    "@treeseed-cordis/admin": "0.0.0-cordis.1",
-    "@treeseed-cordis/deployment": "0.0.0-cordis.4"
+    "@treeseed-cordis/sdk": "0.0.0-cordis.12",
+    "@treeseed-cordis/identity": "0.0.0-cordis.3",
+    "@treeseed-cordis/admin": "0.0.0-cordis.4",
+    "@treeseed-cordis/deployment": "0.0.0-cordis.31",
+    "@treeseed-cordis/ui": "0.0.0-cordis.14"
   },
   "devDependencies": {
     "@treeseed-cordis/sdk": "file:vendor/sdk.tgz",
@@ -44,32 +45,40 @@
     "@types/node": "24.10.1",
     "@treeseed-cordis/identity": "file:vendor/identity.tgz",
     "@treeseed-cordis/admin": "file:vendor/admin.tgz",
-    "@treeseed-cordis/deployment": "file:vendor/deployment.tgz"
+    "@treeseed-cordis/deployment": "file:vendor/deployment.tgz",
+    "@treeseed-cordis/ui": "file:vendor/ui.tgz",
+    "@types/semver": "7.8.0"
   },
   "dependencies": {
     "cordis": "4.0.0-rc.12",
-    "jsonc-parser": "3.3.1"
+    "jsonc-parser": "3.3.1",
+    "semver": "7.8.5"
   },
   "cordisCandidate": {
     "sdk": {
       "repository": "https://github.com/treeseed-ai/sdk.git",
-      "commit": "f44ede394a58814b5d6e73146ba9ed7246b4f2ca",
-      "sha256": "16d3d7f699c55795b97972ca538bfeedeafdc6bfc4c32ed01708871ea02fe75c"
+      "commit": "4a0b12ca45478f58d92a02de4a7c144ed94c7417",
+      "sha256": "9652a1e1f830eb85c41b2d9ea207782ffdf291db2ef97331e338775dadf62fd4"
     },
     "identity": {
       "repository": "https://github.com/treeseed-ai/identity.git",
-      "commit": "906d64e1dc9219786444f5f793968592bb8abd96",
-      "sha256": "dd3131499b01b8ad8d4c8aa78d0cb99de69da86c4fbad1da0670439c3d8bdddc"
+      "commit": "9ca694c38593184357cd8537ddca7912677efbf6",
+      "sha256": "2931e0cd948299566ff5d8224545e287143df06de7ac7b25a568da52599f4dab"
     },
     "admin": {
       "repository": "https://github.com/treeseed-ai/admin.git",
-      "commit": "5b30c2af69c5d273936cfddd480e7f5891c75db9",
-      "sha256": "a7750c6f38187e44b2823eb778f66b73c4596983226dd80c2204208f96848e28"
+      "commit": "439d638a4c2f09424685073dc72bd2b6a9353254",
+      "sha256": "5aee82cfeb00f18f8bed00a445fc59d1bfb02eb53e3961ced2cfe9559ff17c31"
     },
     "deployment": {
       "repository": "https://github.com/treeseed-ai/deployment.git",
-      "commit": "6a861aa81f3786b74752191b461d1bcddf99fce5",
-      "sha256": "7015e2447eb4d98f9979e8f10a3b33480c8ca80818384e2cbf939eba550ab65d"
+      "commit": "7bf5ef7e43b692f3ea35eaafcb6fae8943c840b1",
+      "sha256": "c41ee0da38d7a78712b4b13827b689853f7cf0f73502127ee7b3a19065154723"
+    },
+    "ui": {
+      "repository": "https://github.com/treeseed-ai/ui.git",
+      "commit": "a0f28a2d4a3285cbb5203a97c2cdb620517871ae",
+      "sha256": "6c1032996990178f7a76d5cbde2e15a4b6467941159d6d6013a33526e799e7ad"
     }
   },
   "cordis": {
@@ -163,7 +172,7 @@
       "id": "private-worker",
       "pluginId": "api",
       "capability": "api.host",
-      "contractVersion": "0.3.0-cordis.1",
+      "contractVersion": "0.4.0-cordis.1",
       "target": "api",
       "provide": [
         "api.host"
@@ -174,7 +183,7 @@
       "id": "platform-operations",
       "pluginId": "api",
       "capability": "platform.invoker",
-      "contractVersion": "0.3.0-cordis.1",
+      "contractVersion": "0.4.0-cordis.1",
       "target": "api",
       "provide": [
         "platform.invoker"
@@ -188,13 +197,14 @@
       "id": "installed-routes",
       "pluginId": "api",
       "capability": "api.routes",
-      "contractVersion": "0.3.0-cordis.1",
+      "contractVersion": "0.4.0-cordis.1",
       "target": "api",
       "provide": [
         "api.routes"
       ],
       "inject": [
         "cordis.composition",
+        "api.host",
         "identity.sessions",
         "admin.routes",
         "platform.invoker"
@@ -204,7 +214,7 @@
       "id": "node-http",
       "pluginId": "api",
       "capability": "api.http",
-      "contractVersion": "0.3.0-cordis.1",
+      "contractVersion": "0.4.0-cordis.1",
       "target": "api",
       "provide": [
         "api.http"
@@ -213,5 +223,607 @@
         "api.routes"
       ]
     }
-  ]
+  ],
+  "cordisPackage": {
+    "formatVersion": 4,
+    "contractVersion": "0.4.0-cordis.1",
+    "pluginId": "api",
+    "package": {
+      "name": "@treeseed-cordis/api",
+      "version": "0.0.0-cordis.3"
+    },
+    "providers": [
+      {
+        "declaration": {
+          "id": "api.node.service",
+          "pluginId": "api",
+          "capability": "container.service",
+          "contractVersion": "0.4.0-cordis.1",
+          "target": "deployment",
+          "provide": [
+            "container.service"
+          ],
+          "inject": [
+            "deployment.services",
+            "service.context"
+          ]
+        },
+        "entry": "dist/src/server.js",
+        "classExport": "NodeApiServicePlugin",
+        "configurationSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "replacement": {
+          "kind": "restart",
+          "stateVersion": 1,
+          "qualificationDigest": null
+        },
+        "commandIds": [],
+        "container": {
+          "definition": {
+            "imageId": "api",
+            "user": "installation-owner",
+            "command": [
+              "--serve",
+              "--configuration",
+              "/run/secrets/api-config"
+            ],
+            "environment": {},
+            "ports": [
+              {
+                "id": "http",
+                "target": 8080
+              }
+            ],
+            "volumes": [],
+            "secrets": [
+              {
+                "slot": "api-config",
+                "target": "/run/secrets/api-config"
+              }
+            ],
+            "workerSocket": true
+          },
+          "resources": {
+            "volumes": [],
+            "slots": {
+              "api-config": {
+                "kind": "json",
+                "value": {
+                  "installationId": {
+                    "$context": "installationId"
+                  },
+                  "serviceId": {
+                    "$context": "serviceId"
+                  },
+                  "origin": {
+                    "$context": "origin"
+                  },
+                  "issuer": {
+                    "$template": [
+                      {
+                        "$context": "origin"
+                      },
+                      "/identity/realms/cordis"
+                    ]
+                  },
+                  "identityInternalOrigin": {
+                    "$endpoint": {
+                      "dependencyPort": "identity",
+                      "portId": "http",
+                      "scheme": "http",
+                      "path": "/",
+                      "part": "url"
+                    }
+                  },
+                  "clientId": "cordis-admin",
+                  "clientSecret": {
+                    "$secret": {
+                      "dependencyPort": "identity",
+                      "slot": "oidc-client"
+                    }
+                  },
+                  "databaseUrl": {
+                    "$template": [
+                      "postgresql://cordis:",
+                      {
+                        "$secret": {
+                          "dependencyPort": "database",
+                          "slot": "database-password"
+                        }
+                      },
+                      "@",
+                      {
+                        "$endpoint": {
+                          "dependencyPort": "database",
+                          "portId": "postgres",
+                          "scheme": "tcp",
+                          "path": "/",
+                          "part": "authority"
+                        }
+                      },
+                      "/cordis"
+                    ]
+                  },
+                  "bootstrapSubject": {
+                    "$secret": {
+                      "dependencyPort": "identity",
+                      "slot": "bootstrap-subject"
+                    }
+                  },
+                  "workerSocket": "/run/cordis-host/host.sock",
+                  "runtimeReceipt": "/app/cordis-runtime.json",
+                  "assetDigest": {
+                    "$context": "assetDigest"
+                  }
+                }
+              }
+            },
+            "grants": [
+              {
+                "dependencyPort": "database",
+                "slot": "database-password"
+              },
+              {
+                "dependencyPort": "identity",
+                "slot": "oidc-client"
+              },
+              {
+                "dependencyPort": "identity",
+                "slot": "bootstrap-subject"
+              }
+            ],
+            "authorities": []
+          },
+          "providedContracts": [
+            {
+              "port": "api",
+              "contractId": "platform.api",
+              "contractVersion": "1.0.0"
+            }
+          ],
+          "dependencies": [
+            {
+              "port": "database",
+              "contractId": "storage.postgres",
+              "contractVersion": "1.0.0"
+            },
+            {
+              "port": "identity",
+              "contractId": "identity.oidc",
+              "contractVersion": "1.0.0"
+            }
+          ],
+          "observationContract": "platform.api",
+          "transitionPolicy": {
+            "kind": "restart-required",
+            "stateVersion": 1
+          }
+        }
+      },
+      {
+        "declaration": {
+          "id": "api.runtime.readiness",
+          "pluginId": "api",
+          "capability": "probe.service",
+          "contractVersion": "0.4.0-cordis.1",
+          "target": "deployment",
+          "provide": [
+            "probe.service"
+          ],
+          "inject": []
+        },
+        "entry": "dist/src/server.js",
+        "classExport": "ApiReadinessPlugin",
+        "configurationSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "apiPort": {
+              "default": "api",
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,47}$"
+            },
+            "authoritySlot": {
+              "default": "public-ca",
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "replacement": {
+          "kind": "restart",
+          "stateVersion": 1,
+          "qualificationDigest": null
+        },
+        "commandIds": [],
+        "probe": {
+          "observationContracts": [
+            "platform.api",
+            "edge.https"
+          ],
+          "schemes": [
+            "http",
+            "https"
+          ],
+          "maximumDeadlineMs": 120000
+        }
+      },
+      {
+        "declaration": {
+          "id": "private-worker",
+          "pluginId": "api",
+          "capability": "api.host",
+          "contractVersion": "0.4.0-cordis.1",
+          "target": "api",
+          "provide": [
+            "api.host"
+          ],
+          "inject": []
+        },
+        "entry": "dist/src/server.js",
+        "classExport": "HostPlugin",
+        "configurationSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "installationId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "origin": {
+              "type": "string",
+              "pattern": "^https:\\/\\/(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?$"
+            },
+            "issuer": {
+              "type": "string",
+              "format": "uri"
+            },
+            "identityInternalOrigin": {
+              "type": "string",
+              "format": "uri"
+            },
+            "clientId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "clientSecret": {
+              "type": "string",
+              "minLength": 1
+            },
+            "databaseUrl": {
+              "type": "string",
+              "minLength": 1
+            },
+            "bootstrapSubject": {
+              "type": "string",
+              "minLength": 1
+            },
+            "workerSocket": {
+              "type": "string",
+              "pattern": "^\\/"
+            },
+            "assetDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "serviceId": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,47}$"
+            },
+            "runtimeReceipt": {
+              "type": "string",
+              "pattern": "^\\/"
+            }
+          },
+          "required": [
+            "installationId",
+            "origin",
+            "issuer",
+            "identityInternalOrigin",
+            "clientId",
+            "clientSecret",
+            "databaseUrl",
+            "bootstrapSubject",
+            "workerSocket",
+            "assetDigest"
+          ],
+          "additionalProperties": false
+        },
+        "replacement": {
+          "kind": "restart",
+          "stateVersion": 1,
+          "qualificationDigest": null
+        },
+        "commandIds": []
+      },
+      {
+        "declaration": {
+          "id": "platform-operations",
+          "pluginId": "api",
+          "capability": "platform.invoker",
+          "contractVersion": "0.4.0-cordis.1",
+          "target": "api",
+          "provide": [
+            "platform.invoker"
+          ],
+          "inject": [
+            "api.host",
+            "cordis.composition"
+          ]
+        },
+        "entry": "dist/src/server.js",
+        "classExport": "InvokerPlugin",
+        "configurationSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "installationId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "origin": {
+              "type": "string",
+              "pattern": "^https:\\/\\/(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?$"
+            },
+            "issuer": {
+              "type": "string",
+              "format": "uri"
+            },
+            "identityInternalOrigin": {
+              "type": "string",
+              "format": "uri"
+            },
+            "clientId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "clientSecret": {
+              "type": "string",
+              "minLength": 1
+            },
+            "databaseUrl": {
+              "type": "string",
+              "minLength": 1
+            },
+            "bootstrapSubject": {
+              "type": "string",
+              "minLength": 1
+            },
+            "workerSocket": {
+              "type": "string",
+              "pattern": "^\\/"
+            },
+            "assetDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "serviceId": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,47}$"
+            },
+            "runtimeReceipt": {
+              "type": "string",
+              "pattern": "^\\/"
+            }
+          },
+          "required": [
+            "installationId",
+            "origin",
+            "issuer",
+            "identityInternalOrigin",
+            "clientId",
+            "clientSecret",
+            "databaseUrl",
+            "bootstrapSubject",
+            "workerSocket",
+            "assetDigest"
+          ],
+          "additionalProperties": false
+        },
+        "replacement": {
+          "kind": "restart",
+          "stateVersion": 1,
+          "qualificationDigest": null
+        },
+        "commandIds": []
+      },
+      {
+        "declaration": {
+          "id": "installed-routes",
+          "pluginId": "api",
+          "capability": "api.routes",
+          "contractVersion": "0.4.0-cordis.1",
+          "target": "api",
+          "provide": [
+            "api.routes"
+          ],
+          "inject": [
+            "cordis.composition",
+            "api.host",
+            "identity.sessions",
+            "admin.routes",
+            "platform.invoker"
+          ]
+        },
+        "entry": "dist/src/server.js",
+        "classExport": "RouterPlugin",
+        "configurationSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "installationId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "origin": {
+              "type": "string",
+              "pattern": "^https:\\/\\/(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?$"
+            },
+            "issuer": {
+              "type": "string",
+              "format": "uri"
+            },
+            "identityInternalOrigin": {
+              "type": "string",
+              "format": "uri"
+            },
+            "clientId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "clientSecret": {
+              "type": "string",
+              "minLength": 1
+            },
+            "databaseUrl": {
+              "type": "string",
+              "minLength": 1
+            },
+            "bootstrapSubject": {
+              "type": "string",
+              "minLength": 1
+            },
+            "workerSocket": {
+              "type": "string",
+              "pattern": "^\\/"
+            },
+            "assetDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "serviceId": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,47}$"
+            },
+            "runtimeReceipt": {
+              "type": "string",
+              "pattern": "^\\/"
+            }
+          },
+          "required": [
+            "installationId",
+            "origin",
+            "issuer",
+            "identityInternalOrigin",
+            "clientId",
+            "clientSecret",
+            "databaseUrl",
+            "bootstrapSubject",
+            "workerSocket",
+            "assetDigest"
+          ],
+          "additionalProperties": false
+        },
+        "replacement": {
+          "kind": "restart",
+          "stateVersion": 1,
+          "qualificationDigest": null
+        },
+        "commandIds": []
+      },
+      {
+        "declaration": {
+          "id": "node-http",
+          "pluginId": "api",
+          "capability": "api.http",
+          "contractVersion": "0.4.0-cordis.1",
+          "target": "api",
+          "provide": [
+            "api.http"
+          ],
+          "inject": [
+            "api.routes"
+          ]
+        },
+        "entry": "dist/src/server.js",
+        "classExport": "HttpPlugin",
+        "configurationSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "installationId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "origin": {
+              "type": "string",
+              "pattern": "^https:\\/\\/(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?$"
+            },
+            "issuer": {
+              "type": "string",
+              "format": "uri"
+            },
+            "identityInternalOrigin": {
+              "type": "string",
+              "format": "uri"
+            },
+            "clientId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "clientSecret": {
+              "type": "string",
+              "minLength": 1
+            },
+            "databaseUrl": {
+              "type": "string",
+              "minLength": 1
+            },
+            "bootstrapSubject": {
+              "type": "string",
+              "minLength": 1
+            },
+            "workerSocket": {
+              "type": "string",
+              "pattern": "^\\/"
+            },
+            "assetDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "serviceId": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,47}$"
+            },
+            "runtimeReceipt": {
+              "type": "string",
+              "pattern": "^\\/"
+            }
+          },
+          "required": [
+            "installationId",
+            "origin",
+            "issuer",
+            "identityInternalOrigin",
+            "clientId",
+            "clientSecret",
+            "databaseUrl",
+            "bootstrapSubject",
+            "workerSocket",
+            "assetDigest"
+          ],
+          "additionalProperties": false
+        },
+        "replacement": {
+          "kind": "restart",
+          "stateVersion": 1,
+          "qualificationDigest": null
+        },
+        "commandIds": []
+      }
+    ],
+    "assets": [],
+    "images": [],
+    "runtimeImages": [
+      {
+        "id": "api",
+        "entry": "dist/src/server.js"
+      }
+    ]
+  }
 }
