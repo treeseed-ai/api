@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.inbox-question-scope-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
+    testName: "real native inbox question authoring grants only its question path and retains exact Git bytes and relations"
   api.golden.retired-class-profile-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

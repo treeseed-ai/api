@@ -35,7 +35,7 @@ export function createInboxService(input: { store: any; discussions: any; commun
 			const path=text(signal.subject_id),commitSha=text(signal.commit_sha);if(!path||!commitSha)continue;
 			const existing=await store.first("SELECT id,commit_sha FROM inbox_items WHERE team_id=? AND kind='question' AND project_id=? AND content_path=? LIMIT 1",[teamId,signal.project_id,path]);if(text(existing?.commit_sha)===commitSha)continue;
 			try{
-				const connection=await resolveKnowledgeGatewayConnection(store,{projectId:signal.project_id,write:false,readRefs:[commitSha]});if(!connection)continue;
+				const connection=await resolveKnowledgeGatewayConnection(store,{projectId:signal.project_id,write:false,readRefs:[commitSha],workspacePaths:[path]});if(!connection)continue;
 				const read=await connection.client.readRepositoryFiles({repoId:connection.repositoryId,ref:commitSha,paths:[path],encoding:'utf8',parseFrontmatter:false,allowProtected:true});const file=(read.files??[])[0];
 				if(!file){if(existing){await store.run("UPDATE inbox_items SET status='deleted',updated_at=? WHERE id=?",[new Date().toISOString(),existing.id]);await store.run('DELETE FROM inbox_drafts WHERE item_id=?',[existing.id]);}continue;}
 				const source=text(file.content),parsed=parseFrontmatterDocument(source),frontmatter=record(parsed.frontmatter);
