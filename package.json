@@ -34,7 +34,7 @@
   "peerDependencies": {
     "@treeseed-cordis/sdk": "0.0.0-cordis.12",
     "@treeseed-cordis/identity": "0.0.0-cordis.4",
-    "@treeseed-cordis/admin": "0.0.0-cordis.7",
+    "@treeseed-cordis/admin": "0.0.0-cordis.8",
     "@treeseed-cordis/deployment": "0.0.0-cordis.35",
     "@treeseed-cordis/ui": "0.0.0-cordis.14"
   },
@@ -68,8 +68,8 @@
     },
     "admin": {
       "repository": "https://github.com/treeseed-ai/admin.git",
-      "commit": "45abbeeb5e99f368128418168d913a30721fefba",
-      "sha256": "2041d42294bcd5814dc0a481bcc5a95b583ca4ba2a201b46d72a8f0c57979132"
+      "commit": "83b9bd399666bcaa0d806b807804f4a8b7b3514e",
+      "sha256": "6ed661574bbe10f00dfa09fafc84c60785e987152cd997ecb31395334077c4a2"
     },
     "deployment": {
       "repository": "https://github.com/treeseed-ai/deployment.git",

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Qualify the genuine installed API root and preserve public SDK application responses (#624).
+
 ### Added
 
 - Bind native API roots and readiness to accepted measured runtime content (#624).
