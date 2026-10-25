@@ -1,3 +1,4 @@
+import { exactEntityReferenceSchema, type ExactEntityReference } from '@treeseed/sdk/agent-capacity';
 type Row = Record<string, unknown>;
 function record(value: unknown): Row {
 	if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row;
@@ -24,7 +25,7 @@ export interface QuestionConditionSource {
 	relatedProposalIds: string[];
 	relatedDecisionIds: string[];
 	relatedWorkItemIds: string[];
-	answerRef: { model: 'discussion_message'; id: string; revision: number; digest: string; repositoryId: string; path: string; commit: string } | null;
+	answerRef: ExactEntityReference | null;
 }
 
 /** Read the indexed current question lifecycle while retaining exact TreeDX
@@ -36,13 +37,11 @@ export async function loadTeamQuestionConditionSources(store: any, teamId: strin
 		const metadata = record(row.metadata_json), answer = record(metadata.answerProvenance);
 		const repositoryId = text(row.repository_id), path = text(row.content_path), commit = text(row.commit_sha), digest = text(row.digest);
 		if (!repositoryId || !path || !/^[a-f0-9]{40}$/u.test(commit) || !digest) return [];
-		const answerCommit = text(answer.commit), answerPath = text(answer.path), answerDigest = text(answer.digest);
-		const answerRef = /^[a-f0-9]{40}$/u.test(answerCommit) && answerPath && answerDigest ? {
-			model: 'discussion_message' as const, id: text(answer.id) || answerPath, revision: Math.max(1, Number(answer.revision) || 1),
-			digest: answerDigest, repositoryId: text(answer.repositoryId) || repositoryId, path: answerPath, commit: answerCommit,
-		} : null;
+		const parsedAnswer = exactEntityReferenceSchema.safeParse(answer);
+		const answerRef = parsedAnswer.success && parsedAnswer.data.store === 'treedx'
+			&& parsedAnswer.data.model === 'discussion-message' && parsedAnswer.data.repository === repositoryId ? parsedAnswer.data : null;
 		return [{ teamId: text(row.team_id), projectId: text(row.project_id), id: text(row.id), revision: Math.max(1, Number(row.version) || 1),
-			digest, status: row.status === 'answered' ? 'answered' as const : row.status === 'closed' ? 'closed' as const : 'open' as const,
+			digest: digest.startsWith('sha256:') ? digest : `sha256:${digest}`, status: row.status === 'answered' ? 'answered' as const : row.status === 'closed' ? 'closed' as const : 'open' as const,
 			severity: text(metadata.severity) === 'advisory' ? 'advisory' as const : 'blocking' as const, title: text(row.title), repositoryId, path, commit,
 			relatedProposalIds: strings(metadata.related_proposals, metadata.relatedProposals),
 			relatedDecisionIds: strings(metadata.related_decisions, metadata.relatedDecisions),

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { validateDecisionAuthority, validateExecutionAuthorityReceipt } from '../../../../../../src/api/governance/decision-authority.ts';
 import { prepareNativeProposalVoting } from './ready-proposal-fixture.ts';
 import { nativeSubscriberInputs, recordNativeSubscriberInputs, expectNativeSubscriberGraph } from './native-subscriber-inputs.ts';
-import { verifyNativeProposalReconciliation } from './proposal-reconciliation-fixture.ts';
+import { verifyNativeProposalReconciliation, verifyScopedInboxQuestionGates } from './proposal-reconciliation-fixture.ts';
 import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { stringify } from 'yaml';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
@@ -481,8 +481,8 @@ describe('native proposal Decision authority', () => {
 				expect(await f.store.all('SELECT * FROM capacity_operation_receipts ORDER BY id')).toEqual(allReceipts);
 				const readback = object(await native.readRepositoryFile({ repoId: repository, ref: retainedContent.commit, path: retainedContent.path, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }));
 				expect(readback.resolvedRef).toBe(retainedContent.commit); expect(object(readback.file).content).toBe(retainedContent.raw);
-				// Native admission/claim does not prove live model execution or usage.
 			}
+			if (!canonicalSupply) await verifyScopedInboxQuestionGates(f, declaration.id, decisionId); // No live model execution or usage is proved by native admission/claim.
 		} finally {
 			const cleanupErrors: unknown[] = [];
 			for (const workspace of extraWorkspaces) try { await f.client.workspaces.close(workspace); } catch (error) { cleanupErrors.push(error); }
