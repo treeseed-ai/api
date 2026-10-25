@@ -72,7 +72,7 @@ in-progress adoption receipt, not a passing API runtime/assembly claim:
 | Owner | Version | Source commit | Archive SHA-256 |
 | --- | --- | --- | --- |
 | SDK | `0.0.0-cordis.12` | `4a0b12ca45478f58d92a02de4a7c144ed94c7417` | `9652a1e1f830eb85c41b2d9ea207782ffdf291db2ef97331e338775dadf62fd4` |
-| Deployment | `0.0.0-cordis.33` | `4e5f19cf55cdd9c7d7ee679b5d3f451334b1d4ee` | `34b9f1080fc5a86a3c193daf5039537b91f4947514b84c9603268183b2bf42b1` |
+| Deployment | `0.0.0-cordis.34` | `59ada8bb3bb50d6d86eeff03f35e218a363369e7` | `9627fa88157926f55985579fc783ff0b2c6a2e95aca674dff5076c31b1a6e7fb` |
 | Identity | `0.0.0-cordis.4` | `d837d23d99bc49eb1954bdd865397d34186d41a1` | `0e377e4a0ad79ee649b20e41779c862e431f20979b19cae638b658925686d9f1` |
 | Admin | `0.0.0-cordis.6` | `e3155dc389080d1c48370a3057660ad97e4a7404` | `98e709ade2c8cda1913f5c65c995334a97056fd5b9d60e78a6261e110576dd1c` |
 | UI | `0.0.0-cordis.14` | `a0f28a2d4a3285cbb5203a97c2cdb620517871ae` | `6c1032996990178f7a76d5cbde2e15a4b6467941159d6d6013a33526e799e7ad` |
