@@ -2,30 +2,15 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { AuthInfo } from '@modelcontextprotocol/server';
 import type { Context } from 'hono';
 import { ZodError } from 'zod';
-import { ControlPlaneOperationError, type BoundOperation } from '../catalog/operation-registry.ts';
+import { controlPlaneProblem, ControlPlaneOperationError, type BoundOperation } from '../catalog/operation-registry.ts';
 import { enforceOperationAuthorization, readOperationPreconditions } from '../authorization/invocation-policy.ts';
 import { CONFIRMATION_HEADER, decodeConfirmation, type ConfirmationService } from '../confirmation/confirmation-service.ts';
 
 type Authenticate = (request: Request) => Promise<AuthInfo | Response>;
 
 function problem(context: Context, error: ControlPlaneOperationError, requestId: string) {
-	const title = error.status === 400 ? 'Invalid request'
-		: error.status === 401 ? 'Authentication required'
-			: error.status === 403 ? 'Access denied'
-				: error.status === 404 ? 'Not found'
-					: error.status === 409 ? 'Conflict'
-						: error.status === 412 ? 'Precondition failed'
-							: error.status === 429 ? 'Rate limited'
-								: error.status === 503 ? 'Service unavailable' : 'Operation failed';
-	return context.json({
-		type: `https://treeseed.dev/problems/${error.code}`,
-		title,
-		status: error.status,
-		code: error.code,
-		detail: error.message,
-		instance: new URL(context.req.url).pathname,
-		requestId,
-	}, error.status, { 'content-type': 'application/problem+json', 'x-request-id': requestId });
+	return context.json(controlPlaneProblem(error, requestId, new URL(context.req.url).pathname),
+		error.status, { 'content-type': 'application/problem+json', 'x-request-id': requestId });
 }
 
 function etag(value: unknown) {

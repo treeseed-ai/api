@@ -9,6 +9,7 @@ import { projectActiveWorkdays } from '../../../../capacity/policy/execution/wor
 import { projectCommunicationInvocations, type CommunicationProjectionSource } from '../../../../capacity/policy/execution/communication-execution-projector.ts';
 import { loadTeamExecutableProposalSources } from '../../../../capacity/services/capacity/execution/executable-proposal-source.ts';
 import { loadTeamExactDependencyLinks } from '../../../../capacity/services/capacity/execution/exact-dependency-links.ts';
+import { loadTeamQuestionConditionSources } from '../../../../capacity/services/capacity/execution/question-condition-source.ts';
 import { readExactProposal } from '../../../../governance/executable-proposal.ts';
 import { authorizeCapacityTeam, type CapacityPrincipal } from '../capacity-authorization.ts';
 import { CapacityOperationError } from '../capacity-operation-error.ts';
@@ -233,7 +234,9 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 	const revision = current.revision + 1;
 	const dependencyLinks = new Set(sources.map((source) => source.projectId)).size > 1
 		? await loadGraphSource('dependencies', () => loadTeamExactDependencyLinks(store, sources)) : [];
-	const proposalProjection = sources.length ? projectTeamExecutionGraph({ teamId, revision, sources, profiles, dependencyLinks }) : null;
+	const questionSources = scope === 'communication' || !sources.length ? []
+		: await loadGraphSource('questions', () => loadTeamQuestionConditionSources(store, teamId));
+	const proposalProjection = sources.length ? projectTeamExecutionGraph({ teamId, revision, sources, profiles, dependencyLinks, questionSources }) : null;
 	const activeSimulationByDecision = simulationRunByDecision(workdays);
 	const activeSimulationByProposal = simulationRunBySelection(workdays, 'proposalIds');
 	const decisionRun = (node: ExecutionNode) => simulationRunForNode(node, activeSimulationByDecision, activeSimulationByProposal);

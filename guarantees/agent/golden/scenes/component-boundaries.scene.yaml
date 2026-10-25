@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: inbox-question-scope-native
+    action: { verifier: api.golden.inbox-question-scope-native }
+    expect: { status: passed }
   - id: retired-class-profile-unit
     action: { verifier: api.golden.retired-class-profile-unit }
     expect: { status: passed }
@@ -2576,6 +2579,12 @@ workflow:
     expect: { status: passed }
   - id: mcp-write-preconditions-unit
     action: { verifier: api.golden.mcp-write-preconditions-unit }
+    expect: { status: passed }
+  - id: mcp-problem-legacy
+    action: { verifier: api.golden.mcp-problem-legacy }
+    expect: { status: passed }
+  - id: mcp-problem-modern
+    action: { verifier: api.golden.mcp-problem-modern }
     expect: { status: passed }
   - id: mcp-write-preconditions-postgres
     action: { verifier: api.golden.mcp-write-preconditions-postgres }

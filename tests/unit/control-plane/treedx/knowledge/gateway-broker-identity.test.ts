@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const { mint } = vi.hoisted(() => ({ mint: vi.fn((_input: Record<string, any>) => ({ token: 'test-delegation' })) }));
 vi.mock('../../../../../src/api/control-plane/treedx/delegation-authority.ts', () => ({
-	treeDxDelegationAuthority: () => ({ mint: () => ({ token: 'test-delegation' }) }),
+	treeDxDelegationAuthority: () => ({ mint }),
 }));
 
 import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
@@ -16,6 +17,21 @@ function store(config: Record<string, string> = {}, treeDx: Record<string, strin
 afterEach(() => vi.unstubAllEnvs());
 
 describe('knowledge gateway broker identity', () => {
+	it('grants exact-snapshot indexing without content writes or remote publication only when requested', async () => {
+		const input = { projectId: 'project', write: false, relationPaths: true, readRefs: ['a'.repeat(40)] };
+		await resolveKnowledgeGatewayConnection(store(), input);
+		const ordinary = mint.mock.calls.at(-1)![0].scope;
+		expect(ordinary.capabilities).not.toContain('graph:refresh');
+		await resolveKnowledgeGatewayConnection(store(), { ...input, refreshGraph: true });
+		const indexed = mint.mock.calls.at(-1)![0].scope;
+		expect(indexed).toEqual({ ...ordinary, capabilities: [...ordinary.capabilities, 'graph:refresh'] });
+		for (const denied of ['files:write', 'files:delete', 'workspace:create', 'git:commit', 'git:push', 'policy:write'])
+			expect(indexed.capabilities).not.toContain(denied);
+	});
+	it.each([[], ['staging'], ['a'.repeat(40), 'b'.repeat(40)]])('rejects refresh grants without one exact snapshot: %j', async (readRefs) => {
+		await expect(resolveKnowledgeGatewayConnection(store(), { projectId: 'project', write: false, refreshGraph: true, readRefs }))
+			.rejects.toThrow('one exact commit');
+	});
 	it('uses the runtime service identity instead of the library instance UUID', async () => {
 		vi.stubEnv('TREESEED_TREEDX_NODE_ID', 'runtime-broker');
 		const connection = await resolveKnowledgeGatewayConnection(store({ TREESEED_TREEDX_NODE_ID: 'configured-broker' }),

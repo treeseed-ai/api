@@ -55,6 +55,19 @@ export class ControlPlaneOperationError extends Error {
 	}
 }
 
+export function controlPlaneProblem(error: ControlPlaneOperationError, requestId: string, instance: string) {
+	const title = error.status === 400 ? 'Invalid request'
+		: error.status === 401 ? 'Authentication required'
+			: error.status === 403 ? 'Access denied'
+				: error.status === 404 ? 'Not found'
+					: error.status === 409 ? 'Conflict'
+						: error.status === 412 ? 'Precondition failed'
+							: error.status === 429 ? 'Rate limited'
+								: error.status === 503 ? 'Service unavailable' : 'Operation failed';
+	return { type: `https://treeseed.dev/problems/${error.code}`, title, status: error.status,
+		code: error.code, detail: error.message, instance, requestId };
+}
+
 export class OperationRegistry {
 	readonly catalog: ControlPlaneCatalog;
 	readonly operations: ReadonlyMap<string, BoundOperation>;

@@ -31,6 +31,50 @@ const noteBytes = `---\n${stringify(note)}---\n\n${note.body}\n`;
 beforeEach(() => { resolve.mockReset(); });
 
 describe('exact TreeDX dependency intake', () => {
+	it('rebuilds only an unready exact snapshot through a scoped refresh grant before reading its links', async () => {
+		const notReady = Object.assign(new Error('Graph is not ready.'), { code: 'graph_not_ready' });
+		const client = { listRepositoryPaths: vi.fn(async () => ({ resolvedRef: graph.resolvedRef })),
+			queryGraph: vi.fn().mockRejectedValueOnce(notReady).mockResolvedValue(graph),
+			refreshGraph: vi.fn(async () => ({ graph: { jobId: 'exact-refresh', resolvedRef: graph.resolvedRef } })),
+			getGraphRefreshJob: vi.fn(async () => ({ job: { status: 'completed', graphVersion: 'exact-index' } })),
+			readRepositoryFile: vi.fn(async () => ({ resolvedRef: graph.resolvedRef,
+				file: { path: 'notes/dependency.md', content: noteBytes, frontmatter: note } })) };
+		resolve.mockImplementation(async (_store, input) => ({ repositoryId: `${input.projectId}-library`, contentPath: '.',
+			baseRef: 'staging', allowedPaths: ['notes/**', 'proposals/**'], client: input.projectId === 'sdk' ? client : {
+				listRepositoryPaths: async () => ({ resolvedRef: 'd'.repeat(40) }),
+				queryGraph: async () => ({ resolvedRef: 'd'.repeat(40), nodes: [], edges: [] }) } }));
+		expect(await loadTeamExactDependencyLinks({}, [sdk, api] as never)).toHaveLength(1);
+		expect(resolve).toHaveBeenCalledWith({}, { projectId: 'sdk', write: false, relationPaths: true,
+			readRefs: [graph.resolvedRef], refreshGraph: true });
+		expect(client.refreshGraph).toHaveBeenCalledWith({ repoId: 'sdk-library', ref: graph.resolvedRef,
+			paths: ['notes/**', 'proposals/**'] });
+		expect(client.getGraphRefreshJob).toHaveBeenCalledWith({ repoId: 'sdk-library', ref: graph.resolvedRef, jobId: 'exact-refresh' });
+		expect(client.queryGraph).toHaveBeenCalledTimes(2);
+		expect(client.queryGraph.mock.calls[0]).toEqual(client.queryGraph.mock.calls[1]);
+	});
+
+	it.each(['permission_denied', 'authentication_required', 'transport_failed'])('does not reinterpret %s as an empty or unready dependency graph', async (code) => {
+		const error = Object.assign(new Error(code), { code });
+		resolve.mockResolvedValue({ repositoryId: 'sdk-library', contentPath: '.', baseRef: 'staging', allowedPaths: ['notes/**'],
+			client: { listRepositoryPaths: async () => ({ resolvedRef: graph.resolvedRef }), queryGraph: async () => { throw error; } } });
+		await expect(loadTeamExactDependencyLinks({}, [sdk, api] as never)).rejects.toBe(error);
+		expect(resolve.mock.calls.some(([, input]) => input.refreshGraph)).toBe(false);
+	});
+	it.each(['missing-grant', 'wrong-repository', 'failed-job', 'still-unready'])('retains the dependency failure after %s', async (failure) => {
+		const notReady = Object.assign(new Error('Graph is not ready.'), { code: 'graph_not_ready' });
+		const client = { listRepositoryPaths: async () => ({ resolvedRef: graph.resolvedRef }),
+			queryGraph: vi.fn(async () => { throw notReady; }),
+			refreshGraph: vi.fn(async () => ({ graph: { jobId: 'exact-refresh' } })),
+			getGraphRefreshJob: vi.fn(async () => ({ job: { status: failure === 'failed-job' ? 'failed' : 'completed', errorCode: 'native-index-failed' } })) };
+		resolve.mockImplementation(async (_store, input) => input.refreshGraph && failure === 'missing-grant' ? null : {
+			repositoryId: input.refreshGraph && failure === 'wrong-repository' ? 'foreign-library' : 'sdk-library',
+			contentPath: '.', baseRef: 'staging', allowedPaths: ['notes/**'], client });
+		await expect(loadTeamExactDependencyLinks({}, [sdk, api] as never)).rejects.toThrow(
+			failure === 'failed-job' ? 'native-index-failed' : failure === 'still-unready' ? 'Graph is not ready.' : 'refresh grant is missing');
+		expect(client.queryGraph).toHaveBeenCalledTimes(failure === 'still-unready' ? 2 : 1);
+		if (failure === 'missing-grant' || failure === 'wrong-repository') expect(client.refreshGraph).not.toHaveBeenCalled();
+	});
+
 	it('requires a scoped grant, exact graph commit, and matching note bytes', async () => {
 		const client = { listRepositoryPaths: vi.fn(async () => ({ resolvedRef: 'c'.repeat(40) })), queryGraph: vi.fn(async () => graph),
 			readRepositoryFile: vi.fn(async () => ({ resolvedRef: 'c'.repeat(40),

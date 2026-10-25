@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { exactDependencyLinkSchema, validatePortableContentData } from '@treeseed/sdk/content-validation';
-import { projectLibraryPath, resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
+import { completedGraphRefresh, projectLibraryPath, resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
 import type { ExecutableProposalSource, VerifiedDependencyLink } from '../../../policy/execution/execution-graph-projector.ts';
 
 type Row = Record<string, unknown>;
@@ -42,9 +42,19 @@ export async function loadTeamExactDependencyLinks(store: any, sources: Executab
 			projectId: project.projectId, write: false, relationPaths: true, readRefs: [commit],
 		});
 		if (!pinned || pinned.repositoryId !== project.repository) throw new Error(`TreeDX exact dependency read grant is missing for project ${project.projectId}.`);
-		const response = record(await pinned.client.queryGraph({ repoId: pinned.repositoryId,
+		const query = { repoId: pinned.repositoryId,
 			ref: commit, seeds: [{ kind: 'type', value: 'ExactEntityReference' }],
-			relations: ['depends_on'], options: { direction: 'both', depth: 1, maxNodes: 50 } }));
+			relations: ['depends_on'], options: { direction: 'both', depth: 1, maxNodes: 50 } };
+		let response: Row;
+		try { response = record(await pinned.client.queryGraph(query)); }
+		catch (error) {
+			if (text(record(error).code) !== 'graph_not_ready') throw error;
+			const refresh = await resolveKnowledgeGatewayConnection(store, { projectId: project.projectId,
+				write: false, relationPaths: true, readRefs: [commit], refreshGraph: true });
+			if (!refresh || refresh.repositoryId !== project.repository) throw new Error(`TreeDX exact dependency refresh grant is missing for project ${project.projectId}.`);
+			await completedGraphRefresh(refresh.client, { repoId: refresh.repositoryId, ref: commit, paths: refresh.allowedPaths });
+			response = record(await pinned.client.queryGraph(query));
+		}
 		if (text(response.resolvedRef) !== commit) throw new Error('TreeDX dependency graph moved during read.');
 		const nodes = response.nodes;
 		if (!Array.isArray(nodes) || nodes.length >= 50 || !Array.isArray(response.edges)) {

@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.inbox-question-scope-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
+    testName: "real native inbox question authoring grants only its question path and retains exact Git bytes and relations"
   api.golden.retired-class-profile-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -4526,6 +4531,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/mcp/authorization-equivalence.test.ts
     testName: "retains real MCP mutation identity and version headers and denies missing authority before dispatch"
+  api.golden.mcp-problem-legacy:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/mcp/authorization-equivalence.test.ts
+    testName: "preserves the shared safe operation problem over native MCP legacy"
+  api.golden.mcp-problem-modern:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/mcp/authorization-equivalence.test.ts
+    testName: "preserves the shared safe operation problem over native MCP 2026-07-28"
   api.golden.mcp-write-preconditions-postgres:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

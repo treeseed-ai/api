@@ -4,11 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { relationAuthoringDatabase } from './relation-authoring-fixture.ts';
 import { createLocalKnowledgePublicationStorage } from '../../../../../../src/api/knowledge/publication-storage.ts';
-import { createKnowledgePublicationExecutor, completedGraphRefresh } from '../../../../../../src/operations-runner/knowledge/publication-executor.ts';
+import { createKnowledgePublicationExecutor } from '../../../../../../src/operations-runner/knowledge/publication-executor.ts';
 import { DirectControlPlaneRunnerClient } from '../../../../../../src/operations-runner/client/direct-control-plane-runner-client.ts';
 import { runPlatformOperationOnce } from '../../../../../../src/operations-runner/entrypoint-support/operations/operation-execution.ts';
 import { loadTeamExactDependencyLinks } from '../../../../../../src/api/capacity/services/capacity/execution/exact-dependency-links.ts';
-import { resolveKnowledgeGatewayConnection } from '../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 
 // Same native fixture, official SDK, original SQL and existing local runner/storage.
 // Only these fresh managed repositories are in scope. No external publication,
@@ -32,10 +31,8 @@ export async function relationPublicationDatabase() {
 			{ version: workspace.version, message: 'Publish exact native dependency Note' });
 		const run = (operationId: string) => runPlatformOperationOnce({ client, runnerId, operationId, executors: [executor], environment: 'local' });
 		const load = async () => {
-			// The unchanged selected secondary library also needs its real empty index;
-			// never supply a graph response to the owning loader.
-			const secondary = await resolveKnowledgeGatewayConnection(f.store, { projectId: 'dependent', write: true }); assert.ok(secondary);
-			await completedGraphRefresh(secondary.client, { repoId: secondary.repositoryId, ref: secondary.baseRef, paths: ['notes/**'] });
+			// Do not pre-index the fresh secondary repository: ordinary dependency
+			// loading owns observation/recovery of its exact native graph readiness.
 			return loadTeamExactDependencyLinks(f.store, f.sources);
 		};
 		const close = async () => {

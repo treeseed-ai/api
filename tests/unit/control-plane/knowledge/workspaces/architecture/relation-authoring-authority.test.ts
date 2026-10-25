@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { validateContentFrontmatter } from '@treeseed/sdk/content-validation';
 import { applyTextChangeset } from '../../../../../../src/api/knowledge/changesets/apply-text-changeset.ts';
 import { createUnifiedChangeset } from '../../../../../../src/api/knowledge/changesets/unified-diff.ts';
-import { completedGraphRefresh, requireIndexedSourceClosure } from '../../../../../../src/operations-runner/knowledge/publication-executor.ts';
+import { requireIndexedSourceClosure } from '../../../../../../src/operations-runner/knowledge/publication-executor.ts';
+import { completedGraphRefresh } from '../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { relationInputs, relationPath } from '../../../capacity/execution/graph/architecture/relations/relation-fixture.ts';
 import { noteSource } from './relation-authoring-fixture.ts';
 

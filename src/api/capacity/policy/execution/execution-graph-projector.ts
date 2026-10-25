@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { agentProfileReference } from './agent-profile-reference.ts';
 import { contributionBindings } from './contribution-bindings.ts';
+import type { QuestionConditionSource } from '../../services/capacity/execution/question-condition-source.ts';
 import {
 	executionNodeSchema,
 	graphRevisionSchema,
@@ -203,6 +204,7 @@ export function projectTeamExecutionGraph(input: {
 	sources: ExecutableProposalSource[];
 	profiles: Record<string, AgentDefinition>;
 	dependencyLinks?: VerifiedDependencyLink[];
+	questionSources?: QuestionConditionSource[];
 	createdAt?: string;
 }): ExecutionGraphProjection {
 	const nodes: ExecutionNode[] = [];
@@ -256,6 +258,22 @@ export function projectTeamExecutionGraph(input: {
 				edges.push(edge({ teamId: source.teamId, fromNodeId: actor.id, toNodeId: reviewer.id,
 					provenance: 'review-pair', sourceRef }, input.revision));
 			} else completionByItem.set(text(workItem.id), actor);
+		}
+
+		for (const question of input.questionSources ?? []) {
+			if (question.teamId !== source.teamId || question.projectId !== source.projectId || question.severity !== 'blocking'
+				|| !question.relatedProposalIds.includes(sourceRef.id)
+				|| question.relatedDecisionIds.length && !question.relatedDecisionIds.includes(source.decision?.id ?? '')) continue;
+			const targets = [...new Set(question.relatedWorkItemIds)].flatMap(id => actorByItem.has(id) ? [actorByItem.get(id)!] : []);
+			if (!targets.length) continue;
+			const questionRef: ExactEntityReference = { store: 'treedx', model: 'question', id: question.id,
+				revision: question.revision, digest: question.digest, repository: question.repositoryId, path: question.path, commit: question.commit };
+			const resolved = question.status === 'answered' && question.answerRef !== null;
+			const condition = feedbackConditionNode(exactSource, { id: `inbox:${question.id}`, kind: 'question', sourceRef: questionRef, resolved }, input.revision);
+			if (resolved) condition.authorityRefs = [question.answerRef!];
+			nodes.push(condition); changedSourceRefs.push(questionRef, ...(resolved ? [question.answerRef!] : []));
+			for (const actor of targets) edges.push(edge({ teamId: source.teamId, fromNodeId: condition.id, toNodeId: actor.id,
+				provenance: 'governance', sourceRef: questionRef }, input.revision));
 		}
 
 		for (const workItem of workItems) {
