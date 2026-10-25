@@ -11,11 +11,11 @@ Development: Bun 1.4.4, Node 24.19.0, TypeScript 5.9.3, native Cordis 4.0.0-rc.1
 
 All capabilities that can be plugins, including container services, are native Cordis class plugins with typed swappable contracts. No parallel DI graph. Keep independent repository/public package boundaries, exact archive pins and original licenses. Migration PRs target cordis with Part of issue references. All issues remain open until authorized release; installer/Agent/generalized recovery are later tasks.
 
-Delivery is split into two reviewable changes under #617: the native container provider/service definition baseline, then the API server root and authenticated installed interfaces. Each targets cordis and carries its own checks. The server follow-up consumes the first slice and the exact Identity, Admin and Deployment archives. This baseline does not claim an implemented server.
+Delivery is split into two reviewable changes under #617: the native container provider/service definition baseline, then the API server root and authenticated installed interfaces. Each targets cordis and carries its own checks. The server follow-up consumes the first slice and the exact Identity, Admin and Deployment archives. The integrated Task 3B server remains implemented; the following historical contract describes that boundary.
 
 ## Server follow-up contract
 
-The next slice adds ApiApplication.start/close with the actual native api.host, platform.invoker, api.routes and api.http providers. Identity supplies OIDC/principal/session providers; Admin supplies its route/browser contribution. Each HTTP request receives a native isolated identity.principal child; ordinary headers/body fields never become trusted authority. The public DeploymentWorkerClient is the only host transport and API has no Docker socket/controller. GET /v1/platform, /v1/platform/status and /v1/platform/applications/{id} require the configured session and platform.read. Other declared seven-operation surfaces report unavailable explicitly in this slice. GET /health/ready reports component/context readiness; installed overall readiness comes from the worker. The owner build generates the image context from exact public runtime packages, without dependency execution or network builds.
+Task 3B provides ApiApplication.start/close with the actual native api.host, platform.invoker, api.routes and api.http providers. Identity supplies OIDC/principal/session providers; Admin supplies its route/browser contribution. Each HTTP request receives a native isolated identity.principal child; ordinary headers/body fields never become trusted authority. The public DeploymentWorkerClient is the only host transport and API has no Docker socket/controller. GET /v1/platform, /v1/platform/status and /v1/platform/applications/{id} require the configured session and platform.read. Other declared seven-operation surfaces report unavailable explicitly in this slice. GET /health/ready reports component/context readiness; installed overall readiness comes from the worker. The owner build generates the image context from exact public runtime packages, without dependency execution or network builds.
 
 An authenticated request for an unknown well-formed application ID returns HTTP 404 with the safe `APPLICATION_NOT_FOUND` code. Missing authority remains 401/403 and unavailable worker/runtime failures remain 503; responses never expose local journal paths or internal exception details.
 
@@ -24,3 +24,42 @@ An authenticated request for an unknown well-formed application ID returns HTTP 
 Owner issue: https://github.com/treeseed-ai/api/issues/624. Follow the approved Platform Task 3C service/provider/UI plan through exact public archives. Preserve independent repository ownership, strict TypeScript classes, native Cordis lifecycle, historical formats and all seven SDK operations. Expected-generation/idempotency, resource/credential/TLS retention and explicit unsafe restart/migration gates are mandatory. All issues remain open until release.
 
 Every visual component must be mobile-first from 320 CSS pixels to widescreen monitors; test 320/375/768/1024/1440/1920/2560 widths, long content, keyboard/touch and 200% text resizing. Keep authored controls at least 44×44 CSS pixels, required actions visible, logical/fluid dimensions and no page overflow (labeled local semantic-table overflow is permitted). UI owns components/styles/renderers; consumers retain domain behavior and Identity retains Keycloak authority.
+
+
+### Native format-3 root and installed runtime evidence
+
+Task 3C advances the API root's api.host, platform.invoker, api.routes and api.http contracts to
+native provider version 4, consuming exact SDK/Deployment/Identity/Admin/UI archives. Identity owns
+Keycloak discovery, principals and sessions; Admin owns authorized HTTP/actions; UI supplies every
+rendered component/document/asset. The seven public SDK operation IDs and current authenticated
+read endpoints remain unchanged. Unsupported operations continue to fail explicitly.
+
+The private server configuration extends the existing fields with a paired `serviceId` and
+`runtimeReceipt` for format 3. Identity/Admin receive only their existing configuration projection.
+The private worker adapter uses observer-only `ServiceWorkerClient` through `/run/cordis-host/host.sock`,
+never owner control or Docker.sock. Initialization reads accepted `observation.context` metadata
+instead of recursively asking overall status to prove API startup. Bind installation/service IDs,
+origin, asset generation and exact runtime content before opening the listener. Historical format-2
+archives/readers remain immutable; new mode cannot silently adopt incompatible journals.
+
+`NodeApiServicePlugin` declares its container, typed `platform.api@1.0.0` binding, dependencies and
+credential slots in this repository. No literal database/identity service IDs are embedded in its
+configuration; selected typed endpoints and grants resolve them. Only an explicit profile grant may
+mount the observer directory, with installation-owner UID and read-only socket-directory access.
+`ApiReadinessPlugin` owns API-specific direct HTTP and routed HTTPS health/asset qualification. Its
+protocol uses Deployment's bounded byte transport; generic Deployment code gains no API role switch.
+Routed observation targets the explicitly bound API dependency and its accepted expected identity.
+
+The owner image producer retains exact public runtime archives, their complete locked closure and
+installed file identities. Runtime audit inspects archives through the Deployment public artifact
+interface and compares actual installed bytes, server entry and complete Admin/UI asset generation.
+Match measured package-set/entry digests to accepted runtime bindings before reporting readiness.
+Copying expected labels or receipt hashes into a response is insufficient. Host verification retains
+image/daemon authority; API reports measured runtime content and actual native provider generation.
+
+Built default-root acceptance must run genuine package/image bytes with real database, Keycloak,
+private worker and HTTP listener, plus direct/routed observations. Tampered archives, installed files,
+entry/assets, wrong identity/generation, foreign grants and denied socket mounts must block. Preserve
+session/Origin/CSRF/PKCE/CSP boundaries, immutable browser assets and reusable mobile-first UI. The
+restored #620 committer policy remains exact; all issues remain open. This documentation commits the
+contract before implementation and does not claim those new assembled gates have passed.
