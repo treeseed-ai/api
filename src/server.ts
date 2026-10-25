@@ -5,6 +5,7 @@ import {createHash} from 'node:crypto';
 import {ApiConfiguration,type ApiServerConfiguration} from './configuration.js';
 import {ApiRuntimeAudit} from './runtime-audit.js';
 import {ApiJson} from './json.js';
+import {ApiApplicationView} from './application-view.js';
 import {ApiImageContext,type ApiRuntimePackageSource} from './image-context.js';
 import {NodeApiServicePlugin,ApiReadinessPlugin} from './services.js';
 export {NodeApiServicePlugin,ApiReadinessPlugin} from './services.js';
@@ -31,7 +32,7 @@ class HostAdapter implements ApiHost {
  async initialize():Promise<void>{if(this.client instanceof ServiceWorkerClient){const observation=await this.client.observationContext(this.settings.serviceId!);this.scope(observation.identity);const content=await ApiRuntimeAudit.inspect(this.settings.runtimeReceipt!,this.settings.assetDigest);if(content.packageSetDigest!==observation.identity.runtime?.packageSetDigest||content.entryDigest!==observation.identity.runtime.entryDigest)throw new Error('API_RUNTIME_UNAVAILABLE');this.boot=observation.identity;}else{const status=await this.status();if(status.installationId!==this.settings.installationId)throw new Error('Worker scope mismatch');}}
  private scope(identity:ReturnType<typeof ServiceSchemas.observationContext.parse>['identity']):void{if(identity.installationId!==this.settings.installationId||identity.serviceId!==this.settings.serviceId||identity.origin!==this.settings.origin||identity.assetDigest!==this.settings.assetDigest||!identity.runtime)throw new Error('API_RUNTIME_UNAVAILABLE');}
  status():Promise<ReturnType<typeof PlatformOperations.status.parseOutput>>{return this.client.status();}
- application(id:string):Promise<ReturnType<typeof PlatformOperations.get.parseOutput>>{return this.client.application(id);}
+ async application(id:string):Promise<ReturnType<typeof PlatformOperations.get.parseOutput>>{return ApiApplicationView.project(await this.client.application(id));}
  async evidence(generation:string,assetDigest:string):Promise<ReturnType<typeof ServiceSchemas.runtimeEvidence.parse>|null>{if(!(this.client instanceof ServiceWorkerClient))return null;const identity=(await this.client.observationContext(this.settings.serviceId!)).identity;this.scope(identity);if(!this.boot||identity.serviceGeneration!==this.boot.serviceGeneration||CanonicalJson.stringify(identity.runtime)!==CanonicalJson.stringify(this.boot.runtime)||assetDigest!==identity.assetDigest)throw new Error('API_RUNTIME_UNAVAILABLE');const content=await ApiRuntimeAudit.inspect(this.settings.runtimeReceipt!,assetDigest);if(content.packageSetDigest!==identity.runtime!.packageSetDigest||content.entryDigest!==identity.runtime!.entryDigest)throw new Error('API_RUNTIME_UNAVAILABLE');return ServiceSchemas.runtimeEvidence.parse({formatVersion:1,installationId:identity.installationId,serviceId:identity.serviceId,compositionGeneration:identity.compositionGeneration,serviceGeneration:identity.serviceGeneration,runtimeGeneration:generation,assetDigest,ready:true,content});}
 }
 export class HostPlugin {
