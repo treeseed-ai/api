@@ -1,4 +1,4 @@
-import { resolveKnowledgeGatewayConnection } from '../../api/knowledge/gateway-treedx-connection.ts';
+import { completedGraphRefresh, resolveKnowledgeGatewayConnection, treeDxResult } from '../../api/knowledge/gateway-treedx-connection.ts';
 import { buildKnowledgePublication } from '../../api/knowledge/build-publication.ts';
 import { loadKnowledgeSnapshotProjects } from '../../api/knowledge/snapshot-projects.ts';
 import { createKnowledgePublicationStorage } from '../../api/knowledge/publication-storage.ts';
@@ -29,24 +29,6 @@ export function knowledgePublicationTransport(repository: { storageKind?: unknow
 export function knowledgeRunnerEnvironment(options: any) {
 	return options.environment ?? options.config?.environment
 		?? process.env.TREESEED_PLATFORM_RUNNER_ENVIRONMENT;
-}
-
-export function treeDxResult(value: unknown, key: string) {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return {} as any;
-	const record = value as Record<string, any>;
-	return record[key] && typeof record[key] === 'object' ? record[key] : record;
-}
-
-export async function completedGraphRefresh(client: any, input: any) {
-	const refresh = treeDxResult(await client.refreshGraph(input), 'graph');
-	if (!refresh.jobId) return refresh;
-	for (let attempt = 0; attempt < 60; attempt += 1) {
-		const job = treeDxResult(await client.getGraphRefreshJob({ repoId: input.repoId, ref: input.ref, jobId: refresh.jobId }), 'job');
-		if (job.status === 'completed') return { ...refresh, graphVersion: job.graphVersion ?? refresh.graphVersion };
-		if (job.status === 'failed') throw new Error(`TreeDX graph refresh failed: ${job.errorCode ?? 'unknown error'}.`);
-		await new Promise((resolve) => setTimeout(resolve, 250));
-	}
-	throw new Error('TreeDX graph refresh did not complete before the publication deadline.');
 }
 
 export function requireIndexedSourceClosure(input: {

@@ -8,7 +8,8 @@ import { ControlPlaneStore } from '../../../../../../src/api/persistence/store.t
 import { TreeDxInfrastructureClient } from '../../../../../../src/api/control-plane/treedx/infrastructure-client.ts';
 import { createKnowledgeWorkspaceService } from '../../../../../../src/api/control-plane/knowledge/knowledge-workspace-service.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
-import { completedGraphRefresh, requireIndexedSourceClosure, treeDxResult } from '../../../../../../src/operations-runner/knowledge/publication-executor.ts';
+import { requireIndexedSourceClosure } from '../../../../../../src/operations-runner/knowledge/publication-executor.ts';
+import { completedGraphRefresh, treeDxResult } from '../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { loadTeamExactDependencyLinks } from '../../../../../../src/api/capacity/services/capacity/execution/exact-dependency-links.ts';
 import { relationInputs, relationPath } from '../../../capacity/execution/graph/architecture/relations/relation-fixture.ts';
 import { postgresGraph } from '../../../capacity/execution/graph/architecture/living/living-postgres-fixture.ts';
@@ -171,10 +172,8 @@ export async function relationAuthoringDatabase(nativePostgres = false) {
 			assert.equal(file.resolvedRef, commit); const nativeFile = object(file.file ?? (Array.isArray(file.files) ? file.files[0] : undefined));
 			assert.equal(nativeFile.path, relationPath); assert.equal(nativeFile.content, content);
 			await completedGraphRefresh(read.client, { repoId: read.repositoryId, ref: read.publicationRef, paths: ['notes/**'] });
-			// Loader queries every selected project's authoritative binding. Build the
-			// original native index for the other disposable selected library too.
-			const secondary = await resolveKnowledgeGatewayConnection(store, { projectId: 'dependent', write: true }); assert.ok(secondary);
-			await completedGraphRefresh(secondary.client, { repoId: secondary.repositoryId, ref: secondary.baseRef, paths: ['notes/**'] });
+			// The fresh secondary library has no graph. The owning loader must obtain
+			// its exact index through the public grant/refresh/job/query path itself.
 			const loaded = await loadTeamExactDependencyLinks(store, input.sources);
 			return { commit, graph, search, file, loaded, read };
 		};

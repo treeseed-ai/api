@@ -78,12 +78,15 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 	maintenanceRefs?: string[];
 	replicationRefs?: string[];
 	readRefs?: string[];
+	refreshGraph?: boolean;
 	workspaceRefs?: string[];
 	workspacePaths?: string[];
 	relationPaths?: boolean;
 	communicationPaths?: boolean;
 	authoringPaths?: boolean;
 }): Promise<KnowledgeGatewayConnection | null> {
+	if (input.refreshGraph && (input.readRefs?.length !== 1 || !/^[a-f0-9]{40}$/u.test(input.readRefs[0] ?? '')))
+		throw new Error('A graph refresh grant requires one exact commit.');
 	const library = await store.getProjectTreeDxLibrary(input.projectId);
 	if (!library) return null;
 	const topology = record(library.topology);
@@ -130,7 +133,7 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 			? ['repos:read', 'files:read', 'files:search', 'git:read', 'git:fetch', 'git:push', 'registry:read', 'graph:query', 'graph:refresh']
 			: input.write
 			? ['repos:read', 'repos:write', 'workspace:create', 'files:read', 'files:search', 'files:write', 'files:delete', 'git:read', 'git:diff', 'git:commit', 'graph:query', 'graph:refresh']
-			: ['repos:read', 'files:read', 'files:search', 'git:read', 'git:diff', 'graph:query'],
+			: ['repos:read', 'files:read', 'files:search', 'git:read', 'git:diff', 'graph:query', ...(input.refreshGraph ? ['graph:refresh'] : [])],
 		refs: [...new Set([text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main'),
 			canonicalTreeDxBranchRef(library.contentRepositoryDefaultBranch ?? 'main'),
 			...(input.write || input.communicationPaths || input.authoringPaths ? [canonicalAuthoringRef] : []),
@@ -152,4 +155,26 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 		authoringBranch,
 		publicationRef: canonicalAuthoringRef,
 	};
+}
+
+/** Shared observation of the existing native graph-refresh job. */
+export function treeDxResult(value: unknown, key: string) {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return {} as Record<string, any>;
+	const record = value as Record<string, any>;
+	return record[key] && typeof record[key] === 'object' ? record[key] as Record<string, any> : record;
+}
+
+export async function completedGraphRefresh(client: {
+	refreshGraph(input: Record<string, unknown>): Promise<unknown>;
+	getGraphRefreshJob(input: Record<string, unknown>): Promise<unknown>;
+}, input: Record<string, unknown>) {
+	const refresh = treeDxResult(await client.refreshGraph(input), 'graph');
+	if (!refresh.jobId) return refresh;
+	for (let attempt = 0; attempt < 60; attempt += 1) {
+		const job = treeDxResult(await client.getGraphRefreshJob({ repoId: input.repoId, ref: input.ref, jobId: refresh.jobId }), 'job');
+		if (job.status === 'completed') return { ...refresh, graphVersion: job.graphVersion ?? refresh.graphVersion };
+		if (job.status === 'failed') throw new Error(`TreeDX graph refresh failed: ${job.errorCode ?? 'unknown error'}.`);
+		await new Promise((resolve) => setTimeout(resolve, 250));
+	}
+	throw new Error('TreeDX graph refresh did not complete before the publication deadline.');
 }

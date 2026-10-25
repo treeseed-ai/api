@@ -9,7 +9,7 @@ import { validatePortableContentData } from '@treeseed/sdk/content-validation';
 import { parseFrontmatterDocument } from '../../../../../../src/api/content/frontmatter.ts';
 import { relationAuthoringDatabase, object } from '../../../knowledge/workspaces/architecture/relation-authoring-fixture.ts';
 import { TreeDxInfrastructureClient } from '../../../../../../src/api/control-plane/treedx/infrastructure-client.ts';
-import { completedGraphRefresh } from '../../../../../../src/operations-runner/knowledge/publication-executor.ts';
+import { completedGraphRefresh } from '../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import assert from 'node:assert/strict';
 import { decodeExecutionNode } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-storage.ts';
