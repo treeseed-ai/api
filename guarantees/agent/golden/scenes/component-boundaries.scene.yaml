@@ -2580,6 +2580,12 @@ workflow:
   - id: mcp-write-preconditions-unit
     action: { verifier: api.golden.mcp-write-preconditions-unit }
     expect: { status: passed }
+  - id: mcp-problem-legacy
+    action: { verifier: api.golden.mcp-problem-legacy }
+    expect: { status: passed }
+  - id: mcp-problem-modern
+    action: { verifier: api.golden.mcp-problem-modern }
+    expect: { status: passed }
   - id: mcp-write-preconditions-postgres
     action: { verifier: api.golden.mcp-write-preconditions-postgres }
     expect: { status: passed }

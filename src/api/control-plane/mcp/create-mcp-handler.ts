@@ -1,6 +1,6 @@
 import { McpServer, ResourceTemplate, acceptedContent, completable, createMcpHandler, inputRequired, type ServerEventBus } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import type { OperationRegistry } from '../catalog/operation-registry.ts';
+import { controlPlaneProblem, ControlPlaneOperationError, type OperationRegistry } from '../catalog/operation-registry.ts';
 import { sdkOperationInputStandardSchema, sdkStandardSchema } from '../catalog/sdk-standard-schema.ts';
 import { createMcpCatalog } from './mcp-catalog.ts';
 import { CONFIRMATION_HEADER, decodeConfirmation, encodeConfirmation, type ConfirmationService } from '../confirmation/confirmation-service.ts';
@@ -27,43 +27,50 @@ export function createControlPlaneMcpHandler(registry: OperationRegistry, confir
 					openWorldHint: false,
 				},
 			}, async (input, context) => {
-				enforceOperationAuthorization(descriptor, requestContext.authInfo);
-				const { headers, ...operationInput } = input as { headers?: Record<string, string>; path: unknown; query: unknown; body: unknown };
-				const preconditions = readOperationPreconditions(descriptor, requestContext.requestInfo?.headers, headers);
-				if (descriptor.confirmation === 'input_required') {
-					const principalId = String((requestContext.authInfo?.extra?.principal as any)?.id ?? '');
-					const clientId = String(requestContext.authInfo?.clientId ?? '');
-					if (!confirmations || !principalId || !clientId) return { content: [{ type: 'text', text: 'Confirmation is unavailable.' }], isError: true };
-					const { [CONFIRMATION_HEADER]: supplied, ...operationHeaders } = headers ?? {};
-					const identity = { principalId, clientId, operationId: descriptor.operationId,
-						arguments: headers ? { ...operationInput, headers: operationHeaders } : operationInput };
-					const requestState = supplied ?? context.mcpReq.requestState<string>();
-					const accepted = acceptedContent<{ confirm: boolean }>(context.mcpReq.inputResponses, 'confirm');
-					if (!requestState || (supplied === undefined && accepted?.confirm !== true)) {
-						const required = confirmations.request({ ...identity, requestId: String(context.mcpReq.id) });
-						if (requestContext.era === 'legacy') return { isError: true,
-							content: [{ type: 'text', text: JSON.stringify(required) }] };
-						return inputRequired({ requestState: encodeConfirmation(required.confirmation), inputRequests: {
-							confirm: inputRequired.elicit({ message: required.prompt, requestedSchema: {
-								type: 'object', properties: { confirm: { type: 'boolean' } }, required: ['confirm'], additionalProperties: false,
-							} }),
-						} });
+				const requestId = crypto.randomUUID();
+				try {
+					enforceOperationAuthorization(descriptor, requestContext.authInfo);
+					const { headers, ...operationInput } = input as { headers?: Record<string, string>; path: unknown; query: unknown; body: unknown };
+					const preconditions = readOperationPreconditions(descriptor, requestContext.requestInfo?.headers, headers);
+					if (descriptor.confirmation === 'input_required') {
+						const principalId = String((requestContext.authInfo?.extra?.principal as any)?.id ?? '');
+						const clientId = String(requestContext.authInfo?.clientId ?? '');
+						if (!confirmations || !principalId || !clientId) return { content: [{ type: 'text', text: 'Confirmation is unavailable.' }], isError: true };
+						const { [CONFIRMATION_HEADER]: supplied, ...operationHeaders } = headers ?? {};
+						const identity = { principalId, clientId, operationId: descriptor.operationId,
+							arguments: headers ? { ...operationInput, headers: operationHeaders } : operationInput };
+						const requestState = supplied ?? context.mcpReq.requestState<string>();
+						const accepted = acceptedContent<{ confirm: boolean }>(context.mcpReq.inputResponses, 'confirm');
+						if (!requestState || (supplied === undefined && accepted?.confirm !== true)) {
+							const required = confirmations.request({ ...identity, requestId: String(context.mcpReq.id) });
+							if (requestContext.era === 'legacy') return { isError: true,
+								content: [{ type: 'text', text: JSON.stringify(required) }] };
+							return inputRequired({ requestState: encodeConfirmation(required.confirmation), inputRequests: {
+								confirm: inputRequired.elicit({ message: required.prompt, requestedSchema: {
+									type: 'object', properties: { confirm: { type: 'boolean' } }, required: ['confirm'], additionalProperties: false,
+								} }),
+							} });
+						}
+						const state = decodeConfirmation(requestState);
+						if (!state || !await confirmations.verify(state, identity)) return { content: [{ type: 'text', text: 'Confirmation is invalid, expired, changed, or already used.' }], isError: true };
 					}
-					const state = decodeConfirmation(requestState);
-					if (!state || !await confirmations.verify(state, identity)) return { content: [{ type: 'text', text: 'Confirmation is invalid, expired, changed, or already used.' }], isError: true };
+					if (context.mcpReq.signal.aborted) throw context.mcpReq.signal.reason;
+					const progressToken = context.mcpReq._meta?.progressToken;
+					if (progressToken !== undefined) await context.mcpReq.notify({ method: 'notifications/progress', params: { progressToken, progress: 0, total: 1 } });
+					const output = await operation.handler(operationInput as any, {
+						interface: 'mcp', requestId, authInfo: requestContext.authInfo,
+						...preconditions,
+						principal: requestContext.authInfo?.extra?.principal as any, signal: context.mcpReq.signal,
+					});
+					if (context.mcpReq.signal.aborted) throw context.mcpReq.signal.reason;
+					if (progressToken !== undefined) await context.mcpReq.notify({ method: 'notifications/progress', params: { progressToken, progress: 1, total: 1 } });
+					const validated = operation.binding.schema.output.parse(output) as Record<string, unknown>;
+					return { content: [{ type: 'text', text: JSON.stringify(validated) }], structuredContent: validated };
+				} catch (error) {
+					if (!(error instanceof ControlPlaneOperationError)) throw error;
+					const problem = controlPlaneProblem(error, requestId, `mcp:${descriptor.operationId}`);
+					return { isError: true, content: [{ type: 'text', text: JSON.stringify(problem) }], structuredContent: problem };
 				}
-				if (context.mcpReq.signal.aborted) throw context.mcpReq.signal.reason;
-				const progressToken = context.mcpReq._meta?.progressToken;
-				if (progressToken !== undefined) await context.mcpReq.notify({ method: 'notifications/progress', params: { progressToken, progress: 0, total: 1 } });
-				const output = await operation.handler(operationInput as any, {
-					interface: 'mcp', requestId: crypto.randomUUID(), authInfo: requestContext.authInfo,
-					...preconditions,
-					principal: requestContext.authInfo?.extra?.principal as any, signal: context.mcpReq.signal,
-				});
-				if (context.mcpReq.signal.aborted) throw context.mcpReq.signal.reason;
-				if (progressToken !== undefined) await context.mcpReq.notify({ method: 'notifications/progress', params: { progressToken, progress: 1, total: 1 } });
-				const validated = operation.binding.schema.output.parse(output) as Record<string, unknown>;
-				return { content: [{ type: 'text', text: JSON.stringify(validated) }], structuredContent: validated };
 			});
 		}
 		for (const resource of mcpCatalog.resources) {

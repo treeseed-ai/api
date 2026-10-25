@@ -51,7 +51,14 @@ it('native MCP cancels only the inspected queued project discussion and retains 
 		const before = await rows();
 		for (const supplied of [{}, { 'Idempotency-Key': 'cancel-api-research' }, { 'Idempotency-Key': 'cancel-api-research', 'If-Match': 'stale' }]) {
 			Object.assign(headers, supplied);
-			expect(await call()).toMatchObject({ isError: true }); expect(await rows()).toEqual(before);
+			const denied = await call();
+			expect(denied).toMatchObject({ isError: true });
+			if (supplied['If-Match']) expect(denied.structuredContent).toMatchObject({
+				status: 412, code: 'agent_invocation_precondition_failed',
+				detail: 'The agent invocation changed after it was inspected.',
+				instance: 'mcp:communications.invocations.cancel', requestId: expect.any(String),
+			});
+			expect(await rows()).toEqual(before);
 		}
 		delete headers['Idempotency-Key']; delete headers['If-Match'];
 		expect(await call({ 'Idempotency-Key': 'cancel-api-research', 'If-Match': `"${at}"` }))

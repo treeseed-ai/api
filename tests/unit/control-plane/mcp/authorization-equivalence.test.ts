@@ -7,6 +7,47 @@ import { installControlPlaneProtocolRoutes } from '../../../../src/api/control-p
 import { sdkOperationInputStandardSchema, sdkSchemaJson, sdkStandardSchema } from '../../../../src/api/control-plane/catalog/sdk-standard-schema.ts';
 
 describe('MCP authorization equivalence', () => {
+	it.each(['legacy', '2026-07-28'] as const)('preserves the shared safe operation problem over native MCP %s', async (protocol) => {
+		const binding = CONTROL_PLANE_OPERATIONS.knowledge.updateWorkspaceContent;
+		const observed: OperationInvocationContext[] = [];
+		const failure = Object.assign(new ControlPlaneOperationError(403, 'treedx_read_denied', 'TreeDX Discussion operation failed.'),
+			{ cause: new Error('private-cause-token'), details: { authorization: 'private-bearer' } });
+		const app = new Hono();
+		installControlPlaneProtocolRoutes(app, async () => ({ principal: { id: 'coordinator', scopes: ['treeseed:knowledge:write'] },
+			credential: { id: 'coordinator-client' } }), undefined, new OperationRegistry([{ binding, async handler(_input, context) {
+			observed.push(context); throw failure;
+		} }]));
+		const client = new Client({ name: 'problem-coordinator', version: '1' }, {
+			versionNegotiation: { mode: protocol === 'legacy' ? 'legacy' : { pin: protocol } },
+		});
+		await client.connect(new StreamableHTTPClientTransport(new URL('http://localhost/mcp'), {
+			authProvider: { token: async () => 'controlled-operator' },
+			fetch: (input, init) => {
+				const request = input instanceof Request ? input : new Request(input, init), headers = new Headers(request.headers);
+				headers.set('host', 'localhost'); return app.fetch(new Request(request, { headers }));
+			},
+		}));
+		const headers = { 'Idempotency-Key': 'problem-operation', 'If-Match': 'revision-1' };
+		const body = { kind: 'agent-profile', sourcePath: 'agents/engineer.yaml', version: 1, content: 'governed source' };
+		try {
+			const rest = binding.descriptor.rest!;
+			const path = rest.path.replace('{workspaceId}', 'workspace-api');
+			const response = await app.request(path, { method: rest.method, headers: { authorization: 'Bearer controlled-operator',
+				'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+			expect(response.status).toBe(403);
+			const httpProblem = await response.json();
+			const result = await client.callTool({ name: binding.descriptor.operationId,
+				arguments: { path: { workspaceId: 'workspace-api' }, headers, body } });
+			expect(result.isError).toBe(true);
+			expect(result.structuredContent).toEqual({ ...httpProblem, instance: `mcp:${binding.descriptor.operationId}`,
+				requestId: observed[1]!.requestId });
+			expect(result.structuredContent).toEqual({ type: 'https://treeseed.dev/problems/treedx_read_denied', title: 'Access denied',
+				status: 403, code: 'treedx_read_denied', detail: 'TreeDX Discussion operation failed.',
+				instance: `mcp:${binding.descriptor.operationId}`, requestId: observed[1]!.requestId });
+			expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(result.structuredContent) }]);
+			expect(JSON.stringify(result)).not.toMatch(/private-cause-token|private-bearer|authorization|cause|details/u);
+		} finally { await client.close(); }
+	});
 	it('retains real MCP mutation identity and version headers and denies missing authority before dispatch', async () => {
 		const binding = CONTROL_PLANE_OPERATIONS.knowledge.updateWorkspaceContent;
 		const observations: OperationInvocationContext[] = [];
