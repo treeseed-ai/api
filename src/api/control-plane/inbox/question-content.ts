@@ -4,6 +4,7 @@ import { exactEntityReferenceSchema } from '@treeseed/sdk/agent-capacity';
 import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
 import { projectLibraryPath, resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
 import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
+import { discussionWorkspaceOperationKey, openDiscussionWorkspace } from '../../discussions/discussion-workspace.ts';
 
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 72) || 'question';
 
@@ -27,7 +28,9 @@ export async function commitInboxQuestion(input: { store: any; teamId: string; p
 		relatedWorkItems: input.relatedWorkItems,
 		createdBy: input.principal.id, createdAt: now, updatedAt: now }, `${input.markdown.trim()}\n`);
 	const branchName = `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
-	const workspace = await connection.client.createWorkspace({ repoId: connection.repositoryId, baseRef: connection.baseRef, branchName, mode: 'writable', allowedPaths: [path] });
+	const session = await openDiscussionWorkspace({ store: input.store, connection: { ...connection, allowedPaths: [path] },
+		projectId: input.projectId, baseRef: connection.baseRef, branchName, operationKey: discussionWorkspaceOperationKey('question', id) });
+	const workspace = session.workspace;
 	try {
 		await applyTextChangeset({ client: connection.client, workspace, changes: [{ path, before: null, after: source }] });
 		const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `question: ${input.title}`, author: { name: input.principal.displayName ?? input.principal.id, email: input.principal.email ?? 'inbox@users.treeseed.local' } });
@@ -37,9 +40,8 @@ export async function commitInboxQuestion(input: { store: any; teamId: string; p
 		if (String((observed as any).resolvedRef) !== commit.commitSha || observed.files?.length !== 1 || observed.files[0]?.path !== path || observed.files[0]?.content !== source) throw Object.assign(new Error('Question did not pass exact TreeDX read-back.'), { status: 502, code: 'inbox_question_readback_failed' });
 		await recordTreeDxAuthoringState(input.store, 'integrated', { projectId: input.projectId, repositoryId: connection.repositoryId, commitSha: commit.commitSha,
 			ref: commit.branchName, changedPaths: commit.changedPaths, assignmentId: null, actorType: 'user', actorId: input.principal.id });
-		await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined);
 		return { id, path, source, commitSha: commit.commitSha, repositoryId: connection.repositoryId, digest: createHash('sha256').update(source).digest('hex'), createdAt: now };
-	} catch (error) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw error; }
+	} finally { await session.close(); }
 }
 
 /** Resolve a question only from its exact committed answer, never a body digest

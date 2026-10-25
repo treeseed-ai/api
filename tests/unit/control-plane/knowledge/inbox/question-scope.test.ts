@@ -8,7 +8,9 @@ vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', async o
 	...await original<object>(), resolveKnowledgeGatewayConnection: vi.fn(),
 }));
 vi.mock('../../../../../src/api/knowledge/changesets/apply-text-changeset.ts', () => ({ applyTextChangeset: vi.fn() }));
-vi.mock('../../../../../src/api/capacity/services/treedx/repositories/treedx-authoring-journal.ts', () => ({ recordTreeDxAuthoringState: vi.fn() }));
+vi.mock('../../../../../src/api/capacity/services/treedx/repositories/treedx-authoring-journal.ts', () => ({
+	recordTreeDxAuthoringState: vi.fn(), listOpenTreeDxWorkspaces: async () => [], recordTreeDxWorkspaceState: vi.fn(),
+}));
 
 const commit = 'a'.repeat(40);
 let readback: 'exact' | 'moved' | 'wrong-path' | 'changed-bytes' | 'missing' = 'exact';
@@ -25,10 +27,10 @@ beforeEach(() => {
 	vi.mocked(resolveKnowledgeGatewayConnection).mockImplementation(async (_store, scope) => ({
 		contentPath: '.', repositoryId: 'library', baseRef: 'b'.repeat(40), authoringBranch: 'staging',
 		client: { closeWorkspace,
-			createWorkspace: async ({ allowedPaths = ['**'], mode = 'read_only' }: { allowedPaths?: string[]; mode?: string }) => {
+			createWorkspace: async ({ allowedPaths = ['**'], mode = 'read_only', workspaceId = 'workspace' }: { allowedPaths?: string[]; mode?: string; workspaceId?: string }) => {
 				if (allowedPaths.length !== 1 || !allowedPaths.every(path => scope.workspacePaths?.includes(path))) throw new Error('Permission denied.');
 				if (mode !== 'writable') throw new Error('Permission denied: files:write.');
-				return { workspaceId: 'workspace', baseCommitSha: 'b'.repeat(40), baseRef: 'refs/heads/staging' };
+				return { workspaceId, baseCommitSha: 'b'.repeat(40), baseRef: 'refs/heads/staging' };
 			},
 			commit: async () => ({ commitSha: commit, branchName: 'refs/heads/staging', changedPaths: [] }),
 			readRepositoryFiles: async ({ paths }: { paths: string[] }) => {
@@ -49,7 +51,7 @@ beforeEach(() => {
 it.each(['moved', 'wrong-path', 'changed-bytes', 'missing'] as const)('retains failure and closes the workspace for %s readback', async value => {
 	readback = value;
 	await expect(commitInboxQuestion(input())).rejects.toMatchObject({ code: 'inbox_question_readback_failed' });
-	expect(recordTreeDxAuthoringState).not.toHaveBeenCalled(); expect(closeWorkspace).toHaveBeenCalledWith('workspace');
+	expect(recordTreeDxAuthoringState).not.toHaveBeenCalled(); expect(closeWorkspace).toHaveBeenCalledWith(expect.stringMatching(/^ws_/u));
 });
 
 it.each(['.', 'portfolio/library'])('authors and reads the exact question with narrow scope under %s', async contentPath => {
@@ -61,7 +63,7 @@ it.each(['.', 'portfolio/library'])('authors and reads the exact question with n
 		expect(scope.workspacePaths).toEqual([result.path]); expect(scope.relationPaths).toBeUndefined();
 	}
 	expect(vi.mocked(resolveKnowledgeGatewayConnection).mock.calls.at(-1)?.[1].readRefs).toEqual([commit]);
-	expect(recordTreeDxAuthoringState).toHaveBeenCalledOnce(); expect(closeWorkspace).toHaveBeenCalledWith('workspace');
+	expect(recordTreeDxAuthoringState).toHaveBeenCalledOnce(); expect(closeWorkspace).toHaveBeenCalledWith(expect.stringMatching(/^ws_/u));
 });
 
 it('does not acquire authoring authority when the project library is unavailable', async () => {
