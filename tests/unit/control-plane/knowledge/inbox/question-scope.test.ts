@@ -25,8 +25,9 @@ beforeEach(() => {
 	vi.mocked(resolveKnowledgeGatewayConnection).mockImplementation(async (_store, scope) => ({
 		contentPath: '.', repositoryId: 'library', baseRef: 'b'.repeat(40), authoringBranch: 'staging',
 		client: { closeWorkspace,
-			createWorkspace: async ({ allowedPaths = ['**'] }: { allowedPaths?: string[] }) => {
+			createWorkspace: async ({ allowedPaths = ['**'], mode = 'read_only' }: { allowedPaths?: string[]; mode?: string }) => {
 				if (allowedPaths.length !== 1 || !allowedPaths.every(path => scope.workspacePaths?.includes(path))) throw new Error('Permission denied.');
+				if (mode !== 'writable') throw new Error('Permission denied: files:write.');
 				return { workspaceId: 'workspace', baseCommitSha: 'b'.repeat(40), baseRef: 'refs/heads/staging' };
 			},
 			commit: async () => ({ commitSha: commit, branchName: 'refs/heads/staging', changedPaths: [] }),

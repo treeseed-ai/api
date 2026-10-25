@@ -19,7 +19,7 @@ export async function commitInboxQuestion(input: { store: any; teamId: string; p
 		relatedWorkItems: input.relatedWorkItems,
 		createdBy: input.principal.id, createdAt: now, updatedAt: now }, `${input.markdown.trim()}\n`);
 	const branchName = `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
-	const workspace = await connection.client.createWorkspace({ repoId: connection.repositoryId, baseRef: connection.baseRef, branchName, allowedPaths: [path] });
+	const workspace = await connection.client.createWorkspace({ repoId: connection.repositoryId, baseRef: connection.baseRef, branchName, mode: 'writable', allowedPaths: [path] });
 	try {
 		await applyTextChangeset({ client: connection.client, workspace, changes: [{ path, before: null, after: source }] });
 		const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `question: ${input.title}`, author: { name: input.principal.displayName ?? input.principal.id, email: input.principal.email ?? 'inbox@users.treeseed.local' } });
