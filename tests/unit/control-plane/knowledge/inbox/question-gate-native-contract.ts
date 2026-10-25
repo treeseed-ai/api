@@ -37,9 +37,9 @@ export async function verifyScopedInboxQuestionGates(f: Awaited<ReturnType<typeo
 	expect((await inbox.show(f.principal, 'team', created.item.id)).status).toBe('outstanding');
 	const answered = await inbox.action(f.principal, 'team', created.item.id, { action: 'answer', markdown: 'The exact reviewed transport is adopted; native origin readback is recorded.' }, 'native-handoff-answer', commented.item.etag);
 	expect(answered.item.status).toBe('answered');
-	const row = await f.store.first('SELECT metadata_json FROM inbox_items WHERE id=?', [created.item.id]);
-	const metadata = typeof row!.metadata_json === 'string' ? JSON.parse(row!.metadata_json) : row!.metadata_json;
-	const ref = metadata.answerProvenance;
+	const row = await f.store.first("SELECT payload_json FROM inbox_events WHERE item_id=? AND event_type='question.answered' ORDER BY sequence DESC LIMIT 1", [created.item.id]);
+	const proof = typeof row!.payload_json === 'string' ? JSON.parse(row!.payload_json) : row!.payload_json;
+	const ref = proof.answerRef;
 	expect(ref).toMatchObject({ store: 'treedx', model: 'discussion-message', repository: f.sources[0]!.repository });
 	const reader = await resolveKnowledgeGatewayConnection(f.store, { projectId, write: false, readRefs: [ref.commit], workspacePaths: [ref.path] });
 	if (!reader) throw new Error('Native exact answer reader required');

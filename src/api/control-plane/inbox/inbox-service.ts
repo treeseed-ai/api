@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { commitInboxQuestion, readInboxQuestionAnswer } from './question-content.ts';
+import { commitInboxQuestion, inboxQuestionReference, readInboxQuestionAnswer } from './question-content.ts';
 import { loadDiscussions } from '../../discussions/content.ts';
 import { parseFrontmatterDocument } from '../../content/frontmatter.ts';
 import { resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
@@ -71,9 +71,10 @@ export function createInboxService(input: { store: any; discussions: any; commun
 		const frontmatter = record(answer.frontmatter), now = timestamp(frontmatter.createdAt);
 		const answerProvenance = await readInboxQuestionAnswer({ store, projectId: row.project_id, discussionId: row.discussion_id,
 			path: text(answer.path), commit: text(answer.immutableRef), authorId: text(frontmatter.authorId) });
-		await store.run("UPDATE inbox_items SET status='answered',metadata_json=COALESCE(metadata_json,'{}'::jsonb)||?::jsonb,updated_at=? WHERE id=? AND status='outstanding'", [JSON.stringify({ answerProvenance }),now,row.id]);
+		await event(row.team_id,row.id,'question.answered',text(frontmatter.authorId,'agent'),'Agent answer received.',
+			{ messageRef: answer.path, answerRef: answerProvenance, questionRef: inboxQuestionReference(row) });
+		await store.run("UPDATE inbox_items SET status='answered',updated_at=? WHERE id=? AND status='outstanding'", [now,row.id]);
 		await reconcileExecutionGraph(store,row.team_id,{projectId:row.project_id},`inbox-agent-answer:${row.id}:${answerProvenance.commit}`);
-		await event(row.team_id,row.id,'question.answered',text(frontmatter.authorId,'agent'),'Agent answer received.',{ messageRef: answer.path });
 		return { ...row, status: 'answered', updated_at: now };
 	}
 	async function view(row: Row) { const slug = await projectSlug(row.project_id); return { schemaVersion: 'treeseed.inbox-item/v1', id: text(row.id), teamId: text(row.team_id), projectId: text(row.project_id), projectSlug: slug,
@@ -97,11 +98,11 @@ export function createInboxService(input: { store: any; discussions: any; commun
 				const discussionId=text(result.discussion?.id,row.discussion_id);
 				const answerProvenance=action==='answer'&&row.kind==='question' ? await readInboxQuestionAnswer({store,projectId:row.project_id,
 					discussionId,path:text(result.message?.path),commit:text(result.commitSha),authorId:principal!.id}) : null;
-				await store.run("UPDATE inbox_items SET discussion_id=COALESCE(discussion_id,?),status=CASE WHEN ?='answer' THEN 'answered' ELSE status END,metadata_json=COALESCE(metadata_json,'{}'::jsonb)||?::jsonb,updated_at=? WHERE id=?",[discussionId,action,JSON.stringify(answerProvenance?{answerProvenance}:{}),now,itemId]);
+				await event(teamId,itemId,action==='answer'?'question.answered':'comment.created',principal!.id,action==='answer'?'Question answered.':'Comment added.',{messageRef:result.message?.path,...(answerProvenance?{answerRef:answerProvenance,questionRef:inboxQuestionReference(row)}:{})});
+				await store.run("UPDATE inbox_items SET discussion_id=COALESCE(discussion_id,?),status=CASE WHEN ?='answer' THEN 'answered' ELSE status END,updated_at=? WHERE id=?",[discussionId,action,now,itemId]);
 				receipts.push({messageRef:result.message?.path,commitSha:result.commitSha});
 				if(answerProvenance)await reconcileExecutionGraph(store,teamId,{projectId:row.project_id},`inbox-answer:${itemId}:${result.commitSha}`);
 				if(row.kind==='proposal')await store.recordGovernanceEvent({eventType:'proposal.discussion',actorType:'user',actorId:principal!.id,teamId,projectId:row.project_id,proposalId:itemId,proposalVersion:row.version,message:body.markdown,evidence:{kind:'response',contentPath:result.message?.path,commitSha:result.commitSha}});
-				await event(teamId,itemId,action==='answer'?'question.answered':'comment.created',principal!.id,action==='answer'?'Question answered.':'Comment added.',{messageRef:result.message?.path});
 			}
 			else if(action==='reopen'){if(row.kind!=='question'||row.status!=='answered')throw new InboxServiceError(409,'inbox_reopen_invalid','Only answered questions can be reopened.');await store.run("UPDATE inbox_items SET status='outstanding',metadata_json=COALESCE(metadata_json,'{}'::jsonb)-'answerProvenance',updated_at=? WHERE id=?",[now,itemId]);await reconcileExecutionGraph(store,teamId,{projectId:row.project_id},`inbox-reopen:${itemId}:${idempotencyKey}`);await event(teamId,itemId,'question.reopened',principal!.id,'Question reopened.');}
 			else if(action==='publish_revision'){if(row.kind!=='proposal'||!text(body.markdown)||!text(body.changeReason))throw new InboxServiceError(422,'inbox_revision_invalid','Proposal markdown and a change summary are required.');const result=await governance.updateProposal(principal,row.project_id,itemId,{body:body.markdown,changeReason:body.changeReason,expectedProposalVersion:row.version},String(row.version));receipts.push(result.authoringReceipt??{});await syncProposals(teamId);await event(teamId,itemId,'proposal.revised',principal!.id,'Proposal revision published.');}

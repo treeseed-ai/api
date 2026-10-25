@@ -3,6 +3,7 @@ import { graphProfiles, graphSource, emptyLivingGraph } from '../architecture/li
 import { projectTeamExecutionGraph } from '../../../../../../../src/api/capacity/policy/execution/execution-graph-projector.ts';
 import { applyOperationalState } from '../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
 import { loadTeamQuestionConditionSources } from '../../../../../../../src/api/capacity/services/capacity/execution/question-condition-source.ts';
+import { inboxQuestionReference } from '../../../../../../../src/api/control-plane/inbox/question-content.ts';
 
 const answerRef = { store: 'treedx' as const, model: 'discussion-message', id: 'answer', revision: 1,
 	digest: `sha256:${'c'.repeat(64)}`, repository: 'project-library', commit: 'c'.repeat(40), path: 'discussion-messages/runtime/answer.mdx' };
@@ -48,8 +49,19 @@ it('indexes only canonical exact discussion-message answer provenance and preser
 	for (const reference of [answerRef, { ...answerRef, model: 'discussion_message' }, { ...answerRef, digest: 'body-only-digest' },
 		{ ...answerRef, repository: 'foreign' }, { ...answerRef, commit: 'moved' }]) {
 		const supplied = { ...row, metadata_json: { ...row.metadata_json, answerProvenance: reference } }, held = structuredClone(supplied);
-		const loaded = await loadTeamQuestionConditionSources({ all: async () => [supplied] }, 'team');
+		const event = { item_id: row.id, event_type: 'question.answered', payload_json: { answerRef: reference, questionRef: inboxQuestionReference(row) } };
+		const loaded = await loadTeamQuestionConditionSources({ all: async (sql: string) => sql.includes('FROM inbox_events') ? [event] : [supplied] }, 'team');
 		expect(loaded[0]?.answerRef).toEqual(reference === answerRef ? answerRef : null);
 		expect(loaded[0]?.digest).toBe(`sha256:${row.digest}`); expect(supplied).toEqual(held);
 	}
+});
+
+it.each(['no-event', 'reopened', 'changed-question'] as const)('does not trust source metadata or reuse superseded answer proof: %s', mode => {
+	const base = question(), row = { id: base.id, team_id: base.teamId, project_id: base.projectId, status: 'answered',
+		title: base.title, version: 1, repository_id: base.repositoryId, content_path: base.path, commit_sha: base.commit,
+		digest: 'd'.repeat(64), metadata_json: { relatedProposals: base.relatedProposalIds, relatedWorkItems: ['next'], answerProvenance: answerRef } };
+	const event = { item_id: row.id, event_type: mode === 'reopened' ? 'question.reopened' : 'question.answered',
+		payload_json: { answerRef, questionRef: { ...inboxQuestionReference(row), ...(mode === 'changed-question' ? { commit: 'e'.repeat(40) } : {}) } } };
+	return loadTeamQuestionConditionSources({ all: async (sql: string) => sql.includes('FROM inbox_events') ? mode === 'no-event' ? [] : [event] : [row] }, 'team')
+		.then(loaded => expect(loaded[0]?.answerRef).toBeNull());
 });

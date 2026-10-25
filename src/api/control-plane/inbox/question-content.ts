@@ -7,6 +7,13 @@ import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repos
 
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 72) || 'question';
 
+export function inboxQuestionReference(row: Record<string, unknown>) {
+	const digest = String(row.digest ?? '');
+	return exactEntityReferenceSchema.parse({ store: 'treedx', model: 'question', id: row.id, revision: Number(row.version),
+		digest: digest.startsWith('sha256:') ? digest : `sha256:${digest}`, repository: row.repository_id,
+		path: row.content_path, commit: row.commit_sha });
+}
+
 export async function commitInboxQuestion(input: { store: any; teamId: string; projectId: string; principal: Record<string, any>; title: string; markdown: string;
 	severity: 'blocking' | 'advisory'; relatedObjectives: string[]; relatedProposals: string[]; relatedDecisions: string[]; relatedWorkItems: string[] }) {
 	const library = await input.store.getProjectTreeDxLibrary(input.projectId);
