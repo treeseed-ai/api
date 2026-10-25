@@ -63,3 +63,19 @@ entry/assets, wrong identity/generation, foreign grants and denied socket mounts
 session/Origin/CSRF/PKCE/CSP boundaries, immutable browser assets and reusable mobile-first UI. The
 restored #620 committer policy remains exact; all issues remain open. This documentation commits the
 contract before implementation and does not claim those new assembled gates have passed.
+
+### Exact Task 3C dependency candidates
+
+Native-root work consumes these private review archives through public exports. This is an
+in-progress adoption receipt, not a passing API runtime/assembly claim:
+
+| Owner | Version | Source commit | Archive SHA-256 |
+| --- | --- | --- | --- |
+| SDK | `0.0.0-cordis.12` | `4a0b12ca45478f58d92a02de4a7c144ed94c7417` | `9652a1e1f830eb85c41b2d9ea207782ffdf291db2ef97331e338775dadf62fd4` |
+| Deployment | `0.0.0-cordis.31` | `7bf5ef7e43b692f3ea35eaafcb6fae8943c840b1` | `c41ee0da38d7a78712b4b13827b689853f7cf0f73502127ee7b3a19065154723` |
+| Identity | `0.0.0-cordis.3` | `9ca694c38593184357cd8537ddca7912677efbf6` | `2931e0cd948299566ff5d8224545e287143df06de7ac7b25a568da52599f4dab` |
+| Admin | `0.0.0-cordis.4` | `439d638a4c2f09424685073dc72bd2b6a9353254` | `5aee82cfeb00f18f8bed00a445fc59d1bfb02eb53e3961ced2cfe9559ff17c31` |
+| UI | `0.0.0-cordis.14` | `a0f28a2d4a3285cbb5203a97c2cdb620517871ae` | `6c1032996990178f7a76d5cbde2e15a4b6467941159d6d6013a33526e799e7ad` |
+
+API keeps AGPL-3.0 licensing, the restored committer policy and its own source/image producer.
+No cross-checkout source imports or production publication are introduced.
