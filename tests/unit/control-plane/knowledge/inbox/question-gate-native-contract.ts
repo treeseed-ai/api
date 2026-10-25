@@ -15,8 +15,9 @@ import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowle
 export async function verifyScopedInboxQuestionGates(f: Awaited<ReturnType<typeof relationAuthoringDatabase>>, proposalId: string, decisionId: string) {
 	const projectId = f.sources[0]!.projectId;
 	const discussions = createDiscussionService({ store: f.store, capacity: f.store, sessionEvents: new SessionEventService(f.store) });
-	const inbox = createInboxService({ store: f.store, discussions, governance: createGovernanceService(f.store, discussions),
-		communications: { send: async () => { throw new Error('Coordinator prerequisite has no addressed recipients'); } } });
+	const dependencies = { store: f.store, discussions, governance: createGovernanceService(f.store, discussions),
+		communications: { send: async () => { throw new Error('Coordinator prerequisite has no addressed recipients'); } } };
+	const inbox = createInboxService(dependencies);
 	const graph = async () => ({ nodes: (await f.store.all('SELECT * FROM execution_nodes WHERE team_id=? ORDER BY id', ['team'])).map(decodeExecutionNode),
 		edges: (await f.store.all('SELECT * FROM execution_edges WHERE team_id=? ORDER BY id', ['team'])).map(decodeExecutionEdge) });
 	const before = await graph(), originalAuthority = await f.store.all('SELECT * FROM governance_decisions ORDER BY id');
@@ -46,17 +47,35 @@ export async function verifyScopedInboxQuestionGates(f: Awaited<ReturnType<typeo
 	const read = await reader.client.readRepositoryFiles({ repoId: ref.repository, ref: ref.commit, paths: [ref.path], encoding: 'utf8', parseFrontmatter: false, allowProtected: true });
 	expect(read.resolvedRef).toBe(ref.commit); expect(`sha256:${createHash('sha256').update(read.files[0].content).digest('hex')}`).toBe(ref.digest);
 	expect((await graph()).nodes.find(node => node.id === gate!.id)).toMatchObject({ status: 'completed', authorityRefs: [ref] });
+	let resume!: () => void, entered!: () => void;
+	const paused = new Promise<void>(resolve => { resume = resolve; }), writing = new Promise<void>(resolve => { entered = resolve; });
+	const lateInbox = createInboxService({ ...dependencies, discussions: { ...discussions, create: async (...args: Parameters<typeof discussions.create>) => {
+		const actual = await discussions.create(...args); entered(); await paused; return actual;
+	} } });
+	const lateAnswer = lateInbox.action(f.principal, 'team', created.item.id, { action: 'answer', markdown: 'An answer started before reopen must not release it.' }, 'native-handoff-late-answer', answered.item.etag);
+	await Promise.race([writing, lateAnswer.then(() => { throw new Error('Late answer completed before its controlled response boundary'); })]);
 	const reopened = await inbox.action(f.principal, 'team', created.item.id, { action: 'reopen' }, 'native-handoff-reopen', answered.item.etag);
+	resume(); await expect(lateAnswer).rejects.toMatchObject({ status: 412, code: 'inbox_item_precondition_failed' });
 	expect(reopened.item.status).toBe('outstanding');
 	expect((await graph()).nodes.find(node => node.id === gate!.id)).toMatchObject({ status: 'blocked', authorityRefs: [] });
 	const reread = await inbox.show(f.principal, 'team', created.item.id); expect(reread.status).toBe('outstanding');
 	await commitDiscussionMessage({ store: f.store, teamId: 'team', projectId, discussionId: commented.item.discussionId!,
 		principal: { id: 'controlled-agent' }, authorType: 'agent', intent: 'discuss', inboxIntent: 'answer',
 		body: 'Controlled explicit answer for native lifecycle coverage; no managed execution claimed.', messageId: 'agent-answer' });
-	const agentAnswered = await inbox.show(f.principal, 'team', created.item.id); expect(agentAnswered.status).toBe('answered');
+	const agentEvidence = await inbox.show(f.principal, 'team', created.item.id); expect(agentEvidence.status).toBe('outstanding');
+	expect((await graph()).nodes.find(node => node.id === gate!.id)?.status).toBe('blocked');
+	const acceptedEvidence = await inbox.action(f.principal, 'team', created.item.id, { action: 'answer', markdown: 'Accept the exact submitted evidence after coordinator evaluation.' }, 'native-handoff-accept-evidence', agentEvidence.etag);
 	expect((await graph()).nodes.find(node => node.id === gate!.id)?.status).toBe('completed');
-	await inbox.action(f.principal, 'team', created.item.id, { action: 'reopen' }, 'native-handoff-reopen-again', agentAnswered.etag);
+	await inbox.action(f.principal, 'team', created.item.id, { action: 'reopen' }, 'native-handoff-reopen-again', acceptedEvidence.item.etag);
 	expect((await inbox.show(f.principal, 'team', created.item.id)).status).toBe('outstanding');
 	expect((await graph()).nodes.find(node => node.id === gate!.id)).toMatchObject({ status: 'blocked', authorityRefs: [] });
+	const advisory = await inbox.createQuestion(f.principal, 'team', { ...body, severity: 'advisory', title: 'Explain integration preparation' }, 'native-advisory-question');
+	const routed = await inbox.action(f.principal, 'team', advisory.item.id, { action: 'comment', markdown: 'Supply the explanation here.' }, 'native-advisory-topic', advisory.item.etag);
+	await commitDiscussionMessage({ store: f.store, teamId: 'team', projectId, discussionId: routed.item.discussionId!,
+		principal: { id: 'controlled-agent' }, authorType: 'agent', intent: 'discuss', inboxIntent: 'answer',
+		body: 'Controlled advisory answer for the native inbox lifecycle.', messageId: 'advisory-answer' });
+	const explained = await inbox.show(f.principal, 'team', advisory.item.id); expect(explained.status).toBe('answered');
+	await inbox.action(f.principal, 'team', advisory.item.id, { action: 'reopen' }, 'native-advisory-reopen', explained.etag);
+	expect((await inbox.show(f.principal, 'team', advisory.item.id)).status).toBe('outstanding');
 	expect(await f.store.all('SELECT * FROM governance_decisions ORDER BY id')).toEqual(originalAuthority);
 }
