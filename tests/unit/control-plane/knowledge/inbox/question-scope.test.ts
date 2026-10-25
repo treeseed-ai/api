@@ -25,7 +25,10 @@ beforeEach(() => {
 	vi.mocked(resolveKnowledgeGatewayConnection).mockImplementation(async (_store, scope) => ({
 		contentPath: '.', repositoryId: 'library', baseRef: 'b'.repeat(40), authoringBranch: 'staging',
 		client: { closeWorkspace,
-			createWorkspace: async () => ({ workspaceId: 'workspace', baseCommitSha: 'b'.repeat(40), baseRef: 'refs/heads/staging' }),
+			createWorkspace: async ({ allowedPaths = ['**'] }: { allowedPaths?: string[] }) => {
+				if (allowedPaths.length !== 1 || !allowedPaths.every(path => scope.workspacePaths?.includes(path))) throw new Error('Permission denied.');
+				return { workspaceId: 'workspace', baseCommitSha: 'b'.repeat(40), baseRef: 'refs/heads/staging' };
+			},
 			commit: async () => ({ commitSha: commit, branchName: 'refs/heads/staging', changedPaths: [] }),
 			readRepositoryFiles: async ({ paths }: { paths: string[] }) => {
 				if (!paths.every(path => scope.workspacePaths?.includes(path))) throw new Error('Permission denied.');
