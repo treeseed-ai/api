@@ -110,3 +110,14 @@ The genuine installed-root continuation adopts Admin `.7` from
 `2041d42294bcd5814dc0a481bcc5a95b583ca4ba2a201b46d72a8f0c57979132`.
 Its asset catalog resolves named package roots across Node's nested module-mode boundaries.
 The API consumes that public owner fix; it does not duplicate Admin asset resolution.
+
+### Genuine installed identity and reusable browser acceptance
+
+The installed-root gate signs in through genuine Keycloak over the selected public HTTPS
+origin using only the disposable fixture's private bootstrap credential. A fresh Firefox
+profile trusts only the fixture's exported Caddy CA; TLS bypass is forbidden. It verifies
+Admin's reusable mobile-first controls, authenticated status and application read-back through
+the seven-operation SDK contract, Origin/CSRF refusals, session-cookie protections and logout
+revocation. Credentials and cookies never enter fixture output. The gate retains the native
+worker and compares resource/credential/TLS identity before and after reads and browser actions.
+This is test-only activation of uniquely scoped disposable resources, not a user installation.
