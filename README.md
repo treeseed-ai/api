@@ -104,3 +104,9 @@ Format-3 private worker records are projected to its declared fields before resp
 plan digests, idempotency keys, private sequence/format metadata and acknowledgements do not
 become extra HTTP fields. Legacy public DTOs retain the same shape. Full private read-back stays
 on the installation's owner/observer boundary.
+
+The genuine installed-root continuation adopts Admin `.7` from
+`45abbeeb5e99f368128418168d913a30721fefba`, archive SHA-256
+`2041d42294bcd5814dc0a481bcc5a95b583ca4ba2a201b46d72a8f0c57979132`.
+Its asset catalog resolves named package roots across Node's nested module-mode boundaries.
+The API consumes that public owner fix; it does not duplicate Admin asset resolution.
