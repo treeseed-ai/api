@@ -1,6 +1,6 @@
 {
   "name": "@treeseed-cordis/api",
-  "version": "0.0.0-cordis.1",
+  "version": "0.0.0-cordis.2",
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-only",
@@ -10,8 +10,8 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/src/container.d.ts",
-      "default": "./dist/src/container.js"
+      "types": "./dist/src/server.d.ts",
+      "default": "./dist/src/server.js"
     },
     "./container": {
       "types": "./dist/src/container.d.ts",
@@ -25,29 +25,51 @@
   ],
   "scripts": {
     "check": "bun node_modules/@treeseed-cordis/sdk/dist/src/source-policy.js check",
-    "build": "bun node_modules/@treeseed-cordis/sdk/dist/src/source-policy.js build && bun dist/src/container.js --metadata",
+    "build": "bun node_modules/@treeseed-cordis/sdk/dist/src/source-policy.js build && bun dist/src/container.js --metadata && bun dist/src/server.js --metadata",
     "test:unit": "bun test ./tests --test-name-pattern '^unit:'",
     "test:integration": "bun test ./tests --test-name-pattern '^integration:'",
     "test:smoke": "bun test ./tests --test-name-pattern '^smoke:'",
     "verify": "bun run check && bun run build && bun run test:unit && bun run test:integration && bun run test:smoke"
   },
   "peerDependencies": {
-    "@treeseed-cordis/sdk": "0.0.0-cordis.4"
+    "@treeseed-cordis/sdk": "0.0.0-cordis.4",
+    "@treeseed-cordis/identity": "0.0.0-cordis.1",
+    "@treeseed-cordis/admin": "0.0.0-cordis.1",
+    "@treeseed-cordis/deployment": "0.0.0-cordis.4"
   },
   "devDependencies": {
     "@treeseed-cordis/sdk": "file:vendor/sdk.tgz",
     "typescript": "5.9.3",
     "@types/bun": "1.4.4",
-    "@types/node": "24.10.1"
+    "@types/node": "24.10.1",
+    "@treeseed-cordis/identity": "file:vendor/identity.tgz",
+    "@treeseed-cordis/admin": "file:vendor/admin.tgz",
+    "@treeseed-cordis/deployment": "file:vendor/deployment.tgz"
   },
   "dependencies": {
-    "cordis": "4.0.0-rc.12"
+    "cordis": "4.0.0-rc.12",
+    "jsonc-parser": "3.3.1"
   },
   "cordisCandidate": {
     "sdk": {
       "repository": "https://github.com/treeseed-ai/sdk.git",
-      "commit": "c03a2b0eab89786439eddea3cff8161e85676b3e",
-      "sha256": "d6d0f2f4379d2d95403a226d20899ad22a78a11ccdbb4106116ef0a925295d1b"
+      "commit": "f44ede394a58814b5d6e73146ba9ed7246b4f2ca",
+      "sha256": "16d3d7f699c55795b97972ca538bfeedeafdc6bfc4c32ed01708871ea02fe75c"
+    },
+    "identity": {
+      "repository": "https://github.com/treeseed-ai/identity.git",
+      "commit": "906d64e1dc9219786444f5f793968592bb8abd96",
+      "sha256": "dd3131499b01b8ad8d4c8aa78d0cb99de69da86c4fbad1da0670439c3d8bdddc"
+    },
+    "admin": {
+      "repository": "https://github.com/treeseed-ai/admin.git",
+      "commit": "5b30c2af69c5d273936cfddd480e7f5891c75db9",
+      "sha256": "a7750c6f38187e44b2823eb778f66b73c4596983226dd80c2204208f96848e28"
+    },
+    "deployment": {
+      "repository": "https://github.com/treeseed-ai/deployment.git",
+      "commit": "6a861aa81f3786b74752191b461d1bcddf99fce5",
+      "sha256": "7015e2447eb4d98f9979e8f10a3b33480c8ca80818384e2cbf939eba550ab65d"
     }
   },
   "cordis": {
@@ -135,5 +157,61 @@
         "nativeComposition": true
       }
     }
-  }
+  },
+  "cordisProviders": [
+    {
+      "id": "private-worker",
+      "pluginId": "api",
+      "capability": "api.host",
+      "contractVersion": "0.3.0-cordis.1",
+      "target": "api",
+      "provide": [
+        "api.host"
+      ],
+      "inject": []
+    },
+    {
+      "id": "platform-operations",
+      "pluginId": "api",
+      "capability": "platform.invoker",
+      "contractVersion": "0.3.0-cordis.1",
+      "target": "api",
+      "provide": [
+        "platform.invoker"
+      ],
+      "inject": [
+        "api.host",
+        "cordis.composition"
+      ]
+    },
+    {
+      "id": "installed-routes",
+      "pluginId": "api",
+      "capability": "api.routes",
+      "contractVersion": "0.3.0-cordis.1",
+      "target": "api",
+      "provide": [
+        "api.routes"
+      ],
+      "inject": [
+        "cordis.composition",
+        "identity.sessions",
+        "admin.routes",
+        "platform.invoker"
+      ]
+    },
+    {
+      "id": "node-http",
+      "pluginId": "api",
+      "capability": "api.http",
+      "contractVersion": "0.3.0-cordis.1",
+      "target": "api",
+      "provide": [
+        "api.http"
+      ],
+      "inject": [
+        "api.routes"
+      ]
+    }
+  ]
 }
