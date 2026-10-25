@@ -129,3 +129,10 @@ The genuine four-service test reached running containers but failed snapshot pub
 because direct and routed API observations shared one target. Deployment now admits identical
 evidence once and blocks conflicting observations; API retains its owning semantic probes.
 Qualification of the new assembled candidate remains required.
+
+The SDK status-contract continuation adopts Admin `.8` from
+`83b9bd399666bcaa0d806b807804f4a8b7b3514e`, archive SHA-256
+`6ed661574bbe10f00dfa09fafc84c60785e987152cd997ecb31395334077c4a2`.
+Admin now validates the native invoker's raw SDK status result. API machine endpoints retain
+their established raw operation outputs; CLI envelopes do not redefine those outputs.
+Browser acceptance checks the same SDK projections and revocation of the exact prior cookie.
