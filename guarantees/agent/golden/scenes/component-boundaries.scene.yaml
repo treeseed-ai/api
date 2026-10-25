@@ -21,6 +21,18 @@ workflow:
   - id: legacy-graph-unissued
     action: { verifier: api.golden.legacy-graph-unissued }
     expect: { status: passed }
+  - id: retained-contribution-inactive
+    action: { verifier: api.golden.retained-contribution-inactive }
+    expect: { status: passed }
+  - id: retained-contribution-active
+    action: { verifier: api.golden.retained-contribution-active }
+    expect: { status: passed }
+  - id: retained-contribution-unmaterialized
+    action: { verifier: api.golden.retained-contribution-unmaterialized }
+    expect: { status: passed }
+  - id: retained-contribution-no-callback
+    action: { verifier: api.golden.retained-contribution-no-callback }
+    expect: { status: passed }
   - id: subscriber-execution-context-owner
     action: { verifier: api.golden.subscriber-execution-context-owner }
     expect: { status: passed }
@@ -3130,6 +3142,10 @@ workflow:
     expect: { status: passed }
   - id: proposal-contract-authority-native
     action: { verifier: api.golden.proposal-contract-authority-native }
+    expect: { status: passed }
+
+  - id: proposal-plan-readback-native
+    action: { verifier: api.golden.proposal-plan-readback-native }
     expect: { status: passed }
 
   - id: stopped-reporter-history

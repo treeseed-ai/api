@@ -18,6 +18,37 @@ Use this package when you operate or develop the Treeseed backend. Ordinary admi
 
 Site and external clients reach this package through its REST or MCP surfaces.
 
+### Governance proposal detail contract
+
+The existing project-authorized `governance.proposals.show` operation is intended
+to include an `executionPlan` field alongside its proposal metadata, votes,
+events, readiness, and decision data. The plan's canonical source is the exact
+TreeDX proposal identified by that proposal row's
+`metadata.contentProvenance` (`repositoryId`, `contentPath`, `commitSha`, and
+`digest`), resolved and validated through `readExactProposal()` in
+`src/api/governance/executable-proposal.ts`. The SQL proposal row is a query
+projection, not the authority for plan contents.
+
+The response must preserve the authored plan fields and values, including work
+item IDs, permissions, context references, and estimate references. It must
+also preserve whether optional fields were authored: validation must not add
+defaults or invent an empty `workItems` array. If the exact, valid canonical
+proposal genuinely has no `executionPlan`, the detail response uses
+`executionPlan: null`. Failure to find or read that source, a moved or changed
+source, a digest mismatch, or invalid proposal content remains an explicit
+source error; these cases must not be represented as a missing plan.
+
+Operators should use the existing proposal detail operation to inspect the
+authored plan before coordinating a revision. The returned authored work items
+and estimates provide the basis for that review without reconstructing them
+from readiness summaries or host-side state. The operation retains its existing
+project authorization and unrelated response fields.
+
+This describes the intended API contract. At source revision
+`3497c1dc81328994383bfe9804e06039fac3c673`, the proposal detail method does not
+yet return `executionPlan`; implementation and regression coverage are separate
+work.
+
 ### MCP mutation requests
 
 Tool input and output schemas declare JSON Schema draft-07 and retain the SDK's native validation constraints.

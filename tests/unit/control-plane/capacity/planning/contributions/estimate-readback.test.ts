@@ -8,6 +8,7 @@ import { splitPostgresSqlStatements } from '../../../../../../src/api/persistenc
 import { loadProposalGroupContributions } from '../../../../../../src/api/capacity/services/capacity/execution/proposal-contributions.ts';
 import { projectTeamExecutionGraph } from '../../../../../../src/api/capacity/policy/execution/execution-graph-projector.ts';
 import { effectiveProfile } from '../../../../../../src/api/capacity/services/build/execution-node-profile.ts';
+import { hasCompleteExecutablePlan, readExactProposal } from '../../../../../../src/api/governance/executable-proposal.ts';
 import { loadTeamExecutableProposalSources } from '../../../../../../src/api/capacity/services/capacity/execution/executable-proposal-source.ts';
 import { verifyAssignmentContent, recordAssignmentContentIntegration } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-content-readback.ts';
 
@@ -29,10 +30,19 @@ describe('own contribution through owning SQL public HTTP client and native Git'
 				activityProfiles: { estimating: { ...profile, permissions: { content: { read: ['proposal'], write: ['proposal'] }, tools: ['source.read'] } },
 					acting: profile, reviewing: { ...profile, permissions: { content: { read: ['proposal', 'decision'], write: ['decision'] }, tools: ['source.read', 'verification'] } } } }));
 			for (const definition of definitions) f.publishContent(`agents/${definition.name}.mdx`, definition);
+			const discussed = definitions.map(definition => ({ id: `${definition.name}-work`, activity: 'acting',
+				objective: `Own ${definition.name} provider runtime repair.`, workspace: 'git', review: 'required', maximumReviewCycles: 2,
+				dependsOn: [], acceptanceCriteria: ['Deliver the accepted source boundary repair.'],
+				requestedPermissions: { content: { read: ['proposal'], write: [] }, tools: ['source.read', 'source.write', 'verification'] },
+				contextRefs: [{ store: 'git', model: 'repository', id: 'agent', repository: 'treeseed-ai/agent', commit: 'a'.repeat(40) }] }));
 			const draft = { schemaVersion: 'treeseed.proposal/v2', id: 'proposal', projectId: 'project', groupIds: ['provider-runtime'],
 				title: 'Preserve prepared workload inputs', request: 'Document and repair the actual model request handoff.',
-				summary: 'Own documentation and engineering contributions to the opaque runner repair.', status: 'discussing' };
+				summary: 'Own documentation and engineering contributions to the opaque runner repair.', status: 'discussing',
+				executionPlan: { workItems: discussed } };
 			const frozen = await f.publish(draft), path = 'proposals/proposal.mdx';
+			const initialRow = (await f.query('SELECT * FROM governance_proposals')).rows[0]!;
+			expect((await readExactProposal(f.store, initialRow)).definition.executionPlan).toEqual(draft.executionPlan);
+			expect(hasCompleteExecutablePlan(draft)).toBe(false);
 			const sourceRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1, repository: 'repository',
 				commit: frozen.commit, digest: `sha256:${frozen.digest}`, path };
 			const inputs = ['technical-writer', 'engineer'].map(name => {
@@ -44,12 +54,11 @@ describe('own contribution through owning SQL public HTTP client and native Git'
 					workspace: { mode: 'treedx', workspaceId: `workspace-${name}`, repository: 'repository', baseCommit: frozen.commit, writablePaths: [path] },
 					grant: { contentRead: [sourceRef], contentWrite: [sourceRef], sourceRead: [], sourceWrite: [], tools: [] } });
 				const estimate = { expectedSeconds: 120, maximumSeconds: 240, rationale: 'Controlled bounded contribution input, not measured agent work.' };
-				const item = { id: `${name}-work`, activity: 'acting', objective: `Own ${name} provider runtime repair.`, workspace: 'git',
-					review: 'required', maximumReviewCycles: 2, dependsOn: [], estimateRef: { store: 'postgresql', model: 'assignment-attempt', id, revision: attempt.attempt },
-					estimate, reviewEstimate: estimate, acceptanceCriteria: ['Deliver the accepted source boundary repair.'],
-					requestedPermissions: { content: { read: ['proposal'], write: [] }, tools: ['source.read', 'source.write', 'verification'] },
-					contextRefs: [{ store: 'git', model: 'repository', id: 'agent', repository: 'treeseed-ai/agent', commit: 'a'.repeat(40) }] };
-				const candidate = { ...draft, executionPlan: { workItems: [item] } }, committed = f.publishContent(path, candidate);
+				const planned = discussed.find(item => item.id === `${name}-work`)!;
+				const item = { ...planned, estimateRef: { store: 'postgresql', model: 'assignment-attempt', id, revision: attempt.attempt },
+					estimate, reviewEstimate: estimate };
+				const candidate = { ...draft, executionPlan: { workItems: [item, ...discussed.filter(peer => peer.id !== item.id)] } },
+					committed = f.publishContent(path, candidate);
 				const result = assignmentResultSchema.parse({ schemaVersion: 'treeseed.assignment-result/v1', id: `result-${name}`, assignmentId: id,
 					status: 'completed', summary: 'Controlled native component input; no live agent completion claimed.',
 					references: [{ kind: 'treedx', projectId: 'project', repository: 'repository', commit: committed.commit, path, workspaceId: attempt.workspace.mode === 'treedx' ? attempt.workspace.workspaceId : '' }],
@@ -62,8 +71,11 @@ describe('own contribution through owning SQL public HTTP client and native Git'
 				[assignment.id, 'controlled-membership', 'team', 'project', 'controlled-provider', 'maintenance', 'planning', 'completed',
 					assignment.agentId, JSON.stringify(assignment.assignmentAttempt), JSON.stringify(result), original.createdAt, original.createdAt]);
 			let current: Record<string, unknown> = draft;
-			for (const input of inputs) current = mergeAssignmentEstimate({ frozen: draft, current, candidate: input.candidate,
-				assignment: input.assignment, ownedEstimateRefs: [] });
+			for (const [index, input] of inputs.entries()) {
+				current = mergeAssignmentEstimate({ frozen: draft, current, candidate: input.candidate,
+					assignment: input.assignment, ownedEstimateRefs: [] });
+				expect(hasCompleteExecutablePlan(current)).toBe(index === inputs.length - 1);
+			}
 			await f.publish(current);
 			const proposal = (await f.query('SELECT * FROM governance_proposals')).rows[0]!;
 			await f.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,handler_refs_json,metadata_json,created_at,updated_at)
@@ -149,6 +161,60 @@ describe('own contribution through owning SQL public HTTP client and native Git'
 				assignment: refreshed, ownedEstimateRefs: [writer.candidate.executionPlan.workItems[0]!.estimateRef] } as never))
 				.toEqual(changedPeer);
 			expect(await f.snapshot()).toEqual(held);
+			// Real portfolio team growth must not let retained accepted history
+			// prevent a new draft. No historical contribution is invented for it.
+			const accepted = await readExactProposal(store, proposal);
+			await f.query("UPDATE governance_proposals SET status='accepted',decision_id='retained-decision' WHERE id='proposal'");
+			await f.query(`INSERT INTO governance_decisions
+				(id,team_id,project_id,proposal_id,proposal_version,proposal_content_hash,status,title,summary,
+				governance_provider_id,decision_record_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				['retained-decision', 'team', 'project', 'proposal', 1, proposal.active_content_hash, 'accepted',
+					'Retained accepted repair', 'Controlled historical authority, not a live approval.', 'default',
+					JSON.stringify({ proposalRef: accepted.ref }), original.createdAt, original.createdAt]);
+			await f.query(`INSERT INTO execution_nodes
+				(id,team_id,project_id,kind,pair_role,source_ref_json,rule_revision,node_revision,status,
+				graph_revision_created,graph_revision_updated,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				['retained-node', 'team', 'project', 'acting', 'actor', JSON.stringify(accepted.ref), 1, 1,
+					'blocked', 1, 1, original.createdAt, original.createdAt]);
+			const newcomer = { ...definitions[1]!, id: 'project/integrator', name: 'integrator' };
+			const grown = f.publishContent('agents/integrator.mdx', newcomer);
+			await f.query('UPDATE project_agent_classes SET handler_refs_json=?,metadata_json=? WHERE id=?', [
+				JSON.stringify({ agents: [...definitions, newcomer] }), JSON.stringify({ source: 'project-library',
+					immutableRef: grown.commit, definitionPaths: [...definitions.map(item => `agents/${item.name}.mdx`), 'agents/integrator.mdx'] }), 'maintenance']);
+			expect(await loadProposalGroupContributions(store as never, subject, current)).toMatchObject({
+				current: false, missing: ['project/project/integrator'] });
+			const nextDraft = { ...draft, id: 'next-objective' }, nextSource = f.publishContent('proposals/next-objective.mdx', nextDraft);
+			await f.query(`INSERT INTO governance_proposals
+				(id,team_id,project_id,title,summary,body,active_content_hash,governance_provider_id,metadata_json,created_at,updated_at)
+				VALUES (?,?,?,?,?,?,?,?,?,?,?)`, ['next-objective', 'team', 'project', nextDraft.title, nextDraft.summary,
+					nextDraft.request, nextSource.digest, 'default', JSON.stringify({ contentProvenance: { repositoryId: 'repository',
+						contentPath: 'proposals/next-objective.mdx', commitSha: nextSource.commit, digest: nextSource.digest } }), original.createdAt, original.createdAt]);
+			const retained = await f.snapshot(), frozenHistory: Array<{ id: string; digest: string }> = [];
+			await expect(loadTeamExecutableProposalSources(store, 'team', undefined, source => frozenHistory.push(source))).resolves.toEqual([]);
+			expect(frozenHistory).toEqual([{ id: 'proposal', digest: accepted.ref.digest }]);
+			expect(await f.snapshot()).toEqual(retained);
+			await expect(loadTeamExecutableProposalSources(store, 'team')).rejects.toMatchObject({ code: 'proposal_contributions_unverified' });
+			await f.query('BEGIN');
+			try {
+				await f.query("DELETE FROM execution_nodes WHERE id='retained-node'");
+				await expect(loadTeamExecutableProposalSources(store, 'team', undefined, () => undefined))
+					.rejects.toMatchObject({ code: 'proposal_contributions_unverified' });
+			} finally { await f.query('ROLLBACK'); }
+			expect(await f.snapshot()).toEqual(retained);
+			for (const fault of ['moved', 'denied'] as const) {
+				f.setFault(fault); await expect(loadTeamExecutableProposalSources(store, 'team', undefined, () => undefined)).rejects.toThrow();
+				expect(await f.snapshot()).toEqual(retained);
+			}
+			f.setFault('none');
+			await f.query(`INSERT INTO capacity_provider_assignments
+				(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,mode,status,
+				execution_node_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+				['active-retained', 'membership', 'team', 'project', 'provider', 'maintenance', 'acting', 'running',
+					'retained-node', original.createdAt, original.createdAt]);
+			const active = await f.snapshot();
+			await expect(loadTeamExecutableProposalSources(store, 'team', undefined, () => undefined))
+				.rejects.toMatchObject({ code: 'proposal_contributions_unverified', details: { missing: ['project/project/integrator'] } });
+			expect(await f.snapshot()).toEqual(active);
 			// Actual owning SQL, SDK HTTP transport and committed Git are exercised.
 			// The existing isolated endpoint is not a native TreeDX server or managed
 			// execution/approval/permission proof. Those layers remain required.

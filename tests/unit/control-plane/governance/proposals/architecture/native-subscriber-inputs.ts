@@ -92,7 +92,11 @@ export function expectNativeSubscriberGraph(input: ReturnType<typeof nativeSubsc
 		const reviewer = nodes.find(node => node.workItemId === workItemId && node.pairRole === 'reviewer'); assert.ok(reviewer);
 		expect(actor.authorityRefs).toContainEqual(expect.objectContaining({ model: 'agent', id: subscriber.definition.id }));
 		expect(actor.authorityRefs).toContainEqual(input.declaration.executionPlan.workItems[index]!.estimateRef);
-		expect(reviewer.authorityRefs).toContainEqual(expect.objectContaining({ model: 'agent', id: input.subscribers[1 - index]!.definition.id }));
+		expect(reviewer.authorityRefs).toContainEqual(expect.objectContaining({ model: 'agent', id: subscriber.definition.id }));
+		expect(reviewer.authorityRefs).toContainEqual(input.declaration.executionPlan.workItems[index]!.estimateRef);
+		expect(reviewer.id).not.toBe(actor.id);
+		expect(reviewer.kind).toBe('reviewing');
+		expect(reviewer.estimate).toEqual(input.declaration.executionPlan.workItems[index]!.reviewEstimate);
 	}
 }
 

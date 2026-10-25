@@ -15,6 +15,20 @@ const classes = [
 ];
 
 describe('exact activity selection before living-node admission', () => {
+	it('omits archived legacy definitions before validation while preserving active and paused group subscribers', () => {
+		const current = (name: string, status: string) => ({ id: name, slug: 'maintenance', status, handlerRefs: { agents: [
+			{ ...definition(name, 'maintenance', { planning: profile('writer') }), groupIds: ['project-api'] },
+		] } });
+		const archived = { id: 'legacy', status: 'archived', handlerRefs: { agents: [{ agentId: 'legacy', groupIds: ['project-api'] }] } };
+		const rows = [archived, current('current', 'active'), current('paused', 'paused')], held = structuredClone(rows);
+		expect(compileWorkdayAgentProfileSnapshot(rows, { activityTypes: ['planning'] }, ['project-api']).agents.map(x => x.definition.id))
+			.toEqual(['sdk/current', 'sdk/paused']);
+		for (const status of ['active', 'paused']) expect(() => compileWorkdayAgentProfileSnapshot([
+			{ ...archived, status }, rows[1]!, rows[2]!,
+		], undefined, ['project-api'])).toThrow(/invalid minimal agent/u);
+		expect(() => compileWorkdayAgentProfileSnapshot([archived], undefined, ['project-api'])).toThrow(/no eligible/u);
+		expect(rows).toEqual(held);
+	});
 	it('admits every v2 group subscriber to estimating before a contribution plan exists regardless of class or project', () => {
 		const snapshot = (project: string, name: string, groupIds = ['provider-runtime']) => ({ agents: [{
 			definition: { ...definition(name, 'maintenance', { planning: profile('writer'), estimating: profile('writer') }), id: `${project}/${name}`, groupIds },

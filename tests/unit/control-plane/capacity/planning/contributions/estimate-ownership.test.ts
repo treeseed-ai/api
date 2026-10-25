@@ -26,6 +26,39 @@ function input(name: string, itemId: string, frozen: Row = draft) {
 }
 
 describe('subscriber-owned estimate contributions', () => {
+	it('lets each actual author claim an unestimated discussed item while retaining concurrent peer authority', () => {
+		const writer = input('technical-writer', 'document-boundary'), tester = input('tester', 'reproduce-request');
+		const unestimated = (work: Row) => Object.fromEntries(Object.entries(work)
+			.filter(([key]) => !['estimate', 'estimateRef', 'reviewEstimate'].includes(key)));
+		const writerPlan = unestimated(writer.work), testerPlan = unestimated(tester.work);
+		const frozen = { ...draft, executionPlan: { workItems: [writerPlan, testerPlan] } };
+		const writerCandidate = { ...frozen, executionPlan: { workItems: [writer.work, testerPlan] } };
+		const testerCandidate = { ...frozen, executionPlan: { workItems: [writerPlan, tester.work] } };
+		const held = structuredClone({ frozen, writerCandidate, testerCandidate });
+		const first = mergeAssignmentEstimate({ ...writer, frozen, current: frozen, candidate: writerCandidate } as never);
+		const both = mergeAssignmentEstimate({ ...tester, frozen, current: first, candidate: testerCandidate } as never);
+		expect((both.executionPlan as { workItems: Row[] }).workItems).toEqual([writer.work, tester.work]);
+		expect(mergeAssignmentEstimate({ ...writer, frozen, current: both, candidate: writerCandidate } as never)).toEqual(both);
+		for (const workItems of [[testerPlan], [{ ...writerPlan, objective: 'Newer discussed scope.' }, testerPlan]])
+			expect(() => mergeAssignmentEstimate({ ...writer, frozen, current: { ...frozen, executionPlan: { workItems } },
+				candidate: writerCandidate } as never)).toThrow(/newer discussed contribution/u);
+		const foreign = input('another-subscriber', 'document-boundary');
+		expect(() => mergeAssignmentEstimate({ ...foreign, frozen, current: both,
+			candidate: { ...frozen, executionPlan: { workItems: [foreign.work, testerPlan] } } } as never)).toThrow(/conflicting IDs/u);
+		for (const peers of [[], [{ ...testerPlan, objective: 'Altered peer scope.' }]]) expect(() => mergeAssignmentEstimate({
+			...writer, frozen, current: frozen, candidate: { ...frozen, executionPlan: { workItems: [writer.work, ...peers] } },
+		} as never)).toThrow(/another subscriber contribution/u);
+		expect({ frozen, writerCandidate, testerCandidate }).toEqual(held);
+	});
+	it('refuses an estimating result that supplies authority without its actual estimate and required review estimate', () => {
+		const author = input('engineer', 'implementation');
+		for (const field of ['estimate', 'reviewEstimate']) {
+			const incomplete = { ...author.work } as Row; Reflect.deleteProperty(incomplete, field);
+			const supplied = { ...author, candidate: { ...draft, executionPlan: { workItems: [incomplete] } } }, held = structuredClone(supplied);
+			expect(() => mergeAssignmentEstimate(supplied as never)).toThrow(/actual estimate/u);
+			expect(supplied).toEqual(held);
+		}
+	});
 	it('keeps an already integrated contribution current when the proposal orders work by workflow rather than alphabetically', () => {
 		const engineer = input('engineer', 'z-repair-request'), tester = input('tester', 'a-reproduce-request');
 		const current = { ...draft, executionPlan: { workItems: [engineer.work, tester.work] } }, held = structuredClone(current);

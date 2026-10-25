@@ -32,6 +32,7 @@ export function compileWorkdayAgentProfileSnapshot(agentClasses: unknown[], sele
 	const available: WorkdayAgentSelectionSnapshot[] = [];
 	for (const value of agentClasses) {
 		const row = record(value);
+		if (row.status === 'archived') continue;
 		for (const candidate of array(record(row.handlerRefs ?? row.handler_refs ?? row.handler_refs_json).agents)) {
 			const membership = record(candidate).groupIds;
 			if (groupIds !== undefined && !(Array.isArray(membership) && membership.some(id => groupIds.includes(String(id))))) continue;

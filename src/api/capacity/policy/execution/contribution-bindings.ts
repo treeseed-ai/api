@@ -45,30 +45,11 @@ export function contributionBindings(source: { teamId: string; frontmatter: Row;
 	};
 	const acting = new Map(items.map(item => [text(item.id), bind(item, 'acting')]));
 	const targets = items.filter(item => item.review === 'required');
-	const budgets = items.filter(item => Object.keys(record(item.reviewEstimate)).length > 0);
-	const targetByBudget = new Map<string, string>();
-	const eligible = (target: Row, budget: Row) => {
-		const actor = owners.get(text(target.id))!, reviewer = owners.get(text(budget.id))!;
-		return (actor.attempt.projectId !== reviewer.attempt.projectId || actor.definition.id !== reviewer.definition.id)
-			&& Boolean(reviewer.definition.activityProfiles.reviewing);
-	};
-	// Each estimated review budget is used once. Matching never invents, scales or
-	// duplicates a subscriber's promised effort, and never chooses by role/class.
-	const allocate = (target: Row, visited: Set<string>): boolean => {
-		for (const budget of budgets) {
-			const id = text(budget.id); if (visited.has(id) || !eligible(target, budget)) continue;
-			visited.add(id);
-			const previous = targetByBudget.get(id);
-			if (!previous || allocate(targets.find(item => item.id === previous)!, visited)) {
-				targetByBudget.set(id, text(target.id)); return true;
-			}
-		}
-		return false;
-	};
-	for (const target of targets) if (!allocate(target, new Set())) deny(`Work item ${target.id} lacks a separately estimated independent peer review.`);
-	const reviewing = new Map([...targetByBudget].map(([budgetId, targetId]) => {
-		const budget = items.find(item => item.id === budgetId)!;
-		return [targetId, { profile: bind(budget, 'reviewing'), estimate: record(budget.reviewEstimate), budgetId }] as const;
+	// Omission selects a separate review execution by the product's own agent.
+	// Each product retains its own instructions, estimate and authority.
+	const reviewing = new Map(targets.map(item => {
+		if (!Object.keys(record(item.reviewEstimate)).length) deny(`Work item ${item.id} lacks its own separately estimated review.`);
+		return [text(item.id), { profile: bind(item, 'reviewing'), estimate: record(item.reviewEstimate), budgetId: text(item.id) }] as const;
 	}));
 	return { acting, reviewing };
 }
