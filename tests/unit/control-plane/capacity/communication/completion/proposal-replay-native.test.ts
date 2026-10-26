@@ -26,7 +26,7 @@ describe('native communication proposal recovery', () => {
 			const projectId = f.sources[0]!.projectId, repository = f.sources[0]!.repository;
 			const discussionProjectId = f.sources[crossProject ? 1 : 0]!.projectId;
 			const now = new Date().toISOString();
-			const agent = { schemaVersion: 'treeseed.agent/v1', id: `${discussionProjectId}/researcher`, name: 'Researcher', agentClass: 'researcher',
+			const agent = { schemaVersion: 'treeseed.agent/v1', id: `${discussionProjectId}/researcher`, name: 'Researcher', agentClass: 'researcher', groupIds: ['context-recovery'],
 				purpose: 'Inspect the retry boundary.', responsibilities: ['Inspect the retry boundary.'], capabilities: ['repository-analysis'], context: { include: ['project-objectives'] },
 				activityProfiles: { chat: { handler: 'writer', permissions: { content: { read: ['knowledge', 'discussion'], write: ['discussion'] }, tools: ['discussion', 'source.read'] }, prompt: { system: 'Answer with exact source evidence.' } } } };
 			await f.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,handler_refs_json,metadata_json,created_at,updated_at)
@@ -59,7 +59,7 @@ describe('native communication proposal recovery', () => {
 				const id = String(result.authoringReceipt.changeset.workspaceId ?? ''); assert.ok(id); owned.add(id);
 				await f.client.workspaces.close(id); expect(object(await f.client.workspaces.get(id)).status).toBe('closed'); owned.delete(id);
 			};
-			const body = { message: `@${discussionProjectId}/researcher Trace the MCP retry-context boundary.`, proposalId: declaration.id };
+			const body = { message: `@${discussionProjectId}/context-recovery @${discussionProjectId}/researcher Trace the MCP retry-context boundary.`, proposalId: declaration.id };
 			const send = (key = 'same-project-work', input = body) => communication.send(f.principal, 'team', 'mcp-recovery', input, key);
 			// The original official client must compile the actual receipt schema and
 			// validate real owning-service output; no relaxed validator or fake receipt.
@@ -80,6 +80,9 @@ describe('native communication proposal recovery', () => {
 				expect(result.isError).not.toBe(true); first = binding.schema.output.parse(result.structuredContent);
 			} finally { await client.close(); }
 			expect(first.targets).toHaveLength(1); expect(first.targets[0]!.projectId).toBe(discussionProjectId);
+			const committed = await loadDiscussions({ store: f.store, projectId: discussionProjectId, discussionId: 'mcp-recovery', collection: 'messages' });
+			expect(committed.messages[0]!.frontmatter.mentionedAgents).toEqual(['researcher']);
+			expect(committed.messages[0]!.frontmatter.recipientIds).toEqual(['researcher']);
 			// Draft discussion uses the exact source without opening voting or
 			// granting acting authority. Later edits still freeze replay context.
 			expect((await f.store.getGovernanceProposal(declaration.id))?.status).toBe('draft');

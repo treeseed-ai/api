@@ -230,7 +230,7 @@ export async function commitDiscussionMessage(input: {
 	const recipients = [...new Set((input.recipients ?? []).map((value) => text(value)).filter(Boolean))];
 	const mentionedAgents = input.authorType === 'agent'
 		? mentions.filter((agentId) => recipients.includes(agentId))
-		: [...new Set([...mentions, ...recipients])];
+		: recipients.length ? recipients : mentions;
 	const root = connection.contentPath;
 	const discussionPath = projectLibraryPath(root, 'discussions', `${slug(discussionId)}.mdx`);
 	const messagePath = projectLibraryPath(root, 'discussion-messages', slug(discussionId), `${messageId}.mdx`);
@@ -310,7 +310,7 @@ export async function commitDiscussionMessage(input: {
 		// Simulation/assignment messages remain readable from their exact journaled commit.
 	if (authoring.state === 'integrated') await projectTreeDxCommitSignals(input.store, { projectId: input.projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: `Discussion message: ${topic}`, actorType: input.authorType === 'system' ? 'service' : 'user', actorId: authorId });
 		await session.close();
-		return { discussion: { id: discussionId, topic, path: discussionPath }, message: { id: messageId, authorLabel: authorName, body: input.body, path: messagePath }, event: { path: eventPath }, mentions, commitSha: commit.commitSha, changeset: { ...changeset, resultCommitSha: commit.commitSha }, snapshotDigest: createHash('sha256').update(commit.commitSha).digest('hex') };
+		return { discussion: { id: discussionId, topic, path: discussionPath }, message: { id: messageId, authorLabel: authorName, body: input.body, path: messagePath }, event: { path: eventPath }, mentions: mentionedAgents, commitSha: commit.commitSha, changeset: { ...changeset, resultCommitSha: commit.commitSha }, snapshotDigest: createHash('sha256').update(commit.commitSha).digest('hex') };
 	} catch (error) {
 		await session.close().catch(() => undefined);
 		throw error;
