@@ -30,12 +30,13 @@ function fixture() {
 	};
 	vi.mocked(resolveKnowledgeGatewayConnection).mockResolvedValue({ repositoryId: 'library', contentPath: '.',
 		baseRef: dataRef, allowedPaths: ['knowledge/**', 'agent-context-queries/**'], client } as never);
-	const service = new ContextQueryCheckService({} as never);
+	const store = { listTreeDxSharesForRecipient: vi.fn().mockResolvedValue([]) };
+	const service = new ContextQueryCheckService(store as never);
 	const passing = vi.spyOn(service, 'requirePassing').mockResolvedValue([]);
 	const input = { teamId: 'team', projectId: 'project', definitionRef, dataRef, allowedModels: ['knowledge'],
 		layers: { agent: { queryRefs: [{ id: query.id, revision: 2 }], querySetRefs: [] },
 			activity: { queryRefs: [], querySetRefs: [] } } };
-	return { service, client, passing, query, content, input };
+	return { service, client, passing, query, content, input, store };
 }
 
 describe('canonical assignment query execution', () => {
@@ -96,5 +97,38 @@ describe('canonical assignment query execution', () => {
 		expect(f.client.buildContext).toHaveBeenCalledTimes(1);
 		expect(result.authorizedContext).toHaveLength(1);
 		expect(result.checks.map(check => check.layer)).toEqual(['agent', 'activity']);
+	});
+	it('preserves the original share path ceiling when query patterns would broaden a one-level share', async () => {
+		const f = fixture();
+		f.query.sources = [{ scope: 'shared-team', teamId: 'owner', projectIds: ['foreign'] }] as never;
+		f.query.target.paths = ['/knowledge/**'];
+		f.store.listTreeDxSharesForRecipient.mockResolvedValue([{ teamId: 'owner', status: 'active', trustGrant: {
+			operations: ['context'], projectIds: ['foreign'], paths: ['knowledge/*'], contentModels: ['knowledge'] } }]);
+		f.client.buildContext.mockResolvedValue({ resolvedRef: dataRef, totalTokenEstimate: 1,
+			nodes: [{ node: { id: 'section', path: 'knowledge/private/secret.mdx', text: 'x' }, text: 'x', tokenEstimate: 1 }], edges: [] } as never);
+		await expect(f.service.resolveForAssignment(f.input)).rejects.toMatchObject({ code: 'assignment_context_query_permission_denied' });
+	});
+	it('accepts a normal directory query under an equivalent active share ceiling', async () => {
+		const f = fixture(); f.query.sources = [{ scope: 'shared-team', teamId: 'owner', projectIds: ['foreign'] }] as never;
+		f.query.target.paths = ['/knowledge/**'];
+		f.store.listTreeDxSharesForRecipient.mockResolvedValue([{ teamId: 'owner', status: 'active', trustGrant: {
+			operations: ['context'], projectIds: ['foreign'], paths: ['knowledge/**'], contentModels: ['knowledge'] } }]);
+		const result = await f.service.resolveForAssignment(f.input);
+		expect(result.authorizedContext).toHaveLength(1);
+		expect(result.authorizedContext[0]!.value).toMatchObject({ projectId: 'foreign' });
+	});
+	it('applies a replacing query set only to its own layer without rerunning shared members or losing global context', async () => {
+		const f = fixture(), other = { ...f.query, id: 'activity-context' };
+		const set = { id: 'focused-context', title: 'Focused context', description: 'Replace optional activity context.',
+			revision: 1, mergePolicy: 'replace', queryRefs: [{ id: f.query.id, revision: f.query.revision }] };
+		f.client.readRepositoryFiles.mockImplementation(async input => ({ resolvedRef: input.ref, files: input.paths.map(path => ({ path,
+			content: `---\n${stringify(path.startsWith('agent-context-query-sets/') ? set : path.endsWith('activity-context.mdx') ? other : f.query)}---\n`, frontmatter: {} })) }));
+		const input: Parameters<typeof f.service.resolveForAssignment>[0] = { ...f.input, layers: { agent: f.input.layers.agent,
+			activity: { queryRefs: [{ id: other.id, revision: other.revision }], querySetRefs: [{ id: set.id, revision: set.revision }] } } };
+		const result = await f.service.resolveForAssignment(input);
+		expect(f.client.buildContext).toHaveBeenCalledTimes(2);
+		expect(result.authorizedContext).toHaveLength(1);
+		expect(result.authorizedContext[0]!.value).toMatchObject({ definition: { id: f.query.id } });
+		expect(result.checks[2]).toMatchObject({ layer: 'activity', querySet: { id: set.id, revision: 1, mergePolicy: 'replace' } });
 	});
 });

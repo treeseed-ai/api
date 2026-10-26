@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: canonical-query-context-native
+    action: { verifier: api.golden.canonical-query-context-native }
+    expect: { status: passed }
+  - id: canonical-query-budget-unit
+    action: { verifier: api.golden.canonical-query-budget-unit }
+    expect: { status: passed }
   - id: inbox-question-scope-native
     action: { verifier: api.golden.inbox-question-scope-native }
     expect: { status: passed }

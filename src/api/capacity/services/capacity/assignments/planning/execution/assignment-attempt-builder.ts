@@ -76,7 +76,7 @@ function assignmentScope(candidate: ReadyExecutionNode): ExactEntityReference[] 
 		|| (reference.model === 'knowledge' && reference.path === 'README.md'));
 	return uniqueReferences([candidate.node.sourceRef, candidate.effectiveProfile.profileRef,
 		...(candidate.node.authorityRefs ?? []).filter(reference => reference.model === 'decision'),
-		...core, ...inherited].filter(reference => reference.store === 'treedx'));
+		...core, ...inherited, ...candidate.queryContext?.references ?? []].filter(reference => reference.store === 'treedx'));
 }
 
 function communicationWritePaths(path: string | undefined) {
