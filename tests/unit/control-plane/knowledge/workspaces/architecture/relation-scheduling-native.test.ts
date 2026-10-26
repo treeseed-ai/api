@@ -88,7 +88,7 @@ describe('native publication to owning scheduler candidate input', () => {
 			// Accepted Decision and predecessor completion remain supplied inputs.
 		} finally { await f.close(); }
 	}, 60_000);
-	it('native original scheduler applies provider hard gates before weighted priority selection and retains the exact eligible input beside one atomic admission', async () => {
+	it.each([false, true])('native scheduler retains one atomic admission after provider gates (concurrent synthesis: %s)', async concurrent => {
 		const f = await relationSchedulingDatabase();
 		try {
 			await f.publish(); await f.completeInputs();
@@ -142,7 +142,10 @@ describe('native publication to owning scheduler candidate input', () => {
 			}
 			expect(eligible.length).toBeGreaterThan(0); expect(eligible.every(value => value.node.projectId === 'dependent')).toBe(true);
 			const before = await f.snapshot(), supplied = structuredClone({ providers, principal, parameters });
-			const observation = object(await assignNextReadyExecutionNode(f.capacity, principal, 'session', providers, now)), admitted = object(observation.assignment);
+			const observations = await Promise.all((concurrent ? [now, new Date(Date.parse(now) + 1_000).toISOString()] : [now])
+				.map(clock => assignNextReadyExecutionNode(f.capacity, principal, 'session', providers, clock)));
+			const admitted = object(observations.find(value => value.assignment)?.assignment);
+			for (const observation of observations) if (observation.assignment) expect(observation.assignment).toEqual(admitted);
 			const attempt = assignmentAttemptSchema.parse(admitted.assignmentAttempt); expect(attempt.projectId).toBe('dependent');
 			expect(attempt.limits.maximumSeconds).toBe(3); expect(attempt.deadline).toBe(plan.endsAt);
 			const selection = object(object(object(admitted.explanation).metadata).allocation).selection;

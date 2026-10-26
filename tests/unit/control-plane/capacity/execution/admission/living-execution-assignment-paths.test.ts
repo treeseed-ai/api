@@ -20,7 +20,7 @@ import { ControlPlaneStore } from '../../../../../../src/api/persistence/store.t
 import { createCapacityControlPlane } from '../../../../../../src/api/capacity/control-plane.ts';
 
 describe('living execution TreeDX path authority', () => {
-	it('replays original authority when another synthesizer issued the assignment after the ready observation', async () => {
+	it.each([false, true])('replays original authority after a competing synthesis (commit after absence read: %s)', async lateCommit => {
 		// API625: native start0924f9a2 left an issued assignment after a graph
 		// conflict. A second synthesis rebuilt that identity with a new createdAt.
 		// This controlled UNIT models that interleaving; it is not SQL race proof.
@@ -30,7 +30,8 @@ describe('living execution TreeDX path authority', () => {
 			assignmentAttempt: structuredClone(issued), explanation: {} };
 		const host = new ControlPlaneStore({}, { prepare: () => { throw new Error('Unexpected native SQL in UNIT'); } });
 		host.ensureInitialized = vi.fn(); host.all = vi.fn().mockResolvedValue([]);
-		host.first = vi.fn().mockResolvedValue({ id: input.candidate.node.id });
+		host.first = vi.fn(async <T extends Record<string, unknown>>(query: string) =>
+			query.startsWith('SELECT node.id') ? { id: input.candidate.node.id } as unknown as T : null);
 		host.listTeamProjects = vi.fn().mockResolvedValue([{ id: input.candidate.node.projectId, slug: input.candidate.node.projectId }]);
 		host.getProjectByTeamAndSlug = vi.fn().mockResolvedValue(null); host.getProjectTreeDxLibrary = vi.fn().mockResolvedValue(null);
 		const store = createCapacityControlPlane(host);
@@ -54,8 +55,14 @@ describe('living execution TreeDX path authority', () => {
 			await expect(assignNextReadyExecutionNode(store, input.principal, input.providerSessionId, input.providers, input.now))
 				.resolves.toMatchObject({ assignment: retained });
 			const later = new Date(Date.parse(input.now) + 1_000).toISOString();
+			if (lateCommit) lookup.mockResolvedValueOnce(null);
 			await expect(assignNextReadyExecutionNode(store, input.principal, input.providerSessionId, input.providers, later))
 				.resolves.toMatchObject({ assignment: retained });
+			const changed = structuredClone(input.candidate);
+			changed.effectiveProfile.parameters = { changed: true };
+			boundary.ready.mockResolvedValue([changed]);
+			await expect(assignNextReadyExecutionNode(store, input.principal, input.providerSessionId, input.providers, later))
+				.rejects.toMatchObject({ code: 'execution_assignment_idempotency_conflict' });
 		} finally {
 			lookup.mockRestore(); observation.mockRestore(); transaction.mockRestore();
 			expect(retained).toEqual(original);
@@ -81,13 +88,21 @@ describe('living execution TreeDX path authority', () => {
 		const store = createCapacityControlPlane(host);
 		const createWorkspace = vi.spyOn(store, 'createCapacityWorkdayTreeDxWorkspace').mockResolvedValue({ baseCommitSha: candidate.node.sourceRef.commit });
 		boundary.runs.mockResolvedValue([run]); boundary.ready.mockResolvedValue([candidate]); boundary.allocation.mockResolvedValue(input.allocationInputs);
-		boundary.admit.mockReset().mockImplementation(async (_store, value) => ({ id: value.assignment.id, assignmentAttempt: value.assignment }));
+		boundary.admit.mockReset().mockImplementation(async (_store, value) => ({ id: value.assignment.id,
+			assignmentAttempt: value.assignment, treedxProxyHandle: value.treedxProxyHandle }));
 		const execute = () => assignNextReadyExecutionNode(store, input.principal, input.providerSessionId, input.providers, input.now);
 		if (mode === 'bound') {
 			const result = await execute(); expect(result.assignment?.assignmentAttempt?.projectId).toBe(candidate.node.projectId);
 			expect(createWorkspace).toHaveBeenCalledWith({ id: 'ui' }, run,
 				expect.objectContaining({ repositoryId: 'ui-library', baseRef: candidate.node.sourceRef.commit }));
 			expect(boundary.admit.mock.calls[0]![1].treedxProxyHandle).toMatchObject({ projectId: candidate.node.projectId, repositoryProjectId: 'ui' });
+			const lookup = vi.spyOn(ProviderAssignmentRepository.prototype, 'get').mockResolvedValue(result.assignment as never);
+			try {
+				const replay = await assignNextReadyExecutionNode(store, input.principal, input.providerSessionId, input.providers,
+					new Date(Date.parse(input.now) + 1_000).toISOString());
+				expect(replay.assignment).toEqual(result.assignment);
+				expect(createWorkspace).toHaveBeenCalledTimes(1);
+			} finally { lookup.mockRestore(); }
 		} else {
 			await expect(execute()).rejects.toMatchObject({ code: 'assignment_content_project_mismatch' });
 			expect(createWorkspace).not.toHaveBeenCalled(); expect(boundary.admit).not.toHaveBeenCalled();
