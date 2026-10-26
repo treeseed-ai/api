@@ -23,7 +23,7 @@
       },
       "peerDependencies": {
         "@treeseed-cordis/admin": "0.0.0-cordis.10",
-        "@treeseed-cordis/deployment": "0.0.0-cordis.75",
+        "@treeseed-cordis/deployment": "0.0.0-cordis.76",
         "@treeseed-cordis/identity": "0.0.0-cordis.7",
         "@treeseed-cordis/sdk": "0.0.0-cordis.16",
         "@treeseed-cordis/ui": "0.0.0-cordis.16",
@@ -37,7 +37,7 @@
 
     "@treeseed-cordis/admin": ["@treeseed-cordis/admin@vendor/admin.tgz", { "dependencies": { "cordis": "4.0.0-rc.12" }, "peerDependencies": { "@treeseed-cordis/identity": "0.0.0-cordis.7", "@treeseed-cordis/sdk": "0.0.0-cordis.16", "@treeseed-cordis/ui": "0.0.0-cordis.16", "react": "19.3.1", "react-dom": "19.3.1" } }, "sha512-nJEmqqvdGEUQ/uUk4A7tnxKlWZ3H1gAlFEZZceDUQ8B3wAMnue18LRZAk7uTGyRa+lrRnuZngYfObcW4WosObg=="],
 
-    "@treeseed-cordis/deployment": ["@treeseed-cordis/deployment@vendor/deployment.tgz", { "dependencies": { "ajv": "8.17.1", "ajv-formats": "3.0.1", "cordis": "4.0.0-rc.12", "jsonc-parser": "3.3.1", "postgres": "3.4.9", "semver": "7.8.5", "tar": "7.5.22", "zod": "4.6.7" }, "peerDependencies": { "@treeseed-cordis/sdk": "0.0.0-cordis.16" } }, "sha512-kYGpZ+kv9yNu23/i/B/2ah0B7MgedGIRFbruG+GAhzqd2cNRzbhyQG0rUixKsaOxt6b0SqmTThIJCV8xbNIr/Q=="],
+    "@treeseed-cordis/deployment": ["@treeseed-cordis/deployment@vendor/deployment.tgz", { "dependencies": { "ajv": "8.17.1", "ajv-formats": "3.0.1", "cordis": "4.0.0-rc.12", "jsonc-parser": "3.3.1", "postgres": "3.4.9", "semver": "7.8.5", "tar": "7.5.22", "zod": "4.6.7" }, "peerDependencies": { "@treeseed-cordis/sdk": "0.0.0-cordis.16" } }, "sha512-Jv8Bg4+XiW7g+9vg5LLAuHfbxnwupqe7BJRisY6nbp+aUyw96/QOkdOeLGuB26/8JlqAD3/fP3+p4PXtUtj1+w=="],
 
     "@treeseed-cordis/identity": ["@treeseed-cordis/identity@vendor/identity.tgz", { "dependencies": { "cordis": "4.0.0-rc.12", "openid-client": "6.8.8", "postgres": "3.4.9" }, "peerDependencies": { "@treeseed-cordis/sdk": "0.0.0-cordis.16" } }, "sha512-6HRxydsGkxlStDLD2VUORS94ats/OL/Cgue26y1Jr9ciuK60Q38xqMO9TxwcPCV0y++LQ08f38cgfKVrAJoDsQ=="],
 
