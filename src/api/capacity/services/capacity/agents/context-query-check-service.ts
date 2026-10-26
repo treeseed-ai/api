@@ -406,6 +406,37 @@ export class ContextQueryCheckService {
 		return outcomes;
 	}
 
+	private async unchangedCheckDefinitions(projectId:string,currentCommit:string,check:ReturnType<typeof rowCheck>,
+		test:Awaited<ReturnType<ContextQueryCheckService['catalog']>>['tests'][number],catalog:Awaited<ReturnType<ContextQueryCheckService['catalog']>>) {
+		try {
+			if(check.testRef!==test.testRef)return false;
+			if(check.definition.commit===currentCommit)return true;
+			const previous=await this.catalog(projectId,check.definition.commit);
+			const priorTest=previous.tests.find(entry=>entry.id===test.id&&entry.testRef===test.testRef);
+			if(!priorTest)return false;
+			const same=async(beforePath:string,afterPath:string)=>{
+				const [before,after]=await Promise.all([this.source(projectId,check.definition.commit,beforePath),this.source(projectId,currentCommit,afterPath)]);
+				if(before.resolvedRef!==check.definition.commit||after.resolvedRef!==currentCommit||before.path!==beforePath||after.path!==afterPath)
+					throw new CapacityGovernanceError('context_query_reference_moved','Context-check definition bytes moved from their immutable references.',409);
+				return canonicalStandardsJson(before.frontmatter)===canonicalStandardsJson(after.frontmatter);
+			};
+			const definition=async(kind:'query'|'query-set',id:string,revision:number)=>{
+				const before=previous.definitions.find(entry=>entry.kind===kind&&entry.id===id&&entry.revision===revision);
+				const after=catalog.definitions.find(entry=>entry.kind===kind&&entry.id===id&&entry.revision===revision);
+				return before&&after&&await same(before.path,after.path)?after:null;
+			};
+			if(!await same(priorTest.path,test.path))return false;
+			const selected=await definition(check.definition.kind,check.definition.id,check.definition.revision);
+			if(!selected)return false;
+			if(selected.kind==='query-set')for(const member of selected.queryRefs)
+				if(!await definition('query',String(member.id),Number(member.revision)))return false;
+			return true;
+		} catch(error) {
+			if(['not_found','context_query_definition_missing'].includes(String(record(error).code)))return false;
+			throw error;
+		}
+	}
+
 	async requirePassing(teamId:string,projectId:string,currentCommit:string,references:Array<{kind:'query'|'query-set';id:string;revision:number}>,now=new Date()) {
 		const rows=await this.store.all('SELECT * FROM agent_context_query_checks WHERE team_id = ? AND project_id = ? ORDER BY checked_at DESC LIMIT 200',[teamId,projectId]);
 		const byTest=new Map<string,ReturnType<typeof rowCheck>>();
@@ -413,16 +444,19 @@ export class ContextQueryCheckService {
 			const check=rowCheck(row); if(!byTest.has(check.testId)) byTest.set(check.testId,check);
 		}
 		const catalog=await this.catalog(projectId,currentCommit);
-		const blocked=references.flatMap((reference)=>{
+		const blocked=[];
+		for(const reference of references){
 			const tests=catalog.tests.filter((test)=>test.definitionKind===reference.kind&&test.definitionId===reference.id&&test.definitionRevision===reference.revision);
 			// Compare evidence to the requested definition, not to its own revision.
-			const failed=tests.flatMap((test)=>{
+			const failed=[];
+			for(const test of tests){
 				const check=byTest.get(test.id)??null;
 				const readiness=contextQueryReadiness({check,definition:{...reference,commit:currentCommit},now});
-				return readiness.selectable?[]:[{testId:test.id,reason:readiness.reason}];
-			});
-			return tests.length>0&&failed.length===0?[]:[{...reference,readiness:{status:'unchecked',selectable:false,reason:tests.length?'required_tests_failed':'no_tests'},requiredTestIds:tests.map((test)=>test.id),failedTestIds:failed.map((test)=>test.testId),failedChecks:failed}];
-		});
+				if(!readiness.selectable)failed.push({testId:test.id,reason:readiness.reason});
+				else if(check&&!await this.unchangedCheckDefinitions(projectId,currentCommit,check,test,catalog))failed.push({testId:test.id,reason:'definition_changed'});
+			}
+			if(!tests.length||failed.length)blocked.push({...reference,readiness:{status:'unchecked',selectable:false,reason:tests.length?'required_tests_failed':'no_tests'},requiredTestIds:tests.map((test)=>test.id),failedTestIds:failed.map((test)=>test.testId),failedChecks:failed});
+		}
 		if(blocked.length) {
 			// Invocation receipts retain the message even where structured details are
 			// unavailable. Include bounded identifiers/reasons, never context content.

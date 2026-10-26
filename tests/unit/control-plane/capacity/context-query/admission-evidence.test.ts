@@ -22,8 +22,9 @@ describe('context-query admission evidence', () => {
     const store = { all: vi.fn().mockResolvedValue(rows) };
     const instance = new ContextQueryCheckService(store as unknown as CapacityGovernanceDatabase);
     const root = kind === 'query' ? 'agent-context-queries' : 'agent-context-query-sets';
-    const definitions = [{ kind, id: 'foundation', revision: 2, path: `${root}/foundation.mdx` },
-      { kind: 'query', id: 'member', revision: 1, path: 'agent-context-queries/member.mdx' }];
+    const definitions = [{ kind, id: 'foundation', revision: 2, path: `${root}/foundation.mdx`,
+      queryRefs: kind === 'query-set' ? [{ id: 'member', revision: 1 }] : [] },
+      { kind: 'query', id: 'member', revision: 1, path: 'agent-context-queries/member.mdx', queryRefs: [] }];
     const documents = new Map<string, Record<string, unknown>>();
     for (const commit of [ref, passing.definition_commit]) {
       documents.set(`${commit}:agent-tests/foundation-test.mdx`, { id: 'foundation-test', testRef: 'test:2',
@@ -81,5 +82,23 @@ describe('context-query admission evidence', () => {
     f.documents.set(`${ref}:agent-context-queries/member.mdx`, { id: 'member', revision: 1, query: 'changed member context' });
     await expect(f.requirePassing('team', 'sdk', ref, [{ ...requested, kind: 'query-set' }], now))
       .rejects.toMatchObject({ code: 'agent_context_query_not_ready' });
+  });
+  it('requires a fresh check when the historical definition can no longer be read', async () => {
+    const f = service([passing]);
+    f.readRepositoryFiles.mockRejectedValueOnce(Object.assign(new Error('Historical source missing'), { code: 'not_found' }));
+    await expect(f.requirePassing('team', 'sdk', ref, [requested], now)).rejects.toMatchObject({
+      code: 'agent_context_query_not_ready', message: expect.stringContaining('definition_changed'),
+    });
+  });
+  it('retains an unavailable historical read instead of certifying reuse', async () => {
+    const f = service([passing]);
+    f.readRepositoryFiles.mockRejectedValueOnce(new Error('Historical read unavailable'));
+    await expect(f.requirePassing('team', 'sdk', ref, [requested], now)).rejects.toThrow('Historical read unavailable');
+  });
+  it('rejects historical definition bytes returned at a different immutable commit', async () => {
+    const f = service([passing]);
+    f.readRepositoryFiles.mockImplementationOnce(async ({ paths }) => ({ resolvedRef: 'c'.repeat(40),
+      files: paths.map(path => ({ path, content: `---\n${JSON.stringify(f.documents.get(`${passing.definition_commit}:${path}`))}\n---\n` })) }));
+    await expect(f.requirePassing('team', 'sdk', ref, [requested], now)).rejects.toMatchObject({ code: 'context_query_reference_moved' });
   });
 });
