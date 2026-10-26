@@ -136,3 +136,16 @@ The SDK status-contract continuation adopts Admin `.8` from
 Admin now validates the native invoker's raw SDK status result. API machine endpoints retain
 their established raw operation outputs; CLI envelopes do not redefine those outputs.
 Browser acceptance checks the same SDK projections and revocation of the exact prior cookie.
+
+## Final Task 3C owner closure
+
+The next API review candidate consumes SDK16, Deployment73, Identity7, Admin10 and UI16
+through their exact public archives. Its existing genuine installed programme must rebuild
+and measure the complete image/package/browser asset closure before exercising real
+Postgres, Keycloak, Caddy, login/refresh/logout and durable host generation read-back.
+No Identity/session/grant or endpoint authority moves into the UI library.
+
+The trusted approved-committers policy remains the exact #620 blob
+`b1a687db754ee2fac141919e6c63052d12bf2812`. All issues stay open. This alignment alone
+is not assembled acceptance; the genuine installed programme and final Platform gates
+must pass with these bytes.

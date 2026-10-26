@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Rebuild the genuine API runtime and browser asset closure against the final Task 3C public owner archives (#624).
+
 ### Fixed
 - Qualify the genuine installed API root and preserve public SDK application responses (#624).
 
