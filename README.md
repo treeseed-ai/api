@@ -169,3 +169,8 @@ installed construction path. Fixture cleanup verifies the worker's executable de
 and owner before signaling it, then verifies retained containers remain running.
 
 The compiled default-worker correction is selected as Deployment75, source `f5b511999a9196759f22d827ee4ee8fb7b48c8ba`, archive `fea365585ceaa9b813ba18c01fa78de2eca6335351fef86eeb9dcb37afbe4109`. Genuine installed verification is rerun against these exact bytes; no older failed configuration is counted as passing.
+
+Final assembly now combines the separately qualified compiler and migration prefixes as
+Deployment76. The private pre-acceptance archive is rebuilt from exact source
+`8f1673608a1c748501aa8046f5ab256982a78a82` while the UI replacement/restart gate is completed;
+its source and archive hashes are explicit and no frozen prior candidate is overwritten.
