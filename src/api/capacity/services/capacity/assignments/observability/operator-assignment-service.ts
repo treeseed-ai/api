@@ -19,6 +19,27 @@ function idempotencyKey(value: string) {
 	return value.trim();
 }
 
+/** Read the original audit after the caller has authorized assignment access.
+ * Unknown usage remains unresolved; reads never settle or recover it again. */
+export async function readUnresolvedUsageRecovery<T extends object>(database: Pick<CapacityGovernanceDatabase, 'first'>,
+	assignment: T): Promise<T & { unresolvedUsageRecovery?: unknown }> {
+	const row = record(assignment);
+	if (!['expired', 'failed', 'cancelled'].includes(String(row.status))
+		|| record(record(row.metadata).leaseRecovery).disposition !== 'operator-action') return assignment;
+	const audit = await database.first(`SELECT audit.metadata_json FROM capacity_audit_events audit
+		JOIN capacity_reservations reservation ON reservation.id=?
+		WHERE audit.team_id=? AND audit.resource_id=? AND audit.capacity_provider_id=? AND audit.membership_id=?
+		AND audit.action='assignment.usage.unresolved' AND reservation.team_id=audit.team_id
+		AND reservation.assignment_id=audit.resource_id AND (reservation.state='released'
+			OR (reservation.state='consumed' AND EXISTS (SELECT 1 FROM capacity_audit_events dispute
+				WHERE dispute.action='assignment.settlement.disputed' AND dispute.team_id=audit.team_id
+				AND dispute.resource_id=audit.resource_id AND dispute.capacity_provider_id=audit.capacity_provider_id
+				AND dispute.membership_id=audit.membership_id AND dispute.idempotency_key=audit.idempotency_key
+				AND dispute.actor_id=audit.actor_id AND dispute.actor_type=audit.actor_type)))`,
+		[row.reservationId, row.teamId, row.id, row.capacityProviderId, row.membershipId]);
+	return audit ? { ...assignment, unresolvedUsageRecovery: JSON.parse(String(audit.metadata_json)) } : assignment;
+}
+
 // Only the original automatic deadline zero can be disputed. A provider
 // measurement, native usage or an authoritative active clock is never inferred.
 export function isAutomaticUnknownZero(row: Record<string, unknown>, reservation: Record<string, unknown>,

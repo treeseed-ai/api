@@ -152,7 +152,7 @@ async function readExecutionProposal(store: any, owner: Row, source: ExactEntity
 export async function workItemContext(store: any, node: ExecutionNode): Promise<ExactEntityReference[]> {
 	const source = node.sourceRef;
 	if (node.kind === 'communication' && source.store === 'treedx' && source.repository && source.commit) {
-		const row = await store.first('SELECT content_refs_json,requested_at FROM agent_invocation_requests WHERE team_id=? AND id=? LIMIT 1',
+		const row = await store.first('SELECT content_refs_json,requested_at,metadata_json FROM agent_invocation_requests WHERE team_id=? AND id=? LIMIT 1',
 			[node.teamId,source.id]);
 		const resolved: ExactEntityReference[] = [];
 		for (const [index, value] of array(row?.content_refs_json).entries()) {
@@ -189,6 +189,17 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 				{ ...node, projectId: text(reference.projectId) }, proposalContextRefs(exact.definition)));
 		}
 
+		const history = record(record(record(row?.metadata_json).communication).historySnapshot);
+		const prefix = source.path?.slice(0, source.path.lastIndexOf('/') + 1);
+		for (const [index, value] of array(history.messages).entries()) {
+			const message = record(value), path = text(message.path), commit = text(message.immutableRef);
+			if (history.kind !== 'prior-discussion-messages' || !prefix || !path.startsWith(prefix)
+				|| path === source.path || path.split('/').some(part => part === '..' || part === '.' || !part)
+				|| !/^[a-f0-9]{40}$/u.test(commit)) throw new CapacityGovernanceError(
+				'communication_history_reference_invalid', 'Prior discussion history requires exact commits and paths in the original discussion.', 409);
+			resolved.push({ store: 'treedx', model: 'discussion', id: `${source.id}:history:${index + 1}`,
+				repository: source.repository, commit, path });
+		}
 		return projectSourceContext(store, node, resolved);
 	}
 	if (node.workdayId && source.store === 'postgresql' && source.model === 'workday') {

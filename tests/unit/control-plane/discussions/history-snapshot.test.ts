@@ -1,9 +1,37 @@
 import { describe, expect, it } from 'vitest';
 import { discussionHistorySnapshot } from '../../../../src/api/discussions/history-snapshot.ts';
+import { workItemContext } from '../../../../src/api/capacity/services/build/ready-execution-node.ts';
 
 const ref = 'a'.repeat(40);
 const message = (id: string, body: string, createdAt = id) => ({ path: `discussion-messages/topic/${id}.mdx`, body, immutableRef: ref, frontmatter: { createdAt, author: 'architect' } });
 describe('chat history snapshot', () => {
+	it('hands the frozen prior-message references to canonical communication context without copying their body into instructions', async () => {
+		const source = { store: 'treedx', model: 'discussion', id: 'invocation', repository: 'project-library',
+			commit: 'b'.repeat(40), path: 'discussion-messages/topic/current.mdx' };
+		const snapshot = discussionHistorySnapshot([message('1', 'Prior decision and evidence'),
+			{ ...message('2', 'A subsequent correction'), immutableRef: 'c'.repeat(40) }], 'topic', source.path);
+		const held = structuredClone(snapshot);
+		const context = await workItemContext({ first: async () => ({ content_refs_json: [],
+			metadata_json: JSON.stringify({ communication: { historySnapshot: snapshot } }) }) },
+			{ id: 'node', teamId: 'team', projectId: 'project', kind: 'communication', sourceRef: source } as never);
+		expect(context.map(({ store, model, repository, commit, path }) => ({ store, model, repository, commit, path }))).toEqual([
+			{ store: 'treedx', model: 'discussion', repository: source.repository, commit: ref, path: 'discussion-messages/topic/1.mdx' },
+			{ store: 'treedx', model: 'discussion', repository: source.repository, commit: 'c'.repeat(40), path: 'discussion-messages/topic/2.mdx' },
+		]);
+		expect(snapshot).toEqual(held);
+	});
+	it('rejects moved refs and paths outside the frozen discussion instead of expanding history authority', async () => {
+		const source = { store: 'treedx', model: 'discussion', id: 'invocation', repository: 'project-library',
+			commit: 'b'.repeat(40), path: 'discussion-messages/topic/current.mdx' };
+		for (const prior of [{ path: 'discussion-messages/other/1.mdx', immutableRef: ref },
+			{ path: 'discussion-messages/topic/../other/1.mdx', immutableRef: ref },
+			{ path: source.path, immutableRef: ref }, { path: 'discussion-messages/topic/1.mdx', immutableRef: 'staging' }]) {
+			await expect(workItemContext({ first: async () => ({ content_refs_json: [], metadata_json: {
+				communication: { historySnapshot: { kind: 'prior-discussion-messages', messages: [prior] } },
+			} }) }, { id: 'node', teamId: 'team', kind: 'communication', sourceRef: source } as never))
+				.rejects.toMatchObject({ code: 'communication_history_reference_invalid' });
+		}
+	});
 	it('preserves prior turns chronologically with exact provenance, excluding current and other discussions', () => {
 		const result = discussionHistorySnapshot([message('2', '2 + 2 = 4'), message('1', 'What is 2 + 2?'), message('3', 'What was that result?'), { ...message('4', 'not authorized here'), path: 'discussion-messages/elsewhere/4.mdx' }], 'topic', 'discussion-messages/topic/3.mdx');
 		expect(result.messages.map(entry => entry.body)).toEqual(['What is 2 + 2?', '2 + 2 = 4']);

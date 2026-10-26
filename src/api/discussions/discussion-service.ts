@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import { admitDiscussionInvocations, resolveDiscussionInvocationAgents } from '../capacity/services/capacity/invocations/discussion-invocation-service.ts';
-import { changeDiscussionStatus, commitDiscussionMessage, discussionMessageId, loadDiscussions, validateDiscussionContextRefs } from './content.ts';
+import { changeDiscussionStatus, commitDiscussionMessage, discussionMessageId, loadDiscussions, mentionedAgentSlugs, validateDiscussionContextRefs } from './content.ts';
+import { resolveTeamCommunicationTargets } from '../capacity/services/capacity/invocations/communication-target-resolution.ts';
 import { discussionHistorySnapshot } from './history-snapshot.ts';
 import { canonicalJson } from '../capacity/security.ts';
+import { CapacityGovernanceError } from '../capacity/database.ts';
 
 type Principal = { id: string; roles?: string[]; permissions?: string[]; metadata?: Record<string, unknown> } | undefined;
 
@@ -23,6 +25,8 @@ function stableId(scope: string, key: string) { return createHash('sha256').upda
 function administrator(principal: Principal) { return principal?.roles?.some((role) => ['admin', 'platform_admin'].includes(role)) ?? false; }
 function failure(error: unknown, status: 409 | 503, code: string): never {
 	if (error instanceof DiscussionServiceError) throw error;
+	if (error instanceof CapacityGovernanceError && error.code === 'discussion_agent_chat_profile_missing')
+		throw new DiscussionServiceError(409, error.code, error.message);
 	const value = record(error);
 	const cause = record(value.cause);
 	console.error('discussion.operation.failed', {
@@ -135,7 +139,7 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 			const parentWorkdayId = text(body.parentWorkdayId) || null;
 			const parentAssignmentId = text(body.parentAssignmentId) || null;
 			let contextRefs: Awaited<ReturnType<typeof validateDiscussionContextRefs>> = [];
-			let authored: any;
+			let authored: any, recipients: string[] = [];
 			try {
 				const parentAssignment = parentAssignmentId ? await store.first(
 					'SELECT id,metadata_json FROM capacity_provider_assignments WHERE id = ? AND team_id = ? AND project_id = ? LIMIT 1',
@@ -156,8 +160,12 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 						}
 					let invocations = await store.all(`SELECT id,status,execution_id,assignment_id,metadata_json FROM agent_invocation_requests
 						WHERE team_id = ? AND idempotency_key LIKE ? ORDER BY id`, [teamId, `${idempotencyKey}:%`]);
-					const replayMentions = Array.isArray(replay.frontmatter?.mentionedAgents)
-						? replay.frontmatter.mentionedAgents.map((value: unknown) => text(value)).filter(Boolean) : [];
+					// A committed message freezes its concrete audience. Never expand a
+					// stored group alias against a later roster during admission recovery.
+					const frozenRecipients = Array.isArray(replay.frontmatter?.recipientIds) ? replay.frontmatter.recipientIds : [];
+					const frozenMentions = Array.isArray(replay.frontmatter?.mentionedAgents) ? replay.frontmatter.mentionedAgents : [];
+					const replayMentions = (frozenRecipients.length ? frozenRecipients : frozenMentions)
+						.map((value: unknown) => text(value)).filter(Boolean);
 					const replayAgents = await resolveDiscussionInvocationAgents(invocationStore, { teamId, projectId, discussionId,
 						parentAssignmentId, mentionedAgents: replayMentions });
 					if (replayAgents.length) {
@@ -172,6 +180,11 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 					return { discussion: { id: discussionId }, message: replay, commitSha: text(replay.immutableRef), invocations, replayed: true };
 				}
 				contextRefs = await validateDiscussionContextRefs({ store, projectId, teamId, values: body.contextRefs });
+				const addresses = [...new Set([...mentionedAgentSlugs(messageBody, text(project.slug, project.id)),
+					...(Array.isArray(body.recipients) ? body.recipients.map(String) : [])])];
+				if (addresses.length) recipients = (await resolveTeamCommunicationTargets(store, teamId,
+					addresses.map(agentSlug => ({ projectSlug: projectId, agentSlug, requirement: 'required' as const,
+						address: `@${text(project.slug, project.id)}/${agentSlug}` })))).map(target => target.agentSlug);
 				const existing = text(body.discussionId) ? await loadDiscussions({ store, projectId, discussionId,
 					includeDiscussion: true, collection: 'discussions', limit: 1 }).catch(() => ({ discussions: [] })) : { discussions: [] };
 				authored = await commitDiscussionMessage({ store, projectId, teamId, principal, body: messageBody,
@@ -180,7 +193,7 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 					lookupWorkday: (teamId, workdayId) => invocationStore.getCapacityWorkdayRun(teamId, workdayId),
 					createDiscussion: !text(body.discussionId) || (body.createDiscussion === true && existing.discussions.length === 0), topic: text(record(existing.discussions[0]?.frontmatter).topic) || text(body.topic) || undefined,
 					projectSlug: text(project.slug, project.id), fileRefs: Array.isArray(body.fileRefs) ? body.fileRefs : [], contextRefs,
-					recipients: Array.isArray(body.recipients) ? body.recipients.map(String) : [],
+					recipients,
 					inboxIntent: ['comment', 'answer', 'reply'].includes(text(body.inboxIntent)) ? body.inboxIntent as 'comment'|'answer'|'reply' : undefined,
 					replyTo: text(body.replyTo) || undefined, ...(continuation ?? {}) });
 			} catch (error) { failure(error, 503, 'discussion_content_unavailable'); }
@@ -193,9 +206,7 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 				payload: { discussionId: authored.discussion.id, messageId: authored.message.id, commitSha: authored.commitSha } }).catch(() => undefined);
 			try {
 				const agents = await resolveDiscussionInvocationAgents(invocationStore, { teamId, projectId,
-					discussionId: authored.discussion.id, parentAssignmentId, mentionedAgents: [...new Set([
-						...authored.mentions, ...(Array.isArray(body.recipients) ? body.recipients.map(String) : []),
-					])] });
+					discussionId: authored.discussion.id, parentAssignmentId, mentionedAgents: recipients });
 				if (!agents.length) return { ...authored, invocations: [], replayed: false };
 				const prior = await loadDiscussions({ store, projectId, discussionId: authored.discussion.id, collection: 'messages', limit: 100 });
 				const historySnapshot = discussionHistorySnapshot(prior.messages, authored.discussion.id, authored.message.path);

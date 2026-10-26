@@ -3,6 +3,7 @@ import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { authorizeCapacityTeam, type CapacityPrincipal } from './capacity-authorization.ts';
 import { CapacityOperationError } from './capacity-operation-error.ts';
 import { ProviderAssignmentRepository } from '../../../capacity/repositories/capacity/assignments/assignment.ts';
+import { readUnresolvedUsageRecovery } from '../../../capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
 
 function page(query: Record<string, unknown>) {
 	try { return { limit: normalizeCapacityPageLimit(query.limit), cursor: decodeCapacityPageCursor(query.cursor) }; }
@@ -22,7 +23,7 @@ export function createAssignmentService(store: any) {
 		await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
 		const result = await new ProviderAssignmentRepository(store).get(teamId, assignmentId, true);
 		if (!result) throw new CapacityOperationError(404, 'assignment_not_found', 'Assignment not found.');
-		return result;
+		return readUnresolvedUsageRecovery(store, result);
 	}
 	return {
 		async recover(principal: CapacityPrincipal, teamId: string, assignmentId: string,

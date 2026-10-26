@@ -34,6 +34,8 @@ describe('native unresolved operator recovery', () => {
 				source: 'capacity_workday_deadline_terminalization', usageActual: undefined });
 			const unused = async () => { throw new Error('Audit read cannot invoke productive operations'); };
 			const repository = new ProviderAssignmentRepository(f.owner);
+			const coordinator = createAssignmentService(f.owner);
+			const readCoordinator = () => coordinator.show({ id: 'operator', roles: ['admin'] }, 'team', f.assignment.id);
 			const provider = createProviderAssignmentService({ ...f.owner, getProviderAssignment: (team, id) => repository.get(team, id),
 				leaseNextProviderAssignment: unused, renewProviderAssignmentLease: unused, returnProviderAssignment: unused,
 				completeProviderAssignment: unused, failProviderAssignment: unused,
@@ -41,10 +43,12 @@ describe('native unresolved operator recovery', () => {
 			const principal = { principal: { teamId: f.assignment.teamId, capacityProviderId: f.assignment.capacityProviderId,
 				membershipId: f.assignment.membershipId!, scopes: ['provider:assignments:read'] } };
 			expect(await provider.show(principal, f.assignment.id)).toEqual(await repository.get('team', f.assignment.id));
+			expect(await readCoordinator()).toEqual(await repository.get('team', f.assignment.id));
 			const recovery = await f.call(), held = await f.snapshot();
 			expect((await f.query('SELECT state FROM capacity_reservations')).rows).toEqual([{ state: 'consumed' }]);
 			const expected = { ...await repository.get('team', f.assignment.id), unresolvedUsageRecovery: recovery };
 			expect(await provider.show(principal, f.assignment.id)).toEqual(expected);
+			expect(await Promise.all([readCoordinator(), readCoordinator()])).toEqual([expected, expected]);
 			expect(await Promise.all([provider.show(principal, f.assignment.id), provider.show(principal, f.assignment.id)])).toEqual([expected, expected]);
 			expect(await f.snapshot()).toEqual(held);
 			const dispute = held.audit.find(value => value.action === 'assignment.settlement.disputed')!;
@@ -53,6 +57,7 @@ describe('native unresolved operator recovery', () => {
 				await f.query(`UPDATE capacity_audit_events SET ${field}=? WHERE id=?`, [value, dispute.id]);
 				const denied = await f.snapshot();
 				expect(await provider.show(principal, f.assignment.id)).toEqual(await repository.get('team', f.assignment.id));
+				expect(await readCoordinator()).toEqual(await repository.get('team', f.assignment.id));
 				expect(await f.snapshot()).toEqual(denied);
 				await f.query(`UPDATE capacity_audit_events SET ${field}=? WHERE id=?`, [dispute[field], dispute.id]);
 			}

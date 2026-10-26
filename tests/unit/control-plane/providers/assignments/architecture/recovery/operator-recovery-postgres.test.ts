@@ -59,6 +59,9 @@ async function exercisePostgresRecovery(dispute: boolean) {
 					const principal = { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership', scopes: ['provider:assignments:read'] } };
 					expect(await provider.show(principal, 'assignment-report')).toEqual({
 						...await repository.get('team', 'assignment-report'), unresolvedUsageRecovery: recovery });
+					const coordinator = createAssignmentService(store);
+					expect(await coordinator.show({ id: 'operator', roles: ['admin'] }, 'team', 'assignment-report')).toEqual({
+						...await repository.get('team', 'assignment-report'), unresolvedUsageRecovery: recovery });
 				});
 				const operator = new OperatorAssignmentService(store);
 				const service = createAssignmentService({ ...store, recoverCapacityAssignment: (team: string, id: string, body: Record<string, unknown>) => operator.recover(team, id, body) });

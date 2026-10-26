@@ -14,6 +14,20 @@ const agent = (slug: string) => ({
 });
 
 describe('discussion invocation capacity admission', () => {
+	it('rejects an unsupported addressed profile before persisting any peer invocation', async () => {
+		const store = {
+			first: vi.fn(async () => null),
+			all: vi.fn(async (sql: string) => sql.includes('FROM project_agent_classes')
+				? [{ id: 'class', handler_refs_json: { agents: [agent('engineer')] } }] : []),
+			run: vi.fn(async () => ({ meta: { changes: 1 } })),
+			createCapacityWorkdayRun: vi.fn(), tickCapacityWorkdayRun: vi.fn(), updateCapacityWorkdayRun: vi.fn(),
+		};
+		await expect(admitDiscussionInvocations(store, { teamId: 'team', projectId: 'project', projectSlug: 'sdk',
+			discussionId: 'discussion', messageId: 'message', messagePath: 'discussion-messages/message.mdx', messageCommit: 'c'.repeat(40),
+			contextRefs: [], agentSlugs: ['engineer', 'unsupported'], idempotencyKey: 'invalid-group-profile', durationSeconds: 180 }))
+			.rejects.toMatchObject({ code: 'discussion_agent_chat_profile_missing', details: { agentSlug: 'unsupported' } });
+		expect(store.run).not.toHaveBeenCalled(); expect(store.createCapacityWorkdayRun).not.toHaveBeenCalled();
+	});
 	it('preflights a persisted addressed conversation without inventing proposal group membership', async () => {
 		const source = { invocationId: 'invocation', discussionId: 'discussion', messageId: 'message',
 			messagePath: 'discussion-messages/message.mdx', commitSha: 'c'.repeat(40) };
