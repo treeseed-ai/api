@@ -69,8 +69,14 @@ function uniqueReferences(values: ExactEntityReference[]): ExactEntityReference[
 function assignmentScope(candidate: ReadyExecutionNode): ExactEntityReference[] {
 	const inherited = candidate.contextRefs.filter(reference => reference.store === 'treedx'
 		&& candidate.predecessorResults.some(result => result.references.some(artifact => predecessorArtifactMatches(artifact, reference))));
-	return uniqueReferences([candidate.node.sourceRef, ...(candidate.node.authorityRefs ?? [])
-		.filter(reference => reference.model === 'decision'), ...inherited].filter(reference => reference.store === 'treedx'));
+	// Identity and objective context is part of every execution, even when the
+	// contribution narrows its task reads. Keep the team README alongside its
+	// core objective; arbitrary knowledge still requires an explicit task read.
+	const core = candidate.contextRefs.filter(reference => reference.model === 'objective'
+		|| (reference.model === 'knowledge' && reference.path === 'README.md'));
+	return uniqueReferences([candidate.node.sourceRef, candidate.effectiveProfile.profileRef,
+		...(candidate.node.authorityRefs ?? []).filter(reference => reference.model === 'decision'),
+		...core, ...inherited].filter(reference => reference.store === 'treedx'));
 }
 
 function communicationWritePaths(path: string | undefined) {
@@ -139,8 +145,10 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string, run: Durable
 	if (denied.read.length || denied.write.length || denied.tools.length) throw new CapacityGovernanceError(
 		'assignment_permission_ceiling_exceeded', 'Ready node requests authority outside its effective activity profile.', 409, denied);
 	const scope = assignmentScope(candidate);
-	if (scope.some(reference => !ceiling.content.read.includes(reference.model as never))) throw new CapacityGovernanceError(
-		'assignment_permission_ceiling_exceeded', 'Exact assignment scope exceeds its effective activity profile.', 409);
+	const missingModels = [...new Set(scope.filter(reference => !ceiling.content.read.includes(reference.model as never))
+		.map(reference => reference.model))].sort();
+	if (missingModels.length) throw new CapacityGovernanceError(
+		'assignment_permission_ceiling_exceeded', 'Exact assignment scope exceeds its effective activity profile.', 409, { missingModels });
 	if (candidate.node.workspace === 'git' && !requested.tools.includes('source.write')) throw new CapacityGovernanceError(
 		'assignment_source_write_required', 'A Git workspace requires source.write authority.', 409);
 	if (candidate.node.workspace !== 'git' && requested.tools.includes('source.write')) throw new CapacityGovernanceError(

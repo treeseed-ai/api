@@ -11,7 +11,7 @@ vi.mock('../../../../../../src/api/capacity/services/capacity/assignments/admiss
 	...await importOriginal<object>(), admitLivingExecutionAssignment: boundary.admit,
 }));
 import { assignNextReadyExecutionNode, prioritizeCommunicationCandidates, reservationFairUsage, treeDxAuthorizedPaths, workdayConcurrencyAvailable } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/living-execution-assignment.ts';
-import { canonicalOfferBuildInput } from '../fixtures/assignment-attempt-fixtures.ts';
+import { canonicalOfferBuildInput, withIdentityRead } from '../fixtures/assignment-attempt-fixtures.ts';
 import { ControlPlaneStore } from '../../../../../../src/api/persistence/store.ts';
 import { createCapacityControlPlane } from '../../../../../../src/api/capacity/control-plane.ts';
 
@@ -21,7 +21,7 @@ describe('living execution TreeDX path authority', () => {
 		candidate.node.kind = 'estimating'; candidate.node.pairRole = null; delete candidate.node.workItemId; candidate.node.workspace = 'treedx';
 		candidate.node.sourceRef = { ...candidate.node.sourceRef, repository: 'ui-library' };
 		candidate.node.requestedPermissions = { content: { read: ['proposal'], write: ['proposal'] }, tools: ['source.read'] };
-		candidate.effectiveProfile.activity = 'estimating'; candidate.effectiveProfile.permissionCeiling = candidate.node.requestedPermissions;
+		candidate.effectiveProfile.activity = 'estimating'; candidate.effectiveProfile.permissionCeiling = withIdentityRead(candidate.node.requestedPermissions) as never;
 		candidate.contextRefs = [candidate.node.sourceRef]; candidate.projectContentRepositoryId = 'worker-library';
 		const plan = input.run.parameters.appliedPlan;
 		const run = { ...input.run, parameters: { ...input.run.parameters, projects: [candidate.node.projectId],

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ExactEntityReference } from '@treeseed/sdk/agent-capacity';
-import { buildAssignmentAttempt } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
-import { canonicalOfferBuildInput } from '../fixtures/assignment-attempt-fixtures.ts';
+import { buildAssignmentAttempt } from '../../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
+import { canonicalOfferBuildInput } from '../../fixtures/assignment-attempt-fixtures.ts';
 
 // Reproduces API625 / real assignment_PC1y_bx9s6IeIBw3MgTD9o7KF6M1eAQE:
 // the activity ceiling permits core context, while the contribution requests
@@ -17,7 +17,7 @@ function coreContextInput() {
 		{ ...project, model: 'objective', id: `${input.candidate.node.projectId}:project-objective`, path: 'objectives/core' }];
 	const unrelated: ExactEntityReference = { ...project, model: 'knowledge', id: 'unrelated', path: 'knowledge/unrelated.mdx' };
 	input.candidate.effectiveProfile.profileRef = identity;
-	input.candidate.effectiveProfile.permissionCeiling.content.read.push('agent', 'knowledge', 'objective');
+	input.candidate.effectiveProfile.permissionCeiling.content.read.push('knowledge', 'objective');
 	input.candidate.contextRefs.push(...required, unrelated);
 	return { input, required, unrelated };
 }
@@ -32,9 +32,9 @@ describe('mandatory canonical execution context', () => {
 		expect(assignment.grant.contentRead).not.toContainEqual(unrelated);
 		expect(assignment.grant.tools).toEqual(input.candidate.node.requestedPermissions!.tools);
 	});
-	it('reports missing mandatory objective authority instead of silently omitting it', () => {
+	it.each(['agent', 'knowledge', 'objective'])('reports missing mandatory %s authority instead of silently omitting it', model => {
 		const { input } = coreContextInput();
-		input.candidate.effectiveProfile.permissionCeiling.content.read = ['proposal', 'agent', 'knowledge'];
-		expect(() => buildAssignmentAttempt(input)).toThrow(expect.objectContaining({ code: 'assignment_permission_ceiling_exceeded' }));
+		input.candidate.effectiveProfile.permissionCeiling.content.read = input.candidate.effectiveProfile.permissionCeiling.content.read.filter(value => value !== model);
+		expect(() => buildAssignmentAttempt(input)).toThrow(expect.objectContaining({ code: 'assignment_permission_ceiling_exceeded', details: { missingModels: [model] } }));
 	});
 });

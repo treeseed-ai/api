@@ -144,6 +144,13 @@ describe('native publication to owning scheduler candidate input', () => {
 			const before = await f.snapshot(), supplied = structuredClone({ providers, principal, parameters });
 			const observation = object(await assignNextReadyExecutionNode(f.capacity, principal, 'session', providers, now)), admitted = object(observation.assignment);
 			const attempt = assignmentAttemptSchema.parse(admitted.assignmentAttempt); expect(attempt.projectId).toBe('dependent');
+			const core = eligible.find(value => value.node.id === attempt.nodeId)!.contextRefs.filter(reference =>
+				reference.model === 'objective' || (reference.model === 'knowledge' && reference.path === 'README.md'));
+			expect(core).toHaveLength(3);
+			for (const reference of [attempt.effectiveProfile.profileRef, ...core]) {
+				expect(attempt.contextRefs).toContainEqual(reference);
+				expect(attempt.grant.contentRead).toContainEqual(reference);
+			}
 			expect(attempt.limits.maximumSeconds).toBe(3); expect(attempt.deadline).toBe(plan.endsAt);
 			const selection = object(object(object(admitted.explanation).metadata).allocation).selection;
 			const expected = eligible.map(value => {

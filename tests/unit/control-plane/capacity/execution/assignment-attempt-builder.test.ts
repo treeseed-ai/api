@@ -1,27 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { buildAssignmentAttempt } from '../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import { candidate, permissions, provider, run, sourceRef, gitRef, canonicalOfferBuildInput, invalidCanonicalOffers,
-	conversationCapability, executionCapability, suppliedCapabilityOffer } from './fixtures/assignment-attempt-fixtures.ts';
+	conversationCapability, executionCapability, suppliedCapabilityOffer, withIdentityRead } from './fixtures/assignment-attempt-fixtures.ts';
 import { capabilityOfferDigest } from '@treeseed/sdk/capacity-provider';
 import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 // Typed allocator output is a supplied component input, not native allocation proof.
 const opportunity = canonicalOfferBuildInput().allocationInputs.codex!.opportunity;
 describe('immutable assignment-attempt construction', () => {
-	it('retains profile and estimate authority without granting unrequested configuration or SQL reads', () => {
+	it('retains the mandatory definition without granting unrelated configuration or SQL reads', () => {
 		const exact = structuredClone(candidate), profile = { store: 'treedx' as const, model: 'agent', id: 'configured/member', repository: 'library', commit: 'b'.repeat(40), path: 'agents/member.mdx' };
 		const decision = { ...sourceRef, model: 'decision', id: 'decision', path: 'decisions/one.mdx' };
 		exact.node.authorityRefs = [...exact.node.authorityRefs!, profile, { store: 'postgresql', model: 'assignment-attempt', id: 'own-estimate', revision: 1 }, decision];
 		exact.contextRefs.push(profile); exact.node.requestedPermissions = { ...exact.node.requestedPermissions, content: { read: ['proposal', 'decision'], write: [] } } as never;
-		exact.effectiveProfile.permissionCeiling = exact.node.requestedPermissions;
+		exact.effectiveProfile.permissionCeiling = withIdentityRead(exact.node.requestedPermissions) as never;
 		const original = structuredClone(exact), result = buildAssignmentAttempt({ candidate: exact, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never, providerSessionId: 'session', providers: [provider],
 			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
 		expect(result.assignment.authorityRefs).toEqual(exact.node.authorityRefs);
-		expect(result.assignment.grant.contentRead).toEqual([sourceRef, decision]); expect(exact).toEqual(original);
+		expect(result.assignment.grant.contentRead).toEqual([sourceRef, exact.effectiveProfile.profileRef, decision]);
+		expect(result.assignment.grant.contentRead).not.toContainEqual(profile); expect(exact).toEqual(original);
 	});
 	it('calibrates exact review history without inventing a minimum allocation floor', () => {
 		const review = structuredClone(candidate); Object.assign(review.node, { kind: 'reviewing', pairRole: null, agentClass: 'reviewer', workspace: 'read-only', estimate: { expectedSeconds: 100, maximumSeconds: 165 }, requestedPermissions: { content: { read: ['proposal'], write: [] }, tools: ['source.read', 'verification'] } });
-		Object.assign(review.effectiveProfile, { activity: 'reviewing', handler: 'reviewer', permissionCeiling: review.node.requestedPermissions });
+		Object.assign(review.effectiveProfile, { activity: 'reviewing', handler: 'reviewer', permissionCeiling: withIdentityRead(review.node.requestedPermissions) });
 		const measurements = Array.from({ length: 20 }, (_, index) => ({ id: `review-${index}`, completedAt: new Date(Date.parse('2026-09-13T11:30:00.000Z') + index * 1000).toISOString(), expectedSeconds: 250, allocatedSeconds: 200, activeSeconds: 84, outcome: 'completed' as const }));
 		const build = (item: typeof review, constraints: Array<{ id: string; remainingSeconds: number }> = []) => buildAssignmentAttempt({ candidate: item as never, run, principal: { teamId: 'team', capacityProviderId: 'provider' } as never, allocationInputs: { codex: { opportunity, measurements, constraints } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1, now: '2026-09-13T12:01:00.000Z' });
 		const original = structuredClone({ review, measurements, run, provider }); for (const item of [review, { ...review, node: { ...review.node, pairRole: 'reviewer' as const } }]) {
@@ -42,7 +43,7 @@ describe('immutable assignment-attempt construction', () => {
 		discussion.node.workspace = 'treedx';
 		discussion.node.sourceRef = { ...sourceRef, model: 'discussion', path: 'discussion-messages/one.mdx' } as never;
 		discussion.node.requestedPermissions = { content: { read: ['discussion'], write: ['discussion'] }, tools: ['discussion'] } as never;
-		discussion.effectiveProfile.permissionCeiling = discussion.node.requestedPermissions; discussion.effectiveProfile.activity = 'chat';
+		discussion.effectiveProfile.permissionCeiling = withIdentityRead(discussion.node.requestedPermissions) as never; discussion.effectiveProfile.activity = 'chat';
 		const offered = { ...provider, capabilities: [conversationCapability],
 			accountingLimits: { ...provider.accountingLimits, capabilityLimits: { [conversationCapability]: { dailyActiveSecondsLimit: 28800 } } },
 			accountingObservation: { ...provider.accountingObservation,
@@ -99,7 +100,7 @@ describe('immutable assignment-attempt construction', () => {
 		architect.node.agentClass = 'architect'; architect.node.workItemId = 'architecture-contract'; architect.node.workspace = 'treedx';
 		architect.node.requestedPermissions = { content: { read: ['proposal', 'book'], write: ['knowledge'] },
 			tools: ['source.read'] } as never;
-		architect.effectiveProfile.permissionCeiling = architect.node.requestedPermissions;
+		architect.effectiveProfile.permissionCeiling = withIdentityRead(architect.node.requestedPermissions) as never;
 		const result = buildAssignmentAttempt({ candidate: { ...architect, lineageSourceCommit: '9'.repeat(40) } as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session',
@@ -116,7 +117,7 @@ describe('immutable assignment-attempt construction', () => {
 		misplaced.node.workspace = 'treedx';
 		misplaced.node.sourceRef = { ...sourceRef, repository: 'team-library' };
 		misplaced.node.requestedPermissions = { content: { read: ['proposal'], write: ['proposal'] }, tools: ['source.read'] } as never;
-		misplaced.effectiveProfile.permissionCeiling = misplaced.node.requestedPermissions;
+		misplaced.effectiveProfile.permissionCeiling = withIdentityRead(misplaced.node.requestedPermissions) as never;
 		expect(() => buildAssignmentAttempt({ candidate: misplaced as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session',
@@ -129,7 +130,7 @@ describe('immutable assignment-attempt construction', () => {
 		exact.contextRefs = [{ store: 'treedx', model: 'book', id: 'sdk-core', repository: 'library', commit: '9'.repeat(40), path: 'books/sdk-core.md', revision: 1, digest: `sha256:${'1'.repeat(64)}` }] as never;
 		exact.node.workspace = 'treedx';
 		exact.node.requestedPermissions = { content: { read: ['proposal', 'book'], write: ['knowledge'] }, tools: ['source.read'] } as never;
-		exact.effectiveProfile.permissionCeiling = exact.node.requestedPermissions;
+		exact.effectiveProfile.permissionCeiling = withIdentityRead(exact.node.requestedPermissions) as never;
 		const input = { candidate: { ...exact, lineageSourceCommit: '9'.repeat(40) }, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session',
@@ -148,7 +149,7 @@ describe('immutable assignment-attempt construction', () => {
 		architect.node.workspace = 'treedx';
 		architect.node.requestedPermissions = { content: { read: ['proposal', 'book'], write: ['knowledge'] },
 			tools: ['source.read'] } as never;
-		architect.effectiveProfile.permissionCeiling = architect.node.requestedPermissions;
+		architect.effectiveProfile.permissionCeiling = withIdentityRead(architect.node.requestedPermissions) as never;
 		expect(() => buildAssignmentAttempt({ candidate: architect as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } }, providerSessionId: 'session',
@@ -348,7 +349,7 @@ describe('immutable assignment-attempt construction', () => {
 		planning.node.estimate = { expectedSeconds: 60, maximumSeconds: 60 };
 		planning.node.requestedPermissions = { content: { read: ['proposal'], write: [] }, tools: ['source.read'] } as never;
 		planning.effectiveProfile = { ...planning.effectiveProfile, activity: 'planning', handler: 'planner',
-			permissionCeiling: planning.node.requestedPermissions } as never;
+			permissionCeiling: withIdentityRead(planning.node.requestedPermissions) } as never;
 		const result = buildAssignmentAttempt({ candidate: planning as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { opportunity, measurements: [{ id: 'short', completedAt: '2026-09-13T11:00:00.000Z',
@@ -367,7 +368,7 @@ describe('immutable assignment-attempt construction', () => {
 		planning.node.estimate = { expectedSeconds: 60, maximumSeconds: 60 };
 		planning.node.requestedPermissions = { content: { read: ['proposal'], write: [] }, tools: ['source.read'] } as never;
 		planning.effectiveProfile = { ...planning.effectiveProfile, activity: 'planning', handler: 'planner',
-			permissionCeiling: planning.node.requestedPermissions } as never;
+			permissionCeiling: withIdentityRead(planning.node.requestedPermissions) } as never;
 		const result = buildAssignmentAttempt({ candidate: planning as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { opportunity, measurements: [], constraints: [
@@ -387,7 +388,7 @@ describe('immutable assignment-attempt construction', () => {
 		planning.node.estimate = { expectedSeconds: 60, maximumSeconds: 60 };
 		planning.node.requestedPermissions = { content: { read: ['proposal'], write: [] }, tools: ['source.read'] } as never;
 		planning.effectiveProfile = { ...planning.effectiveProfile, activity: 'planning', handler: 'planner',
-			permissionCeiling: planning.node.requestedPermissions } as never;
+			permissionCeiling: withIdentityRead(planning.node.requestedPermissions) } as never;
 		expect(() => buildAssignmentAttempt({ candidate: planning as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { opportunity, measurements: [], constraints: [] } },
@@ -402,7 +403,7 @@ describe('immutable assignment-attempt construction', () => {
 		review.node.estimate = { expectedSeconds: 1320, maximumSeconds: 1980 };
 		review.node.requestedPermissions = { content: { read: ['proposal'], write: ['decision'] },
 			tools: ['source.read', 'verification'] } as never;
-		review.effectiveProfile.activity = 'reviewing'; review.effectiveProfile.permissionCeiling = review.node.requestedPermissions;
+		review.effectiveProfile.activity = 'reviewing'; review.effectiveProfile.permissionCeiling = withIdentityRead(review.node.requestedPermissions) as never;
 		const currentObservation = { ...provider.accountingObservation.modelUsage, observedAt: '2026-09-13T12:30:00.000Z' };
 		const reviewProvider = { ...provider, accountingObservation: { modelUsage: currentObservation,
 			capabilityUsage: { [executionCapability]: currentObservation } } };
@@ -470,7 +471,7 @@ describe('immutable assignment-attempt construction', () => {
 		chat.node.workspace = 'treedx';
 		chat.node.requestedPermissions = { content: { read: ['discussion'], write: ['discussion'] }, tools: ['source.read'] } as never;
 		chat.effectiveProfile = { ...chat.effectiveProfile, activity: 'chat', handler: 'writer',
-			permissionCeiling: chat.node.requestedPermissions } as never;
+			permissionCeiling: withIdentityRead(chat.node.requestedPermissions) } as never;
 		chat.contextRefs = []; chat.sourceRepositories = ['repository-sdk'];
 		const communicationProvider = { ...provider, lanes: [{ ...provider.lanes[0]!, id: 'chat', purpose: 'communication' }] };
 		const result = buildAssignmentAttempt({ candidate: chat as never, run,
@@ -480,6 +481,7 @@ describe('immutable assignment-attempt construction', () => {
 		expect(result).toMatchObject({ laneId: 'chat', lanePurpose: 'communication', assignment: {
 			effectiveProfile: { activity: 'chat' }, grant: { sourceRead: ['repository-sdk'], contentRead: [
 				{ model: 'discussion', path: 'discussion-messages/thread/message.mdx' },
+				chat.effectiveProfile.profileRef,
 				{ model: 'discussion', path: 'discussions/thread.mdx' },
 			], contentWrite: [
 				{ model: 'discussion', path: 'discussion-messages/**' },
