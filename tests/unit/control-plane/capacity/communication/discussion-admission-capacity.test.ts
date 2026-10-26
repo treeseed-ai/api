@@ -98,10 +98,19 @@ describe('discussion invocation capacity admission', () => {
 		expect(store.createCapacityWorkdayRun).not.toHaveBeenCalled();
 	});
 	it.each([
-		{ laneMaximum: 1, availableConcurrency: 1, expectedRuns: 1 },
-		{ laneMaximum: 5, availableConcurrency: 1, expectedRuns: 1 },
-		{ laneMaximum: 5, availableConcurrency: 0, expectedRuns: 0 },
-	])('keeps group discussions queued when native capacity is below lane maximum: $laneMaximum/$availableConcurrency', async ({ laneMaximum, availableConcurrency, expectedRuns }) => {
+		{ laneMaximum: 1, availableConcurrency: 1, hostAvailable: 1, expectedRuns: 1 },
+		{ laneMaximum: 5, availableConcurrency: 1, hostAvailable: 1, expectedRuns: 1 },
+		{ laneMaximum: 5, availableConcurrency: 2, hostAvailable: 1, expectedRuns: 1 },
+		{ laneMaximum: 5, availableConcurrency: 1, hostAvailable: 0, expectedRuns: 0 },
+		{ laneMaximum: 5, availableConcurrency: 0, hostAvailable: 1, expectedRuns: 0 },
+		{ laneMaximum: 5, availableConcurrency: -1, hostAvailable: 1, expectedRuns: 0 },
+		{ laneMaximum: 5, availableConcurrency: 1.5, hostAvailable: 1, expectedRuns: 0 },
+		{ laneMaximum: 5, availableConcurrency: NaN, hostAvailable: 1, expectedRuns: 0 },
+		{ laneMaximum: 5, availableConcurrency: Number.MAX_SAFE_INTEGER + 1, hostAvailable: 1, expectedRuns: 0 },
+		{ laneMaximum: 5, availableConcurrency: '1', hostAvailable: 1, expectedRuns: 0 },
+		{ laneMaximum: 5, availableConcurrency: undefined, hostAvailable: 1, expectedRuns: 0 },
+		{ laneMaximum: 5, availableConcurrency: 1, hostAvailable: NaN, expectedRuns: 0 },
+	])('keeps group discussions queued when native capacity is below lane maximum: $laneMaximum/$availableConcurrency/$hostAvailable', async ({ laneMaximum, availableConcurrency, hostAvailable, expectedRuns }) => {
 		const claimed = new Map<string, { status: string; execution_id: string; blocking_state_json: string }>();
 		const createdRuns: string[] = [];
 		const store = {
@@ -115,8 +124,9 @@ describe('discussion invocation capacity admission', () => {
 			first: vi.fn(async (query: string, params: unknown[] = []) => {
 				if (query.includes('capacity_provider_availability_sessions')) return {
 					execution_providers_json: [{ id: 'codex', status: 'active', maxConcurrentWorkers: 5,
-						activeWorkers: 5 - availableConcurrency, availableConcurrency,
+						activeWorkers: typeof availableConcurrency === 'number' ? 5 - availableConcurrency : 0, availableConcurrency,
 						lanes: [{ purpose: 'communication', maxConcurrentWorkers: laneMaximum }] }],
+					runner_pressure_json: { maxConcurrentWorkers: 5, activeWorkers: 5 - hostAvailable },
 					metadata_json: { runtimeBuild: `sha256:${'b'.repeat(64)}` },
 				};
 				if (query.includes('COUNT(*) AS count FROM capacity_provider_assignments')) return { count: 0 };

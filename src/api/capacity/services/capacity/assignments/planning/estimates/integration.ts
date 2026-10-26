@@ -60,7 +60,10 @@ function mergeSubscriberEstimate(input: EstimateMerge): Row {
 	const owns = (item: Row) => owned.has(stable(item.estimateRef));
 	const frozenItems = workItems(input.frozen), candidateItems = workItems(input.candidate), currentItems = workItems(input.current);
 	const own = candidateItems.filter(owns), peers = candidateItems.filter(item => !owns(item));
-	if (!own.length || own.some(item => stable(item.estimateRef) !== stable(ref))) return deny('assignment_estimate_owner_missing',
+	// A new contribution must cite this attempt. Unchanged earlier own work
+	// retains its actual provenance instead of being relabeled as new work.
+	if (!own.some(item => stable(item.estimateRef) === stable(ref)) || own.some(item =>
+		stable(item.estimateRef) !== stable(ref) && !frozenItems.some(prior => stable(prior) === stable(item)))) return deny('assignment_estimate_owner_missing',
 		'Each estimating author must submit its own work with the exact current attempt provenance.');
 	if (own.some(item => !estimateSchema.safeParse(item.estimate).success
 		|| (item.review === 'required' && !estimateSchema.safeParse(item.reviewEstimate).success)))

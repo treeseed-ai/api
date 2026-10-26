@@ -3,6 +3,45 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: native-conversation-lane-limit
+    action: { verifier: api.golden.native-conversation-lane-limit }
+    expect: { status: passed }
+  - id: native-conversation-retained-slot
+    action: { verifier: api.golden.native-conversation-retained-slot }
+    expect: { status: passed }
+  - id: native-conversation-shared-host-slot
+    action: { verifier: api.golden.native-conversation-shared-host-slot }
+    expect: { status: passed }
+  - id: native-conversation-shared-host-full
+    action: { verifier: api.golden.native-conversation-shared-host-full }
+    expect: { status: passed }
+  - id: native-conversation-adapter-full
+    action: { verifier: api.golden.native-conversation-adapter-full }
+    expect: { status: passed }
+  - id: native-conversation-negative
+    action: { verifier: api.golden.native-conversation-negative }
+    expect: { status: passed }
+  - id: native-conversation-fractional
+    action: { verifier: api.golden.native-conversation-fractional }
+    expect: { status: passed }
+  - id: native-conversation-not-number
+    action: { verifier: api.golden.native-conversation-not-number }
+    expect: { status: passed }
+  - id: native-conversation-unsafe-integer
+    action: { verifier: api.golden.native-conversation-unsafe-integer }
+    expect: { status: passed }
+  - id: native-conversation-numeric-string
+    action: { verifier: api.golden.native-conversation-numeric-string }
+    expect: { status: passed }
+  - id: native-conversation-missing
+    action: { verifier: api.golden.native-conversation-missing }
+    expect: { status: passed }
+  - id: native-conversation-unknown-host
+    action: { verifier: api.golden.native-conversation-unknown-host }
+    expect: { status: passed }
+  - id: retained-own-estimate
+    action: { verifier: api.golden.retained-own-estimate }
+    expect: { status: passed }
   - id: canonical-query-context-native
     action: { verifier: api.golden.canonical-query-context-native }
     expect: { status: passed }
