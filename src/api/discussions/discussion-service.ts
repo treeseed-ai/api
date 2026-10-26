@@ -4,6 +4,7 @@ import { changeDiscussionStatus, commitDiscussionMessage, discussionMessageId, l
 import { resolveTeamCommunicationTargets } from '../capacity/services/capacity/invocations/communication-target-resolution.ts';
 import { discussionHistorySnapshot } from './history-snapshot.ts';
 import { canonicalJson } from '../capacity/security.ts';
+import { CapacityGovernanceError } from '../capacity/database.ts';
 
 type Principal = { id: string; roles?: string[]; permissions?: string[]; metadata?: Record<string, unknown> } | undefined;
 
@@ -24,6 +25,8 @@ function stableId(scope: string, key: string) { return createHash('sha256').upda
 function administrator(principal: Principal) { return principal?.roles?.some((role) => ['admin', 'platform_admin'].includes(role)) ?? false; }
 function failure(error: unknown, status: 409 | 503, code: string): never {
 	if (error instanceof DiscussionServiceError) throw error;
+	if (error instanceof CapacityGovernanceError && error.code === 'discussion_agent_chat_profile_missing')
+		throw new DiscussionServiceError(409, error.code, error.message);
 	const value = record(error);
 	const cause = record(value.cause);
 	console.error('discussion.operation.failed', {
