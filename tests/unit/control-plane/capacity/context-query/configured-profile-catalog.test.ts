@@ -3,11 +3,42 @@ import { stringify } from 'yaml';
 import { ContextQueryCheckService } from '../../../../../src/api/capacity/services/capacity/agents/context-query-check-service.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import type { CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
+import { agentDefinitionSchema } from '@treeseed/sdk/agent-capacity';
+import { effectiveProfile } from '../../../../../src/api/capacity/services/build/execution-node-profile.ts';
+import { agentProfileReference } from '../../../../../src/api/capacity/policy/execution/agent-profile-reference.ts';
 
 vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', async original => ({
 	...await original<object>(), resolveKnowledgeGatewayConnection: vi.fn(),
 }));
 afterEach(() => vi.restoreAllMocks());
+
+it.each(['planning', 'estimating', 'acting', 'reviewing', 'reporting', 'chat'] as const)(
+	'inherits global and activity query selectors in exact canonical %s context', async activity => {
+		const global = { id: 'portfolio/objectives', revision: 2 }, local = { id: 'portfolio/work-history', revision: 3 };
+		const globalSet = { id: 'portfolio/foundation', revision: 4 }, localSet = { id: 'portfolio/experience', revision: 5 };
+		const commit = 'a'.repeat(40), path = 'agents/renamed-contributor.mdx';
+		const definition = agentDefinitionSchema.parse({ schemaVersion: 'treeseed.agent/v1', id: 'project/renamed-contributor',
+			name: 'Renamed contributor', agentClass: 'maintenance', purpose: 'Advance accepted work with relevant experience.',
+			responsibilities: ['Use exact context.'], capabilities: ['source.read'], context: { include: ['project-objectives'] },
+			contextQueryRefs: [global], contextQuerySetRefs: [globalSet], activityProfiles: { [activity]: {
+				handler: 'configured/workload', prompt: { system: 'Use governed context.' },
+				permissions: { content: { read: ['agent', 'objective', 'discussion'], write: [] }, tools: [] },
+				contextQueryRefs: [local], contextQuerySetRefs: [localSet],
+			} } });
+		const before = structuredClone(definition);
+		vi.mocked(resolveKnowledgeGatewayConnection).mockResolvedValue({ repositoryId: 'library', client: {
+			readRepositoryFile: vi.fn().mockResolvedValue({ resolvedRef: commit, file: { path, frontmatter: definition } }),
+		} } as never);
+		const store = { all: vi.fn().mockResolvedValue([{ id: 'class', status: 'active', handler_refs_json: { agents: [definition] },
+			metadata_json: { source: 'project-library', immutableRef: commit, definitionPaths: [path] } }]) };
+		const result = await effectiveProfile(store, { id: 'node', projectId: 'project',
+			kind: activity === 'chat' ? 'communication' : activity, agentClass: definition.agentClass,
+			authorityRefs: [agentProfileReference(definition)] } as never);
+		expect(result.profile.contextQueryRefs).toEqual([global, local]);
+		expect(result.profile.contextQuerySetRefs).toEqual([globalSet, localSet]);
+		expect(result.profile.permissionCeiling).toEqual(definition.activityProfiles[activity]!.permissions);
+		expect(definition).toEqual(before);
+	});
 
 it('catalogs exact global and configured activity query refs without an unsupported enabled flag', async () => {
 	const activities = ['planning', 'estimating', 'acting', 'reviewing', 'reporting', 'chat'];
