@@ -3,7 +3,7 @@ import { DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { buildAssignmentAttempt } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import { beginAssignmentPreparationTimeBudget, compileAssignmentTimeBudget } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-time-budget.ts';
 import { compileAssignmentExecutionWindow } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-execution-window-service.ts';
-import { candidate, provider, run, executionCapability, canonicalOfferBuildInput } from '../fixtures/assignment-attempt-fixtures.ts';
+import { candidate, provider, run, executionCapability, canonicalOfferBuildInput, withIdentityRead } from '../fixtures/assignment-attempt-fixtures.ts';
 
 function allocate(now: string, mode: 'production' | 'simulation', startsAt: string, endsAt: string) {
 	const planning = structuredClone(candidate);
@@ -13,7 +13,7 @@ function allocate(now: string, mode: 'production' | 'simulation', startsAt: stri
 	planning.node.estimate = { expectedSeconds: 180, maximumSeconds: 180 };
 	planning.node.requestedPermissions = { content: { read: ['proposal'], write: [] }, tools: ['source.read'] } as never;
 	planning.effectiveProfile = { ...planning.effectiveProfile, activity: 'planning', handler: 'planner',
-		permissionCeiling: planning.node.requestedPermissions } as never;
+		permissionCeiling: withIdentityRead(planning.node.requestedPermissions) } as never;
 	const applied = { ...structuredClone(run), executionMode: mode, parameters: { appliedPlan: {
 		...run.parameters.appliedPlan,
 		executionMode: mode, startsAt, endsAt, policySnapshot: { ...DEFAULT_WORKDAY_POLICY, durationSeconds: 3600, planningPercent: 100 / 3,

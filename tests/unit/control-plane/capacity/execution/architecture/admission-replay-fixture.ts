@@ -18,6 +18,7 @@ export function replayAttempt(): AssignmentAttempt {
 
 export type ReplayChange = { name: string; change: (value: AssignmentAttempt) => void };
 export const replayChanges: ReplayChange[] = [
+	{ name: 'original creation time', change: value => { value.createdAt = new Date(Date.parse(value.createdAt) + 1_000).toISOString(); } },
 	{ name: 'grant or mutable workspace', change: value => { value.grant.sourceWrite.push('unassigned-repository'); value.workspace = {
 		...value.workspace, mode: 'git', repository: 'treeseed-ai/sdk', baseCommit: 'd'.repeat(40), branch: 'simulation/fixture/workday/assignment', writablePaths: ['.'] }; } },
 	{ name: 'profile handler or parameters', change: value => { value.effectiveProfile.handler = 'different-handler'; value.effectiveProfile.parameters = { alternate: true }; } },

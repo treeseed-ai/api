@@ -76,6 +76,8 @@ export async function effectiveProfile(store: any, node: ExecutionNode): Promise
 			profile: effectiveActivityProfileSchema.parse({
 				handler: selected.handler,
 				prompt: selected.prompt,
+				...(selected.contextQueryRefs ? { contextQueryRefs: selected.contextQueryRefs } : {}),
+				...(selected.contextQuerySetRefs ? { contextQuerySetRefs: selected.contextQuerySetRefs } : {}),
 				...(selected.additionalContext ? { additionalContext: selected.additionalContext } : {}),
 				...(selected.parameters ? { parameters: selected.parameters } : {}),
 				profileRef: { store: 'treedx', model: 'agent', id: exact.data.id,

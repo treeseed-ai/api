@@ -54,12 +54,13 @@ it('reads acting and reviewing context from the exact shared proposal owner whil
 		const decision = { store: 'treedx' as const, model: 'decision', id: 'accepted', repository: 'repository',
 			commit: accepted.commit, path: 'decisions/accepted.mdx' };
 		const acting = structuredClone(input.candidate);
+		acting.effectiveProfile.profileRef = own;
 		acting.node.sourceRef = sourceRef; acting.node.authorityRefs = [decision];
 		acting.node.requestedPermissions.content.read = [];
-		acting.effectiveProfile.permissionCeiling.content.read = ['proposal', 'decision'];
+		acting.effectiveProfile.permissionCeiling.content.read = ['proposal', 'decision', 'agent'];
 		const actingHeld = structuredClone(acting), worker = buildAssignmentAttempt({ ...input, candidate: acting }).assignment;
-		expect(worker.grant.contentRead).toEqual([sourceRef, decision]);
-		expect(worker.contextRefs).toEqual([...acting.contextRefs, sourceRef, decision]);
+		expect(worker.grant.contentRead).toEqual([sourceRef, acting.effectiveProfile.profileRef, decision]);
+		expect(worker.contextRefs).toEqual([...acting.contextRefs, sourceRef, acting.effectiveProfile.profileRef, decision]);
 		expect(worker.grant.contentWrite).toEqual([]); expect(worker.grant.tools).toEqual(acting.node.requestedPermissions.tools);
 		const scopeConnection = await resolveKnowledgeGatewayConnection(f.store, { projectId: 'project', write: false,
 			relationPaths: true, readRefs: worker.grant.contentRead.map(reference => reference.commit!) });
@@ -108,7 +109,14 @@ it('reads required reviewed predecessor artifacts through native scope without s
 		input.candidate.node.sourceRef = { store: 'treedx', model: 'proposal', id: 'proposal', repository: 'repository', commit: frozen.commit,
 			path: 'proposals/proposal.mdx', revision: 1, digest: `sha256:${frozen.digest}` };
 		input.candidate.node.requestedPermissions!.content.read = [];
-		input.candidate.effectiveProfile.permissionCeiling.content.read = ['proposal', 'note', 'decision', 'knowledge'];
+		input.candidate.effectiveProfile.permissionCeiling.content.read = ['proposal', 'note', 'decision', 'knowledge', 'agent'];
+		const active = input.candidate.effectiveProfile;
+		const identity = f.publishContent('agents/reader.mdx', { schemaVersion: 'treeseed.agent/v1', id: active.profileRef.id,
+			name: 'Context Reader', agentClass: input.candidate.node.agentClass, purpose: 'Read exact governed context and reviewed predecessor artifacts.',
+			responsibilities: ['Retain exact reviewed source authority.'], capabilities: ['source-read'], context: { include: ['predecessor-results'] },
+			activityProfiles: { acting: { handler: active.handler, prompt: active.prompt, permissions: active.permissionCeiling } } });
+		input.candidate.effectiveProfile.profileRef = { store: 'treedx', model: 'agent', id: active.profileRef.id,
+			repository: 'repository', commit: identity.commit, path: 'agents/reader.mdx' };
 		input.candidate.contextRefs.push(note, decision, unrelated);
 		input.candidate.predecessorResults = [assignmentResultSchema.parse({ schemaVersion: 'treeseed.assignment-result/v1',
 			id: 'review-result', assignmentId: 'review-attempt', status: 'completed', summary: 'Supplied completed review.',
@@ -116,7 +124,7 @@ it('reads required reviewed predecessor artifacts through native scope without s
 			verification: [], usage: { elapsedSeconds: 1 }, diagnostics: [], completedAt: input.now })];
 		const held = structuredClone(input), before = await f.snapshot();
 		const issued = buildAssignmentAttempt(input).assignment;
-		expect(issued.grant.contentRead).toEqual([input.candidate.node.sourceRef, note, decision]);
+		expect(issued.grant.contentRead).toEqual([input.candidate.node.sourceRef, input.candidate.effectiveProfile.profileRef, note, decision]);
 		expect(issued.contextRefs).toContainEqual(note); expect(issued.contextRefs).toContainEqual(decision);
 		expect(issued.contextRefs).not.toContainEqual(unrelated); expect(issued.grant.contentWrite).toEqual([]);
 		expect(issued.grant.tools).toEqual(input.candidate.node.requestedPermissions!.tools);
@@ -125,7 +133,7 @@ it('reads required reviewed predecessor artifacts through native scope without s
 		if (!connection) throw new Error('Original native artifact reader required.');
 		await expect(connection.client.readRepositoryFile({ repoId: 'repository', ref: note.commit, path: '../notes/escaped.mdx',
 			encoding: 'utf8', parseFrontmatter: true, allowProtected: true })).rejects.toThrow('TreeDX request failed with status 404');
-		for (const [reference, expected] of [[note, noteFile], [decision, decisionFile]] as const) {
+		for (const [reference, expected] of [[input.candidate.effectiveProfile.profileRef, identity], [note, noteFile], [decision, decisionFile]] as const) {
 			const observed = await connection.client.readRepositoryFile({ repoId: reference.repository, ref: reference.commit, path: reference.path,
 				encoding: 'utf8', parseFrontmatter: true, allowProtected: true }) as { resolvedRef: string; file: { path: string; content: string; frontmatter: { id: string } } };
 			expect(observed.resolvedRef).toBe(reference.commit); expect(observed.file.path).toBe(reference.path);
@@ -134,7 +142,7 @@ it('reads required reviewed predecessor artifacts through native scope without s
 		const explicit = structuredClone(input); explicit.candidate.node.requestedPermissions!.content.read = ['proposal', 'note', 'decision'];
 		expect(buildAssignmentAttempt(explicit).assignment.grant.contentRead).toEqual(issued.grant.contentRead);
 		for (const model of ['note', 'decision']) {
-			const denied = structuredClone(input); denied.candidate.effectiveProfile.permissionCeiling.content.read = ['proposal', 'note', 'decision'].filter(value => value !== model) as never;
+			const denied = structuredClone(input); denied.candidate.effectiveProfile.permissionCeiling.content.read = ['proposal', 'note', 'decision', 'agent'].filter(value => value !== model) as never;
 			expect(() => buildAssignmentAttempt(denied)).toThrow('Exact assignment scope exceeds its effective activity profile.');
 		}
 		for (const patch of [null, { commit: 'a'.repeat(40) }, { path: 'notes/foreign.mdx' }]) {

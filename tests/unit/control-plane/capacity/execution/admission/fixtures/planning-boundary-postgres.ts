@@ -2,7 +2,7 @@ import { allocateWorkdayCapacity, appliedWorkdaySchema, assignmentAttemptSchema 
 import type { createControlPlanePostgresDatabase } from '../../../../../../../src/api/support/control-plane-postgres.ts';
 import { buildAssignmentAttempt } from '../../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import { compileAssignmentTimeBudget } from '../../../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-time-budget.ts';
-import { candidate, provider, run, executionCapability } from '../../fixtures/assignment-attempt-fixtures.ts';
+import { candidate, provider, run, executionCapability, withIdentityRead } from '../../fixtures/assignment-attempt-fixtures.ts';
 
 /** Use the ordinary allocator and graph records, not a partial attempt snapshot. */
 export async function seedPlanningBoundary(db: ReturnType<typeof createControlPlanePostgresDatabase>, now: string, boundary: string) {
@@ -14,7 +14,7 @@ export async function seedPlanningBoundary(db: ReturnType<typeof createControlPl
 	planning.node.estimate = { expectedSeconds: 180, maximumSeconds: 180 };
 	planning.node.requestedPermissions = { content: { read: ['proposal'], write: [] }, tools: ['source.read'] } as never;
 	planning.effectiveProfile = { ...planning.effectiveProfile, activity: 'planning', handler: 'planner',
-		permissionCeiling: planning.node.requestedPermissions } as never;
+		permissionCeiling: withIdentityRead(planning.node.requestedPermissions) } as never;
 	const parameters = { scheduledProjectIds: ['project'], appliedPlan: {
 		...run.parameters.appliedPlan, startsAt, endsAt,
 		policySnapshot: { durationSeconds: 3600, planningPercent: 100 / 3, allocationWeight: 1,

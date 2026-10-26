@@ -347,8 +347,8 @@ describe('native proposal Decision authority', () => {
 				expect(attempt.requiredCapabilities).toEqual(['treeseed.research.verification']);
 				expect(attempt.provider).toEqual({ providerId: 'provider', executionProviderId: 'codex', offerId: 'canonical-code-change',
 					modelConfigurationId: 'terra-medium', executionCapabilityId: 'treeseed.research.verification', offerRevision: 1, runtimeBuild: suppliedProvider.runtimeBuild });
-				// Configuration/SQL authority is retained above, not a content permission.
-				expect(attempt.grant.contentRead).toEqual([proposalRef, decision.decisionRecord.decisionRef]);
+				const core = selectedReady.contextRefs.filter(reference => reference.model === 'objective' || (reference.model === 'knowledge' && reference.path === 'README.md'));
+				expect(core).toHaveLength(3); expect(attempt.grant.contentRead).toEqual([proposalRef, selectedReady.effectiveProfile.profileRef, decision.decisionRecord.decisionRef, ...core]);
 				expect(attempt.grant.contentWrite).toEqual([]); expect(attempt.grant.sourceWrite).toEqual([]); expect(attempt.workspace).toEqual({ mode: 'read-only' }); expect(attempt.predecessorResultIds).toEqual([]);
 				expect(attempt.createdAt).toBe(compileNow); expect(attempt.limits.maximumSeconds).toBe(3); expect(attempt.deadline).toBe(plan.endsAt);
 				for (let retry = 0; retry < 2; retry++) expect(buildAssignmentAttempt(structuredClone(qualifiedInput))).toEqual(frozen);

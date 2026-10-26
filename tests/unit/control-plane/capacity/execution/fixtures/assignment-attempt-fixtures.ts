@@ -9,6 +9,9 @@ export const sourceRef = { store: 'treedx' as const, model: 'proposal', id: 'pro
 	digest: `sha256:${'a'.repeat(64)}`, repository: 'library', commit: 'b'.repeat(40), path: 'proposals/one.mdx' };
 export const gitRef = { store: 'git' as const, model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'c'.repeat(40) };
 export const permissions = { content: { read: ['proposal'] as const, write: [] }, tools: ['source.read', 'source.write', 'verification'] as const };
+export function withIdentityRead<T extends { content: { read: readonly string[]; write: readonly string[] }; tools: readonly string[] }>(value: T) {
+	return { ...value, content: { ...value.content, read: [...new Set([...value.content.read, 'agent'])] } };
+}
 export const executionCapability = 'treeseed.engineering.code-change';
 export const conversationCapability = 'treeseed.coordination.conversation';
 export const candidate = {
@@ -17,7 +20,7 @@ export const candidate = {
 	effectiveProfile: effectiveActivityProfileSchema.parse({
 		handler: 'actor', prompt: { system: 'Implement the accepted work and verify the exact result.' },
 		profileRef: { store: 'treedx', model: 'agent', id: 'agent:engineer', revision: 1, digest: `sha256:${'d'.repeat(64)}` },
-		activity: 'acting', handlerOrigin: 'agent-package', permissionCeiling: permissions,
+		activity: 'acting', handlerOrigin: 'agent-package', permissionCeiling: withIdentityRead(permissions),
 	}),
 	node: (() => { const node = executionNodeSchema.parse({
 		schemaVersion: 'treeseed.execution-node/v1', id: 'node', teamId: 'team', projectId: 'project',

@@ -196,7 +196,8 @@ export async function assignNextReadyExecutionNode(
 			if (error.code === 'capacity_assignment_allocation_deferred') selection.allocationDeferred += 1;
 			if (error.code.startsWith('capacity_')) deferred.push({ runId: run.id, nodeId, code: error.code, details: error.details });
 		};
-		const qualified: Array<(typeof withinWindow)[number] & { selected: ReturnType<typeof buildAssignmentAttempt> }> = [];
+		const qualified: Array<(typeof withinWindow)[number] & { selected: ReturnType<typeof buildAssignmentAttempt>;
+			allocationInputs: Awaited<ReturnType<typeof livingAllocationInputs>> }> = [];
 		for (const candidate of withinWindow) {
 			selection.attemptedNodes += 1;
 			try {
@@ -208,7 +209,7 @@ export async function assignNextReadyExecutionNode(
 						&& candidate.node.sourceRef.model === 'proposal', now });
 				const selected = buildAssignmentAttempt({ candidate, run, principal, providerSessionId,
 					providers: executionProviders, allocationInputs, attempt: priorAttempts + 1, now });
-				qualified.push({ ...candidate, selected });
+				qualified.push({ ...candidate, selected, allocationInputs });
 			} catch (error) { defer(error, candidate.node.id); }
 		}
 		const candidates = prioritizeCommunicationCandidates(qualified);
@@ -229,10 +230,18 @@ export async function assignNextReadyExecutionNode(
 			if (!candidate) break;
 			remaining.splice(remaining.indexOf(candidate), 1);
 				try {
-				const selected = candidate.selected;
-				const attempt = selected.assignment;
-					const treedxProxyHandle = await issueLivingTreeDxAuthority(store, run, attempt, now);
-					const admitted = await admitLivingExecutionAssignment(store, { principal, assignment: attempt, allocation: { ...selected.allocation, selection: selectedNode },
+				const admit = async (retained: DurableProviderAssignment | null) => {
+					// A competing synthesis can issue this identity after our count read.
+					// Rebuild against its original clock; admission still compares ALL
+					// immutable authority and allocation, including the original deadline.
+					const selected = retained?.assignmentAttempt ? buildAssignmentAttempt({
+						candidate, run, principal, providerSessionId, providers: executionProviders,
+						allocationInputs: candidate.allocationInputs,
+						attempt: candidate.selected.assignment.attempt, now: retained.assignmentAttempt.createdAt,
+					}) : candidate.selected;
+					const attempt = selected.assignment;
+					const treedxProxyHandle = retained ? record(retained.treedxProxyHandle) : await issueLivingTreeDxAuthority(store, run, attempt, now);
+					return admitLivingExecutionAssignment(store, { principal, assignment: attempt, allocation: { ...selected.allocation, selection: selectedNode },
 						workdayConcurrencyLimit: candidate.node.kind === 'communication'
 							? appliedPlan.policySnapshot.communicationConcurrency : appliedPlan.policySnapshot.maximumConcurrency,
 						accountingLimits: selected.accountingLimits,
@@ -243,6 +252,21 @@ export async function assignNextReadyExecutionNode(
 						invocationId: candidate.node.kind === 'communication'
 							? candidate.node.sourceRef.id : null,
 						predecessorResults: candidate.predecessorResults, treedxProxyHandle, now });
+				};
+				let admitted: DurableProviderAssignment;
+				const original = await store.getProviderAssignment(candidate.node.teamId, candidate.selected.assignment.id);
+				try {
+					admitted = await admit(original);
+				} catch (error) {
+					// One bounded convergence read also covers a commit between our
+					// absence check and admission. Never relax the admission guard.
+					const changed = error instanceof CapacityGovernanceError ? error.details?.changedAuthorityFields : undefined;
+					if (original || !(error instanceof CapacityGovernanceError) || error.code !== 'execution_assignment_idempotency_conflict'
+						|| !Array.isArray(changed) || changed.length !== 1 || changed[0] !== 'createdAt') throw error;
+					const retained = await store.getProviderAssignment(candidate.node.teamId, candidate.selected.assignment.id);
+					if (!retained) throw error;
+					admitted = await admit(retained);
+				}
 					return { assignment: admitted, selection };
 				} catch (error) {
 					defer(error, candidate.node.id);
