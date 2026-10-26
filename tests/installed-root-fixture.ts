@@ -8,7 +8,7 @@ import { PostgresServicePlugin, PostgresReadinessPlugin, CaddyServicePlugin, Ser
 import { KeycloakServicePlugin, KeycloakReadinessPlugin } from '@treeseed-cordis/identity/services';
 import { NodeApiServicePlugin, ApiReadinessPlugin } from '../src/services.js';
 import { ApiBuild } from '../src/server.js';
-import { PreparedApiPackages, type PreparedApiPackage } from './runtime-packages.js';
+import { PreparedApiPackages, type PreparedApiPackage,type ApiFixtureSelection } from './runtime-packages.js';
 class FixturePort {
     private readonly server: Server = createServer();
     async get(): Promise<number> { await new Promise<void>(this.listen.bind(this)); const address = this.server.address(); if (!address || typeof address === 'string') throw new Error('Fixture port unavailable'); const port = address.port; await new Promise<void>(this.close.bind(this)); return port; }
@@ -23,9 +23,9 @@ export class InstalledApiFixture extends ServiceRuntimeFixture {
     private static command(args: string[], cwd?: string): string { const result = spawnSync('docker', args, { cwd, encoding: 'utf8', timeout: 180000, maxBuffer: 16 * 1024 * 1024 }); if (result.status !== 0) throw new Error('API fixture Docker prerequisite failed: ' + result.stderr.slice(-2000)); return result.stdout.trim(); }
     private readonly packages = new Map<string, PreparedApiPackage>(); private readonly descriptors = new Map<string, ReturnType<typeof PluginManagementSchemas.packageDescriptor.parse>>();
     private reference(owner: string, providerId: string): ServiceInstance['provider'] { const name = '@treeseed-cordis/' + owner, artifact = this.packages.get(name)!, descriptor = this.descriptors.get(name)!; let exported: PluginExportDescriptor | undefined; for (const candidate of descriptor.providers) if (candidate.declaration.id === providerId) exported = candidate; if (!exported) throw new Error('Fixture owner export unavailable'); return ServiceSchemas.provider.parse({ pluginId: descriptor.pluginId, providerId, target: 'deployment', package: { name, version: artifact.version, sha256: artifact.sha256 }, entry: exported.entry, classExport: exported.classExport, contractVersion: exported.declaration.contractVersion }); }
-    async prepared(): Promise<this> {
+    async prepared(selection?:ApiFixtureSelection): Promise<this> {
         await this.services(); this.configuration.origin = 'https://localhost:' + await new FixturePort().get();
-        const sources = await new PreparedApiPackages(join(this.bundle, 'archives')).prepare();
+        const sources = await new PreparedApiPackages(join(this.bundle, 'archives'),selection).prepare();
         for (const item of sources) { this.packages.set(item.name, item); const index = await PackageArchiveInspector.inspect(item.path, item.sha256); if (index.metadata.cordisPackage !== undefined) this.descriptors.set(item.name, PluginManagementSchemas.packageDescriptor.parse(index.metadata.cordisPackage)); }
         this.configuration.plugins = []; for (const [name, descriptor] of this.descriptors) { const item = this.packages.get(name)!; this.configuration.plugins.push({ id: descriptor.pluginId, package: name, version: item.version, integrity: item.sha256 }); }
         const build = join(this.root, 'api-image-context'); mkdirSync(build, { mode: 0o700 }); const base = spawnSync('docker', ['image', 'inspect', ServiceRuntimeFixture.base], { encoding: 'utf8' }); if (base.status !== 0) InstalledApiFixture.command(['image', 'pull', ServiceRuntimeFixture.base]);

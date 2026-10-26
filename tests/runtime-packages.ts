@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, copyFileSync, mkdirSync, existsSync, lstatSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
 import { parse, type ParseError } from 'jsonc-parser';
 import { PlatformSchemas } from '@treeseed-cordis/sdk';
@@ -8,22 +8,25 @@ import { PackageArchiveInspector } from '@treeseed-cordis/deployment';
 import { ApiJson } from '../src/json.js';
 import { ApiRuntimeClosure } from '../src/runtime-audit.js';
 export interface PreparedApiPackage { name: string; version: string; path: string; sha256: string; }
+export interface ApiFixtureSelection {archives:Record<'api'|'sdk'|'deployment'|'identity'|'admin'|'ui',string>;lockfile:string;}
 /** Test-only producer: public exact archives, no package imports or lifecycle execution. */
 export class PreparedApiPackages {
     private readonly metadata = new Map<string, Readonly<Record<string, unknown>>>(); private readonly selected = new Map<string, PreparedApiPackage>();
     private readonly lock: Record<string, unknown[]>;
     private readonly cache = '/tmp/cordis-task3c-api-fixture-cache';
-    constructor(private readonly destination: string) {
-        const errors: ParseError[] = [], lock = parse(readFileSync('bun.lock', 'utf8'), errors, { allowTrailingComma: true }) as { lockfileVersion: number; packages: Record<string, unknown[]> };
+    constructor(private readonly destination: string,private readonly selection?:ApiFixtureSelection) {
+        const errors: ParseError[] = [], lock = parse(readFileSync(selection?.lockfile??'bun.lock', 'utf8'), errors, { allowTrailingComma: true }) as { lockfileVersion: number; packages: Record<string, unknown[]> };
         this.require(errors.length === 0 && lock.lockfileVersion === 2); this.lock = lock.packages; mkdirSync(this.cache, { recursive: true, mode: 0o700 }); const stat = lstatSync(this.cache); this.require(stat.isDirectory() && !stat.isSymbolicLink() && stat.uid === process.getuid?.() && (stat.mode & 0o777) === 0o700);
     }
     private require(value: unknown): asserts value { if (!value) throw new Error('API_FIXTURE_PACKAGE_UNAVAILABLE'); }
     private sha(bytes: Uint8Array | string): string { return createHash('sha256').update(bytes).digest('hex'); }
     private async inspect(path: string): Promise<PreparedApiPackage> { const sha256 = this.sha(readFileSync(path)), index = await PackageArchiveInspector.inspect(path, sha256), name = PlatformSchemas.packageName.parse(index.metadata.name), version = PlatformSchemas.version.parse(index.metadata.version); this.require(!this.selected.has(name)); const item = { name, version, path, sha256 }; this.selected.set(name, item); this.metadata.set(name, index.metadata); return item; }
     async prepare(): Promise<PreparedApiPackage[]> {
-        const packed = spawnSync('bun', ['pm', 'pack', '--destination', this.destination], { encoding: 'utf8', timeout: 30000 }); this.require(packed.status === 0);
+        if(this.selection){for(const owner of ['api','sdk','deployment','identity','admin','ui'] as const){const source=this.selection.archives[owner];this.require(isAbsolute(source)&&resolve(source)===source);const target=join(this.destination,owner+'.tgz');copyFileSync(source,target);const item=await this.inspect(target);this.require(item.name==='@treeseed-cordis/'+owner);}}else{
+        const packed = spawnSync('bun', ['pm', 'pack', '--ignore-scripts', '--destination', this.destination], { encoding: 'utf8', timeout: 30000 }); this.require(packed.status === 0);
         const own = JSON.parse(readFileSync('package.json', 'utf8')) as { version: string }, api = join(this.destination, 'treeseed-cordis-api-' + own.version + '.tgz'); await this.inspect(api);
         for (const owner of ['sdk', 'deployment', 'identity', 'admin', 'ui']) { const target = join(this.destination, owner + '.tgz'); copyFileSync(resolve('vendor', owner + '.tgz'), target); await this.inspect(target); }
+        }
         const pending = ['@treeseed-cordis/api'], visited = new Set<string>();
         while (pending.length) {
             const name = pending.pop()!; if (visited.has(name)) continue; visited.add(name); if (!this.metadata.has(name)) await this.registry(name); const metadata = this.metadata.get(name)!;
