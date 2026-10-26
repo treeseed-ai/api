@@ -159,3 +159,6 @@ Postgres/Keycloak/Caddy release using public interfaces; it does not import sibl
 Its default owner-test mode packs this owner's current built candidate. `close()` removes
 only that fixture's resources and private files. Consumers separately own their browser/CLI
 observations and never use this producer as installation authority.
+
+Qualification failures retain both their original error and any subsequent host-drain error.
+A cleanup failure must not hide the stage that failed or be interpreted as runtime acceptance.
