@@ -88,7 +88,8 @@ describe('native publication to owning scheduler candidate input', () => {
 			// Accepted Decision and predecessor completion remain supplied inputs.
 		} finally { await f.close(); }
 	}, 60_000);
-	it.each([false, true])('native scheduler retains one atomic admission after provider gates (concurrent synthesis: %s)', async concurrent => {
+	it('native original scheduler applies provider hard gates before weighted priority selection and retains the exact eligible input beside one atomic admission', async () => {
+		for (const concurrent of [false, true]) {
 		const f = await relationSchedulingDatabase();
 		try {
 			await f.publish(); await f.completeInputs();
@@ -165,6 +166,7 @@ describe('native publication to owning scheduler candidate input', () => {
 			// Provider availability/principal/predecessors remain controlled INPUTS,
 			// not signed enrollment, live model billing or provider-global fairness.
 		} finally { await f.close(); }
+		}
 	}, 60_000);
 	it('native exact proposal context preserves the primary source lineage while foreign predecessor citations remain read-only evidence in either reference order', async () => {
 		const primary = { store: 'git' as const, model: 'repository', id: 'dependent-source', repository: 'treeseed-ai/dependent', commit: 'c'.repeat(40) };
