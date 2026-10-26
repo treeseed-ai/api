@@ -11,7 +11,7 @@ function reviewedInput() {
 	const unrelated = { ...note, model: 'knowledge', id: 'unrelated', path: 'knowledge/unrelated.md' };
 	const git = { store: 'git' as const, model: 'repository', id: 'documented-source', repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40) };
 	input.candidate.node.requestedPermissions!.content.read = [];
-	input.candidate.effectiveProfile.permissionCeiling.content.read = ['proposal', 'note', 'decision', 'knowledge'];
+	input.candidate.effectiveProfile.permissionCeiling.content.read = ['proposal', 'note', 'decision', 'knowledge', 'agent'];
 	input.candidate.contextRefs.push(git, note, decision, unrelated);
 	const actor = assignmentResultSchema.parse({ schemaVersion: 'treeseed.assignment-result/v1', id: 'documented-result', assignmentId: 'documented-attempt',
 		status: 'completed', summary: 'Controlled candidate.', references: [{ kind: 'git', repository: git.repository, commit: git.commit }],
@@ -26,7 +26,7 @@ function reviewedInput() {
 it('compiles every exact reviewed predecessor read within the profile ceiling even when supplementary reads are empty', () => {
 	const f = reviewedInput(), held = structuredClone(f.input);
 	const assignment = buildAssignmentAttempt(f.input).assignment;
-	expect(assignment.grant.contentRead).toEqual([f.input.candidate.node.sourceRef, f.note, f.decision]);
+	expect(assignment.grant.contentRead).toEqual([f.input.candidate.node.sourceRef, f.input.candidate.effectiveProfile.profileRef, f.note, f.decision]);
 	for (const ref of [f.note, f.decision, f.git]) expect(assignment.contextRefs).toContainEqual(ref);
 	expect(assignment.contextRefs).not.toContainEqual(f.unrelated);
 	expect(assignment.grant.contentRead).not.toContainEqual(f.unrelated);
@@ -42,7 +42,7 @@ it('compiles every exact reviewed predecessor read within the profile ceiling ev
 it('denies a required predecessor model outside the exact profile ceiling without mutating or broadening authority', () => {
 	for (const denied of ['note', 'decision']) {
 		const f = reviewedInput();
-		f.input.candidate.effectiveProfile.permissionCeiling.content.read = ['proposal', 'note', 'decision'].filter(model => model !== denied) as never;
+		f.input.candidate.effectiveProfile.permissionCeiling.content.read = ['proposal', 'note', 'decision', 'agent'].filter(model => model !== denied) as never;
 		const held = structuredClone(f.input);
 		expect(() => buildAssignmentAttempt(f.input)).toThrow('Exact assignment scope exceeds its effective activity profile.');
 		expect(f.input).toEqual(held);
@@ -63,6 +63,6 @@ it('does not infer missing moved or unrelated predecessor context from an artifa
 it('deduplicates mandatory and explicitly requested predecessor reads without changing the requested authority', () => {
 	const f = reviewedInput(); f.input.candidate.node.requestedPermissions!.content.read = ['proposal', 'note', 'decision'];
 	const held = structuredClone(f.input), assignment = buildAssignmentAttempt(f.input).assignment;
-	expect(assignment.grant.contentRead).toEqual([f.input.candidate.node.sourceRef, f.note, f.decision]);
-	expect(assignment.grant.contentRead).toHaveLength(3); expect(f.input).toEqual(held);
+	expect(assignment.grant.contentRead).toEqual([f.input.candidate.node.sourceRef, f.input.candidate.effectiveProfile.profileRef, f.note, f.decision]);
+	expect(assignment.grant.contentRead).toHaveLength(4); expect(f.input).toEqual(held);
 });

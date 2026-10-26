@@ -17,15 +17,15 @@ it('includes exact accepted scope for Git-only work without general content auth
 	const exact = structuredClone(candidate), decision = { ...assignmentSource, model: 'decision', id: 'accepted', path: 'decisions/accepted.mdx' };
 	exact.node.requestedPermissions.content.read = [];
 	exact.node.authorityRefs = [decision];
-	exact.effectiveProfile.permissionCeiling.content.read = ['proposal', 'decision'];
+	exact.effectiveProfile.permissionCeiling.content.read = ['proposal', 'decision', 'agent'];
 	const input = { ...canonicalOfferBuildInput(), candidate: exact }, held = structuredClone(exact);
 	const issued = buildAssignmentAttempt(input).assignment;
-	expect(issued.contextRefs).toEqual([gitRef, assignmentSource, decision]);
-	expect(issued.grant.contentRead).toEqual([assignmentSource, decision]);
+	expect(issued.contextRefs).toEqual([gitRef, assignmentSource, exact.effectiveProfile.profileRef, decision]);
+	expect(issued.grant.contentRead).toEqual([assignmentSource, exact.effectiveProfile.profileRef, decision]);
 	expect(issued.grant.contentWrite).toEqual([]); expect(issued.grant.tools).toEqual(grantedPermissions.tools);
 	expect(exact).toEqual(held);
 	for (const read of [[], ['proposal'], ['decision']]) {
-		exact.effectiveProfile.permissionCeiling.content.read = read as never;
+		exact.effectiveProfile.permissionCeiling.content.read = [...read, 'agent'] as never;
 		expect(() => buildAssignmentAttempt(input)).toThrow('Exact assignment scope exceeds its effective activity profile.');
 	}
 });

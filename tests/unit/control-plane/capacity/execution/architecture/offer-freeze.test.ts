@@ -47,11 +47,11 @@ describe('immutable assignment-attempt construction', () => {
 		expect(first.assignment.requiredCapabilities).toEqual(['treeseed.engineering.code-change']);
 		expect(first.assignment.sourceRef).toEqual(supplied.candidate.node.sourceRef);
 		expect(first.assignment.authorityRefs).toEqual(supplied.candidate.node.authorityRefs);
-		expect(first.assignment.contextRefs).toEqual([...supplied.candidate.contextRefs, supplied.candidate.node.sourceRef]);
+		expect(first.assignment.contextRefs).toEqual([...supplied.candidate.contextRefs, supplied.candidate.node.sourceRef, supplied.candidate.effectiveProfile.profileRef]);
 		expect(first.assignment.effectiveProfile).toEqual(supplied.candidate.effectiveProfile);
 		expect(first.assignment.workspace).toEqual({ mode: 'git', repository: 'treeseed-ai/sdk', baseCommit: 'c'.repeat(40),
 			branch: `simulation/local/workday/${first.assignment.id}`, writablePaths: ['.'] });
-		expect(first.assignment.grant).toEqual({ contentRead: [supplied.candidate.node.sourceRef], contentWrite: [],
+		expect(first.assignment.grant).toEqual({ contentRead: [supplied.candidate.node.sourceRef, supplied.candidate.effectiveProfile.profileRef], contentWrite: [],
 			sourceRead: ['treeseed-ai/sdk'], sourceWrite: ['treeseed-ai/sdk'], tools: [...permissions.tools] });
 		expect(first.assignment.createdAt).toBe(supplied.now); expect(first.assignment.limits.maximumSeconds).toBe(3);
 		// Active allocation does not precharge separately bounded infrastructure or

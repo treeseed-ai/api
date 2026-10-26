@@ -1,13 +1,13 @@
 import {describe,expect,it} from 'vitest';
 import {buildAssignmentAttempt} from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
-import {canonicalOfferBuildInput,candidate,run,provider,sourceRef} from '../fixtures/assignment-attempt-fixtures.ts';
+import {canonicalOfferBuildInput,candidate,run,provider,sourceRef,withIdentityRead} from '../fixtures/assignment-attempt-fixtures.ts';
 describe('frozen Workday workspace authority',()=>{
  it('gives a subscribed estimator the exact shared proposal workspace without changing its allocation project',()=>{
   const input=canonicalOfferBuildInput(),exact=structuredClone(input.candidate);
   exact.node.kind='estimating';exact.node.pairRole=null;delete exact.node.workItemId;exact.node.workspace='treedx';
   exact.node.sourceRef={...sourceRef,repository:'ui-library'};
   exact.node.requestedPermissions={content:{read:['proposal'],write:['proposal']},tools:['source.read']};
-  exact.effectiveProfile.activity='estimating';exact.effectiveProfile.permissionCeiling=exact.node.requestedPermissions;
+  exact.effectiveProfile.activity='estimating';exact.effectiveProfile.permissionCeiling=withIdentityRead(exact.node.requestedPermissions) as never;
   exact.contextRefs=[exact.node.sourceRef];exact.projectContentRepositoryId='sdk-library';
   const before=structuredClone(exact),result=buildAssignmentAttempt({...input,candidate:exact}).assignment;
   expect(result.projectId).toBe(exact.node.projectId);expect(result.workspace).toMatchObject({mode:'treedx',repository:'ui-library',baseCommit:sourceRef.commit});
@@ -21,14 +21,17 @@ describe('frozen Workday workspace authority',()=>{
   expect(withProfile.grant.sourceWrite).toEqual([]);expect(withProfile.grant.tools).toEqual(['source.read']);
   expect(withProfile.grant.contentWrite).toEqual([exact.node.sourceRef]);expect(exact).toEqual(held);
   exact.node.requestedPermissions.content.read=['proposal'];
+  exact.effectiveProfile.permissionCeiling=withIdentityRead(exact.node.requestedPermissions) as never;
+  const narrowed=buildAssignmentAttempt({...input,candidate:exact}).assignment;
+  expect(narrowed.contextRefs).toContainEqual(own);expect(narrowed.grant.contentRead).toContainEqual(own);
   exact.effectiveProfile.permissionCeiling=exact.node.requestedPermissions;
-  const denied=buildAssignmentAttempt({...input,candidate:exact}).assignment;
-  expect(denied.contextRefs).not.toContainEqual(own);expect(denied.grant.contentRead).not.toContainEqual(own);
+  expect(()=>buildAssignmentAttempt({...input,candidate:exact})).toThrow(expect.objectContaining({code:'assignment_permission_ceiling_exceeded'}));
  });
  it('keeps a lifecycle workspace on its held workday project context when the governed library advances before issuance',()=>{
   const input=canonicalOfferBuildInput(),exact=structuredClone(input.candidate),held={store:'treedx' as const,model:'knowledge',id:exact.node.projectId+':project-context',repository:exact.projectContentRepositoryId,commit:'d'.repeat(40),path:'README.md',revision:1,digest:'sha256:'+'4'.repeat(64)};
   exact.node.kind='reporting';exact.node.pairRole=null;exact.node.workspace='treedx';exact.node.sourceRef={store:'postgresql',model:'workday',id:input.run.id,revision:1,digest:'sha256:'+'1'.repeat(64)};
-  exact.node.requestedPermissions={content:{read:['knowledge'],write:['note']},tools:[]};exact.effectiveProfile.activity='reporting';exact.effectiveProfile.permissionCeiling=exact.node.requestedPermissions;
+  exact.node.requestedPermissions={content:{read:['knowledge'],write:['note']},tools:[]};exact.effectiveProfile.activity='reporting';exact.effectiveProfile.permissionCeiling=withIdentityRead(exact.node.requestedPermissions) as never;
+  exact.effectiveProfile.permissionCeiling.content.read.push('objective');
   exact.contextRefs=[{...held,id:'current-project-objective',commit:'e'.repeat(40),model:'objective',path:'objectives/core'},held];
   const run={...input.run,parameters:{...input.run.parameters,workdayContextByProjectId:{[exact.node.projectId]:held},appliedPlan:{...input.run.parameters.appliedPlan as object,state:'closing'}}};
   const before=structuredClone({exact,run}),build=()=>buildAssignmentAttempt({...input,candidate:exact,run});
@@ -55,7 +58,7 @@ const opportunity = canonicalOfferBuildInput().allocationInputs.codex!.opportuni
 		if (subject === 'shared-proposal') planning.node.sourceRef = { ...sourceRef, repository: 'ui-library' };
 		planning.node.requestedPermissions = { content: { read: ['proposal', 'objective', 'book'], write: ['note'] }, tools: ['source.read'] } as never;
 		if (subject === 'shared-proposal') planning.node.requestedPermissions.content.write.push('proposal');
-		planning.effectiveProfile.permissionCeiling = planning.node.requestedPermissions;
+		planning.effectiveProfile.permissionCeiling = withIdentityRead(planning.node.requestedPermissions) as never;
 		const team = { store: 'treedx', model: 'objective', id: 'team-objective', repository: 'team-library',
 			commit: '8'.repeat(40), path: 'objectives/team.md', revision: 1, digest: `sha256:${'8'.repeat(64)}` };
 		const project = { store: 'treedx', model: 'objective', id: 'sdk-objective', repository: 'sdk-library',

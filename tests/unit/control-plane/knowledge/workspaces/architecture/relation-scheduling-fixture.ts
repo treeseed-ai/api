@@ -4,7 +4,7 @@ import { stringify } from 'yaml';
 import { DEFAULT_WORKDAY_POLICY, allocateWorkdayCapacity, assignmentAttemptSchema, assignmentResultSchema, compileWorkday, effectiveActivityProfileSchema, executionNodeSchema, exactEntityReferenceSchema, type ExactEntityReference } from '@treeseed/sdk/agent-capacity';
 import { relationPublicationDatabase } from './relation-publication-fixture.ts';
 import { object } from './relation-authoring-fixture.ts';
-import { candidate, gitRef, provider } from '../../../capacity/execution/fixtures/assignment-attempt-fixtures.ts';
+import { candidate, gitRef, provider, withIdentityRead } from '../../../capacity/execution/fixtures/assignment-attempt-fixtures.ts';
 import { replayAttempt } from '../../../capacity/execution/architecture/admission-replay-fixture.ts';
 import { graphNode, graphState, emptyLivingGraph } from '../../../capacity/execution/graph/architecture/living/living-graph-fixture.ts';
 import { serializeCapacityWorkdayRunRow } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
@@ -52,7 +52,7 @@ export function schedulingInputs(): Parameters<typeof buildAssignmentAttempt>[0]
 	const permissions = { content: { read: ['proposal', 'decision'], write: [] }, tools: ['source.read', 'source.write', 'verification'] };
 	const opportunity = allocateWorkdayCapacity({ now, remainingSeconds: 180, workdays: [{ plan, committedSeconds: 0, planningCommittedSeconds: 0, maximumAdditionalSeconds: 180, actingReady: true }] })[plan.id]; assert.ok(opportunity);
 	return { candidate: { ...candidate, readyAt: now, sourceRepositories: ['treeseed-ai/sdk'], node: executionNodeSchema.parse({ ...candidate.node, requestedPermissions: permissions }),
-		effectiveProfile: effectiveActivityProfileSchema.parse({ ...candidate.effectiveProfile, permissionCeiling: permissions }),
+		effectiveProfile: effectiveActivityProfileSchema.parse({ ...candidate.effectiveProfile, permissionCeiling: withIdentityRead(permissions) }),
 		contextRefs: [gitRef, { store: 'git', model: 'repository', id: 'precursor-candidate', repository: 'treeseed-ai/precursor', commit: 'e'.repeat(40) }, approval], predecessorResults: [actor, review] },
 		run, principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' }, providerSessionId: 'session',
 		providers: [{ ...provider, lanes: provider.lanes.map(lane => ({ ...lane, purpose: 'workday' })) }], allocationInputs: { codex: { measurements: [], constraints: [], opportunity } }, attempt: 1, now };
@@ -84,7 +84,7 @@ export async function relationSchedulingDatabase(primarySource?: ExactEntityRefe
 			}
 		}
 		for (const profile of Object.values(f.profiles)) for (const activity of Object.values(profile.activityProfiles)) {
-			if (activity) activity.permissions = { content: { read: ['proposal', 'decision'], write: [] }, tools: ['source.read'] };
+			if (activity) activity.permissions = { content: { read: ['proposal', 'decision', 'agent', 'objective', 'knowledge'], write: [] }, tools: ['source.read'] };
 		}
 		// Explicit primary source binding INPUT; no remote repository is created,
 		// fetched or written, and predecessor citations never supply this identity.
