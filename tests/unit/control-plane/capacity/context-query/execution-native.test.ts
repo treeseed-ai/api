@@ -34,10 +34,12 @@ it('executes checked global and activity queries on new native data without expa
 	const f = await cancellationDatabase();
 	try {
 		const ddl = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
-		for (const table of ['projects', 'treedx_project_libraries', 'agent_context_query_checks', 'project_agent_classes', 'treedx_commit_replications']) {
+		for (const table of ['projects', 'treedx_project_libraries', 'agent_context_query_checks', 'project_agent_classes']) {
 			const source = ddl.filter(sql => sql.startsWith(`CREATE TABLE "${table}" (`));
-			expect(source).toHaveLength(1); await f.db.exec(source[0]!);
+			expect(source, `Original ${table} schema required.`).toHaveLength(1); await f.db.exec(source[0]!);
 		}
+		for (const file of ['0006_treedx_commit_replication.sql', '0017_remove_git_backup_replication.sql', '0018_repair_git_backup_column_removal.sql'])
+			await f.db.exec(readFileSync(`drizzle/control-plane/${file}`, 'utf8'));
 		const at = new Date().toISOString();
 		await f.owner.run("INSERT INTO teams(id,slug,name,created_at,updated_at) VALUES('team','team','Native context',?,?)", [at, at]);
 		await f.owner.run("INSERT INTO projects(id,team_id,slug,name,created_at,updated_at) VALUES('project','team','api','API context',?,?)", [at, at]);
