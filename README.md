@@ -162,3 +162,8 @@ observations and never use this producer as installation authority.
 
 Qualification failures retain both their original error and any subsequent host-drain error.
 A cleanup failure must not hide the stage that failed or be interpreted as runtime acceptance.
+
+The genuine installed API gate must use `ComposeDeploymentHost.apply` and the actual compiled
+independent worker supplied by the prepared release. An in-process Node test host is not the
+installed construction path. Fixture cleanup verifies the worker's executable device/inode
+and owner before signaling it, then verifies retained containers remain running.
