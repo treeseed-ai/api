@@ -2,6 +2,7 @@ import { effectiveActivityProfileSchema, validateAgentDefinitionModel, type Effe
 import { CapacityGovernanceError } from '../../database.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
 import { agentProfileReference } from '../../policy/execution/agent-profile-reference.ts';
+import { projectAgentActivityRefs } from '../projects/projects-core/project-agent-activity-refs.ts';
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {
  if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row;
@@ -71,13 +72,14 @@ export async function effectiveProfile(store: any, node: ExecutionNode): Promise
 		}
 		const selected = exact.data.activityProfiles[activity as keyof typeof exact.data.activityProfiles];
 		if (!selected) continue;
+		const context = projectAgentActivityRefs({ agents: [exact.data] }, activity)[0]!;
 		return {
 			projectAgentClassId: text(row.id),
 			profile: effectiveActivityProfileSchema.parse({
 				handler: selected.handler,
 				prompt: selected.prompt,
-				...(selected.contextQueryRefs ? { contextQueryRefs: selected.contextQueryRefs } : {}),
-				...(selected.contextQuerySetRefs ? { contextQuerySetRefs: selected.contextQuerySetRefs } : {}),
+				...(exact.data.contextQueryRefs || selected.contextQueryRefs ? { contextQueryRefs: context.contextQueryRefs } : {}),
+				...(exact.data.contextQuerySetRefs || selected.contextQuerySetRefs ? { contextQuerySetRefs: context.contextQuerySetRefs } : {}),
 				...(selected.additionalContext ? { additionalContext: selected.additionalContext } : {}),
 				...(selected.parameters ? { parameters: selected.parameters } : {}),
 				profileRef: { store: 'treedx', model: 'agent', id: exact.data.id,

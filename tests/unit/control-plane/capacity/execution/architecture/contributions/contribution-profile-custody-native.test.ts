@@ -26,6 +26,8 @@ it('resolves current contribution fingerprints through native profile custody wh
 		const definitions = names.map(name => ({ schemaVersion: 'treeseed.agent/v1', id: `project/${name}`, name,
 			agentClass: 'maintenance', purpose: 'Repair current profile custody.', responsibilities: ['Own the accepted contribution.'],
 			capabilities: ['source-repair'], context: { include: ['assignment-subject'] }, groupIds: ['backend-custody'],
+			contextQueryRefs: [{ id: 'portfolio/objectives', revision: 3 }],
+			contextQuerySetRefs: [{ id: 'portfolio/foundation', revision: 2 }],
 			activityProfiles: { estimating: profile(name, 'old'), acting: profile(name, 'current'), reviewing: profile(name, 'current') },
 		} as AgentDefinition));
 		let oldCommit = '';
@@ -61,8 +63,8 @@ it('resolves current contribution fingerprints through native profile custody wh
 			expect(resolved.profile.profileRef).toEqual({ store: 'treedx', model: 'agent', id: bound.definition.id,
 				repository: 'repository', commit: currentCommit, path: `agents/${bound.definition.name}.mdx` });
 			expect(resolved.profile.prompt).toEqual(bound.definition.activityProfiles[kind]!.prompt);
-			expect(resolved.profile.contextQueryRefs).toEqual(bound.definition.activityProfiles[kind]!.contextQueryRefs);
-			expect(resolved.profile.contextQuerySetRefs).toEqual(bound.definition.activityProfiles[kind]!.contextQuerySetRefs);
+			expect(resolved.profile.contextQueryRefs).toEqual([...bound.definition.contextQueryRefs!, ...bound.definition.activityProfiles[kind]!.contextQueryRefs!]);
+			expect(resolved.profile.contextQuerySetRefs).toEqual([...bound.definition.contextQuerySetRefs!, ...bound.definition.activityProfiles[kind]!.contextQuerySetRefs!]);
 			expect(resolved.profile.permissionCeiling).toEqual(bound.definition.activityProfiles[kind]!.permissions);
 			await expect(effectiveProfile(f.store, { ...node, authorityRefs: [owner.effectiveProfile.profileRef] }))
 				.rejects.toMatchObject({ code: 'execution_node_agent_identity_moved' });
