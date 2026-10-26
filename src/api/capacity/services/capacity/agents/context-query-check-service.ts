@@ -133,7 +133,9 @@ export class ContextQueryCheckService {
 			if(contract[0]==='agent') {
 				const profiles=record(value.activityProfiles);
 				return Object.entries(profiles).flatMap(([profileId,candidate])=>{
-					const profile=record(candidate); if(profile.enabled!==true) return [];
+					// Presence in the validated activityProfiles map is the configured
+					// profile authority; canonical profiles have no enabled property.
+					const profile=record(candidate);
 					return [
 						...([...(Array.isArray(value.contextQueryRefs)?value.contextQueryRefs:[]),...(Array.isArray(profile.contextQueryRefs)?profile.contextQueryRefs:[])]).map((reference)=>({kind:'query' as const,reference:record(reference)})),
 						...([...(Array.isArray(value.contextQuerySetRefs)?value.contextQuerySetRefs:[]),...(Array.isArray(profile.contextQuerySetRefs)?profile.contextQuerySetRefs:[])]).map((reference)=>({kind:'query-set' as const,reference:record(reference)})),
