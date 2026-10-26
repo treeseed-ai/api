@@ -101,10 +101,11 @@ it('reads a subscriber contribution from the proposal owner library while retain
 		const forged = f.publishContent(source.path, { ...combined, executionPlan: { workItems: [
 			{ ...contribution.executionPlan.workItems[0]!, estimate: { expectedSeconds: 150, maximumSeconds: 240, rationale: 'Forged earlier measurement.' } }, additional,
 		] } });
+		const deniedCheckpoint = await f.snapshot();
 		await expect(integrateAssignmentEstimate(integrationStore as never, nextAssignment as never, { ...nextResult,
 			references: nextResult.references.map(reference => ({ ...reference, commit: forged.commit })) }))
 			.rejects.toMatchObject({ code: 'assignment_estimate_owner_missing' });
-		expect(await f.snapshot()).toEqual(retained);
+		expect(await f.snapshot()).toEqual(deniedCheckpoint);
 		for (const change of [{ id: 'other-proposal' }, { projectId: 'foreign' }]) {
 			const altered = f.publishContent(source.path, { ...contribution, ...change }), checkpoint = await f.snapshot();
 			const changed = { ...result, references: result.references.map(reference => ({ ...reference, commit: altered.commit })) };
