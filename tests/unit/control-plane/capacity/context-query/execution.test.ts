@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stringify } from 'yaml';
+import { createHash } from 'node:crypto';
+import { canonicalStandardsJson } from '@treeseed/sdk/standards';
 import { ContextQueryCheckService } from '../../../../../src/api/capacity/services/capacity/agents/context-query-check-service.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 
@@ -19,7 +21,9 @@ function fixture() {
 	const client = {
 		refreshGraph: vi.fn().mockResolvedValue({ graph: { jobId: 'refresh' } }),
 		getGraphRefreshJob: vi.fn().mockResolvedValue({ job: { status: 'completed' } }),
-		buildContext: vi.fn().mockResolvedValue({ resolvedRef: dataRef, nodes: [{ node: { path: 'knowledge/context-contract.mdx' } }], edges: [] }),
+		buildContext: vi.fn().mockResolvedValue({ resolvedRef: dataRef, totalTokenEstimate: 6,
+			nodes: [{ node: { id: 'section:context-contract', path: 'knowledge/context-contract.mdx', text: 'Prior repair findings.' },
+				text: 'Prior repair findings.', tokenEstimate: 6, score: 1, provenance: { seedIds: ['section:context-contract'] } }], edges: [] }),
 		readRepositoryFiles: vi.fn(async (input: { ref: string; paths: string[] }) => ({ resolvedRef: input.ref,
 			files: input.paths.map(path => ({ path, content: path.startsWith('agent-context-queries/')
 				? `---\n${stringify(query)}---\n` : content, frontmatter: { id: 'context-contract', revision: 1 } })) })),
@@ -35,14 +39,20 @@ function fixture() {
 }
 
 describe('canonical assignment query execution', () => {
-	it('executes the exact configured definition against the frozen data and admits verified file references rather than old check paths', async () => {
+	it('executes the exact configured definition against frozen data and retains bounded native text rather than expanding entire files', async () => {
 		const f = fixture();
 		const result = await f.service.resolveForAssignment(f.input);
 		expect(f.passing).toHaveBeenCalled();
 		expect(f.client.buildContext).toHaveBeenCalledWith(expect.objectContaining({ ref: dataRef, query: f.query.query }));
 		expect(f.client.refreshGraph).toHaveBeenCalledWith(expect.objectContaining({ paths: ['knowledge/**', 'agent-context-queries/**'] }));
 		expect(result.references).toEqual([expect.objectContaining({ store: 'treedx', model: 'knowledge',
-			repository: 'library', commit: dataRef, path: 'knowledge/context-contract.mdx', id: 'context-contract' })]);
+			repository: 'library', commit: dataRef, path: 'knowledge/context-contract.mdx', anchor: 'section:context-contract' })]);
+		expect(result.authorizedContext).toHaveLength(1);
+		const item = result.authorizedContext[0]!;
+		expect(item.value).toMatchObject({ entry: { text: 'Prior repair findings.', tokenEstimate: 6 } });
+		expect(item.digest).toBe(`sha256:${createHash('sha256').update(canonicalStandardsJson(item.value)).digest('hex')}`);
+		expect(item.ref.digest).toBe(item.digest);
+		expect(f.client.readRepositoryFiles.mock.calls.every(([input]) => input.paths.every(path => path.startsWith('agent-context-queries/')))).toBe(true);
 		expect(result.checks).toEqual([expect.objectContaining({ status: 'resolved', layer: 'agent',
 			definition: { kind: 'query', id: f.query.id, revision: 2, commit: definitionRef } })]);
 	});
@@ -62,6 +72,29 @@ describe('canonical assignment query execution', () => {
 		f.query.requirement = 'preferred';
 		const result = await f.service.resolveForAssignment(f.input);
 		expect(result.references).toEqual([]);
+		expect(result.authorizedContext).toEqual([]);
 		expect(result.checks).toEqual([expect.objectContaining({ status: 'failed', layer: 'agent', requirement: 'preferred' })]);
+	});
+	it.each(['definitionRef', 'dataRef'] as const)('rejects a moving %s before readiness or query execution', async field => {
+		const f = fixture();
+		await expect(f.service.resolveForAssignment({ ...f.input, [field]: 'staging' })).rejects.toMatchObject({ code: 'context_query_reference_invalid' });
+		expect(f.passing).not.toHaveBeenCalled();
+	});
+	it.each(['../private.mdx', '/knowledge/context-contract.mdx', 'private/context-contract.mdx'])('rejects unsafe or out-of-scope native result %s', async path => {
+		const f = fixture();
+		f.client.buildContext.mockResolvedValue({ resolvedRef: dataRef, totalTokenEstimate: 1,
+			nodes: [{ node: { id: 'section', path, text: 'x' }, text: 'x', tokenEstimate: 1 }], edges: [] } as never);
+		await expect(f.service.resolveForAssignment(f.input)).rejects.toMatchObject({ code: 'assignment_context_query_permission_denied' });
+	});
+	it('rejects a native result exceeding the configured budget rather than publishing an oversized assignment context', async () => {
+		const f = fixture(); f.query.tokenBudget = 5;
+		await expect(f.service.resolveForAssignment(f.input)).rejects.toMatchObject({ code: 'context_query_budget_exceeded' });
+	});
+	it('executes a duplicate global/activity query once while retaining both layer observations', async () => {
+		const f = fixture(); f.input.layers.activity.queryRefs = [...f.input.layers.agent.queryRefs];
+		const result = await f.service.resolveForAssignment(f.input);
+		expect(f.client.buildContext).toHaveBeenCalledTimes(1);
+		expect(result.authorizedContext).toHaveLength(1);
+		expect(result.checks.map(check => check.layer)).toEqual(['agent', 'activity']);
 	});
 });
