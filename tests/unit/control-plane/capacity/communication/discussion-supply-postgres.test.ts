@@ -5,6 +5,8 @@ import { createControlPlanePostgresDatabase } from '../../../../../src/api/suppo
 import { admitDiscussionInvocations, reconcileBlockedDiscussionInvocations } from '../../../../../src/api/capacity/services/capacity/invocations/discussion-invocation-service.ts';
 import { CapacityWorkdayRunService, compileCapacityWorkdayRunRecord } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 import { compileWorkdayAgentProfileSnapshot } from '../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-profile-policy.ts';
+import { discussionHistorySnapshot } from '../../../../../src/api/discussions/history-snapshot.ts';
+import { workItemContext } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 
 describe('current communication supply in PostgreSQL', () => {
 	it('uses reported capability lanes rather than the retired materialized lane owner', async () => {
@@ -71,11 +73,20 @@ describe('current communication supply in PostgreSQL', () => {
 			await new CapacityWorkdayRunService(realStore as never).create('team', { id: 'parent', capacityProviderId: 'provider',
 				executionMode: 'simulation', executionKind: 'workday', environment: 'local', status: 'running', startedAt: now,
 				parameters: { durationSeconds: 600, planningPercent: 20, agentProfilesByProjectId: { project: snapshot } } });
-			const parentResult = await admitDiscussionInvocations(realStore, { ...input, idempotencyKey: 'parent-send', parentWorkdayId: 'parent' });
+			const priorPath = 'discussion-messages/acceptance/prior.mdx', priorCommit = 'd'.repeat(40);
+			const historySnapshot = discussionHistorySnapshot([{ path: priorPath, immutableRef: priorCommit, body: 'Prior scoped planning evidence' }], input.discussionId, input.messagePath);
+			const parentInput = { ...input, idempotencyKey: 'parent-send', parentWorkdayId: 'parent', communication: { historySnapshot } };
+			const parentResult = await admitDiscussionInvocations(realStore, parentInput);
 			expect(parentResult).toMatchObject([{ status: 'admitted', executionId: 'parent' }]);
 			expect((await database.pool.query('SELECT status,execution_id FROM agent_invocation_requests WHERE id=$1', [parentResult[0]!.id])).rows)
 				.toEqual([{ status: 'admitted', execution_id: 'parent' }]);
-			expect(await admitDiscussionInvocations(realStore, { ...input, idempotencyKey: 'parent-send', parentWorkdayId: 'parent' }))
+			const contextNode = { teamId: 'team', kind: 'communication', sourceRef: { store: 'treedx', model: 'discussion',
+				id: parentResult[0]!.id, repository: 'project-library', commit: input.messageCommit, path: input.messagePath } };
+			expect(await workItemContext(realStore, contextNode as never)).toEqual([
+				expect.objectContaining({ model: 'discussion', repository: 'project-library', commit: input.messageCommit, path: input.messagePath }),
+				expect.objectContaining({ model: 'discussion', repository: 'project-library', commit: priorCommit, path: priorPath }),
+			]);
+			expect(await admitDiscussionInvocations(realStore, parentInput))
 				.toMatchObject([{ status: 'admitted', executionId: 'parent', replayed: true }]);
 			expect((await database.pool.query('SELECT count(*)::int AS count FROM agent_invocation_requests')).rows).toEqual([{ count: 1 }]);
 			await database.pool.query(`UPDATE capacity_workday_runs SET status='cancelled' WHERE id='parent'`);

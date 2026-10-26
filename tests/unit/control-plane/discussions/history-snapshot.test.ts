@@ -20,6 +20,18 @@ describe('chat history snapshot', () => {
 		]);
 		expect(snapshot).toEqual(held);
 	});
+	it('rejects moved refs and paths outside the frozen discussion instead of expanding history authority', async () => {
+		const source = { store: 'treedx', model: 'discussion', id: 'invocation', repository: 'project-library',
+			commit: 'b'.repeat(40), path: 'discussion-messages/topic/current.mdx' };
+		for (const prior of [{ path: 'discussion-messages/other/1.mdx', immutableRef: ref },
+			{ path: 'discussion-messages/topic/../other/1.mdx', immutableRef: ref },
+			{ path: source.path, immutableRef: ref }, { path: 'discussion-messages/topic/1.mdx', immutableRef: 'staging' }]) {
+			await expect(workItemContext({ first: async () => ({ content_refs_json: [], metadata_json: {
+				communication: { historySnapshot: { kind: 'prior-discussion-messages', messages: [prior] } },
+			} }) }, { id: 'node', teamId: 'team', kind: 'communication', sourceRef: source } as never))
+				.rejects.toMatchObject({ code: 'communication_history_reference_invalid' });
+		}
+	});
 	it('preserves prior turns chronologically with exact provenance, excluding current and other discussions', () => {
 		const result = discussionHistorySnapshot([message('2', '2 + 2 = 4'), message('1', 'What is 2 + 2?'), message('3', 'What was that result?'), { ...message('4', 'not authorized here'), path: 'discussion-messages/elsewhere/4.mdx' }], 'topic', 'discussion-messages/topic/3.mdx');
 		expect(result.messages.map(entry => entry.body)).toEqual(['What is 2 + 2?', '2 + 2 = 4']);
