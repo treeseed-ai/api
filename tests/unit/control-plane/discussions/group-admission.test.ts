@@ -11,6 +11,7 @@ vi.mock('../../../../src/api/capacity/services/capacity/invocations/discussion-i
 }));
 import { createDiscussionService } from '../../../../src/api/discussions/discussion-service.ts';
 import { discussionMessageId } from '../../../../src/api/discussions/content.ts';
+import { CapacityGovernanceError } from '../../../../src/api/capacity/database.ts';
 
 const profile = (name: string) => ({ schemaVersion: 'treeseed.agent/v1', id: `api/${name}`, name, agentClass: `allocation-${name}`,
 	groupIds: ['delivery'], purpose: 'Repair the shared context workflow.', responsibilities: ['Contribute through the group.'],
@@ -41,6 +42,17 @@ beforeEach(() => {
 });
 
 describe('group audience at Discussion admission', () => {
+	it('reports the exact configured profile blocker without exposing arbitrary upstream failures', async () => {
+		const f = fixture();
+		mocks.admit.mockRejectedValueOnce(new CapacityGovernanceError('discussion_agent_chat_profile_missing',
+			'Agent configured-member has no enabled Chat profile in the selected project.', 409, { agentSlug: 'configured-member' }));
+		await expect(f.service.create(principal, { teamId: 'team', projectId: 'project', body: message }, 'profile-blocker'))
+			.rejects.toMatchObject({ code: 'discussion_agent_chat_profile_missing', status: 409,
+				message: 'Agent configured-member has no enabled Chat profile in the selected project.' });
+		mocks.admit.mockRejectedValueOnce(new Error('private upstream failure details'));
+		await expect(f.service.create(principal, { teamId: 'team', projectId: 'project', body: message }, 'upstream-blocker'))
+			.rejects.toMatchObject({ code: 'discussion_invocation_failed', message: 'TreeDX Discussion operation failed.' });
+	});
 	it.each([undefined, ['engineer'], ['engineer', 'tester']])('expands group mentions and overlapping concrete recipients %j without pruning subscribers', async recipients => {
 		const f = fixture();
 		await f.service.create(principal, { teamId: 'team', projectId: 'project', discussionId: 'topic', body: message, recipients }, 'group-work');
