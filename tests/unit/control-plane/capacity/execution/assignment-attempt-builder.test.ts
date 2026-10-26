@@ -7,7 +7,7 @@ import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/a
 // Typed allocator output is a supplied component input, not native allocation proof.
 const opportunity = canonicalOfferBuildInput().allocationInputs.codex!.opportunity;
 describe('immutable assignment-attempt construction', () => {
-	it('retains the mandatory definition without granting unrelated configuration or SQL reads', () => {
+	it('retains profile and estimate authority without granting unrequested configuration or SQL reads', () => {
 		const exact = structuredClone(candidate), profile = { store: 'treedx' as const, model: 'agent', id: 'configured/member', repository: 'library', commit: 'b'.repeat(40), path: 'agents/member.mdx' };
 		const decision = { ...sourceRef, model: 'decision', id: 'decision', path: 'decisions/one.mdx' };
 		exact.node.authorityRefs = [...exact.node.authorityRefs!, profile, { store: 'postgresql', model: 'assignment-attempt', id: 'own-estimate', revision: 1 }, decision];
