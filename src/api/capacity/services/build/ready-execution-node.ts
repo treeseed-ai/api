@@ -21,6 +21,7 @@ import { workdayLineageSql } from '../capacity/workdays/scheduling/workday-conti
 import { resolveGitHubSourceAuthority } from '../../../../security/provider-credential-authority.ts';
 import { resolveAuthorizedSourceCommit } from '../../../control-plane/repositories/providers/source/source-pin.ts';
 import { effectiveProfile } from './execution-node-profile.ts';
+import { ContextQueryCheckService, type AssignmentQueryContext } from '../capacity/agents/context-query-check-service.ts';
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {
 	if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row;
@@ -72,6 +73,7 @@ export interface ReadyExecutionNode {
 	effectiveProfile: EffectiveActivityProfile;
 	projectContentRepositoryId: string;
 	contextRefs: ExactEntityReference[];
+	queryContext?: AssignmentQueryContext;
 	sourceRepositories: string[];
 	predecessorResults: AssignmentResult[];
 	lineageSourceCommit?: string;
@@ -419,6 +421,10 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 		// the workday itself and must remain eligible in that same run.
 		if (selectedDecisionIds.size && decisionIds.length && !decisionIds.some((id) => selectedDecisionIds.has(id))) continue;
 		const selected = await effectiveProfile(store, node);
+		const queries = Object.values(selected.contextQueryLayers).some(layer => layer.queryRefs.length || layer.querySetRefs.length)
+			? await new ContextQueryCheckService(store).resolveForAssignment({ teamId: node.teamId, projectId: node.projectId,
+				definitionRef: selected.profile.profileRef.commit!, dataRef: projectContext[0]!.commit!,
+				allowedModels: selected.profile.permissionCeiling.content.read, layers: selected.contextQueryLayers }) : undefined;
 		const sourceRepository = node.requestedPermissions?.tools.includes('source.read')
 			? selectAssignmentSourceRepository(await store.listHubRepositories(node.projectId)) : undefined;
 		const sourceRepositories = sourceRepository ? [`${sourceRepository.owner}/${sourceRepository.name}`] : [];
@@ -436,9 +442,10 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 			node, graphRevision: Number(row.current_graph_revision),
 			projectAgentClassId: selected.projectAgentClassId,
 			effectiveProfile: selected.profile,
+			...(queries ? { queryContext: queries } : {}),
 			projectContentRepositoryId: projectContext[0]!.repository!,
 			sourceRepositories,
-			contextRefs: [...new Map([node.sourceRef, ...(node.authorityRefs ?? []), ...teamContext, ...projectContext, ...candidateRefs, ...predecessor.contentRefs, ...loadedContext]
+			contextRefs: [...new Map([node.sourceRef, ...(node.authorityRefs ?? []), ...teamContext, ...projectContext, ...candidateRefs, ...predecessor.contentRefs, ...loadedContext, ...queries?.references ?? []]
 				.filter((reference) => reference.store === 'git'
 					? Boolean(reference.repository && reference.commit)
 					: reference.store === 'treedx' && Boolean(reference.repository && reference.commit && reference.path))

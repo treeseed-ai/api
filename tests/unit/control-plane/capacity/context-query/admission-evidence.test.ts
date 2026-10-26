@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ContextQueryCheckService } from '../../../../../src/api/capacity/services/capacity/agents/context-query-check-service.ts';
 import type { CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
+import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
+
+vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', async original => ({
+  ...await original<object>(), resolveKnowledgeGatewayConnection: vi.fn(),
+}));
 
 describe('context-query admission evidence', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -13,13 +18,31 @@ describe('context-query admission evidence', () => {
     definition_commit: 'b'.repeat(40), status: 'passing',
     checked_at: '2026-09-10T11:00:00Z', expires_at: '2026-09-11T11:00:00Z',
   };
-  function service(rows: Record<string, unknown>[], withTest = true) {
+  function service(rows: Record<string, unknown>[], withTest = true, kind: 'query' | 'query-set' = 'query') {
     const store = { all: vi.fn().mockResolvedValue(rows) };
     const instance = new ContextQueryCheckService(store as unknown as CapacityGovernanceDatabase);
+    const root = kind === 'query' ? 'agent-context-queries' : 'agent-context-query-sets';
+    const definitions = [{ kind, id: 'foundation', revision: 2, path: `${root}/foundation.mdx`,
+      queryRefs: kind === 'query-set' ? [{ id: 'member', revision: 1 }] : [] },
+      { kind: 'query', id: 'member', revision: 1, path: 'agent-context-queries/member.mdx', queryRefs: [] }];
+    const documents = new Map<string, Record<string, unknown>>();
+    for (const commit of [ref, passing.definition_commit]) {
+      documents.set(`${commit}:agent-tests/foundation-test.mdx`, { id: 'foundation-test', testRef: 'test:2',
+        expectedPaths: ['knowledge/foundation.mdx'] });
+      documents.set(`${commit}:${root}/foundation.mdx`, { id: 'foundation', revision: 2,
+        ...(kind === 'query' ? { query: 'foundation context' } : { queryRefs: [{ id: 'member', revision: 1 }] }) });
+      documents.set(`${commit}:agent-context-queries/member.mdx`, { id: 'member', revision: 1, query: 'member context' });
+    }
+    const readRepositoryFiles = vi.fn(async ({ ref: commit, paths }: { ref: string; paths: string[] }) => ({
+      resolvedRef: commit, files: paths.map(path => ({ path, content: `---\n${JSON.stringify(documents.get(`${commit}:${path}`))}\n---\n` })),
+    }));
+    vi.mocked(resolveKnowledgeGatewayConnection).mockResolvedValue({ repositoryId: 'library', contentPath: '.',
+      client: { readRepositoryFiles } } as never);
     vi.spyOn(instance, 'catalog').mockResolvedValue({
-      tests: withTest ? [{ id: 'foundation-test', definitionKind: 'query', definitionId: 'foundation', definitionRevision: 2 }] : [],
+      definitions, tests: withTest ? [{ id: 'foundation-test', testRef: 'test:2', path: 'agent-tests/foundation-test.mdx',
+        definitionKind: kind, definitionId: 'foundation', definitionRevision: 2 }] : [],
     } as unknown as Awaited<ReturnType<ContextQueryCheckService['catalog']>>);
-    return instance;
+    return Object.assign(instance, { documents, readRepositoryFiles });
   }
   it('reuses fresh evidence across commits when the requested definition revision is unchanged', async () => {
     const result = await service([passing]).requirePassing('team', 'sdk', ref, [requested], now);
@@ -43,5 +66,39 @@ describe('context-query admission evidence', () => {
   });
   it('rejects a definition without registered tests', async () => {
     await expect(service([], false).requirePassing('team', 'sdk', ref, [requested], now)).rejects.toThrow('foundation: no_tests');
+  });
+  it.each([
+    ['test assertions', 'agent-tests/foundation-test.mdx', { id: 'foundation-test', testRef: 'test:2', expectedPaths: ['knowledge/missing.mdx'] }],
+    ['query definition', 'agent-context-queries/foundation.mdx', { id: 'foundation', revision: 2, query: 'changed context' }],
+  ])('rejects changed %s under the same declared identity and revision', async (_name, path, document) => {
+    const f = service([passing]);
+    f.documents.set(`${ref}:${path}`, document as Record<string, unknown>);
+    await expect(f.requirePassing('team', 'sdk', ref, [requested], now)).rejects.toMatchObject({
+      code: 'agent_context_query_not_ready', message: expect.stringContaining('foundation-test: definition_changed'),
+    });
+  });
+  it('rejects a changed query-set member while the set and member revisions are unchanged', async () => {
+    const f = service([{ ...passing, definition_kind: 'query-set' }], true, 'query-set');
+    f.documents.set(`${ref}:agent-context-queries/member.mdx`, { id: 'member', revision: 1, query: 'changed member context' });
+    await expect(f.requirePassing('team', 'sdk', ref, [{ ...requested, kind: 'query-set' }], now))
+      .rejects.toMatchObject({ code: 'agent_context_query_not_ready' });
+  });
+  it('requires a fresh check when the historical definition can no longer be read', async () => {
+    const f = service([passing]);
+    f.readRepositoryFiles.mockRejectedValueOnce(Object.assign(new Error('Historical source missing'), { code: 'not_found' }));
+    await expect(f.requirePassing('team', 'sdk', ref, [requested], now)).rejects.toMatchObject({
+      code: 'agent_context_query_not_ready', message: expect.stringContaining('definition_changed'),
+    });
+  });
+  it('retains an unavailable historical read instead of certifying reuse', async () => {
+    const f = service([passing]);
+    f.readRepositoryFiles.mockRejectedValueOnce(new Error('Historical read unavailable'));
+    await expect(f.requirePassing('team', 'sdk', ref, [requested], now)).rejects.toThrow('Historical read unavailable');
+  });
+  it('rejects historical definition bytes returned at a different immutable commit', async () => {
+    const f = service([passing]);
+    f.readRepositoryFiles.mockImplementationOnce(async ({ paths }) => ({ resolvedRef: 'c'.repeat(40),
+      files: paths.map(path => ({ path, content: `---\n${JSON.stringify(f.documents.get(`${passing.definition_commit}:${path}`))}\n---\n` })) }));
+    await expect(f.requirePassing('team', 'sdk', ref, [requested], now)).rejects.toMatchObject({ code: 'context_query_reference_moved' });
   });
 });

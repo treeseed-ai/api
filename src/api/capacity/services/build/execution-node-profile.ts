@@ -2,7 +2,7 @@ import { effectiveActivityProfileSchema, validateAgentDefinitionModel, type Effe
 import { CapacityGovernanceError } from '../../database.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
 import { agentProfileReference } from '../../policy/execution/agent-profile-reference.ts';
-import { projectAgentActivityRefs } from '../projects/projects-core/project-agent-activity-refs.ts';
+import { projectAgentActivityRefs, type ProjectAgentActivityRef } from '../projects/projects-core/project-agent-activity-refs.ts';
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {
  if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row;
@@ -21,7 +21,8 @@ const stable = (value: unknown): string => {
  return JSON.stringify(value);
 };
 
-export async function effectiveProfile(store: any, node: ExecutionNode): Promise<{ projectAgentClassId: string; profile: EffectiveActivityProfile }> {
+export async function effectiveProfile(store: any, node: ExecutionNode): Promise<{ projectAgentClassId: string; profile: EffectiveActivityProfile;
+	contextQueryLayers: ProjectAgentActivityRef['contextQueryLayers'] }> {
 	const identities = (node.authorityRefs ?? []).filter(reference => ['postgresql','treedx'].includes(reference.store) && reference.model === 'agent');
 	if (identities.length !== 1) throw new CapacityGovernanceError('execution_node_agent_identity_missing',
 		`Ready node ${node.id} requires one derived contributor identity.`, 409);
@@ -75,6 +76,7 @@ export async function effectiveProfile(store: any, node: ExecutionNode): Promise
 		const context = projectAgentActivityRefs({ agents: [exact.data] }, activity)[0]!;
 		return {
 			projectAgentClassId: text(row.id),
+			contextQueryLayers: context.contextQueryLayers,
 			profile: effectiveActivityProfileSchema.parse({
 				handler: selected.handler,
 				prompt: selected.prompt,

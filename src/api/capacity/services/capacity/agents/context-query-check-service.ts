@@ -1,4 +1,8 @@
 import { createHash,randomUUID } from 'node:crypto';
+import { assignmentPathAllowed, authorizedContextItemSchema, type AssignmentAttempt, type AssignmentContext, type ExactEntityReference } from '@treeseed/sdk/agent-capacity';
+import { canonicalStandardsJson } from '@treeseed/sdk/standards';
+import { compileDeclarativeContextQuery } from '@treeseed/sdk/graph/context-query-contracts';
+import type { ProjectAgentActivityRef } from '../../projects/projects-core/project-agent-activity-refs.ts';
 import {
 	contextQueryReadiness,executeContextQuerySetTest,executeContextQueryTest,
 	type ContextQuerySetDefinition,type ContextQueryTestDefinition,type DeclarativeContextQuery,
@@ -7,7 +11,29 @@ import { validateContentFrontmatter } from '@treeseed/sdk/content-validation';
 import { parseFrontmatterDocument } from '../../../../content/frontmatter.ts';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
-import { projectLibraryPath, resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
+import { completedGraphRefresh, projectLibraryPath, resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
+
+export interface AssignmentQueryContext {
+	references: ExactEntityReference[];
+	authorizedContext: AssignmentContext['context'];
+	selectors: Array<{ kind: 'query' | 'query-set'; id: string; revision: number; layer: 'agent' | 'activity' }>;
+	checks: Array<Record<string, unknown>>;
+}
+
+export function assignmentQueryContext(attempt: AssignmentAttempt, resolved?: AssignmentQueryContext): AssignmentContext['context'] {
+	const items=(resolved?.authorizedContext??[]).map(value=>authorizedContextItemSchema.parse(value));
+	const refs=items.map(item=>canonicalStandardsJson(item.ref));
+	const expected=[...(attempt.effectiveProfile.contextQueryRefs??[]).map(ref=>({...ref,kind:'query'})),
+		...(attempt.effectiveProfile.contextQuerySetRefs??[]).map(ref=>({...ref,kind:'query-set'}))];
+	if(expected.some(ref=>!resolved?.selectors.some(selector=>selector.kind===ref.kind&&selector.id===ref.id&&selector.revision===ref.revision))
+		||new Set(refs).size!==refs.length||canonicalStandardsJson(resolved?.references??[])!==canonicalStandardsJson(items.map(item=>item.ref))
+		||items.some(item=>item.ref.store!=='treedx'||!item.ref.commit||!item.ref.path||!item.ref.anchor
+		||item.ref.digest!==item.digest||item.digest!==`sha256:${createHash('sha256').update(canonicalStandardsJson(item.value)).digest('hex')}`
+		||!attempt.contextRefs.some(ref=>canonicalStandardsJson(ref)===canonicalStandardsJson(item.ref))
+		||!attempt.grant.contentRead.some(ref=>canonicalStandardsJson(ref)===canonicalStandardsJson(item.ref))))
+		throw new CapacityGovernanceError('assignment_context_query_authority_mismatch','Query context must match its exact immutable assignment grant and digest.',409);
+	return items;
+}
 
 const COLLECTIONS = { agent:'agents',test:'agent-tests',query:'agent-context-queries',set:'agent-context-query-sets' } as const;
 const DEFAULT_FRESH_SECONDS = 86_400;
@@ -22,23 +48,20 @@ function safeId(value:unknown) {
 function path(root:string,collection:string,id:string) { return projectLibraryPath(root, collection, `${safeId(id)}.mdx`); }
 function digest(value:unknown) { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
 function strings(value:unknown) { return Array.isArray(value)?[...new Set(value.map(String).map((item)=>item.trim()).filter(Boolean))]:[]; }
+function queryPathModel(root:string,filePath:string) {
+	if(!filePath||filePath.startsWith('/')||filePath.includes('\\')||filePath.split('/').some(part=>!part||part==='.'||part==='..')
+		||(root!=='.'&&!filePath.startsWith(`${root}/`)))return undefined;
+	const relative=root==='.'?filePath:filePath.slice(root.length+1);
+	if(relative==='README.md')return 'knowledge';
+	const models:Record<string,string>={knowledge:'knowledge',objectives:'objective',proposals:'proposal',decisions:'decision',notes:'note',questions:'question',agents:'agent',books:'book',discussions:'discussion','discussion-messages':'discussion-message','discussion-events':'discussion'};
+	return models[relative.split('/')[0]!];
+}
 export async function executeCurrentContext(connection:Awaited<ReturnType<typeof resolveKnowledgeGatewayConnection>>,exactRef:string,request:Record<string,unknown>) {
 	if(!connection) throw new CapacityGovernanceError('context_query_treedx_unavailable','Project TreeDX content is unavailable.',409);
-	// A successful context response is not proof that TreeDX's derived graph includes
-	// every file at the requested ref. Rebuild the exact graph before every isolated
-	// check so omissions cannot be mistaken for authoritative current results.
-	const refresh=await connection.client.refreshGraph({repoId:connection.repositoryId,ref:exactRef,paths:[projectLibraryPath(connection.contentPath,'**')],forceFull:true});
-	if(refresh.jobId) {
-		let completed=false;
-		for(let attempt=0;attempt<600;attempt+=1) {
-			const response=await connection.client.getGraphRefreshJob({repoId:connection.repositoryId,ref:exactRef,jobId:refresh.jobId});
-			const job=record(record(response).job??response);
-			if(job.status==='completed') { completed=true; break; }
-			if(job.status==='failed') throw new CapacityGovernanceError('context_query_graph_refresh_failed','TreeDX failed to refresh the exact context-query graph.',409,{errorCode:job.errorCode});
-			await new Promise((resolve)=>setTimeout(resolve,100));
-		}
-		if(!completed) throw new CapacityGovernanceError('context_query_graph_refresh_timeout','TreeDX did not refresh the exact context-query graph in time.',409);
-	}
+	if(!/^[a-f0-9]{40}$/u.test(exactRef)) throw new CapacityGovernanceError('context_query_reference_invalid','Context execution requires an exact commit.',409);
+	// Use the existing job observer and the original grant, never a wider graph
+	// refresh merely because the query requests the repository root.
+	await completedGraphRefresh(connection.client,{repoId:connection.repositoryId,ref:exactRef,paths:connection.allowedPaths,forceFull:true});
 	return connection.client.buildContext({...request,repoId:connection.repositoryId,ref:exactRef});
 }
 
@@ -54,9 +77,39 @@ function rowCheck(row:Record<string,unknown>) {
 export class ContextQueryCheckService {
 	constructor(private readonly store:CapacityGovernanceDatabase) {}
 
+	/** Initialize missing/expired isolated evidence through the same authority used
+	 * by admission. Seed reconciliation and governed profile edits share this path. */
+	async verifyCatalog(input:{projectId:string;teamId:string;ref:string}) {
+		const catalog=await this.catalog(input.projectId,input.ref);
+		const referenced=new Map(catalog.agentReferences.map(entry=>[`${entry.kind}:${entry.id}@${entry.revision}`,
+			{kind:entry.kind,id:entry.id,revision:entry.revision}]));
+		const relevantTests=catalog.tests.filter(test=>referenced.has(`${test.definitionKind}:${test.definitionId}@${test.definitionRevision}`));
+		const tested=new Set(relevantTests.map(test=>`${test.definitionKind}:${test.definitionId}@${test.definitionRevision}`));
+		const missing=[...referenced.entries()].filter(([key])=>!tested.has(key)).map(([,reference])=>reference);
+		if(missing.length)throw new Error(`Agent context references have no isolated tests: ${missing.map(item=>`${item.kind}:${item.id}@${item.revision}`).join(', ')}.`);
+		if(referenced.size) {
+			try {
+				await this.requirePassing(input.teamId,input.projectId,input.ref,[...referenced.values()]);
+				return {references:referenced.size,tests:relevantTests.length};
+			} catch(error) {
+				if(!(error instanceof CapacityGovernanceError)||error.code!=='agent_context_query_not_ready')throw error;
+			}
+		}
+		const attempt=randomUUID();
+		for(const test of relevantTests) {
+			let result;
+			try { result=await this.check(input.teamId,input.projectId,{testId:test.id,testPath:test.path,definitionRef:input.ref,
+				idempotencyKey:`library-reconcile:${attempt}:${input.projectId}:${input.ref}:${test.id}`}); }
+			catch(error){throw new Error(`Context-query test ${test.id} could not run: ${error instanceof Error?error.message:'unknown error'}`);}
+			if(result.status!=='passing')throw new Error(`Context-query test ${test.id} did not pass for ${input.ref}.`);
+		}
+		if(referenced.size)await this.requirePassing(input.teamId,input.projectId,input.ref,[...referenced.values()]);
+		return {references:referenced.size,tests:relevantTests.length};
+	}
+
 	private async queryProjects(teamId:string,projectId:string,query:DeclarativeContextQuery) {
-		const sources=query.sources?.length?query.sources:[{scope:'current-project' as const}],projects=new Map<string,{projectId:string;paths:string[];source:string}>();
-		const add=(id:string,paths:string[],source:string)=>projects.set(id,{projectId:id,paths:paths.length?paths:['**'],source});
+		const sources=query.sources?.length?query.sources:[{scope:'current-project' as const}],projects=new Map<string,{projectId:string;paths:string[];source:string;allowedModels?:string[]}>();
+		const add=(id:string,paths:string[],source:string,allowedModels?:string[])=>projects.set(id,{projectId:id,paths:paths.length?paths:['**'],source,...(allowedModels?.length?{allowedModels}:{})});
 		for(const selector of sources) {
 			if(selector.scope==='current-project') { add(projectId,['**'],'current-project'); continue; }
 			if(selector.scope==='team-library') {
@@ -74,28 +127,40 @@ export class ContextQueryCheckService {
 				const shares=(await (this.store as any).listTreeDxSharesForRecipient(teamId)).filter((share:Record<string,unknown>)=>String(share.teamId)===selector.teamId&&share.status==='active'&&(!share.expiresAt||Date.parse(String(share.expiresAt))>Date.now()));
 				const eligible=new Map<string,Record<string,unknown>>();for(const share of shares){const grant=record(share.trustGrant);if(!strings(grant.operations).includes('context'))continue;for(const id of strings(grant.projectIds??share.projectId))eligible.set(id,grant);}
 				const selected=selector.projectIds?.length?selector.projectIds:[...eligible.keys()];
-				for(const id of selected){const grant=eligible.get(id);if(!grant)throw new CapacityGovernanceError('context_query_share_denied','An active knowledge share does not cover the selected project.',403);add(id,strings(grant.paths),`shared-team:${selector.teamId}`);}
+				for(const id of selected){const grant=eligible.get(id);if(!grant)throw new CapacityGovernanceError('context_query_share_denied','An active knowledge share does not cover the selected project.',403);add(id,strings(grant.paths),`shared-team:${selector.teamId}`,strings(grant.contentModels));}
 			}
 		}
 		return [...projects.values()];
 	}
 
 	private async executeQuerySources(teamId:string,projectId:string,exactProjectRef:string,exactProjectConnection:NonNullable<Awaited<ReturnType<typeof resolveKnowledgeGatewayConnection>>>,query:DeclarativeContextQuery,request:Record<string,unknown>) {
-		const selected=await this.queryProjects(teamId,projectId,query),results=[] as Array<{projectId:string;source:string;ref:string;result:any}>;
+		const selected=await this.queryProjects(teamId,projectId,query),results=[] as Array<{projectId:string;source:string;ref:string;repositoryId:string;contentPath:string;allowedPaths:string[];allowedModels?:string[];result:any}>;
 		for(const source of selected) {
 			const connection=source.projectId===projectId?exactProjectConnection
-				:await resolveKnowledgeGatewayConnection(this.store,{projectId:source.projectId,write:true,authoringPaths:true});
+				:await resolveKnowledgeGatewayConnection(this.store,{projectId:source.projectId,write:false,authoringPaths:true,relationPaths:true,communicationPaths:true});
 			if(!connection)throw new CapacityGovernanceError('context_query_treedx_unavailable',`TreeDX content is unavailable for source project ${source.projectId}.`,409);
 			const requestedPaths=strings(request.scopePaths).map((path)=>path.replace(/^\/+/,''));
 			const sourceIsUnbounded=source.paths.length===1&&source.paths[0]==='**';
-			const scopePaths=sourceIsUnbounded&&requestedPaths.length?requestedPaths:source.paths;
+			if(!sourceIsUnbounded&&requestedPaths.some(value=>!assignmentPathAllowed(value.replace(/\/\*\*$/u,''),source.paths)))
+				throw new CapacityGovernanceError('assignment_context_query_permission_denied','Query scope exceeds the active source share.',403);
+			const scopePaths=requestedPaths.length?requestedPaths:source.paths;
 			// The project under test must use the immutable commit that supplied its
 			// definitions. A moving remote branch can lag publication and would make a
 			// valid query appear empty. Other projects remain pinned to their own
 			// authoritative connection refs.
-			const sourceRef=source.projectId===projectId?exactProjectRef:connection.baseRef;
-			const result=await executeCurrentContext(connection,sourceRef,{...request,scopePaths});
-			results.push({projectId:source.projectId,source:source.source,ref:sourceRef,result});
+			let sourceRef=source.projectId===projectId?exactProjectRef:connection.baseRef;
+			if(!/^[a-f0-9]{40}$/u.test(sourceRef)) sourceRef=String((await connection.client.listRepositoryPaths({repoId:connection.repositoryId,ref:sourceRef,paths:scopePaths,kinds:['blob'],limit:1})).resolvedRef??'');
+			const refresh=source.projectId===projectId?connection:await resolveKnowledgeGatewayConnection(this.store,{projectId:source.projectId,write:false,authoringPaths:true,relationPaths:true,communicationPaths:true,readRefs:[sourceRef],refreshGraph:true});
+			if(!refresh||refresh.repositoryId!==connection.repositoryId)throw new CapacityGovernanceError('context_query_treedx_unavailable','Exact query source authority is unavailable.',409);
+			const result=await executeCurrentContext(refresh,sourceRef,{...request,scopePaths});
+			if(String(record(result).resolvedRef??'')!==sourceRef)throw new CapacityGovernanceError('context_query_reference_moved','Query source changed its immutable commit.',409);
+			for(const raw of Array.isArray(record(result).nodes)?record(result).nodes as unknown[]:[]){
+				const entry=record(raw),node=record(entry.node??entry),filePath=String(node.path??''),model=queryPathModel(connection.contentPath,filePath);
+				if(!model||!assignmentPathAllowed(filePath,source.paths)||!assignmentPathAllowed(filePath,connection.allowedPaths)
+					||(source.allowedModels&&!source.allowedModels.includes(model)))
+					throw new CapacityGovernanceError('assignment_context_query_permission_denied','Native query result exceeds its source path or content-model grant.',403);
+			}
+			results.push({projectId:source.projectId,source:source.source,ref:sourceRef,repositoryId:connection.repositoryId,contentPath:connection.contentPath,allowedPaths:source.paths,...(source.allowedModels?{allowedModels:source.allowedModels}:{}),result});
 		}
 		const unpack=(value:any)=>record(record(value).payload??value),nodes=results.flatMap((entry)=>Array.isArray(unpack(entry.result).nodes)?unpack(entry.result).nodes:[]),edges=results.flatMap((entry)=>Array.isArray(unpack(entry.result).edges)?unpack(entry.result).edges:[]);
 		return {nodes,edges,sources:results.map(({result,...source})=>{const value=unpack(result),sourceNodes=Array.isArray(value.nodes)?value.nodes.map(record):[];
@@ -158,7 +223,87 @@ export class ContextQueryCheckService {
 		const read=await connection.client.readRepositoryFiles({repoId:connection.repositoryId,ref,paths:[filePath],encoding:'utf8',parseFrontmatter:false,allowProtected:true});
 		const file=Array.isArray(read.files)?record(read.files[0]):{};
 		if(!String(file.content??'')) throw new CapacityGovernanceError('context_query_definition_missing',`Missing ${filePath}.`,404);
-		return {connection,resolvedRef:String(read.resolvedRef??ref),frontmatter:parseFrontmatterDocument(String(file.content)).frontmatter};
+		return {connection,resolvedRef:String(read.resolvedRef??ref),path:String(file.path??''),frontmatter:parseFrontmatterDocument(String(file.content)).frontmatter};
+	}
+
+	/** Execute configured queries against this admission snapshot; isolated check
+	 * paths are readiness evidence, never a substitute for current query results. */
+	async resolveForAssignment(input:{teamId:string;projectId:string;definitionRef:string;dataRef:string;
+		allowedModels:string[];layers:ProjectAgentActivityRef['contextQueryLayers']}):Promise<AssignmentQueryContext> {
+		if(!/^[a-f0-9]{40}$/u.test(input.definitionRef)||!/^[a-f0-9]{40}$/u.test(input.dataRef))
+			throw new CapacityGovernanceError('context_query_reference_invalid','Assignment queries require exact definition and data commits.',409);
+		const selectors=Object.entries(input.layers).flatMap(([layer,value])=>[
+			...value.queryRefs.map(ref=>({...ref,kind:'query' as const,layer:layer as 'agent'|'activity'})),
+			...value.querySetRefs.map(ref=>({...ref,kind:'query-set' as const,layer:layer as 'agent'|'activity'}))]);
+		if(!selectors.length)return {references:[],authorizedContext:[],selectors,checks:[]};
+		await this.requirePassing(input.teamId,input.projectId,input.definitionRef,selectors);
+		const connection=await resolveKnowledgeGatewayConnection(this.store,{projectId:input.projectId,write:false,
+			authoringPaths:true,relationPaths:true,communicationPaths:true,readRefs:[input.dataRef],refreshGraph:true});
+		if(!connection)throw new CapacityGovernanceError('context_query_treedx_unavailable','Assignment query source is unavailable.',409);
+		const contexts=new Map<string,AssignmentContext['context']>(),checks:AssignmentQueryContext['checks']=[];
+		const cached=new Map<string,Promise<{context:AssignmentContext['context'];check:Record<string,unknown>}>>();
+		const readDefinition=async(kind:'query'|'query-set',ref:{id:string;revision:number})=>{
+			const expectedPath=path(connection.contentPath,kind==='query'?COLLECTIONS.query:COLLECTIONS.set,ref.id);
+			const source=await this.source(input.projectId,input.definitionRef,expectedPath);
+			const validation=validateContentFrontmatter(kind==='query'?'agent_context_query':'agent_context_query_set',source.frontmatter);
+			if(source.resolvedRef!==input.definitionRef||source.path!==expectedPath||!validation.ok||!validation.data
+				||record(validation.data).id!==ref.id||record(validation.data).revision!==ref.revision)
+				throw new CapacityGovernanceError('context_query_definition_invalid','The exact configured query definition is missing, moved or invalid.',409,{id:ref.id,revision:ref.revision});
+			return validation.data;
+		};
+		const execute=async(ref:{id:string;revision:number})=>{
+			const query=await readDefinition('query',ref) as DeclarativeContextQuery;
+			const definition={kind:'query',id:ref.id,revision:ref.revision,commit:input.definitionRef},compiled=compileDeclarativeContextQuery(query);
+			if(!compiled.ok||!compiled.compiled)throw new CapacityGovernanceError('context_query_definition_invalid','Configured query does not compile.',409,{id:ref.id,errors:compiled.errors});
+			try {
+				const result=await this.executeQuerySources(input.teamId,input.projectId,input.dataRef,connection,query,compiled.compiled.request as unknown as Record<string,unknown>);
+				const context:AssignmentContext['context']=[];let tokens=0,characters=0;
+				for(const [index,source] of result.sources.entries()){
+					const pack=record(result.memberResults[index]);
+					if(!Array.isArray(pack.nodes)||!Number.isInteger(pack.totalTokenEstimate)||Number(pack.totalTokenEstimate)<0)
+						throw new CapacityGovernanceError('context_query_result_invalid','TreeDX must return its native bounded context pack.',502);
+					let memberTokens=0;
+					for(const [nodeIndex,raw] of pack.nodes.entries()){
+						const entry=record(raw),node=record(entry.node),filePath=String(node.path??''),anchor=String(node.id??'');
+						if(!filePath||filePath.startsWith('/')||filePath.includes('\\')||filePath.split('/').some(part=>!part||part==='.'||part==='..')
+							||!assignmentPathAllowed(filePath,source.allowedPaths)
+							||(source.contentPath!=='.'&&!filePath.startsWith(`${source.contentPath}/`)))
+							throw new CapacityGovernanceError('assignment_context_query_permission_denied','Query result escaped its exact source path grant.',403);
+						const model=queryPathModel(source.contentPath,filePath);
+						if(!model||!input.allowedModels.includes(model)||(source.allowedModels&&!source.allowedModels.includes(model)))
+							throw new CapacityGovernanceError('assignment_context_query_permission_denied','Query result exceeds the profile or share content-model grant.',403);
+						if(!anchor||typeof entry.text!=='string'||node.text!==entry.text||!Number.isInteger(entry.tokenEstimate)||Number(entry.tokenEstimate)<0)
+							throw new CapacityGovernanceError('context_query_result_invalid','TreeDX result lacks its bounded text and citation.',502);
+						memberTokens+=Number(entry.tokenEstimate);characters+=[...entry.text].length;
+						const value={definition,projectId:source.projectId,entry,...(nodeIndex===0?{edges:Array.isArray(pack.edges)?pack.edges:[]}: {})},valueDigest=`sha256:${createHash('sha256').update(canonicalStandardsJson(value)).digest('hex')}`;
+						context.push(authorizedContextItemSchema.parse({ref:{store:'treedx',model,id:anchor,repository:source.repositoryId,commit:source.ref,path:filePath,anchor,digest:valueDigest},mediaType:'application/json',digest:valueDigest,value}));
+					}
+					if(memberTokens!==Number(pack.totalTokenEstimate))throw new CapacityGovernanceError('context_query_result_invalid','Native query token accounting is inconsistent.',502);
+					tokens+=memberTokens;
+				}
+				if((query.contextBudget?.maxItems!==undefined&&context.length>query.contextBudget.maxItems)
+					||(query.resultLimit!==undefined&&context.length>query.resultLimit)
+					||(query.tokenBudget!==undefined&&tokens>query.tokenBudget)
+					||(query.contextBudget?.maxCharacters!==undefined&&characters>query.contextBudget.maxCharacters))
+					throw new CapacityGovernanceError('context_query_budget_exceeded','Query result exceeds its configured aggregate context budget.',409);
+				return {context,check:{definition,status:'resolved',requirement:query.requirement,stats:{sources:result.sources,items:context.length,tokens,characters},resultDigest:digest(result)}};
+			}catch(error){
+				if(query.requirement==='required'||['assignment_context_query_permission_denied','context_query_reference_moved'].includes(String(record(error).code)))throw error;
+				return {context:[],check:{definition,status:'failed',requirement:query.requirement,errorCode:String(record(error).code??'context_query_execution_failed')}};
+			}
+		};
+		for(const selector of selectors){
+			const set=selector.kind==='query-set'?await readDefinition('query-set',selector) as ContextQuerySetDefinition:null;
+			if(set?.mergePolicy==='replace')contexts.set(selector.layer,[]);
+			for(const ref of set?.queryRefs??[selector]){
+				const key=`${ref.id}@${ref.revision}`;if(!cached.has(key))cached.set(key,execute(ref));
+				const result=await cached.get(key)!;
+				contexts.set(selector.layer,[...contexts.get(selector.layer)??[],...result.context]);
+				checks.push({...result.check,layer:selector.layer,...(set?{querySet:{id:set.id,revision:set.revision,mergePolicy:set.mergePolicy}}:{})});
+			}
+		}
+		const authorizedContext=[...new Map([...contexts.values()].flat().map(item=>[canonicalStandardsJson(item.ref),item])).values()];
+		return {references:authorizedContext.map(item=>item.ref),authorizedContext,selectors,checks};
 	}
 
 	async check(teamId:string,projectId:string,input:{testId:string;testPath?:string;definitionRef?:string;idempotencyKey:string;freshForSeconds?:number}) {
@@ -183,7 +328,7 @@ export class ContextQueryCheckService {
 		const exactRef=testSource.resolvedRef;
 		// An isolated check is a control-plane mutation: it may rebuild TreeDX's derived
 		// graph for the exact current ref, but it never writes or commits query results.
-		const exactConnection=await resolveKnowledgeGatewayConnection(this.store,{projectId,write:true,authoringPaths:true,readRefs:[exactRef]});
+		const exactConnection=await resolveKnowledgeGatewayConnection(this.store,{projectId,write:false,authoringPaths:true,relationPaths:true,communicationPaths:true,readRefs:[exactRef],refreshGraph:true});
 		if(!exactConnection) throw new CapacityGovernanceError('context_query_treedx_unavailable','Project TreeDX content is unavailable.',409);
 		let report:Record<string,unknown>; let definition:{kind:'query'|'query-set';id:string;revision:number;commit:string};
 		if(test.kind==='context-query') {
@@ -261,6 +406,37 @@ export class ContextQueryCheckService {
 		return outcomes;
 	}
 
+	private async unchangedCheckDefinitions(projectId:string,currentCommit:string,check:ReturnType<typeof rowCheck>,
+		test:Awaited<ReturnType<ContextQueryCheckService['catalog']>>['tests'][number],catalog:Awaited<ReturnType<ContextQueryCheckService['catalog']>>) {
+		try {
+			if(check.testRef!==test.testRef)return false;
+			if(check.definition.commit===currentCommit)return true;
+			const previous=await this.catalog(projectId,check.definition.commit);
+			const priorTest=previous.tests.find(entry=>entry.id===test.id&&entry.testRef===test.testRef);
+			if(!priorTest)return false;
+			const same=async(beforePath:string,afterPath:string)=>{
+				const [before,after]=await Promise.all([this.source(projectId,check.definition.commit,beforePath),this.source(projectId,currentCommit,afterPath)]);
+				if(before.resolvedRef!==check.definition.commit||after.resolvedRef!==currentCommit||before.path!==beforePath||after.path!==afterPath)
+					throw new CapacityGovernanceError('context_query_reference_moved','Context-check definition bytes moved from their immutable references.',409);
+				return canonicalStandardsJson(before.frontmatter)===canonicalStandardsJson(after.frontmatter);
+			};
+			const definition=async(kind:'query'|'query-set',id:string,revision:number)=>{
+				const before=previous.definitions.find(entry=>entry.kind===kind&&entry.id===id&&entry.revision===revision);
+				const after=catalog.definitions.find(entry=>entry.kind===kind&&entry.id===id&&entry.revision===revision);
+				return before&&after&&await same(before.path,after.path)?after:null;
+			};
+			if(!await same(priorTest.path,test.path))return false;
+			const selected=await definition(check.definition.kind,check.definition.id,check.definition.revision);
+			if(!selected)return false;
+			if(selected.kind==='query-set')for(const member of selected.queryRefs)
+				if(!await definition('query',String(member.id),Number(member.revision)))return false;
+			return true;
+		} catch(error) {
+			if(['not_found','context_query_definition_missing'].includes(String(record(error).code)))return false;
+			throw error;
+		}
+	}
+
 	async requirePassing(teamId:string,projectId:string,currentCommit:string,references:Array<{kind:'query'|'query-set';id:string;revision:number}>,now=new Date()) {
 		const rows=await this.store.all('SELECT * FROM agent_context_query_checks WHERE team_id = ? AND project_id = ? ORDER BY checked_at DESC LIMIT 200',[teamId,projectId]);
 		const byTest=new Map<string,ReturnType<typeof rowCheck>>();
@@ -268,16 +444,19 @@ export class ContextQueryCheckService {
 			const check=rowCheck(row); if(!byTest.has(check.testId)) byTest.set(check.testId,check);
 		}
 		const catalog=await this.catalog(projectId,currentCommit);
-		const blocked=references.flatMap((reference)=>{
+		const blocked=[];
+		for(const reference of references){
 			const tests=catalog.tests.filter((test)=>test.definitionKind===reference.kind&&test.definitionId===reference.id&&test.definitionRevision===reference.revision);
 			// Compare evidence to the requested definition, not to its own revision.
-			const failed=tests.flatMap((test)=>{
+			const failed=[];
+			for(const test of tests){
 				const check=byTest.get(test.id)??null;
 				const readiness=contextQueryReadiness({check,definition:{...reference,commit:currentCommit},now});
-				return readiness.selectable?[]:[{testId:test.id,reason:readiness.reason}];
-			});
-			return tests.length>0&&failed.length===0?[]:[{...reference,readiness:{status:'unchecked',selectable:false,reason:tests.length?'required_tests_failed':'no_tests'},requiredTestIds:tests.map((test)=>test.id),failedTestIds:failed.map((test)=>test.testId),failedChecks:failed}];
-		});
+				if(!readiness.selectable)failed.push({testId:test.id,reason:readiness.reason});
+				else if(check&&!await this.unchangedCheckDefinitions(projectId,currentCommit,check,test,catalog))failed.push({testId:test.id,reason:'definition_changed'});
+			}
+			if(!tests.length||failed.length)blocked.push({...reference,readiness:{status:'unchecked',selectable:false,reason:tests.length?'required_tests_failed':'no_tests'},requiredTestIds:tests.map((test)=>test.id),failedTestIds:failed.map((test)=>test.testId),failedChecks:failed});
+		}
 		if(blocked.length) {
 			// Invocation receipts retain the message even where structured details are
 			// unavailable. Include bounded identifiers/reasons, never context content.

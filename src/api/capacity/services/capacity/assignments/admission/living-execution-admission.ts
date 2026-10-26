@@ -17,6 +17,7 @@ import { compileAssignmentTimeBudget } from '../planning/assignment-time-budget.
 import { workdayReportContext } from './workday-report-context.ts';
 import { workdayLineageSql } from '../../workdays/scheduling/workday-continuation.ts';
 import { buildProviderAssignmentExplanation } from '../observability/assignment-explanation-service.ts';
+import { assignmentQueryContext, type AssignmentQueryContext } from '../../agents/context-query-check-service.ts';
 
 interface Store extends CapacityGovernanceDatabase {
 	getProviderAssignment(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null>;
@@ -65,6 +66,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 	providerConcurrencyLimit?: number;
 	invocationId?: string | null;
 	predecessorResults: unknown[];
+	queryContext?: AssignmentQueryContext;
 	treedxProxyHandle: JsonRecord;
 	now: string;
 }): Promise<DurableProviderAssignment> {
@@ -84,6 +86,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 			'Assignment admission requires its exact team and capacity-provider authority.', 409);
 	}
 	const predecessorResults = assignmentPredecessors(assignment, input.predecessorResults);
+	const queryContext = assignmentQueryContext(assignment, input.queryContext);
 	const reporting = assignment.effectiveProfile.activity === 'reporting';
 	const requireExactReplay = (stored: DurableProviderAssignment) => {
 		// The original admission request remains immutable while owning lifecycle progress is retained.
@@ -242,7 +245,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
       'workday_admission_closed','New admission requires its original current workday phase; closing permits only its Reporter.',409);
   }
 
-		const authorizedContext = await workdayReportContext(database, assignment);
+		const authorizedContext = [...await workdayReportContext(database, assignment), ...queryContext];
 		const beforeNodes=await readExecutionNodeStates(database,assignment.teamId,assignment.workdayId,[assignment.nodeId]);
   await database.batch(initializeCapabilityCounters(assignment,claims,input.now));
   const counterBasis=await database.all('SELECT id,hard_limit,committed_amount,state_version,scope,scope_id,period_key FROM capacity_admission_counters WHERE id IN ('+claims.map(()=>'?').join(',')+') ORDER BY id FOR UPDATE',claims.map(claim=>claim.id));
@@ -328,7 +331,8 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 					assignment.effectiveProfile.profileRef.id,assignment.effectiveProfile.handler,
 				JSON.stringify(capacityEnvelope),
 					JSON.stringify({ assignmentAttempt: assignment, predecessorResults: input.predecessorResults, authorizedContext }),assignment.attempt,input.now,
-					assignment.idempotencyKey,decisionId,proposalId,JSON.stringify({ requiredCapabilities: assignment.requiredCapabilities }),input.now,input.now,
+					assignment.idempotencyKey,decisionId,proposalId,JSON.stringify({ requiredCapabilities: assignment.requiredCapabilities,
+						...(input.queryContext ? { contextQueries: { selectors: input.queryContext.selectors, checks: input.queryContext.checks } } : {}) }),input.now,input.now,
 					assignment.reservationId,assignment.teamId,assignment.id,
 					assignment.teamId,assignment.nodeId,assignment.nodeRevision] },
 			{ query: `UPDATE capacity_provider_assignments SET explanation_json=?::jsonb,graph_revision=?,execution_node_id=?,execution_node_revision=?,

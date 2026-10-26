@@ -251,7 +251,7 @@ export async function assignNextReadyExecutionNode(
 						executionKind: candidate.node.kind === 'communication' ? 'conversation' : 'workday',
 						invocationId: candidate.node.kind === 'communication'
 							? candidate.node.sourceRef.id : null,
-						predecessorResults: candidate.predecessorResults, treedxProxyHandle, now });
+						predecessorResults: candidate.predecessorResults, queryContext: candidate.queryContext, treedxProxyHandle, now });
 				};
 				let admitted: DurableProviderAssignment;
 				const original = await store.getProviderAssignment(candidate.node.teamId, candidate.selected.assignment.id);
