@@ -10,6 +10,7 @@ vi.mock('../../../../src/api/capacity/services/capacity/invocations/discussion-i
 	admitDiscussionInvocations: mocks.admit,
 }));
 import { createDiscussionService } from '../../../../src/api/discussions/discussion-service.ts';
+import { discussionMessageId } from '../../../../src/api/discussions/content.ts';
 
 const profile = (name: string) => ({ schemaVersion: 'treeseed.agent/v1', id: `api/${name}`, name, agentClass: `allocation-${name}`,
 	groupIds: ['delivery'], purpose: 'Repair the shared context workflow.', responsibilities: ['Contribute through the group.'],
@@ -48,7 +49,7 @@ describe('group audience at Discussion admission', () => {
 	});
 	it('replays the committed concrete audience without re-expanding a group into a changed roster', async () => {
 		const f = fixture();
-		mocks.load.mockResolvedValue({ messages: [{ id: 'message', path: 'discussion-messages/topic/message.mdx', body: message,
+		mocks.load.mockResolvedValue({ messages: [{ id: discussionMessageId('topic', 'group-work'), path: 'discussion-messages/topic/message.mdx', body: message,
 			frontmatter: { recipientIds: ['engineer', 'tester'], mentionedAgents: ['delivery', 'engineer', 'tester'], contextRefs: [] } }] });
 		await f.service.create(principal, { teamId: 'team', projectId: 'project', discussionId: 'topic', body: message }, 'group-work');
 		expect(mocks.commit).not.toHaveBeenCalled(); expect(f.store.listProjectAgentClassesPage).not.toHaveBeenCalled();

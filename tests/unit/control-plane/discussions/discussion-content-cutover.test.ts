@@ -52,5 +52,12 @@ describe('canonical Discussion authoring', () => {
 			digest: `sha256:${createHash('sha256').update(threadSource).digest('hex')}` });
 		expect(message.authorRef).toMatchObject({ store: 'postgresql', model: 'user', id: 'user-1' });
 		expect(result.commitSha).toBe('a'.repeat(40));
+		const grouped = await commitDiscussionMessage({ store: {}, projectId: 'project-1', teamId: 'team-1',
+			principal: { id: 'user-1', displayName: 'Test User' }, body: '@delivery @api/engineer Discuss the real repair.',
+			projectSlug: 'api', intent: 'discuss', discussionId: 'chat-1', messageId: 'message-2',
+			recipients: ['engineer', 'tester'] });
+		const groupedSource = mocks.changes.find(change => change.path === 'discussion-messages/chat-1/message-2.mdx')?.after ?? '';
+		expect(parseFrontmatterDocument(groupedSource).frontmatter.mentionedAgents).toEqual(['engineer', 'tester']);
+		expect(grouped.mentions).toEqual(['engineer', 'tester']);
 	});
 });
