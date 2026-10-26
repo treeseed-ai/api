@@ -22,6 +22,28 @@ function configured(): AgentDefinition {
 }
 
 describe('chat activity profile policy', () => {
+	it.each(['planning', 'estimating', 'acting', 'reviewing', 'reporting', 'chat'] as const)(
+		'preserves exact global and %s query selectors with their distinct layers', (activity) => {
+			const definition = configured(), profile = structuredClone(definition.activityProfiles.chat!);
+			const globalQueries = [{ id: 'project-context', revision: 1 }, { id: 'shared-context', revision: 2 }];
+			const activityQueries = [{ id: 'shared-context', revision: 2 }, { id: `${activity}-context`, revision: 3 }];
+			const globalSets = [{ id: 'project-context-set', revision: 4 }];
+			const activitySets = [{ id: `${activity}-context-set`, revision: 5 }];
+			definition.contextQueryRefs = globalQueries; definition.contextQuerySetRefs = globalSets;
+			definition.activityProfiles = { [activity]: { ...profile, contextQueryRefs: activityQueries, contextQuerySetRefs: activitySets } };
+			const before = structuredClone(definition);
+			expect(validateAgentDefinitionModel(definition).ok).toBe(true);
+			const projected = projectAgentActivityRefs({ agents: [definition] }, activity);
+			expect(projected).toHaveLength(1);
+			expect(projected[0]!.contextQueryRefs).toEqual([...globalQueries, activityQueries[1]]);
+			expect(projected[0]!.contextQuerySetRefs).toEqual([...globalSets, ...activitySets]);
+			expect(projected[0]!.contextQueryLayers).toEqual({
+				agent: { queryRefs: globalQueries, querySetRefs: globalSets },
+				activity: { queryRefs: activityQueries, querySetRefs: activitySets },
+			});
+			expect(projected[0]!.profile).toEqual(definition.activityProfiles[activity]);
+			expect(definition).toEqual(before);
+		});
 	it('projects governed proposal-group membership without replacing class or chat configuration', () => {
 		const definition = Object.assign(configured(), { groupIds: ['portfolio-atlas', 'service-design'] });
 		const held = structuredClone(definition);
