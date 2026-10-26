@@ -97,7 +97,11 @@ describe('discussion invocation capacity admission', () => {
 		else await expect(result).rejects.toMatchObject({ code: scenario === 'corrupt' ? 'capacity_workday_agent_profile_snapshot_invalid' : 'discussion_parent_agent_not_frozen' });
 		expect(store.createCapacityWorkdayRun).not.toHaveBeenCalled();
 	});
-	it('starts only one conversation execution when the communication lane has one worker', async () => {
+	it.each([
+		{ laneMaximum: 1, availableConcurrency: 1, expectedRuns: 1 },
+		{ laneMaximum: 5, availableConcurrency: 1, expectedRuns: 1 },
+		{ laneMaximum: 5, availableConcurrency: 0, expectedRuns: 0 },
+	])('keeps group discussions queued when native capacity is below lane maximum: $laneMaximum/$availableConcurrency', async ({ laneMaximum, availableConcurrency, expectedRuns }) => {
 		const claimed = new Map<string, { status: string; execution_id: string; blocking_state_json: string }>();
 		const createdRuns: string[] = [];
 		const store = {
@@ -110,7 +114,9 @@ describe('discussion invocation capacity admission', () => {
 			}),
 			first: vi.fn(async (query: string, params: unknown[] = []) => {
 				if (query.includes('capacity_provider_availability_sessions')) return {
-					execution_providers_json: [{ id: 'codex', status: 'active', maxConcurrentWorkers: 1, lanes: [{ purpose: 'communication', maxConcurrentWorkers: 1 }] }],
+					execution_providers_json: [{ id: 'codex', status: 'active', maxConcurrentWorkers: 5,
+						activeWorkers: 5 - availableConcurrency, availableConcurrency,
+						lanes: [{ purpose: 'communication', maxConcurrentWorkers: laneMaximum }] }],
 					metadata_json: { runtimeBuild: `sha256:${'b'.repeat(64)}` },
 				};
 				if (query.includes('COUNT(*) AS count FROM capacity_provider_assignments')) return { count: 0 };
@@ -137,8 +143,8 @@ describe('discussion invocation capacity admission', () => {
 			agentSlugs: ['architect', 'researcher'], idempotencyKey: 'send', durationSeconds: 180,
 		});
 
-		expect(createdRuns).toHaveLength(1);
-		expect(store.createCapacityWorkdayRun).toHaveBeenCalledWith('team', expect.objectContaining({
+		expect(createdRuns).toHaveLength(expectedRuns);
+		if (expectedRuns) expect(store.createCapacityWorkdayRun).toHaveBeenCalledWith('team', expect.objectContaining({
 			parameters: expect.objectContaining({ durationSeconds: 240, scheduledProjectIds: ['project'], agentSelection: normalizeWorkdayAgentSelection({ activityTypes: ['chat'] }) }),
 		}));
 		// Root lanes are shared by capability-specific adapters. Their legacy
@@ -146,7 +152,7 @@ describe('discussion invocation capacity admission', () => {
 		const supplyQuery = store.all.mock.calls.find(([query]) => query.includes('FROM capacity_provider_team_memberships'))?.[0];
 		expect(supplyQuery).not.toContain('capacity_provider_lanes');
 		expect(result.map((item) => ({ status: item.status, blocker: 'blocker' in item ? item.blocker ?? null : null }))).toEqual([
-			{ status: 'admitted', blocker: null },
+			expectedRuns ? { status: 'admitted', blocker: null } : { status: 'queued', blocker: 'communication_capacity_queued' },
 			{ status: 'queued', blocker: 'communication_capacity_queued' },
 		]);
 	});

@@ -85,6 +85,33 @@ describe('subscriber-owned estimate contributions', () => {
 			expect(b).toEqual(before); expect(draft).not.toHaveProperty('executionPlan');
 		}
 	});
+	it('preserves an unchanged earlier own contribution when the same subscriber estimates additional real work', () => {
+		const prior = input('tester', 'canonical-context-regression');
+		const peer = input('technical-writer', 'context-history-contract');
+		const first = mergeAssignmentEstimate(prior as never);
+		const frozen = mergeAssignmentEstimate({ ...peer, current: first } as never);
+		const next = input('tester-next', 'persisted-context-start-regression', frozen);
+		next.assignment.agentId = prior.assignment.agentId;
+		next.assignment.assignmentAttempt.effectiveProfile.profileRef.id = prior.assignment.agentId;
+		next.ownedEstimateRefs = [prior.ref];
+		const held = structuredClone(next);
+		const result = mergeAssignmentEstimate(next as never);
+		expect((result.executionPlan as { workItems: Row[] }).workItems).toEqual([prior.work, peer.work, next.work]);
+		expect(mergeAssignmentEstimate({ ...next, current: result } as never)).toEqual(result);
+		expect(next).toEqual(held);
+		// Earlier evidence remains attributable to its original execution. Only
+		// the newly estimated product may claim this attempt's provenance.
+		for (const change of [{ objective: 'Rewritten historical work.' },
+			{ estimate: { ...estimate, expectedSeconds: 150 } }, { id: 'new-work-with-old-provenance' }]) {
+			const candidate = { ...next.candidate, executionPlan: { workItems: [
+				{ ...prior.work, ...change }, peer.work, next.work,
+			] } };
+			expect(() => mergeAssignmentEstimate({ ...next, candidate } as never)).toThrow();
+		}
+		expect(() => mergeAssignmentEstimate({ ...next,
+			candidate: { ...next.candidate, executionPlan: { workItems: [prior.work, peer.work] } },
+		} as never)).toThrow(/current attempt provenance/u);
+	});
 	it('allows an admitted author to refine its own contribution while preserving the peer contribution', () => {
 		const writer = input('technical-writer', 'document-boundary'), tester = input('tester', 'reproduce-request');
 		const a = mergeAssignmentEstimate(writer as never), both = mergeAssignmentEstimate({ ...tester, current: a } as never);
