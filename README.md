@@ -167,3 +167,5 @@ The genuine installed API gate must use `ComposeDeploymentHost.apply` and the ac
 independent worker supplied by the prepared release. An in-process Node test host is not the
 installed construction path. Fixture cleanup verifies the worker's executable device/inode
 and owner before signaling it, then verifies retained containers remain running.
+
+The compiled default-worker correction is selected as Deployment75, source `f5b511999a9196759f22d827ee4ee8fb7b48c8ba`, archive `fea365585ceaa9b813ba18c01fa78de2eca6335351fef86eeb9dcb37afbe4109`. Genuine installed verification is rerun against these exact bytes; no older failed configuration is counted as passing.
