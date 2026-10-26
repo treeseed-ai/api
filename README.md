@@ -71,11 +71,11 @@ in-progress adoption receipt, not a passing API runtime/assembly claim:
 
 | Owner | Version | Source commit | Archive SHA-256 |
 | --- | --- | --- | --- |
-| SDK | `0.0.0-cordis.12` | `4a0b12ca45478f58d92a02de4a7c144ed94c7417` | `9652a1e1f830eb85c41b2d9ea207782ffdf291db2ef97331e338775dadf62fd4` |
-| Deployment | `0.0.0-cordis.34` | `59ada8bb3bb50d6d86eeff03f35e218a363369e7` | `9627fa88157926f55985579fc783ff0b2c6a2e95aca674dff5076c31b1a6e7fb` |
-| Identity | `0.0.0-cordis.4` | `d837d23d99bc49eb1954bdd865397d34186d41a1` | `0e377e4a0ad79ee649b20e41779c862e431f20979b19cae638b658925686d9f1` |
-| Admin | `0.0.0-cordis.6` | `e3155dc389080d1c48370a3057660ad97e4a7404` | `98e709ade2c8cda1913f5c65c995334a97056fd5b9d60e78a6261e110576dd1c` |
-| UI | `0.0.0-cordis.14` | `a0f28a2d4a3285cbb5203a97c2cdb620517871ae` | `6c1032996990178f7a76d5cbde2e15a4b6467941159d6d6013a33526e799e7ad` |
+| sdk | `0.0.0-cordis.16` | `4c0ecd2a0fc28545dbf677cc988ce69f0cf2f15d` | `4084aa8dbe9767984fac9fef7f5cea30a0bec93ed416138d32c804e6389fdba5` |
+| deployment | `0.0.0-cordis.73` | `5cc3f3cc655ae318d195746ad3c85a2742bd3c6c` | `3fdcdcf0199aa82c2fc30cf5ff95c0b9dce49f138764366fb99638d10b087576` |
+| identity | `0.0.0-cordis.7` | `f29824578d0aa8fc7725a195b72c698b476da429` | `90ac95f3e1d953f0aeddb5d0da01e9e596b226bbbc806bff3566d274a34f22d6` |
+| admin | `0.0.0-cordis.10` | `227011825a885f184f1b2540d72d830a905ba8a2` | `4891b1e51515ae79827ae801cc14abad4e7b66f3cd6d924860113e934c92cfe5` |
+| ui | `0.0.0-cordis.16` | `32f16876aa6f0eb1f99a4ab339296609c830df23` | `0251c6ff1f5c4b6a628d85113d1e10b9ab019f26d1dda38c7aad3c12f84ef571` |
 
 API keeps AGPL-3.0 licensing, the restored committer policy and its own source/image producer.
 No cross-checkout source imports or production publication are introduced.
@@ -149,3 +149,13 @@ The trusted approved-committers policy remains the exact #620 blob
 `b1a687db754ee2fac141919e6c63052d12bf2812`. All issues stay open. This alignment alone
 is not assembled acceptance; the genuine installed programme and final Platform gates
 must pass with these bytes.
+
+### Public assembled fixture boundary
+
+The `./testing` export provides `InstalledApiFixture` as an explicitly test-only producer.
+An independent consumer supplies absolute paths for exact API/SDK/Deployment/Identity/Admin/UI
+archives and a Bun v2 lock. The producer builds and measures the real API image and genuine
+Postgres/Keycloak/Caddy release using public interfaces; it does not import sibling source.
+Its default owner-test mode packs this owner's current built candidate. `close()` removes
+only that fixture's resources and private files. Consumers separately own their browser/CLI
+observations and never use this producer as installation authority.
