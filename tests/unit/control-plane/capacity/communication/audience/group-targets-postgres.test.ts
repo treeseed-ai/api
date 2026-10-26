@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveTeamCommunicationTargets } from '../../../../../../src/api/capacity/services/capacity/invocations/communication-target-resolution.ts';
+import { admitDiscussionInvocations } from '../../../../../../src/api/capacity/services/capacity/invocations/discussion-invocation-service.ts';
 import { postgresGraph } from '../../execution/graph/architecture/living/living-postgres-fixture.ts';
 
 describe('group and shared-name audience from persisted project agents', () => {
@@ -33,6 +34,16 @@ describe('group and shared-name audience from persisted project agents', () => {
 			expect((await f.left.pool.query('SELECT * FROM project_agent_classes ORDER BY id')).rows).toEqual(before);
 			await expect(resolveTeamCommunicationTargets(store, 'team', [{ projectSlug: null, agentSlug: 'absent-group', requirement: 'required', address: '@absent-group' }]))
 				.rejects.toMatchObject({ status: 404, code: 'communication_agent_not_found' });
+			const snapshots = async () => Promise.all(['agent_invocation_requests', 'capacity_provider_assignments', 'capacity_ledger_entries']
+				.map(table => f.stores[0]!.all(`SELECT * FROM ${table} ORDER BY id`)));
+			const original = await snapshots();
+			await expect(admitDiscussionInvocations(store as never, { teamId: 'team', projectId: 'api', projectSlug: 'api',
+				discussionId: 'context-recovery', messageId: 'message', messagePath: 'discussion-messages/context-recovery/message.mdx',
+				messageCommit: 'c'.repeat(40), contextRefs: [], agentSlugs: ['technical-writer', 'unsupported'],
+				idempotencyKey: 'partial-group-regression', durationSeconds: 180 }))
+				.rejects.toMatchObject({ code: 'discussion_agent_chat_profile_missing', details: { agentSlug: 'unsupported' } });
+			expect(await snapshots()).toEqual(original);
+			expect((await f.left.pool.query('SELECT * FROM project_agent_classes ORDER BY id')).rows).toEqual(before);
 		} finally { await f.close(); }
 	}, 30_000);
 });

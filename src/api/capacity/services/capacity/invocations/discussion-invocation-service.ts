@@ -1,6 +1,6 @@
 import { createHash,randomUUID } from 'node:crypto';
 import { CapacityGovernanceError } from '../../../database.ts';
-import { validateAgentDefinitionModel, type AgentDefinition, type CapacityWorkdayRunRecord } from '@treeseed/sdk/agent-capacity';
+import { validateAgentDefinitionModel, type CapacityWorkdayRunRecord } from '@treeseed/sdk/agent-capacity';
 import { decodeWorkdayAgentProfileSnapshot } from '../workdays/policy/workday-agent-profile-policy.ts';
 import { assignmentPreparationSeconds } from '../assignments/planning/assignment-time-budget.ts';
 import { reconcileAssignmentContent } from '../assignments/lifecycle/assignment-content-readback.ts';
@@ -233,6 +233,19 @@ async function availableCommunicationSlots(store: DiscussionInvocationStore, tea
 	return Math.max(0, Number(supply.maxConcurrentWorkers ?? 1) - Number(active?.count ?? 0));
 }
 
+async function configuredChatProfile(store: DiscussionInvocationStore, projectId: string, agentSlug: string) {
+	const agentClasses = await store.all(`SELECT id, handler_refs_json, metadata_json FROM project_agent_classes WHERE project_id = ? AND status = 'active' ORDER BY updated_at DESC`, [projectId]);
+	for (const candidate of agentClasses) {
+		const agents = record(candidate.handler_refs_json).agents;
+		const selectedAgent = Array.isArray(agents) ? agents.flatMap((agent) => {
+			const parsed = validateAgentDefinitionModel(agent);
+			return parsed.ok && parsed.data ? [parsed.data] : [];
+		}).find((agent) => (agent.id === agentSlug || agent.id.endsWith(`/${agentSlug}`)) && Boolean(agent.activityProfiles.chat)) ?? null : null;
+		if (selectedAgent) return { agentClass: candidate, selectedAgent };
+	}
+	throw new CapacityGovernanceError('discussion_agent_chat_profile_missing', `Agent ${agentSlug} has no enabled Chat profile in the selected project.`, 409, { agentSlug });
+}
+
 async function persistInvocation(store: DiscussionInvocationStore, input: DiscussionInvocationInput, agentSlug: string, parent: Awaited<ReturnType<typeof assertExactParent>>) {
 	const now = new Date().toISOString();
 	const id = `invocation-${stableId(input.teamId, `${input.idempotencyKey}:${agentSlug}`)}`;
@@ -243,17 +256,7 @@ async function persistInvocation(store: DiscussionInvocationStore, input: Discus
 		parentWorkdayId: parent?.id ?? null, parentAssignmentId: input.parentAssignmentId ?? null,
 		handoffRootId: input.handoffRootId ?? null, handoffParentId: input.handoffParentId ?? null, handoffDepth: input.handoffDepth ?? null,
 	});
-	const agentClasses = await store.all(`SELECT id, handler_refs_json, metadata_json FROM project_agent_classes WHERE project_id = ? AND status = 'active' ORDER BY updated_at DESC`, [input.projectId]);
-	let selectedAgent: AgentDefinition | null = null;
-	const agentClass = agentClasses.find((candidate) => {
-		const agents = record(candidate.handler_refs_json).agents;
-		selectedAgent = Array.isArray(agents) ? agents.flatMap((agent) => {
-			const parsed = validateAgentDefinitionModel(agent);
-			return parsed.ok && parsed.data ? [parsed.data] : [];
-		}).find((agent) => (agent.id === agentSlug || agent.id.endsWith(`/${agentSlug}`)) && Boolean(agent.activityProfiles.chat)) ?? null : null;
-		return Boolean(selectedAgent);
-	});
-	if (!agentClass) throw new CapacityGovernanceError('discussion_agent_chat_profile_missing', `Agent ${agentSlug} has no enabled Chat profile in the selected project.`, 409, { agentSlug });
+	const { agentClass, selectedAgent } = await configuredChatProfile(store, input.projectId, agentSlug);
 	const productiveSeconds = input.durationSeconds;
 	const existing = await store.first(`SELECT * FROM agent_invocation_requests WHERE team_id = ? AND idempotency_key = ? LIMIT 1`, [input.teamId, `${input.idempotencyKey}:${agentSlug}`]);
 	if (existing) {
@@ -332,15 +335,19 @@ async function nextConversationRunId(store: DiscussionInvocationStore, teamId: s
 }
 
 export async function admitDiscussionInvocations(store: DiscussionInvocationStore, input: DiscussionInvocationInput) {
-	await reconcileTerminalConversationInvocations(store, input.teamId);
 	const parent = await assertExactParent(store, input);
+	// Validate the complete addressed audience before any peer can be persisted
+	// or started. Unsupported profiles are explicit failures, never silent filters.
+	for (const agentSlug of input.agentSlugs) {
+		if (parent && !frozenProfilesContainChatAgent(parent.parameters, input.projectId, agentSlug))
+			throw new CapacityGovernanceError('discussion_parent_agent_not_frozen', `Agent ${agentSlug} has no configured chat activity in the parent workday's frozen profiles.`, 409, { agentSlug, workdayId: parent.id });
+		await configuredChatProfile(store, input.projectId, agentSlug);
+	}
+	await reconcileTerminalConversationInvocations(store, input.teamId);
 	const supply = await communicationSupply(store, input.teamId);
 	let availableSlots = supply ? await availableCommunicationSlots(store, input.teamId, supply) : 0;
 	const results = [];
 	for (const agentSlug of input.agentSlugs) {
-		if (parent && !frozenProfilesContainChatAgent(parent.parameters, input.projectId, agentSlug)) {
-			throw new CapacityGovernanceError('discussion_parent_agent_not_frozen', `Agent ${agentSlug} has no configured chat activity in the parent workday's frozen profiles.`, 409, { agentSlug, workdayId: parent.id });
-		}
 		const invocation = await persistInvocation(store, input, agentSlug, parent);
 		if (invocation.executionId || invocation.coalesced || !['queued', 'blocked'].includes(invocation.status)) { results.push(invocation); continue; }
 		const serial=await store.first(`SELECT id FROM agent_invocation_requests WHERE project_id=? AND agent_id=? AND subject_digest=(SELECT subject_digest FROM agent_invocation_requests WHERE id=?) AND id<>? AND status IN ('admitted','running') LIMIT 1`,[input.projectId,agentSlug,invocation.id,invocation.id]);
