@@ -18,6 +18,7 @@ import { recordAssignmentDiscussionResponse } from '../../../capacity/services/c
 import { resolveTeamCommunicationTargets } from '../../../capacity/services/capacity/invocations/communication-target-resolution.ts';
 import type { DiagnosticEnvelopeService } from '../../../../security/diagnostic-envelope.ts';
 import { createSourceWorkspaceService } from './source/source-workspace-service.ts';
+import { readUnresolvedUsageRecovery } from '../../../capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
 
 type SessionEvents = { subscribe(teamId: string, listener: (event: { eventType: string; payload: Record<string, unknown> }) => void): Promise<() => void> };
 
@@ -189,23 +190,7 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 		async show(auth: unknown, assignmentId: string) {
 			const actor = principal(auth, ['provider:assignments:read']);
 			const assignment = assertProviderOwnsAssignment(await store.getProviderAssignment(actor.teamId, assignmentId), actor, 'access');
-			if (!['expired', 'failed', 'cancelled'].includes(assignment.status)
-				|| record(record(assignment.metadata).leaseRecovery).disposition !== 'operator-action') return assignment;
-			// Read the sole original audit fact; do not rewrite the assignment or
-			// translate unresolved usage into a measurement/settlement receipt.
-			const audit = await store.first(`SELECT audit.metadata_json FROM capacity_audit_events audit
-				JOIN capacity_reservations reservation ON reservation.id=?
-				WHERE audit.team_id=? AND audit.resource_id=? AND audit.capacity_provider_id=? AND audit.membership_id=?
-				AND audit.action='assignment.usage.unresolved' AND reservation.team_id=audit.team_id
-				AND reservation.assignment_id=audit.resource_id AND (reservation.state='released'
-					OR (reservation.state='consumed' AND EXISTS (SELECT 1 FROM capacity_audit_events dispute
-						WHERE dispute.action='assignment.settlement.disputed' AND dispute.team_id=audit.team_id
-						AND dispute.resource_id=audit.resource_id AND dispute.capacity_provider_id=audit.capacity_provider_id
-						AND dispute.membership_id=audit.membership_id AND dispute.idempotency_key=audit.idempotency_key
-						AND dispute.actor_id=audit.actor_id AND dispute.actor_type=audit.actor_type)))`,
-				[assignment.reservationId, actor.teamId, assignmentId, actor.capacityProviderId, actor.membershipId]);
-			if (!audit) return assignment;
-			return { ...assignment, unresolvedUsageRecovery: JSON.parse(String(audit.metadata_json)) };
+			return readUnresolvedUsageRecovery(store, assignment);
 		},
 		async explain(auth: unknown, assignmentId: string) { return record((await this.show(auth, assignmentId)).explanation); },
 		renew: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => lifecycle(auth, assignmentId, body, 'provider:assignments:read', 'renewProviderAssignmentLease'),
