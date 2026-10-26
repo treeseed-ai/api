@@ -44,8 +44,8 @@ export function projectAgentActivityRefs(handlerRefs: unknown, activityType: str
 		const profile = record(agent.activityProfiles[activityType as keyof typeof agent.activityProfiles]);
 		const agentId = text(agent.id);
 		const handlerId = text(profile.handler);
-		const agentQueryRefs:Array<{id:string;revision:number}>=[], activityQueryRefs:Array<{id:string;revision:number}>=[];
-		const agentQuerySetRefs:Array<{id:string;revision:number}>=[], activityQuerySetRefs:Array<{id:string;revision:number}>=[];
+		const agentQueryRefs=revisionRefs(agent.contextQueryRefs), activityQueryRefs=revisionRefs(profile.contextQueryRefs);
+		const agentQuerySetRefs=revisionRefs(agent.contextQuerySetRefs), activityQuerySetRefs=revisionRefs(profile.contextQuerySetRefs);
 		return agentId && handlerId ? [{
 			agentId,
 			agentName: agent.name,
