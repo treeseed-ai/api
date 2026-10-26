@@ -88,6 +88,7 @@ it('executes checked global and activity queries on new native data without expa
 		expect(JSON.parse(String(classes[0]!.handler_refs_json))).toMatchObject({ agents: [definition] });
 		await projectTreeDxCommitSignals(store as never, signal);
 		expect(await f.owner.all('SELECT * FROM agent_context_query_checks ORDER BY id')).toEqual(checkRows);
+		const activeClasses = await f.owner.all('SELECT * FROM project_agent_classes ORDER BY id');
 		// A committed native workspace is no longer writable. Later history is a
 		// separate normal workspace based on the exact committed definition.
 		await native.workspaces.close(workspaceId);
@@ -120,7 +121,7 @@ it('executes checked global and activity queries on new native data without expa
 		await write('agents/contributor.mdx', { ...definition, name: 'Unready context contributor' });
 		const rejectedRef = await commit('Retain a failing required context check');
 		await expect(projectTreeDxCommitSignals(store as never, { ...signal, commitSha: rejectedRef })).rejects.toThrow('did not pass');
-		expect(await f.owner.all('SELECT * FROM project_agent_classes ORDER BY id')).toEqual(classes);
+		expect(await f.owner.all('SELECT * FROM project_agent_classes ORDER BY id')).toEqual(activeClasses);
 		const failed = await f.owner.all('SELECT * FROM agent_context_query_checks WHERE definition_commit=?', [rejectedRef]);
 		expect(failed).toHaveLength(1); expect(failed[0]).toMatchObject({ status: 'failing', definition_commit: rejectedRef });
 		expect(await f.owner.all('SELECT * FROM agent_context_query_checks WHERE definition_commit=? ORDER BY id', [definitionRef])).toEqual(checkRows);
