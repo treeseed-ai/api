@@ -70,6 +70,13 @@ it('executes checked global and activity queries on new native data without expa
 		const checked = await service.check('team', 'project', { testId: check.id, definitionRef, idempotencyKey: 'native-query-check' });
 		expect(checked.status).toBe('passing');
 		const checkRows = await f.owner.all('SELECT * FROM agent_context_query_checks ORDER BY id');
+		// A committed native workspace is no longer writable. Later history is a
+		// separate normal workspace based on the exact committed definition.
+		await native.workspaces.close(workspaceId);
+		expect(object(await native.workspaces.get(workspaceId)).status).toBe('closed');
+		const later = object(await native.workspaces.create(repositoryId, { mode: 'writable', baseRef: definitionRef,
+			branchName: 'refs/heads/knowledge/context-repair-later', allowedPaths: ['knowledge/**'] }));
+		workspaceId = String(later.workspaceId ?? ''); if (!workspaceId) throw new Error('Later native workspace required.');
 		const newBody = '# Retained claims\nNew repair: preserve the original deadline and usage while exposing the original recovery receipt.\n' + 'Retained product custody matters. '.repeat(200);
 		await write('knowledge/context-repair.mdx', { id: 'context-repair', schemaVersion: 'treeseed.knowledge-page/v2' }, newBody);
 		const dataRef = await commit('Retain later native repair history for execution');
