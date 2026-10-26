@@ -33,6 +33,9 @@ export function nativeProposalProfileInputs(configured: Record<string, AgentDefi
 	const profiles = Object.values(configured).filter(value => configured[`${projectId}:${value.agentClass}`] === value)
 		.map(value => {
 			const definition = structuredClone(value);
+			for (const profile of Object.values(definition.activityProfiles)) if (profile) {
+				profile.permissions.content.read = [...new Set([...profile.permissions.content.read, 'agent', 'objective', 'knowledge'])];
+			}
 			if (canonicalSupply) {
 				definition.capabilities = ['treeseed.research.verification'];
 				for (const profile of Object.values(definition.activityProfiles)) if (profile) profile.permissions.content.read.push('decision');
@@ -44,7 +47,7 @@ export function nativeProposalProfileInputs(configured: Record<string, AgentDefi
 	const closeout = profiles[0]; assert.ok(closeout);
 	closeout.activityProfiles.reporting = { handler: 'reporter',
 		prompt: { system: 'Commit the deterministic canonical Workday closeout.' },
-		permissions: { content: { read: ['knowledge', 'proposal'], write: ['note'] }, tools: [] },
+		permissions: { content: { read: ['knowledge', 'proposal', 'agent', 'objective'], write: ['note'] }, tools: [] },
 		dependsOn: { events: ['workday-closing'] } };
 	const profileInputs = profiles.map(definition => ({ definition, path: `agents/${definition.agentClass}.md`,
 		raw: `---\n${stringify(definition)}---\n` }));
