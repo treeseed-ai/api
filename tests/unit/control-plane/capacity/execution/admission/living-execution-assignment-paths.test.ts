@@ -12,10 +12,55 @@ vi.mock('../../../../../../src/api/capacity/services/capacity/assignments/admiss
 }));
 import { assignNextReadyExecutionNode, prioritizeCommunicationCandidates, reservationFairUsage, treeDxAuthorizedPaths, workdayConcurrencyAvailable } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/living-execution-assignment.ts';
 import { canonicalOfferBuildInput } from '../fixtures/assignment-attempt-fixtures.ts';
+import { buildAssignmentAttempt } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
+import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
+import * as accounting from '../../../../../../src/api/capacity/services/capacity/accounting/accounting-observations.ts';
+import * as transactions from '../../../../../../src/api/capacity/transaction.ts';
 import { ControlPlaneStore } from '../../../../../../src/api/persistence/store.ts';
 import { createCapacityControlPlane } from '../../../../../../src/api/capacity/control-plane.ts';
 
 describe('living execution TreeDX path authority', () => {
+	it('replays original authority when another synthesizer issued the assignment after the ready observation', async () => {
+		// API625: native start0924f9a2 left an issued assignment after a graph
+		// conflict. A second synthesis rebuilt that identity with a new createdAt.
+		// This controlled UNIT models that interleaving; it is not SQL race proof.
+		const input = canonicalOfferBuildInput(), issued = buildAssignmentAttempt(input).assignment;
+		const retained = { id: issued.id, createdAt: issued.createdAt, teamId: issued.teamId, capacityProviderId: issued.provider.providerId,
+			executionNodeId: issued.nodeId, executionNodeRevision: issued.nodeRevision,
+			assignmentAttempt: structuredClone(issued), explanation: {} };
+		const host = new ControlPlaneStore({}, { prepare: () => { throw new Error('Unexpected native SQL in UNIT'); } });
+		host.ensureInitialized = vi.fn(); host.all = vi.fn().mockResolvedValue([]);
+		host.first = vi.fn().mockResolvedValue({ id: input.candidate.node.id });
+		host.listTeamProjects = vi.fn().mockResolvedValue([{ id: input.candidate.node.projectId, slug: input.candidate.node.projectId }]);
+		host.getProjectByTeamAndSlug = vi.fn().mockResolvedValue(null); host.getProjectTreeDxLibrary = vi.fn().mockResolvedValue(null);
+		const store = createCapacityControlPlane(host);
+		boundary.runs.mockResolvedValue([{ ...input.run, parameters: { ...input.run.parameters,
+			projects: [input.candidate.node.projectId], scheduledProjectIds: [input.candidate.node.projectId] } }]);
+		boundary.ready.mockResolvedValue([input.candidate]); boundary.allocation.mockResolvedValue(input.allocationInputs);
+		const actual = await vi.importActual<typeof import('../../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts')>(
+			'../../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts');
+		boundary.admit.mockReset().mockImplementation(async (_database, value) => {
+			retained.assignmentAttempt = structuredClone(value.assignment);
+			retained.explanation = { metadata: { allocation: structuredClone(value.allocation) } };
+			return retained;
+		});
+		await assignNextReadyExecutionNode(store, input.principal, input.providerSessionId, input.providers, input.now);
+		const original = structuredClone(retained);
+		const lookup = vi.spyOn(ProviderAssignmentRepository.prototype, 'get').mockResolvedValue(retained as never);
+		const observation = vi.spyOn(accounting, 'recordCapacityAccountingObservation').mockResolvedValue({} as never);
+		const transaction = vi.spyOn(transactions, 'capacityTransaction').mockImplementation(async (database, apply) => apply(database));
+		boundary.admit.mockImplementation(actual.admitLivingExecutionAssignment);
+		try {
+			await expect(assignNextReadyExecutionNode(store, input.principal, input.providerSessionId, input.providers, input.now))
+				.resolves.toMatchObject({ assignment: retained });
+			const later = new Date(Date.parse(input.now) + 1_000).toISOString();
+			await expect(assignNextReadyExecutionNode(store, input.principal, input.providerSessionId, input.providers, later))
+				.resolves.toMatchObject({ assignment: retained });
+		} finally {
+			lookup.mockRestore(); observation.mockRestore(); transaction.mockRestore();
+			expect(retained).toEqual(original);
+		}
+	});
 	it.each(['bound', 'missing', 'ambiguous'])('creates a shared proposal estimate workspace only through its unique team library owner: %s', async mode => {
 		const input = canonicalOfferBuildInput(), candidate = structuredClone(input.candidate);
 		candidate.node.kind = 'estimating'; candidate.node.pairRole = null; delete candidate.node.workItemId; candidate.node.workspace = 'treedx';
