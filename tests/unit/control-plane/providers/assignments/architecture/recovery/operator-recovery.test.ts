@@ -3,8 +3,31 @@ import { createAssignmentService } from '../../../../../../../src/api/control-pl
 import { isAutomaticUnknownZero } from '../../../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
 import { createProviderAssignmentService } from '../../../../../../../src/api/control-plane/repositories/providers/provider-assignment-service.ts';
 import { recoveryAssignment } from '../cancellation-fixture.ts';
+import { ProviderAssignmentRepository } from '../../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 
 describe('authorized unresolved usage recovery', () => {
+	it('exposes the original unresolved receipt to an authorized coordinator without recovering again or changing unknown usage', async () => {
+		const assignment = { ...recoveryAssignment(false), status: 'expired' as const, metadata: { leaseRecovery: { disposition: 'operator-action' } } };
+		const audit = { assignmentId: assignment.id, usageStatus: 'unresolved', settled: false, reason: 'Original usage unavailable' };
+		const get = vi.spyOn(ProviderAssignmentRepository.prototype, 'get').mockResolvedValue(assignment);
+		const first = vi.fn().mockResolvedValue({ metadata_json: JSON.stringify(audit) });
+		const store = { first, principalCanAccessTeam: vi.fn().mockResolvedValue(true),
+			getTeamAccessSummary: vi.fn().mockResolvedValue({ permissions: ['projects:read:team'] }) };
+		const service = createAssignmentService(store), before = structuredClone({ assignment, audit });
+		try {
+			await expect(service.show(undefined, assignment.teamId, assignment.id)).rejects.toMatchObject({ status: 401 });
+			store.principalCanAccessTeam.mockResolvedValueOnce(false);
+			await expect(service.show({ id: 'foreign' }, assignment.teamId, assignment.id)).rejects.toMatchObject({ status: 403 });
+			store.getTeamAccessSummary.mockResolvedValueOnce({ permissions: [] });
+			await expect(service.show({ id: 'reader' }, assignment.teamId, assignment.id)).rejects.toMatchObject({ status: 403 });
+			expect(get).not.toHaveBeenCalled(); expect(first).not.toHaveBeenCalled();
+			expect(await service.show({ id: 'coordinator' }, assignment.teamId, assignment.id)).toEqual({ ...assignment, unresolvedUsageRecovery: audit });
+			expect(first.mock.calls[0]?.[1]).toEqual([assignment.reservationId, assignment.teamId, assignment.id, assignment.capacityProviderId, assignment.membershipId]);
+			first.mockResolvedValueOnce(null);
+			expect(await service.show({ id: 'coordinator' }, assignment.teamId, assignment.id)).toEqual(assignment);
+			expect({ assignment, audit }).toEqual(before);
+		} finally { get.mockRestore(); }
+	});
 	it('reads the exact operator audit for released or disputed consumed reservation authority without invoking productive lifecycle operations', async () => {
 		const assignment: ReturnType<typeof recoveryAssignment> = { ...recoveryAssignment(false), status: 'expired', metadata: { leaseRecovery: { disposition: 'operator-action' } } };
 		const audit = { assignmentId: assignment.id, reservationId: assignment.reservationId, usageStatus: 'unresolved', settled: false,
