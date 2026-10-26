@@ -4,6 +4,7 @@ import { enqueueTreeDxCommitReplication } from './treedx-commit-replication.ts';
 import { reconcileExecutionGraph } from '../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
 import { agentDefinitionClasses, snapshotAgentDefinitions } from '../../capacity/agents/agent-definition-snapshot.ts';
+import { ContextQueryCheckService } from '../../capacity/agents/context-query-check-service.ts';
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {
@@ -25,6 +26,10 @@ async function projectAgentDefinitions(database: CapacityGovernanceDatabase, inp
 	const project = await database.first('SELECT team_id FROM projects WHERE id=? LIMIT 1', [input.projectId]);
 	if (!project?.team_id) throw new CapacityGovernanceError('agent_profile_project_missing',
 		'Published agent definitions require an active project.', 409, { projectId: input.projectId });
+	if (snapshot.files.some(({ definition }) => [definition, ...Object.values(definition.activityProfiles ?? {})]
+		.some(profile => profile.contextQueryRefs?.length || profile.contextQuerySetRefs?.length))) {
+		await new ContextQueryCheckService(database).verifyCatalog({ teamId: String(project.team_id), projectId: input.projectId, ref: input.commitSha });
+	}
 	for (const group of agentDefinitionClasses(snapshot.files)) {
 		const { slug } = group;
 		const existing = classes.find((entry) => String(entry.slug ?? '') === slug && entry.status === 'active')

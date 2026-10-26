@@ -77,6 +77,36 @@ function rowCheck(row:Record<string,unknown>) {
 export class ContextQueryCheckService {
 	constructor(private readonly store:CapacityGovernanceDatabase) {}
 
+	/** Initialize missing/expired isolated evidence through the same authority used
+	 * by admission. Seed reconciliation and governed profile edits share this path. */
+	async verifyCatalog(input:{projectId:string;teamId:string;ref:string}) {
+		const catalog=await this.catalog(input.projectId,input.ref);
+		const referenced=new Map(catalog.agentReferences.map(entry=>[`${entry.kind}:${entry.id}@${entry.revision}`,
+			{kind:entry.kind,id:entry.id,revision:entry.revision}]));
+		const relevantTests=catalog.tests.filter(test=>referenced.has(`${test.definitionKind}:${test.definitionId}@${test.definitionRevision}`));
+		const tested=new Set(relevantTests.map(test=>`${test.definitionKind}:${test.definitionId}@${test.definitionRevision}`));
+		const missing=[...referenced.entries()].filter(([key])=>!tested.has(key)).map(([,reference])=>reference);
+		if(missing.length)throw new Error(`Agent context references have no isolated tests: ${missing.map(item=>`${item.kind}:${item.id}@${item.revision}`).join(', ')}.`);
+		if(referenced.size) {
+			try {
+				await this.requirePassing(input.teamId,input.projectId,input.ref,[...referenced.values()]);
+				return {references:referenced.size,tests:relevantTests.length};
+			} catch(error) {
+				if(!(error instanceof CapacityGovernanceError)||error.code!=='agent_context_query_not_ready')throw error;
+			}
+		}
+		const attempt=randomUUID();
+		for(const test of relevantTests) {
+			let result;
+			try { result=await this.check(input.teamId,input.projectId,{testId:test.id,testPath:test.path,definitionRef:input.ref,
+				idempotencyKey:`library-reconcile:${attempt}:${input.projectId}:${input.ref}:${test.id}`}); }
+			catch(error){throw new Error(`Context-query test ${test.id} could not run: ${error instanceof Error?error.message:'unknown error'}`);}
+			if(result.status!=='passing')throw new Error(`Context-query test ${test.id} did not pass for ${input.ref}.`);
+		}
+		if(referenced.size)await this.requirePassing(input.teamId,input.projectId,input.ref,[...referenced.values()]);
+		return {references:referenced.size,tests:relevantTests.length};
+	}
+
 	private async queryProjects(teamId:string,projectId:string,query:DeclarativeContextQuery) {
 		const sources=query.sources?.length?query.sources:[{scope:'current-project' as const}],projects=new Map<string,{projectId:string;paths:string[];source:string;allowedModels?:string[]}>();
 		const add=(id:string,paths:string[],source:string,allowedModels?:string[])=>projects.set(id,{projectId:id,paths:paths.length?paths:['**'],source,...(allowedModels?.length?{allowedModels}:{})});

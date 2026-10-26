@@ -9,6 +9,7 @@ import { TreeDxDelegationAuthority } from '../../../../../src/api/control-plane/
 import { requireTreeDxOperation } from '../../../../../src/api/control-plane/treedx/upstream-operation.ts';
 import { splitPostgresSqlStatements } from '../../../../../src/api/persistence/postgres-sql-statements.ts';
 import { cancellationDatabase } from '../../providers/assignments/architecture/cancellation-fixture.ts';
+import { projectTreeDxCommitSignals } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-change-projector.ts';
 
 const object = (value: unknown): Record<string, unknown> => {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Native object response required.');
@@ -33,7 +34,7 @@ it('executes checked global and activity queries on new native data without expa
 	const f = await cancellationDatabase();
 	try {
 		const ddl = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
-		for (const table of ['projects', 'treedx_project_libraries', 'agent_context_query_checks']) {
+		for (const table of ['projects', 'treedx_project_libraries', 'agent_context_query_checks', 'project_agent_classes', 'treedx_commit_replications']) {
 			const source = ddl.filter(sql => sql.startsWith(`CREATE TABLE "${table}" (`));
 			expect(source).toHaveLength(1); await f.db.exec(source[0]!);
 		}
@@ -45,7 +46,7 @@ it('executes checked global and activity queries on new native data without expa
 		const base = refs.find(ref => ref.name === 'refs/heads/main')?.target;
 		if (!base) throw new Error('Native initialized main required.');
 		const workspace = object(await native.workspaces.create(repositoryId, { mode: 'writable', baseRef: base,
-			branchName: 'refs/heads/knowledge/context-repair', allowedPaths: ['knowledge/**', 'agent-context-queries/**', 'agent-tests/**'] }));
+			branchName: 'refs/heads/knowledge/context-repair', allowedPaths: ['knowledge/**', 'agents/**', 'agent-context-queries/**', 'agent-tests/**'] }));
 		workspaceId = String(workspace.workspaceId ?? ''); if (!workspaceId) throw new Error('Native workspace required.');
 		const query = { id: 'context-repair', title: 'Context repair history', description: 'Read prior retained-claim repair findings.',
 			revision: 1, maturity: 'validated', purpose: 'implement', query: 'retained claims',
@@ -59,6 +60,13 @@ it('executes checked global and activity queries on new native data without expa
 		const write = (path: string, value: unknown, body = '') => native.files.write(workspaceId!, { path, content: `---\n${stringify(value)}---\n${body}`, encoding: 'utf8' });
 		await write('agent-context-queries/context-repair.mdx', query);
 		await write('agent-tests/context-repair-check.mdx', check);
+		const definition = { schemaVersion: 'treeseed.agent/v1', id: 'project/engineer', name: 'Context contributor',
+			agentClass: 'maintenance', purpose: 'Use relevant retained history.', responsibilities: ['Preserve existing work.'],
+			capabilities: ['source.read'], context: { include: ['project-objectives'] }, contextQueryRefs: [{ id: query.id, revision: 1 }],
+			activityProfiles: { acting: { handler: 'actor', prompt: { system: 'Use governed context and prior experience.' },
+				permissions: { content: { read: ['knowledge'], write: [] }, tools: [] }, contextQueryRefs: [{ id: query.id, revision: 1 }] } } };
+		expect(validateContentFrontmatter('agent', definition).ok).toBe(true);
+		await write('agents/contributor.mdx', definition);
 		const oldBody = '# Retained claims\nPreserve retained products and unknown usage.\n';
 		await write('knowledge/context-repair.mdx', { id: 'context-repair', schemaVersion: 'treeseed.knowledge-page/v2' }, oldBody);
 		const commit = async (message: string) => String(object(await native.files.commit(workspaceId!, { message,
@@ -67,9 +75,17 @@ it('executes checked global and activity queries on new native data without expa
 		const store = { ...f.owner, config: { TREESEED_ENVIRONMENT: 'test', TREESEED_TREEDX_URL: baseUrl },
 			getProjectTreeDxLibrary: async () => ({ repositoryId, instanceId: 'isolated-native-connection', contentPath: '.', contentRepositoryRef: definitionRef }) };
 		const service = new ContextQueryCheckService(store as never);
-		const checked = await service.check('team', 'project', { testId: check.id, definitionRef, idempotencyKey: 'native-query-check' });
-		expect(checked.status).toBe('passing');
+		const signal = { projectId: 'project', commitSha: definitionRef, changedPaths: ['agents/contributor.mdx'],
+			changeSummary: 'Configure exact history queries.', actorType: 'user' as const };
+		await projectTreeDxCommitSignals(store as never, signal);
 		const checkRows = await f.owner.all('SELECT * FROM agent_context_query_checks ORDER BY id');
+		expect(checkRows).toHaveLength(1);
+		expect(checkRows[0]).toMatchObject({ status: 'passing', definition_commit: definitionRef });
+		const classes = await f.owner.all('SELECT * FROM project_agent_classes ORDER BY id');
+		expect(classes).toHaveLength(1);
+		expect(JSON.parse(String(classes[0]!.handler_refs_json))).toMatchObject({ agents: [definition] });
+		await projectTreeDxCommitSignals(store as never, signal);
+		expect(await f.owner.all('SELECT * FROM agent_context_query_checks ORDER BY id')).toEqual(checkRows);
 		// A committed native workspace is no longer writable. Later history is a
 		// separate normal workspace based on the exact committed definition.
 		await native.workspaces.close(workspaceId);
@@ -94,6 +110,18 @@ it('executes checked global and activity queries on new native data without expa
 		await expect(service.resolveForAssignment({ ...input, allowedModels: ['objective'] })).rejects.toMatchObject({ code: 'assignment_context_query_permission_denied' });
 		expect(await f.owner.all('SELECT * FROM agent_context_query_checks ORDER BY id')).toEqual(checkRows);
 		expect(JSON.stringify(checkRows)).not.toContain('New repair');
+		await native.workspaces.close(workspaceId);
+		const rejected = object(await native.workspaces.create(repositoryId, { mode: 'writable', baseRef: dataRef,
+			branchName: 'refs/heads/knowledge/context-repair-rejected', allowedPaths: ['agents/**', 'agent-tests/**'] }));
+		workspaceId = String(rejected.workspaceId ?? ''); if (!workspaceId) throw new Error('Rejected profile workspace required.');
+		await write('agent-tests/context-repair-check.mdx', { ...check, expectedPaths: ['knowledge/missing-history.mdx'] });
+		await write('agents/contributor.mdx', { ...definition, name: 'Unready context contributor' });
+		const rejectedRef = await commit('Retain a failing required context check');
+		await expect(projectTreeDxCommitSignals(store as never, { ...signal, commitSha: rejectedRef })).rejects.toThrow('did not pass');
+		expect(await f.owner.all('SELECT * FROM project_agent_classes ORDER BY id')).toEqual(classes);
+		const failed = await f.owner.all('SELECT * FROM agent_context_query_checks WHERE definition_commit=?', [rejectedRef]);
+		expect(failed).toHaveLength(1); expect(failed[0]).toMatchObject({ status: 'failing', definition_commit: rejectedRef });
+		expect(await f.owner.all('SELECT * FROM agent_context_query_checks WHERE definition_commit=? ORDER BY id', [definitionRef])).toEqual(checkRows);
 	} finally {
 		try { if (workspaceId) { await native.workspaces.close(workspaceId); expect(object(await native.workspaces.get(workspaceId)).status).toBe('closed'); } }
 		finally { try { await native.repositories.retire(repositoryId); } finally { await f.db.close(); } }
