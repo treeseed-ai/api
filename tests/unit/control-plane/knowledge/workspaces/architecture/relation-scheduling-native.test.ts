@@ -89,6 +89,7 @@ describe('native publication to owning scheduler candidate input', () => {
 		} finally { await f.close(); }
 	}, 60_000);
 	it('native original scheduler applies provider hard gates before weighted priority selection and retains the exact eligible input beside one atomic admission', async () => {
+		for (const concurrent of [false, true]) {
 		const f = await relationSchedulingDatabase();
 		try {
 			await f.publish(); await f.completeInputs();
@@ -142,7 +143,10 @@ describe('native publication to owning scheduler candidate input', () => {
 			}
 			expect(eligible.length).toBeGreaterThan(0); expect(eligible.every(value => value.node.projectId === 'dependent')).toBe(true);
 			const before = await f.snapshot(), supplied = structuredClone({ providers, principal, parameters });
-			const observation = object(await assignNextReadyExecutionNode(f.capacity, principal, 'session', providers, now)), admitted = object(observation.assignment);
+			const observations = await Promise.all((concurrent ? [now, new Date(Date.parse(now) + 1_000).toISOString()] : [now])
+				.map(clock => assignNextReadyExecutionNode(f.capacity, principal, 'session', providers, clock)));
+			const admitted = object(observations.find(value => value.assignment)?.assignment);
+			for (const observation of observations) if (observation.assignment) expect(observation.assignment).toEqual(admitted);
 			const attempt = assignmentAttemptSchema.parse(admitted.assignmentAttempt); expect(attempt.projectId).toBe('dependent');
 			const core = eligible.find(value => value.node.id === attempt.nodeId)!.contextRefs.filter(reference =>
 				reference.model === 'objective' || (reference.model === 'knowledge' && reference.path === 'README.md'));
@@ -169,6 +173,7 @@ describe('native publication to owning scheduler candidate input', () => {
 			// Provider availability/principal/predecessors remain controlled INPUTS,
 			// not signed enrollment, live model billing or provider-global fairness.
 		} finally { await f.close(); }
+		}
 	}, 60_000);
 	it('native exact proposal context preserves the primary source lineage while foreign predecessor citations remain read-only evidence in either reference order', async () => {
 		const primary = { store: 'git' as const, model: 'repository', id: 'dependent-source', repository: 'treeseed-ai/dependent', commit: 'c'.repeat(40) };
