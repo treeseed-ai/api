@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ContextQueryCheckService } from '../../../../src/api/capacity/services/capacity/agents/context-query-check-service.ts';
+import { CapacityGovernanceError } from '../../../../src/api/capacity/database.ts';
 
 const { reconcileExecutionGraph, resolveKnowledgeGatewayConnection, snapshotAgentDefinitions } = vi.hoisted(() => ({
 	reconcileExecutionGraph: vi.fn(), resolveKnowledgeGatewayConnection: vi.fn(), snapshotAgentDefinitions: vi.fn(),
@@ -20,10 +22,45 @@ function database() {
 }
 
 describe('TreeDX change projection', () => {
+	afterEach(() => vi.restoreAllMocks());
 	beforeEach(() => {
 		reconcileExecutionGraph.mockReset();
 		resolveKnowledgeGatewayConnection.mockReset();
 		snapshotAgentDefinitions.mockReset();
+	});
+	it('initializes exact configured query checks before projecting a new profile without requiring seed reconciliation', async () => {
+		const store = database(), commit = 'd'.repeat(40), query = { id: 'project/history', revision: 1 };
+		resolveKnowledgeGatewayConnection.mockResolvedValue({ baseRef: 'refs/heads/staging' });
+		snapshotAgentDefinitions.mockResolvedValue({ commit, files: [{ path: 'agents/contributor.mdx',
+			definition: { id: 'project/contributor', name: 'Contributor', agentClass: 'maintenance', contextQueryRefs: [query] } }] });
+		vi.spyOn(ContextQueryCheckService.prototype, 'catalog').mockResolvedValue({
+			agentReferences: [{ kind: 'query', ...query }], tests: [{ id: 'history-test', path: 'agent-tests/history.mdx',
+				definitionKind: 'query', definitionId: query.id, definitionRevision: query.revision }] } as never);
+		vi.spyOn(ContextQueryCheckService.prototype, 'requirePassing')
+			.mockRejectedValueOnce(new CapacityGovernanceError('agent_context_query_not_ready', 'Unchecked', 409)).mockResolvedValue([]);
+		const check = vi.spyOn(ContextQueryCheckService.prototype, 'check').mockResolvedValue({ status: 'passing' } as never);
+		await projectTreeDxCommitSignals(store as never, { projectId: 'project-1', commitSha: commit,
+			changedPaths: ['agents/contributor.mdx'], changeSummary: 'Configure history.', actorType: 'user' });
+		expect(check).toHaveBeenCalledWith('team-1', 'project-1', expect.objectContaining({
+			testId: 'history-test', testPath: 'agent-tests/history.mdx', definitionRef: commit }));
+		expect(store.run.mock.calls.some(([sql]) => String(sql).includes('project_agent_classes'))).toBe(true);
+	});
+	it('retains a failed query check without activating its profile or replacing existing class authority', async () => {
+		const store = database(), commit = 'e'.repeat(40), query = { id: 'project/history', revision: 1 };
+		resolveKnowledgeGatewayConnection.mockResolvedValue({ baseRef: 'refs/heads/staging' });
+		snapshotAgentDefinitions.mockResolvedValue({ commit, files: [{ path: 'agents/contributor.mdx', definition: {
+			id: 'project/contributor', name: 'Contributor', agentClass: 'maintenance', activityProfiles: {
+				chat: { contextQueryRefs: [query] } } } }] });
+		vi.spyOn(ContextQueryCheckService.prototype, 'catalog').mockResolvedValue({
+			agentReferences: [{ kind: 'query', ...query }], tests: [{ id: 'history-test', path: 'agent-tests/history.mdx',
+				definitionKind: 'query', definitionId: query.id, definitionRevision: query.revision }] } as never);
+		vi.spyOn(ContextQueryCheckService.prototype, 'requirePassing')
+			.mockRejectedValue(new CapacityGovernanceError('agent_context_query_not_ready', 'Unchecked', 409));
+		const check = vi.spyOn(ContextQueryCheckService.prototype, 'check').mockResolvedValue({ status: 'failing' } as never);
+		await expect(projectTreeDxCommitSignals(store as never, { projectId: 'project-1', commitSha: commit,
+			changedPaths: ['agents/contributor.mdx'], changeSummary: 'Configure history.', actorType: 'user' })).rejects.toThrow('did not pass');
+		expect(check).toHaveBeenCalledOnce();
+		expect(store.run.mock.calls.filter(([sql]) => String(sql).includes('project_agent_classes'))).toEqual([]);
 	});
 
 	it('does not feed a terminal Reporter note back into the execution graph', async () => {
