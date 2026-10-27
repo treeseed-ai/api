@@ -3310,3 +3310,30 @@ workflow:
   - id: native-scheduling-subscriber-inputs
     action: { verifier: api.golden.native-scheduling-subscriber-inputs }
     expect: { status: passed }
+  - id: inbox-comment-provenance-unit
+    action: { verifier: api.golden.inbox-comment-provenance-unit }
+    expect: { status: passed }
+  - id: inbox-comment-unknown-provenance-unit
+    action: { verifier: api.golden.inbox-comment-unknown-provenance-unit }
+    expect: { status: passed }
+  - id: inbox-comment-failure-401-unit
+    action: { verifier: api.golden.inbox-comment-failure-401-unit }
+    expect: { status: passed }
+  - id: inbox-comment-failure-403-unit
+    action: { verifier: api.golden.inbox-comment-failure-403-unit }
+    expect: { status: passed }
+  - id: inbox-comment-failure-404-unit
+    action: { verifier: api.golden.inbox-comment-failure-404-unit }
+    expect: { status: passed }
+  - id: inbox-comment-failure-503-unit
+    action: { verifier: api.golden.inbox-comment-failure-503-unit }
+    expect: { status: passed }
+  - id: inbox-comment-denial-unit
+    action: { verifier: api.golden.inbox-comment-denial-unit }
+    expect: { status: passed }
+  - id: discussion-document-provenance-unit
+    action: { verifier: api.golden.discussion-document-provenance-unit }
+    expect: { status: passed }
+  - id: inbox-comment-summary-unit
+    action: { verifier: api.golden.inbox-comment-summary-unit }
+    expect: { status: passed }
