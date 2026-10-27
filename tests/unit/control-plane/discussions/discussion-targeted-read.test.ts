@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -42,6 +43,18 @@ describe('targeted Discussion reads', () => {
 		}));
 		expect(result.messages).toHaveLength(1);
 		expect(result.messages[0]?.body).toBe('Hello');
+	});
+
+	it('retains the repository and exact full document digest in targeted history readback', async () => {
+		const read = mocks.readRepositoryFiles.getMockImplementation()!;
+		mocks.readRepositoryFiles.mockImplementation(async input => ({ ...await read(input), resolvedRef: 'a'.repeat(40) }));
+		const result = await loadDiscussions({ store: { all: async () => [] }, projectId: 'project-1',
+			discussionId: 'discussion-1', exactMessageIds: ['message-1'], collection: 'messages' });
+		const reply = await mocks.readRepositoryFiles.mock.results[0]!.value;
+		expect(result).toMatchObject({ repositoryId: 'repo-1', messages: [{ immutableRef: 'a'.repeat(40),
+			digest: createHash('sha256').update(reply.files[0].content).digest('hex') }] });
+		expect(createHash('sha256').update(reply.files[0].content).digest('hex'))
+			.not.toBe(createHash('sha256').update(result.messages[0]!.body).digest('hex'));
 	});
 
 	it('returns no original message only for an absent branch file while retaining denied and missing immutable authority', async () => {
