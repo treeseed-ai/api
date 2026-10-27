@@ -1,5 +1,62 @@
 # Cordis Api
 
+## Headless seed coordination
+
+Implementation contract under #644; this section is not a passing-runtime claim. API owns the
+legacy seed-operation capability and its successor reconciliation semantics. The successor is a
+public `@treeseed-cordis/api/seeds` package entry. CLI uses it without constructing `ApiApplication`,
+opening an HTTP listener, starting an API server or acquiring browser identity state. Existing
+HTTP endpoints and the seven global platform operations remain unchanged.
+
+`SeedCoordinator.open(selection)` opens a process-local native Cordis root for one explicit
+installation, project and platform profile. Selection contains no caller-asserted authority.
+The selected identity/authority adapter resolves live authorization through its public owner
+boundary. Missing configuration, an ambiguous provider or an incompatible selection blocks;
+there is no account, installation or credential fallback.
+
+The coordinator exposes these asynchronous methods and `close()`:
+
+| Method | Result and effect |
+|---|---|
+| `validate(bundle, signal)` | Validate the versioned envelope, prepare accepted validators and report safe blockers. No live resource activation. |
+| `plan(bundle, signal)` | Resolve exact artifacts, validate resources/dependencies/preconditions and save/read back an unblocked SDK `SeedPlan`. |
+| `apply(planReference, requestId, signal)` | Recheck the saved plan and authority, reconcile admitted owner steps and return an SDK `SeedReceipt`. |
+| `show(reference, signal)` | Read a saved exact plan or receipt through private custody. No bundle reacquisition or activation. |
+| `verify(receiptReference, signal)` | Recheck live authority and owner read-back; stale records cannot establish current readiness. |
+
+Native plugins provide typed `seed.coordinator`, `seed.authority`, `seed.artifacts`,
+`seed.preparation`, `seed.resources` and `seed.journal` capabilities. The typed service locator
+uses native Cordis resolution; metadata describing resource kinds is not an instance cache or
+another dependency container. Resource providers remain in their owning packages. SDK owns
+portable schemas, inferred types and provider/client contracts. API owns ordering, authority
+admission, idempotent reconciliation and aggregate receipt semantics.
+
+Deployment supplies common accepted NPM/Git acquisition and descriptor-anchored private custody.
+Only the trusted coordinator can write `.cordis/seeds`; a resource plugin cannot receive its
+writer capability. Accepted validators run in disposable restricted preparation scopes with no
+writable live installation, credentials or host-control socket. Cordis contexts are not isolation.
+Seed planning may run those preparation containers but never starts managed services, activates
+providers or changes the existing non-activating `platform plan` behavior.
+
+The journal binds exact seed/schema/executable/artifact identities, selected project/profile,
+trusted authority, resource owners and expected/desired generations. Apply holds one writer,
+rechecks authority and owner preconditions before each effect, and links verified owner receipts.
+Lost replies require exact read-back. Resume retains resolved artifacts and verified steps.
+Partial, pending, blocked and recovery-required are explicit; no cross-owner atomicity or
+destructive automatic rollback is promised. A downloaded plugin is not an active capability.
+
+Initial resource providers cover host composition, plugin selection, capacity-provider
+configuration, Agent definitions and environments. Agent owns manager, worker, profiles, warm
+pool and guest execution. Deployment owns bounded sandbox operations. Existing teams enroll
+through the existing public control plane and Keycloak-governed approval; seeds cannot grant
+their own team access. Team/project/repository migration and productive Work/model execution
+remain deferred to their owner tasks and Task 10.
+
+Default construction, a genuine packed Node consumer and owner tests in the four test tiers
+must verify these interfaces. Fixtures may substitute transport endpoints, never identity
+authority or production services. The exact #620 approved-committers blob and AGPL license
+remain unchanged. All issues, including Platform #678, stay open until authorized release.
+
 
 ## Task 3B: Installed API root and container provider
 

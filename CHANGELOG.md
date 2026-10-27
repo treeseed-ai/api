@@ -17,6 +17,8 @@
 
 ### Added
 
+- Define headless seed coordination and linked owner reconciliation boundaries (#644).
+
 - Bind native API roots and readiness to accepted measured runtime content (#624).
 - Api: deliver Task 3C typed providers and mobile-first UI integration (#624).
 - Compose authenticated installed API and request roots (#617).
