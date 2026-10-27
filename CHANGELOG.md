@@ -17,6 +17,7 @@
 
 ### Added
 
+- Specify durable seed owner-step ordering, resume identities and verified receipt admission (#644).
 - Define headless seed coordination and linked owner reconciliation boundaries (#644).
 
 - Bind native API roots and readiness to accepted measured runtime content (#624).
