@@ -1,8 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { subscriberSourceFixture, subscriberSourceProposal } from './native-subscriber-inputs.ts';
-import { readyContributionProposal } from './ready-proposal-fixture.ts';
-import { loadTeamExecutableProposalSources } from '../../../../../../src/api/capacity/services/capacity/execution/executable-proposal-source.ts';
-import { projectTeamExecutionGraph } from '../../../../../../src/api/capacity/policy/execution/execution-graph-projector.ts';
+import { subscriberSourceFixture, subscriberSourceProposal } from '../native-subscriber-inputs.ts';
+import { readyContributionProposal } from '../ready-proposal-fixture.ts';
+import { loadTeamExecutableProposalSources } from '../../../../../../../src/api/capacity/services/capacity/execution/executable-proposal-source.ts';
+import { projectTeamExecutionGraph } from '../../../../../../../src/api/capacity/policy/execution/execution-graph-projector.ts';
 
 afterEach(() => vi.unstubAllEnvs());
 
