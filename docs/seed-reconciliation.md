@@ -6,6 +6,12 @@ authority, Deployment custody, isolated artifact preparation or the public defau
 Those adapters must pass their own production-construction and assembled gates before the
 `SeedCoordinator.open` interface can be reported as implemented.
 
+Development consumes SDK `0.0.0-cordis.19`, source
+`90cf4f3cc62e166685280450c727499defd2af5b`, archive SHA-256
+`93dd549c98aba180306e9b19cc1cbc37494544b2764ed341c531c9af618c6f81`.
+Other owner archives still need their final compatible peer selections; this development
+adoption does not qualify the complete installed API package closure.
+
 `SeedReconciliation.apply(plan, requestId, signal)` accepts a schema-valid saved plan whose
 canonical SHA-256, excluding only `id` and `digest`, matches its identity. It validates live
 authority before acquiring the single-writer journal and before every owner operation. The
