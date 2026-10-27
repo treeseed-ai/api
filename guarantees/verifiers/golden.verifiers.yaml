@@ -226,6 +226,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/planning/contributions/estimate-ownership.test.ts
     testName: "keeps an already integrated contribution current when the proposal orders work by workflow rather than alphabetically"
+  api.golden.accepted-source-first-execution:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/accepted-source-retirement.test.ts
+    testName: "materializes accepted subscriber work after condition-only history while retiring delivered work and preserving failed recovery"
   api.golden.subscriber-source-participant-denial:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

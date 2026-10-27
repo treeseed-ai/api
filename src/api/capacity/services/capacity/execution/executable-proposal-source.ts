@@ -30,17 +30,18 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 		WHERE p.team_id = ? AND ((p.decision_id IS NULL AND p.status IN ('draft','submitted','open','voting')) OR d.id IS NOT NULL)
 			${projectId ? 'AND p.project_id = ?' : ''}
 		ORDER BY p.project_id,p.id`, projectId ? [teamId, projectId] : [teamId]),
-		store.all('SELECT id,source_ref_json,status FROM execution_nodes WHERE team_id=?', [teamId]),
+		store.all('SELECT id,kind,source_ref_json,status FROM execution_nodes WHERE team_id=?', [teamId]),
 		store.all(`SELECT DISTINCT execution_node_id FROM capacity_provider_assignments
 			WHERE team_id=? AND execution_node_id IS NOT NULL AND status IN ('pending','leased','running','returned')`, [teamId])]);
 	const activeNodeIds = new Set(activeRows.map((row: Row) => text(row.execution_node_id)).filter(Boolean));
-	const graphState = new Map<string, { count: number; incomplete: number; active: number }>();
+	const graphState = new Map<string, { count: number; executable: number; incomplete: number; active: number }>();
 	for (const graphRow of graphRows) {
 		const source = record(graphRow.source_ref_json);
 		if (text(source.model) !== 'proposal') continue;
 		const key = `${text(source.id)}\u0000${text(source.digest)}`;
-		const state = graphState.get(key) ?? { count: 0, incomplete: 0, active: 0 };
+		const state = graphState.get(key) ?? { count: 0, executable: 0, incomplete: 0, active: 0 };
 		state.count += 1;
+		if (graphRow.kind === 'acting' || graphRow.kind === 'reviewing') state.executable += 1;
 		if (text(graphRow.status) !== 'completed') state.incomplete += 1;
 		if (activeNodeIds.has(text(graphRow.id))) state.active += 1;
 		graphState.set(key, state);
@@ -52,13 +53,14 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 		const recordedRef = record(decisionRecord.proposalRef);
 		// Pre-cutover decisions remain governed history but never become demand.
 		if (accepted && !text(recordedRef.id)) continue;
-		// Once every node for the exact accepted revision is completed, the decision
+		// Once executable work exists and every node for the exact revision is completed, the decision
 		// remains governed history but no longer participates in the living graph.
 		// Failed and cancelled nodes must remain demand so the projector can open the
 		// bounded revision/re-review path instead of staling the accepted decision.
 		// Reuse the graph itself as lifecycle authority; do not add an archive model.
 		const state = graphState.get(`${text(row.proposal_id)}\u0000sha256:${text(row.active_content_hash)}`);
-		if (accepted && state && state.count > 0 && state.incomplete === 0) continue;
+		// A completed approval condition alone is authority to start, not delivered work.
+		if (accepted && state && state.executable > 0 && state.incomplete === 0) continue;
 		let exact;
 		try { exact = await readExactProposal(store, { ...row, id: row.proposal_id }); }
 		catch (error) {
