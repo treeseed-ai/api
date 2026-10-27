@@ -78,6 +78,34 @@ it('reads a subscriber contribution from the proposal owner library while retain
 		await reconcileAssignmentContent(completionStore, assignment.teamId, 'cross-workday');
 		expect((await f.query('SELECT * FROM audit_events ORDER BY id')).rows).toEqual(audits);
 		expect(f.requests).toHaveLength(reads); expect(await f.snapshot()).toEqual(completed);
+		// A later real contribution from the same subscriber keeps the original
+		// product's measured-attempt custody while adding its own new provenance.
+		const nextSource = { ...source, commit: candidate.commit, digest: `sha256:${candidate.digest}`, revision: 2 };
+		const nextAttempt = assignmentAttemptSchema.parse({ ...attempt, id: 'api-additional-estimate', sourceRef: nextSource,
+			contextRefs: [nextSource], workspace: { ...attempt.workspace, baseCommit: candidate.commit },
+			grant: { ...attempt.grant, contentRead: [nextSource], contentWrite: [nextSource] } });
+		const additional = { ...contribution.executionPlan.workItems[0]!, id: 'repair-api-history-routing',
+			estimateRef: { store: 'postgresql', model: 'assignment-attempt', id: nextAttempt.id, revision: nextAttempt.attempt } };
+		const combined = { ...contribution, executionPlan: { workItems: [...contribution.executionPlan.workItems, additional] } };
+		const nextCommit = f.publishContent(source.path, combined);
+		const nextAssignment = { ...assignment, id: nextAttempt.id, assignmentAttempt: nextAttempt };
+		const nextResult = assignmentResultSchema.parse({ ...result, id: 'additional-estimate-result', assignmentId: nextAttempt.id,
+			references: result.references.map(reference => ({ ...reference, commit: nextCommit.commit })) });
+		await f.query('UPDATE governance_proposals SET active_version=3,active_content_hash=?,metadata_json=?', [nextCommit.digest,
+			JSON.stringify({ contentProvenance: { repositoryId: 'repository', contentPath: source.path, commitSha: nextCommit.commit, digest: nextCommit.digest } })]);
+		const retained = await f.snapshot();
+		expect(await readAssignmentEstimateProposal(store as never, nextAssignment, nextResult)).toEqual(combined);
+		await integrateAssignmentEstimate(integrationStore as never, nextAssignment as never, nextResult);
+		await integrateAssignmentEstimate(integrationStore as never, nextAssignment as never, nextResult);
+		expect(await f.snapshot()).toEqual(retained);
+		const forged = f.publishContent(source.path, { ...combined, executionPlan: { workItems: [
+			{ ...contribution.executionPlan.workItems[0]!, estimate: { expectedSeconds: 150, maximumSeconds: 240, rationale: 'Forged earlier measurement.' } }, additional,
+		] } });
+		const deniedCheckpoint = await f.snapshot();
+		await expect(integrateAssignmentEstimate(integrationStore as never, nextAssignment as never, { ...nextResult,
+			references: nextResult.references.map(reference => ({ ...reference, commit: forged.commit })) }))
+			.rejects.toMatchObject({ code: 'assignment_estimate_owner_missing' });
+		expect(await f.snapshot()).toEqual(deniedCheckpoint);
 		for (const change of [{ id: 'other-proposal' }, { projectId: 'foreign' }]) {
 			const altered = f.publishContent(source.path, { ...contribution, ...change }), checkpoint = await f.snapshot();
 			const changed = { ...result, references: result.references.map(reference => ({ ...reference, commit: altered.commit })) };

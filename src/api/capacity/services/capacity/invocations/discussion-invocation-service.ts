@@ -207,7 +207,7 @@ async function communicationSupply(store: DiscussionInvocationStore, teamId: str
 	);
 	for (const candidate of candidates) {
 		const session = await store.first(
-			`SELECT execution_providers_json,metadata_json FROM capacity_provider_availability_sessions
+			`SELECT execution_providers_json,metadata_json,runner_pressure_json FROM capacity_provider_availability_sessions
 			 WHERE membership_id = ? AND team_id = ? AND capacity_provider_id = ? AND status = 'open'
 			   AND expires_at > ? AND (available_from IS NULL OR available_from <= ?)
 			   AND (available_until IS NULL OR available_until > ?)
@@ -221,7 +221,15 @@ async function communicationSupply(store: DiscussionInvocationStore, teamId: str
 		const communicationLane = lanes.find((lane) => lane.purpose === 'communication');
 		if (!communicationLane) continue;
 		const maxConcurrentWorkers = Math.max(1, Number(communicationLane.maxConcurrentWorkers ?? provider.maxConcurrentWorkers ?? 1) || 1);
-		return { ...candidate, maxConcurrentWorkers,
+		const pressure = record(session?.runner_pressure_json);
+		const maximum = pressure.maxConcurrentWorkers, active = pressure.activeWorkers, available = provider.availableConcurrency;
+		const measured = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+		// Retained claims and non-communication work consume the same host pool.
+		// Keep a conversation queued until the existing native report has room;
+		// starting its run early would spend its original clock in the queue.
+		const availableConcurrency = measured(maximum) && measured(active) && measured(available)
+			? Math.min(available, Math.max(0, maximum - active)) : 0;
+		return { ...candidate, maxConcurrentWorkers: Math.min(maxConcurrentWorkers, availableConcurrency),
 			providerRuntimeBuild: text(record(session?.metadata_json).runtimeBuild) || null };
 	}
 	return null;

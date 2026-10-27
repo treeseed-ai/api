@@ -1,6 +1,71 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.native-conversation-lane-limit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/discussion-admission-capacity.test.ts
+    testName: "keeps group discussions queued when native capacity is below lane maximum: 1/1/1"
+  api.golden.native-conversation-retained-slot:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/discussion-admission-capacity.test.ts
+    testName: "keeps group discussions queued when native capacity is below lane maximum: 5/1/1"
+  api.golden.native-conversation-shared-host-slot:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/discussion-admission-capacity.test.ts
+    testName: "keeps group discussions queued when native capacity is below lane maximum: 5/2/1"
+  api.golden.native-conversation-shared-host-full:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/discussion-admission-capacity.test.ts
+    testName: "keeps group discussions queued when native capacity is below lane maximum: 5/1/+0"
+  api.golden.native-conversation-adapter-full:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/discussion-admission-capacity.test.ts
+    testName: "keeps group discussions queued when native capacity is below lane maximum: 5/+0/1"
+  api.golden.native-conversation-negative:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/discussion-admission-capacity.test.ts
+    testName: "keeps group discussions queued when native capacity is below lane maximum: 5/-1/1"
+  api.golden.native-conversation-fractional:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/discussion-admission-capacity.test.ts
+    testName: "keeps group discussions queued when native capacity is below lane maximum: 5/1.5/1"
+  api.golden.native-conversation-not-number:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/discussion-admission-capacity.test.ts
+    testName: "keeps group discussions queued when native capacity is below lane maximum: 5/NaN/1"
+  api.golden.native-conversation-unsafe-integer:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/discussion-admission-capacity.test.ts
+    testName: "keeps group discussions queued when native capacity is below lane maximum: 5/9007199254740992/1"
+  api.golden.native-conversation-numeric-string:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/discussion-admission-capacity.test.ts
+    testName: "keeps group discussions queued when native capacity is below lane maximum: 5/'1'/1"
+  api.golden.native-conversation-missing:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/discussion-admission-capacity.test.ts
+    testName: "keeps group discussions queued when native capacity is below lane maximum: 5/undefined/1"
+  api.golden.native-conversation-unknown-host:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/discussion-admission-capacity.test.ts
+    testName: "keeps group discussions queued when native capacity is below lane maximum: 5/1/NaN"
+  api.golden.retained-own-estimate:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/contributions/estimate-ownership.test.ts
+    testName: "preserves an unchanged earlier own contribution when the same subscriber estimates additional real work"
   api.golden.canonical-query-context-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

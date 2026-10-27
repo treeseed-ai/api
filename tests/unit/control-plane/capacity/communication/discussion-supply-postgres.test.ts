@@ -30,10 +30,14 @@ describe('current communication supply in PostgreSQL', () => {
 			}
 			await database.pool.query(`INSERT INTO capacity_provider_lanes (id,capacity_provider_id,execution_provider_id,display_name,purpose,max_concurrent_runners,created_at,updated_at) VALUES ('communication','provider','codex-managed','Communication','communication',1,$1,$1)`, [now]);
 			const report = [
-				{ id: 'codex-implementation', status: 'active', lanes: [{ purpose: 'communication', maxConcurrentWorkers: 1 }] },
-				{ id: 'codex-research', status: 'active', lanes: [{ purpose: 'workday', maxConcurrentWorkers: 1 }] },
+				{ id: 'codex-implementation', status: 'active', maxConcurrentWorkers: 5, activeWorkers: 3, availableConcurrency: 2,
+					lanes: [{ purpose: 'communication', maxConcurrentWorkers: 5 }] },
+				{ id: 'codex-research', status: 'active', maxConcurrentWorkers: 5, activeWorkers: 1, availableConcurrency: 4,
+					lanes: [{ purpose: 'workday', maxConcurrentWorkers: 5 }] },
 			];
 			await database.pool.query(`INSERT INTO capacity_provider_availability_sessions (id,membership_id,team_id,capacity_provider_id,status,opened_at,refreshed_at,expires_at,available_from,execution_providers_json,created_at,updated_at) VALUES ('session','membership','team','provider','open',$1,$1,$2,$1,$3,$1,$1)`, [now, new Date(Date.now() + 60_000).toISOString(), JSON.stringify(report)]);
+			await database.pool.query(`UPDATE capacity_provider_availability_sessions SET runner_pressure_json=$1 WHERE id='session'`,
+				[JSON.stringify({ maxConcurrentWorkers: 5, activeWorkers: 4 })]);
 			const agent = { schemaVersion: 'treeseed.agent/v1', id: 'sdk/architect', name: 'Architect', agentClass: 'architect', purpose: 'Inspect architecture.', responsibilities: ['Inspect architecture.'], capabilities: ['repository-analysis'], context: { include: ['project-objectives'] }, activityProfiles: { chat: { handler: 'writer', permissions: { content: { read: ['knowledge', 'discussion'], write: ['discussion'] }, tools: ['discussion', 'source.read'] }, prompt: { system: 'Answer using evidence.' } } } };
 			let claim: Record<string, unknown> | null = null;
 			const store = {
@@ -52,6 +56,15 @@ describe('current communication supply in PostgreSQL', () => {
 			expect(store.createCapacityWorkdayRun).toHaveBeenCalledWith('team', expect.objectContaining({
 				parameters: expect.objectContaining({ scheduledProjectIds: ['project'] }),
 			}));
+			// Adapter-local spare workers do not override the shared host's actual
+			// retained claims. Queuing must not create a hidden run or start its clock.
+			await database.pool.query(`UPDATE capacity_provider_availability_sessions SET runner_pressure_json=$1 WHERE id='session'`,
+				[JSON.stringify({ maxConcurrentWorkers: 5, activeWorkers: 5 })]);
+			expect(await admitDiscussionInvocations(store, { ...input, idempotencyKey: 'host-full' }))
+				.toMatchObject([{ status: 'queued', blocker: 'communication_capacity_queued' }]);
+			expect(store.createCapacityWorkdayRun).toHaveBeenCalledOnce();
+			await database.pool.query(`UPDATE capacity_provider_availability_sessions SET runner_pressure_json=$1 WHERE id='session'`,
+				[JSON.stringify({ maxConcurrentWorkers: 5, activeWorkers: 4 })]);
 			await database.pool.query(`INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('project','team','sdk','SDK',$1,$1)`, [now]);
 
    // The same operator topic is a project-local discussion in each library.
