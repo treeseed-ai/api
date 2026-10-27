@@ -13,6 +13,12 @@ import { readExactProposal } from '../../governance/executable-proposal.ts';
 import { branchMovedConflict } from '../../discussions/discussion-workspace.ts';
 
 type Row = Record<string, unknown>;
+/** A projection failure cannot erase custody of an already committed source. */
+export class CommittedProposalContentError extends Error {
+	constructor(readonly authored: Awaited<ReturnType<typeof commitProposalVersionContent>>, cause: unknown) {
+		super(`Proposal content committed before projection failed: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+	}
+}
 function object(value: unknown): Row { if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row; if (typeof value === 'string') try { return object(JSON.parse(value)); } catch { return {}; } return {}; }
 function text(...values: unknown[]) { return String(values.find((value) => typeof value === 'string' && value.trim()) ?? '').trim(); }
 function list(value: unknown) { return Array.isArray(value) ? value.map(String).map((entry) => entry.trim()).filter(Boolean) : []; }
@@ -113,9 +119,6 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 		: currentStatus === 'voting' ? 'ready' : currentStatus === 'accepted' ? 'decided' : currentStatus === 'open' ? 'discussing' : 'draft');
 	try {
 		const existing = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: baseRef, path, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }).catch((error) => { if (Number(object(error).status) === 404) return null; throw error; });
-		if (input.initial === true && existing !== null) throw Object.assign(new Error('The proposal source path already exists; choose a distinct proposal slug.'), {
-			status: 409, code: 'proposal_source_path_occupied', path,
-		});
 		if (existing && text(object(existing).resolvedRef) !== workspace.baseCommitSha) throw Object.assign(new Error('The proposal content branch changed while its current version was read.'), { status: 409, code: 'proposal_content_base_stale' });
 		const before = existing === null ? null : repositorySource(existing);
 		// Inbox edits carry only changed prose. Preserve authored fields from the
@@ -138,6 +141,12 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 			discussionRef: field('discussionRef'), executionPlan: field('executionPlan'),
 		});
 		const expectedDigest = createHash('sha256').update(source).digest('hex');
+		if (input.initial === true && before !== null && before !== source) {
+			const existingId = text(parseFrontmatterDocument(before).frontmatter.id) || '(unknown)';
+			throw Object.assign(new Error(`The proposal source path already exists for proposal ${existingId} at ${workspace.baseCommitSha}; recover that exact proposal or choose a distinct slug.`), {
+				status: 409, code: 'proposal_source_path_occupied', path,
+			});
+		}
 		if (before === source) {
 			await connection.client.closeWorkspace(workspace.workspaceId);
 			return { receipt: { path, commitSha: workspace.baseCommitSha, branchName, changedPaths: [], digest: expectedDigest,
@@ -151,11 +160,14 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 			status: 409, code: 'proposal_changeset_digest_mismatch',
 		});
 		const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `governance: proposal ${text(input.proposal.id)} version ${version} — ${text(input.update.changeReason)}`, author: { name: text(input.principal.name, input.principal.id, 'Team member'), email: text(input.principal.email, 'governance@users.treeseed.local') } });
-		if (simulation) await connection.client.closeWorkspace(workspace.workspaceId);
-		else {
-			await recordTreeDxAuthoringState(input.store,'unpublished',{ projectId,repositoryId:connection.repositoryId,commitSha:commit.commitSha,ref:commit.branchName,changedPaths:commit.changedPaths,actorType:'user',actorId:text(input.principal.id) });
-			await projectTreeDxCommitSignals(input.store, { projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: text(input.update.changeReason), actorType: 'user', actorId: text(input.principal.id) });
-		}
-		return { receipt: { path, commitSha: commit.commitSha, branchName: commit.branchName, changedPaths: commit.changedPaths, digest: createHash('sha256').update(source).digest('hex'), proposalVersion: version, changeset: { ...changeset, resultCommitSha: commit.commitSha } }, update: { ...input.update, title, summary, body, proposalTypes: types, metadata: nextMetadata, contentProvenance: { repositoryId: connection.repositoryId, contentPath: path, commitSha: commit.commitSha, digest: createHash('sha256').update(source).digest('hex') } } };
+		const authored = { receipt: { path, commitSha: commit.commitSha, branchName: commit.branchName, changedPaths: commit.changedPaths, digest: expectedDigest, proposalVersion: version, changeset: { ...changeset, resultCommitSha: commit.commitSha } }, update: { ...input.update, title, summary, body, proposalTypes: types, metadata: nextMetadata, contentProvenance: { repositoryId: connection.repositoryId, contentPath: path, commitSha: commit.commitSha, digest: expectedDigest } } };
+		try {
+			if (simulation) await connection.client.closeWorkspace(workspace.workspaceId);
+			else {
+				await recordTreeDxAuthoringState(input.store,'unpublished',{ projectId,repositoryId:connection.repositoryId,commitSha:commit.commitSha,ref:commit.branchName,changedPaths:commit.changedPaths,actorType:'user',actorId:text(input.principal.id) });
+				await projectTreeDxCommitSignals(input.store, { projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: text(input.update.changeReason), actorType: 'user', actorId: text(input.principal.id) });
+			}
+		} catch (cause) { throw new CommittedProposalContentError(authored, cause); }
+		return authored;
 	} catch (error) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw error; }
 }

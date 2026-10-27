@@ -4,6 +4,7 @@ import { commitProposalVersionContent } from '../../../../../src/api/control-pla
 import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { projectTreeDxCommitSignals } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-change-projector.ts';
 import { serializeProposalDocument } from '../../../../../src/api/governance/proposal-document.ts';
+import { createGovernanceService } from '../../../../../src/api/control-plane/governance/governance-service.ts';
 
 vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', async original => ({
 	...await original<typeof import('../../../../../src/api/knowledge/gateway-treedx-connection.ts')>(), resolveKnowledgeGatewayConnection: vi.fn(),
@@ -32,6 +33,23 @@ function fixture(existing = false) {
 	return { input, client, commit, path, source, digest, base };
 }
 
+function serviceFixture() {
+	const f = fixture();
+	let retained: Record<string, unknown> | null = null;
+	const store = { getProjectDetails: async () => ({ project: { id: 'project-1', teamId: 'team-1' } }),
+		createGovernanceProposal: async () => (retained = { ...f.input.proposal, activeVersion: 1, activeContentHash: 'initial', metadata: {} }),
+		getGovernanceProposal: async () => retained,
+		batch: async (statements: Array<{ query: string; params: unknown[] }>) => {
+			for (const statement of statements) {
+				if (statement.query.startsWith('DELETE FROM governance_proposals ')) retained = null;
+				if (statement.query.startsWith('UPDATE governance_proposals ') && retained) {
+					retained.metadata = JSON.parse(String(statement.params[5])); retained.activeContentHash = statement.params[6];
+				}
+			}
+		} };
+	return { ...f, retained: () => retained, service: createGovernanceService(store, { create: vi.fn() }) };
+}
+
 describe('initial proposal commit recovery', () => {
 	beforeEach(() => vi.clearAllMocks());
 	it('retains the exact authored receipt when graph projection fails after committing', async () => {
@@ -49,6 +67,21 @@ describe('initial proposal commit recovery', () => {
 		expect(result.update.contentProvenance).toMatchObject({ commitSha: f.base, digest: f.digest });
 		expect(f.client.applyChangeset).not.toHaveBeenCalled(); expect(f.client.commit).not.toHaveBeenCalled();
 		expect(f.client.closeWorkspace).toHaveBeenCalledOnce();
+	});
+	it('keeps the public proposal discoverable and bound after committed projection failure', async () => {
+		const f = serviceFixture();
+		vi.mocked(projectTreeDxCommitSignals).mockRejectedValueOnce(new Error('Graph reconciliation interrupted'));
+		await expect(f.service.createProposal({ id: 'user-1', roles: ['admin'] }, 'project-1', {
+			...f.input.proposal, groupIds: f.input.update.groupIds })).rejects.toMatchObject({
+			code: 'proposal_initial_projection_pending', message: expect.stringContaining(f.commit) });
+		expect(f.retained()).toMatchObject({ id: 'proposal-1', activeContentHash: f.digest,
+			metadata: { contentProvenance: { repositoryId: 'repository-1', commitSha: f.commit, digest: f.digest } } });
+	});
+	it('removes only the uncommitted proposal when source access is denied', async () => {
+		const f = serviceFixture();
+		f.client.readRepositoryFile.mockRejectedValueOnce(Object.assign(new Error('Source denied'), { status: 403 }));
+		await expect(f.service.createProposal({ id: 'user-1', roles: ['admin'] }, 'project-1', f.input.proposal)).rejects.toMatchObject({ status: 403 });
+		expect(f.retained()).toBeNull(); expect(f.client.commit).not.toHaveBeenCalled();
 	});
 	it.each(['foreign-id', 'different-request'])('keeps occupied source immutable for %s', async kind => {
 		const f = fixture(true);

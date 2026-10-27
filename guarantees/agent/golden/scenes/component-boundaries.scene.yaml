@@ -141,6 +141,15 @@ workflow:
   - id: accepted-source-first-execution
     action: { verifier: api.golden.accepted-source-first-execution }
     expect: { status: passed }
+  - id: initial-proposal-postcommit-custody
+    action: { verifier: api.golden.initial-proposal-postcommit-custody }
+    expect: { status: passed }
+  - id: initial-proposal-identical-replay
+    action: { verifier: api.golden.initial-proposal-identical-replay }
+    expect: { status: passed }
+  - id: initial-proposal-recovery-native
+    action: { verifier: api.golden.initial-proposal-recovery-native }
+    expect: { status: passed }
   - id: subscriber-source-participant-denial
     action: { verifier: api.golden.subscriber-source-participant-denial }
     expect: { status: passed }
