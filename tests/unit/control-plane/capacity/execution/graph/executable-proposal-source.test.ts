@@ -98,7 +98,7 @@ describe('executable proposal source selection', () => {
 		const exactReadsBefore = exactProposal.mock.calls.length;
 		const all = vi.fn(async (query: string) => query.includes('FROM execution_nodes') ? [{
 			source_ref_json: { model: 'proposal', id: 'settled-proposal', digest: `sha256:${'a'.repeat(64)}` },
-			status: 'completed',
+			kind: 'acting', status: 'completed',
 		}] : [{
 			proposal_id: 'settled-proposal', project_id: 'project', active_version: 4,
 			active_content_hash: 'a'.repeat(64), metadata_json: {}, decision_id: 'decision',
@@ -107,6 +107,19 @@ describe('executable proposal source selection', () => {
 		}]);
 		await expect(loadTeamExecutableProposalSources({ all }, 'team', 'project')).resolves.toEqual([]);
 		expect(exactProposal.mock.calls).toHaveLength(exactReadsBefore);
+	});
+	it('does not retire accepted authority whose only completed nodes are conditions', async () => {
+		const ref = { id: 'proposal', repository: 'repository', path: 'proposals/proposal.mdx',
+			commit: 'b'.repeat(40), digest: `sha256:${'a'.repeat(64)}` };
+		const all = vi.fn(async (query: string) => query.includes('FROM execution_nodes') ? [{
+			source_ref_json: { model: 'proposal', id: ref.id, digest: ref.digest }, kind: 'condition', status: 'completed',
+		}] : query.includes('FROM governance_proposals') ? [{ proposal_id: ref.id, project_id: 'project', active_version: 1,
+			active_content_hash: 'a'.repeat(64), accepted_decision_id: 'decision', proposal_version: 1,
+			decision_record_json: { proposalRef: ref } }] : []);
+		exactProposal.mockResolvedValueOnce({ ref, definition: readyContributionProposal() });
+		exactDecision.mockResolvedValueOnce({ ref: { id: 'decision', revision: 1, digest: `sha256:${'d'.repeat(64)}`,
+			repository: 'repository', commit: 'e'.repeat(40), path: 'decisions/decision.mdx' } });
+		await expect(loadTeamExecutableProposalSources({ all }, 'team')).resolves.toHaveLength(1);
 	});
 
 	it('keeps a failed accepted revision in the living graph for bounded revision', async () => {
