@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Organize permanent tests by tier and enforce the shared development/testing strategy (#638).
+
 ### Fixed
 
 - Stabilize public metadata declarations and final runtime closure (#624).
