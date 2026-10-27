@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { CanonicalJson, ServiceSchemas, PluginManagementSchemas, type ProbeContext, type ServicePlan } from '@treeseed-cordis/sdk';
 import { ComposeDeploymentHost, ServiceHostRuntime, ServiceWorkerOwnerClient, ServiceWorkerClient, ServicePlanStore, ServiceAuthorityExports, ServiceRuntimeInspection, ServiceCredentials, PackageArchiveInspector } from '@treeseed-cordis/deployment';
-import { ApiJson } from '../src/json.js';
+import { ApiJson } from '../../src/json.js';
 import { InstalledApiBrowser } from './installed-root-browser.js';
 class EdgeRead {
     private resolve: ((value: { status: number; body: Buffer; headers: IncomingMessage['headers'] }) => void) | null = null; private reject: ((error: Error) => void) | null = null;

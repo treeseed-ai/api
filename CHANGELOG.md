@@ -2,10 +2,6 @@
 
 ## [Unreleased]
 
-### Changed
-
-- Organize permanent tests by tier and enforce the shared development/testing strategy (#638).
-
 ### Fixed
 
 - Stabilize public metadata declarations and final runtime closure (#624).
@@ -13,6 +9,8 @@
 - Restore the existing API committer policy to Cordis (#620).
 
 ### Changed
+
+- Organize permanent tests by tier and enforce the shared development/testing strategy (#638).
 
 - Rebuild the genuine API runtime and browser asset closure against the final Task 3C public owner archives (#624).
 

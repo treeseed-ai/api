@@ -18,24 +18,27 @@
       "default": "./dist/src/container.js"
     },
     "./testing": {
-      "types": "./dist/tests/installed-root-fixture.d.ts",
-      "default": "./dist/tests/installed-root-fixture.js"
+      "types": "./dist/tests/support/installed-root-fixture.d.ts",
+      "default": "./dist/tests/support/installed-root-fixture.js"
     }
   },
   "files": [
     "dist/src",
     "README.md",
     "LICENSE",
-    "dist/tests/installed-root-fixture.*",
-    "dist/tests/runtime-packages.*"
+    "dist/tests/support/installed-root-fixture.*",
+    "dist/tests/support/runtime-packages.*"
   ],
   "scripts": {
-    "check": "bun scripts/tooling.ts check",
+    "check": "bun run check:test-layout && bun scripts/tooling.ts check",
     "build": "bun scripts/tooling.ts build && bun dist/src/container.js --metadata && bun dist/src/server.js --metadata",
-    "test:unit": "bun test ./tests --test-name-pattern '^unit:'",
-    "test:integration": "bun test ./tests --test-name-pattern '^integration:'",
-    "test:smoke": "bun test ./tests --test-name-pattern '^smoke:'",
-    "verify": "bun run check && bun run build && bun run test:unit && bun run test:integration && bun run test:smoke"
+    "test:unit": "bun test ./tests/unit",
+    "test:integration": "bun test ./tests/integration",
+    "test:smoke": "bun run test:acceptance",
+    "verify": "bun run check && bun run build && bun run test:acceptance && bun run test:regression && bun run test:integration && bun run test:unit",
+    "check:test-layout": "bun .agents/skills/release-workflow/scripts/test-layout.ts",
+    "test:regression": "bun test ./tests/regression",
+    "test:acceptance": "bun test ./tests/acceptance"
   },
   "peerDependencies": {
     "@treeseed-cordis/sdk": "0.0.0-cordis.16",
