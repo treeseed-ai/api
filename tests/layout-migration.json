@@ -1,0 +1,38 @@
+{
+  "repository": "api",
+  "baseline": "6ad49c982abe896078d7d4c038cd0ae7e718d39d",
+  "registrationCount": 17,
+  "entries": [
+    {"from":"tests/application-view.test.ts","to":"tests/unit/application-view.test.ts","tier":"unit","name":"unit: private format3 application records become exact public SDK views without bookkeeping","currentName":"unit: private format3 application records become exact public SDK views without bookkeeping"},
+    {"from":"tests/application-view.test.ts","to":"tests/unit/application-view.test.ts","tier":"unit","name":"unit: legacy public application views keep their SDK response shape","currentName":"unit: legacy public application views keep their SDK response shape"},
+    {"from":"tests/container.test.ts","to":"tests/acceptance/container.test.ts","tier":"acceptance","name":"smoke: built API container program declares native provider","currentName":"acceptance: built API container program declares native provider"},
+    {"from":"tests/container.test.ts","to":"tests/unit/container.test.ts","tier":"unit","name":"unit: API container declares bounded configuration and dependencies","currentName":"unit: API container declares bounded configuration and dependencies"},
+    {"from":"tests/container.test.ts","to":"tests/integration/container.test.ts","tier":"integration","name":"integration: package projects actual container class definition","currentName":"integration: package projects actual container class definition"},
+    {"from":"tests/installed-root.test.ts","to":"tests/acceptance/installed-root.test.ts","tier":"acceptance","name":"smoke: genuine packed API default root composes typed database Keycloak and edge with measured assets and retained host state","currentName":"acceptance: genuine packed API default root composes typed database Keycloak and edge with measured assets and retained host state"},
+    {"from":"tests/native-service.test.ts","to":"tests/acceptance/native-service.test.ts","tier":"acceptance","name":"smoke: API publicly exports its native service and direct routed readiness contracts","currentName":"acceptance: API publicly exports its native service and direct routed readiness contracts"},
+    {"from":"tests/native-service.test.ts","to":"tests/integration/native-service.test.ts","tier":"integration","name":"integration: default API readiness observes real HTTP evidence and rejects scope content duplicate keys and canaries","currentName":"integration: default API readiness observes real HTTP evidence and rejects scope content duplicate keys and canaries"},
+    {"from":"tests/native-service.test.ts","to":"tests/unit/native-service.test.ts","tier":"unit","name":"unit: native API service owns typed dependencies and observer-only configuration","currentName":"unit: native API service owns typed dependencies and observer-only configuration"},
+    {"from":"tests/public-declarations.test.ts","to":"tests/regression/public-declarations.test.ts","tier":"regression","name":"smoke: API declaration artifact references the public SDK container contract","currentName":"regression: API declaration artifact references the public SDK container contract"},
+    {"from":"tests/public-declarations.test.ts","to":"tests/regression/public-declarations.test.ts","tier":"regression","name":"smoke: retained API metadata names the historical SDK contracts","currentName":"regression: retained API metadata names the historical SDK contracts"},
+    {"from":"tests/public-declarations.test.ts","to":"tests/regression/public-declarations.test.ts","tier":"regression","name":"smoke: native API metadata names the current SDK provider contract","currentName":"regression: native API metadata names the current SDK provider contract"},
+    {"from":"tests/public-fixture.test.ts","to":"tests/integration/public-fixture.test.ts","tier":"integration","name":"integration: API advertises its owner-only exact-archive fixture through a public export","currentName":"integration: API advertises its owner-only exact-archive fixture through a public export"},
+    {"from":"tests/runtime-audit.test.ts","to":"tests/acceptance/runtime-audit.test.ts","tier":"acceptance","name":"smoke: API runtime auditor measures retained archives and installed entry without executing packages and rejects tampering","currentName":"acceptance: API runtime auditor measures retained archives and installed entry without executing packages and rejects tampering"},
+    {"from":"tests/server.test.ts","to":"tests/acceptance/server.test.ts","tier":"acceptance","name":"smoke: built API program declares real native roots and container","currentName":"acceptance: built API program declares real native roots and container"},
+    {"from":"tests/server.test.ts","to":"tests/unit/server.test.ts","tier":"unit","name":"unit: unconfigured API refuses credentials without output or listener","currentName":"unit: unconfigured API refuses credentials without output or listener"},
+    {"from":"tests/server.test.ts","to":"tests/integration/server.test.ts","tier":"integration","name":"integration: API package projects actual owner plugin declarations","currentName":"integration: API package projects actual owner plugin declarations"}
+  ],
+  "mapping": {
+    "tests/installed-root-browser.ts": ["tests/support/installed-root-browser.ts"],
+    "tests/installed-root-fixture.ts": ["tests/support/installed-root-fixture.ts"],
+    "tests/installed-root-program.ts": ["tests/support/installed-root-program.ts"],
+    "tests/runtime-packages.ts": ["tests/support/runtime-packages.ts"],
+    "tests/application-view.test.ts": ["tests/unit/application-view.test.ts"],
+    "tests/container.test.ts": ["tests/acceptance/container.test.ts", "tests/unit/container.test.ts", "tests/integration/container.test.ts"],
+    "tests/installed-root.test.ts": ["tests/acceptance/installed-root.test.ts"],
+    "tests/native-service.test.ts": ["tests/acceptance/native-service.test.ts", "tests/integration/native-service.test.ts", "tests/unit/native-service.test.ts"],
+    "tests/public-declarations.test.ts": ["tests/regression/public-declarations.test.ts"],
+    "tests/public-fixture.test.ts": ["tests/integration/public-fixture.test.ts"],
+    "tests/runtime-audit.test.ts": ["tests/acceptance/runtime-audit.test.ts"],
+    "tests/server.test.ts": ["tests/acceptance/server.test.ts", "tests/unit/server.test.ts", "tests/integration/server.test.ts"]
+  }
+}

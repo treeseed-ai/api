@@ -6,8 +6,8 @@ import { CanonicalJson, ServiceSchemas, PluginManagementSchemas, type ServiceIns
 import { ServiceRuntimeFixture } from '@treeseed-cordis/deployment/testing/runtime';
 import { PostgresServicePlugin, PostgresReadinessPlugin, CaddyServicePlugin, ServiceProjection, ServiceWorkerBuild, PackageArchiveInspector } from '@treeseed-cordis/deployment';
 import { KeycloakServicePlugin, KeycloakReadinessPlugin } from '@treeseed-cordis/identity/services';
-import { NodeApiServicePlugin, ApiReadinessPlugin } from '../src/services.js';
-import { ApiBuild } from '../src/server.js';
+import { NodeApiServicePlugin, ApiReadinessPlugin } from '../../src/services.js';
+import { ApiBuild } from '../../src/server.js';
 import { PreparedApiPackages, type PreparedApiPackage,type ApiFixtureSelection } from './runtime-packages.js';
 class FixturePort {
     private readonly server: Server = createServer();

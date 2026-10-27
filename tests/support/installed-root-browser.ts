@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { PlatformOperations, type ServicePlan } from '@treeseed-cordis/sdk';
 import { ServiceCredentials } from '@treeseed-cordis/deployment';
 import {AdminRoutes} from '@treeseed-cordis/admin';
-import { ApiJson } from '../src/json.js';
+import { ApiJson } from '../../src/json.js';
 class BrowserRequest {
     static async read(path: string): Promise<{status:number;value:unknown}> {const response=await fetch(path,{credentials:'same-origin',redirect:'error'});return {status:response.status,value:await response.json()};}
     static async refusedLogout(): Promise<number> {return (await fetch('/admin/logout',{method:'POST',credentials:'same-origin',redirect:'error',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'csrf=invalid'})).status;}

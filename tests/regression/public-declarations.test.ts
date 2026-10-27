@@ -22,6 +22,6 @@ class PublicDeclarationTests {
   expect(query.exprName.getText(file)).toBe('ServiceProjectionSchemas.container.parse');
  }
 }
-const suite=new PublicDeclarationTests();test('smoke: API declaration artifact references the public SDK container contract',suite.schema.bind(suite));
-test('smoke: retained API metadata names the historical SDK contracts',suite.legacy.bind(suite));
-test('smoke: native API metadata names the current SDK provider contract',suite.providers.bind(suite));
+const suite=new PublicDeclarationTests();test("regression: API declaration artifact references the public SDK container contract",suite.schema.bind(suite));
+test("regression: retained API metadata names the historical SDK contracts",suite.legacy.bind(suite));
+test("regression: native API metadata names the current SDK provider contract",suite.providers.bind(suite));

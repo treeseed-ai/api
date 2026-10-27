@@ -10,6 +10,8 @@
 
 ### Changed
 
+- Organize permanent tests by tier and enforce the shared development/testing strategy (#638).
+
 - Rebuild the genuine API runtime and browser asset closure against the final Task 3C public owner archives (#624).
 
 ### Added

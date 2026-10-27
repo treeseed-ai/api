@@ -5,7 +5,7 @@ import {parse} from 'jsonc-parser';
 import {PackageArchiveInspector} from '@treeseed-cordis/deployment';
 import {CanonicalJson} from '@treeseed-cordis/sdk';
 import { join } from 'node:path';
-import { InstalledApiFixture } from './installed-root-fixture.js';
+import { InstalledApiFixture } from '../support/installed-root-fixture.js';
 class InstalledApiTests {
     private async lockDifference(bundle:string):Promise<string>{
         const lock=parse(readFileSync(join(bundle,'bun.lock'),'utf8'),[],{allowTrailingComma:true}) as {packages:Record<string,unknown[]>},release=JSON.parse(readFileSync(join(bundle,'release.json'),'utf8')) as {packages:Array<{name:string;path:string;sha256:string}>},inventory=new Set<string>(),extra:string[]=[],missing:string[]=[],metadata:unknown[]=[];
@@ -16,11 +16,11 @@ class InstalledApiTests {
         const fixture = new InstalledApiFixture();
         try {
             await fixture.prepared(); const file = join(fixture.root, 'api-configuration.json'); writeFileSync(file, JSON.stringify(fixture.configuration));
-            const result = spawnSync('node', ['dist/tests/installed-root-program.js', file], { encoding: 'utf8', timeout: 240000, maxBuffer: 4 * 1024 * 1024 });
+            const result = spawnSync('node', ['dist/tests/support/installed-root-program.js', file], { encoding: 'utf8', timeout: 240000, maxBuffer: 4 * 1024 * 1024 });
             if (result.status !== 0) throw new Error(result.stderr+await this.lockDifference(fixture.bundle)); expect(result.stderr).toBe('');
             expect(JSON.parse(result.stdout)).toEqual({ fixtureOnly: true, genuineKeycloak: true, nativeApi: true, publicTls: true, unauthenticatedDenied: true, authenticatedBrowser: true, assetsVerified: true, sourceFree: true, retained: true });
         } finally { fixture.close(); }
     }
 }
 const installedApi = new InstalledApiTests();
-test('smoke: genuine packed API default root composes typed database Keycloak and edge with measured assets and retained host state', installedApi.program.bind(installedApi), 600000);
+test("acceptance: genuine packed API default root composes typed database Keycloak and edge with measured assets and retained host state", installedApi.program.bind(installedApi), 600000);

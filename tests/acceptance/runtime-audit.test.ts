@@ -5,8 +5,8 @@ import { spawnSync } from 'node:child_process';
 import { ServiceReleaseFixture, PreparedReleaseFixture } from '@treeseed-cordis/deployment/testing';
 import { PackageArchiveMaterializer } from '@treeseed-cordis/deployment';
 import { CanonicalJson } from '@treeseed-cordis/sdk';
-import { ApiRuntimeAudit } from '../src/runtime-audit.js';
-import { ApiBuild } from '../src/server.js';
+import { ApiRuntimeAudit } from '../../src/runtime-audit.js';
+import { ApiBuild } from '../../src/server.js';
 class RuntimeAuditTests {
     async program(): Promise<void> {
         const fixture = await new ServiceReleaseFixture().services();
@@ -35,4 +35,4 @@ class RuntimeAuditTests {
     }
 }
 const runtimeAudit = new RuntimeAuditTests();
-test('smoke: API runtime auditor measures retained archives and installed entry without executing packages and rejects tampering', runtimeAudit.program.bind(runtimeAudit));
+test("acceptance: API runtime auditor measures retained archives and installed entry without executing packages and rejects tampering", runtimeAudit.program.bind(runtimeAudit));

@@ -5,8 +5,8 @@ import { createHash } from 'node:crypto';
 import { parse, type ParseError } from 'jsonc-parser';
 import { PlatformSchemas } from '@treeseed-cordis/sdk';
 import { PackageArchiveInspector } from '@treeseed-cordis/deployment';
-import { ApiJson } from '../src/json.js';
-import { ApiRuntimeClosure } from '../src/runtime-audit.js';
+import { ApiJson } from '../../src/json.js';
+import { ApiRuntimeClosure } from '../../src/runtime-audit.js';
 export interface PreparedApiPackage { name: string; version: string; path: string; sha256: string; }
 export interface ApiFixtureSelection {archives:Record<'api'|'sdk'|'deployment'|'identity'|'admin'|'ui',string>;lockfile:string;}
 /** Test-only producer: public exact archives, no package imports or lifecycle execution. */
