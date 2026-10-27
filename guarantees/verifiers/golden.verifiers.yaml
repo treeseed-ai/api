@@ -5571,3 +5571,48 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/mcp/schema-dialect.test.ts
     testName: "preserves native numeric nullable tuple and strict object constraints without changing OpenAPI projection"
+  api.golden.inbox-comment-provenance-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/inbox/comment-provenance.test.ts
+    testName: "projects the reader repository, immutable message commit and full document digest instead of authored metadata"
+  api.golden.inbox-comment-unknown-provenance-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/inbox/comment-provenance.test.ts
+    testName: "keeps absent read provenance unknown without substituting frontmatter or a body hash"
+  api.golden.inbox-comment-failure-401-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/inbox/comment-provenance.test.ts
+    testName: "propagates history read failure 401 without claiming an empty discussion"
+  api.golden.inbox-comment-failure-403-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/inbox/comment-provenance.test.ts
+    testName: "propagates history read failure 403 without claiming an empty discussion"
+  api.golden.inbox-comment-failure-404-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/inbox/comment-provenance.test.ts
+    testName: "propagates history read failure 404 without claiming an empty discussion"
+  api.golden.inbox-comment-failure-503-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/inbox/comment-provenance.test.ts
+    testName: "propagates history read failure 503 without claiming an empty discussion"
+  api.golden.inbox-comment-denial-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/inbox/comment-provenance.test.ts
+    testName: "denies a foreign principal before reading history"
+  api.golden.discussion-document-provenance-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/discussions/discussion-targeted-read.test.ts
+    testName: "retains the repository and exact full document digest in targeted history readback"
+  api.golden.inbox-comment-summary-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/inbox/comment-provenance.test.ts
+    testName: "keeps proposal summaries available without fetching discarded comment history"

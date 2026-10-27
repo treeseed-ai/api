@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { expect } from 'vitest';
+import { expect, vi } from 'vitest';
 import type { relationAuthoringDatabase } from '../workspaces/architecture/relation-authoring-fixture.ts';
 import { createInboxService } from '../../../../../src/api/control-plane/inbox/inbox-service.ts';
 import { createDiscussionService } from '../../../../../src/api/discussions/discussion-service.ts';
@@ -32,6 +32,25 @@ export async function verifyScopedInboxQuestionGates(f: Awaited<ReturnType<typeo
 	const unrelated = before.nodes.find(node => node.sourceRef.id === proposalId && node.pairRole === 'actor' && node.workItemId !== 'peer-contribution')!;
 	expect((await graph()).nodes.find(node => node.id === unrelated.id)?.status).toBe(unrelated.status);
 	const commented = await inbox.action(f.principal, 'team', created.item.id, { action: 'comment', markdown: 'Transport adoption is still in progress.' }, 'native-handoff-comment', created.item.etag);
+	const comment = commented.item.comments.find(entry => entry.markdown === 'Transport adoption is still in progress.');
+	expect(comment).toBeDefined(); expect(comment!.provenance.commitSha).toBe(commented.receipts[0]!.commitSha);
+	const commentReader = await resolveKnowledgeGatewayConnection(f.store, { projectId, write: false,
+		readRefs: [comment!.provenance.commitSha!], workspacePaths: [comment!.provenance.contentPath!] });
+	expect(commentReader).not.toBeNull();
+	const commentRead = await commentReader!.client.readRepositoryFiles({ repoId: commentReader!.repositoryId,
+		ref: comment!.provenance.commitSha!, paths: [comment!.provenance.contentPath!], encoding: 'utf8', parseFrontmatter: false, allowProtected: true });
+	expect(commentRead.resolvedRef).toBe(comment!.provenance.commitSha);
+	expect(comment!.provenance.repositoryId).toBe(commentReader!.repositoryId);
+	expect(comment!.provenance.digest).toBe(createHash('sha256').update(commentRead.files[0]!.content!).digest('hex'));
+	const unavailable = Object.assign(new Error('Controlled owning history read unavailable.'), { status: 503 });
+	const failedRead = vi.spyOn(f.store, 'getProjectTreeDxLibrary').mockRejectedValue(unavailable);
+	try {
+		expect((await inbox.list(f.principal, 'team', { kind: 'proposal', state: 'all' })).items.some(entry => entry.id === proposalId)).toBe(true);
+		await expect(inbox.show(f.principal, 'team', created.item.id)).rejects.toBe(unavailable);
+	}
+	finally { failedRead.mockRestore(); }
+	expect((await inbox.show(f.principal, 'team', created.item.id)).comments.find(entry => entry.id === comment!.id)?.provenance)
+		.toEqual(comment!.provenance);
 	const message = await commitDiscussionMessage({ store: f.store, teamId: 'team', projectId, discussionId: commented.item.discussionId!,
 		principal: { id: 'controlled-agent' }, authorType: 'agent', intent: 'discuss', inboxIntent: 'comment', body: 'Investigating the runtime.', messageId: 'agent-comment' });
 	expect(message.commitSha).toMatch(/^[a-f0-9]{40}$/u);
