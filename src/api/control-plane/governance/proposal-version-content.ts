@@ -15,8 +15,15 @@ import { branchMovedConflict } from '../../discussions/discussion-workspace.ts';
 type Row = Record<string, unknown>;
 /** A projection failure cannot erase custody of an already committed source. */
 export class CommittedProposalContentError extends Error {
+	readonly status?: number;
+	readonly code?: string;
 	constructor(readonly authored: Awaited<ReturnType<typeof commitProposalVersionContent>>, cause: unknown) {
 		super(`Proposal content committed before projection failed: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+		if (cause && typeof cause === 'object') {
+			const failure = cause as { status?: unknown; code?: unknown };
+			if (typeof failure.status === 'number') this.status = failure.status;
+			if (typeof failure.code === 'string') this.code = failure.code;
+		}
 	}
 }
 function object(value: unknown): Row { if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row; if (typeof value === 'string') try { return object(JSON.parse(value)); } catch { return {}; } return {}; }

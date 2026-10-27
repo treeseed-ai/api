@@ -53,9 +53,9 @@ function serviceFixture() {
 describe('initial proposal commit recovery', () => {
 	beforeEach(() => vi.clearAllMocks());
 	it('retains the exact authored receipt when graph projection fails after committing', async () => {
-		const f = fixture(), conflict = Object.assign(new Error('The execution graph changed concurrently.'), { code: 'execution_graph_revision_conflict' });
+		const f = fixture(), conflict = Object.assign(new Error('The execution graph changed concurrently.'), { code: 'execution_graph_revision_conflict', status: 409 });
 		vi.mocked(projectTreeDxCommitSignals).mockRejectedValueOnce(conflict);
-		await expect(commitProposalVersionContent(f.input)).rejects.toMatchObject({ cause: conflict,
+		await expect(commitProposalVersionContent(f.input)).rejects.toMatchObject({ cause: conflict, code: conflict.code, status: conflict.status,
 			authored: { receipt: { path: f.path, commitSha: f.commit, digest: f.digest },
 				update: { contentProvenance: { repositoryId: 'repository-1', contentPath: f.path, commitSha: f.commit, digest: f.digest } } } });
 		expect(f.client.commit).toHaveBeenCalledOnce();
