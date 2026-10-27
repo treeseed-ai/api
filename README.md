@@ -181,5 +181,10 @@ and Platform composition/task3c.json select current exact inputs. No frozen prio
 Public container metadata declarations reference the SDK's existing container schema return type
 explicitly. They must not inline an inferred schema whose union ordering can change with compiler
 traversal/project paths. This preserves the same executable contract while stabilizing the
-distributable declaration and exact archive identity. API5 records this correction; API4 remains
+distributable declaration and exact archive identity. API6 completes this correction for both generic and retained historical container metadata; API4/API5 remain
 a retained frozen historical candidate. Native provider behavior and Keycloak authority are unchanged.
+
+The retained NodeApiContainerPlugin.definition/declaration and generic native declarations
+also name their public SDK contracts explicitly. Historical four-role metadata remains only
+in that compatibility export; the generic service host remains extensible. Hosted artifact
+member diagnostics isolated the remaining variation to container.d.ts, with runtime files unchanged.

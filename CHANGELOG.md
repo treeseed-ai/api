@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Stabilize public container declarations and final runtime closure (#624).
+- Stabilize public metadata declarations and final runtime closure (#624).
 - Qualify the genuine installed API root and preserve public SDK application responses (#624).
 - Restore the existing API committer policy to Cordis (#620).
 
