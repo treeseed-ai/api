@@ -1,4 +1,4 @@
-import { commitProposalVersionContent } from './proposal-version-content.ts';
+import { commitProposalVersionContent, CommittedProposalContentError } from './proposal-version-content.ts';
 import { createHash } from 'node:crypto';
 import { governanceContentHash } from '../../persistence/store.ts';
 import { reconcileExecutionGraph } from '../repositories/capacity/execution/execution-graph-service.ts';
@@ -143,6 +143,7 @@ export function createGovernanceService(store: any, discussions: { create: (prin
 			const project = await projectFor(store, principal, projectId, 'projects:manage:team');
 			let created: any;
 			let authored: Awaited<ReturnType<typeof commitProposalVersionContent>> | undefined;
+			let bound = false;
 			try {
 				created = await store.createGovernanceProposal(principal, { ...body, teamId: project.teamId, projectId: project.id,
 					scope: 'project', createdByType: actorType(principal), createdById: principal!.id });
@@ -151,10 +152,17 @@ export function createGovernanceService(store: any, discussions: { create: (prin
 					update: { ...body, title: created.title, summary: created.summary, body: created.body, proposalTypes: created.proposalTypes,
 						changeReason: 'Create initial proposal request.' } });
 				const proposal = await bindInitialProposalContent(store, created, authored);
+				bound = true;
 				await reconcileExecutionGraph(store, project.teamId, { projectId: project.id },
 					`proposal-create:${proposal.id}:${authored.receipt.commitSha}`);
 				return { ...proposal, authoringReceipt: authored.receipt };
 			} catch (error) {
+				if (error instanceof CommittedProposalContentError) {
+					authored = error.authored;
+					try { await bindInitialProposalContent(store, created, authored); bound = true; }
+					catch (bindingFailure) { throw new GovernanceServiceError(409, 'proposal_initial_version_unbound',
+						`Proposal ${created.id} content ${authored.receipt.commitSha} remains committed; its governance binding requires recovery: ${bindingFailure instanceof Error ? bindingFailure.message : String(bindingFailure)}`); }
+				}
 				// A failed pre-commit TreeDX write must not strand an unauthoritative
 				// PostgreSQL proposal. Once TreeDX committed bytes, preserve the row so
 				// an explicit bind repair can recover the immutable content instead.
@@ -163,8 +171,8 @@ export function createGovernanceService(store: any, discussions: { create: (prin
 					{ query: 'DELETE FROM governance_proposal_versions WHERE proposal_id = ?', params: [created.id] },
 					{ query: 'DELETE FROM governance_proposals WHERE id = ? AND active_version = 1', params: [created.id] },
 				]);
-				if (authored?.receipt) throw new GovernanceServiceError(409, 'proposal_initial_version_unbound',
-					'Initial proposal content was committed to TreeDX but could not be bound to governance.');
+				if (authored?.receipt) throw new GovernanceServiceError(409, bound ? 'proposal_initial_projection_pending' : 'proposal_initial_version_unbound',
+					`Proposal ${created.id} content ${authored.receipt.commitSha} remains committed${bound ? ' and bound' : ''}; recovery is required: ${error instanceof Error ? error.message : String(error)}`);
 				fail(error, 'governance_proposal_create_failed');
 			}
 		},

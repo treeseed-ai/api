@@ -99,7 +99,7 @@ describe('governed proposal contract authority with divergent native authoring',
 			}
 			await f.store.upsertProjectTreeDxLibrary(projectId,{contentRepositoryRef:governedRef});
 			const committed=await head();expect(committed).toBe(created.receipt.commitSha);
-			await expect(commitProposalVersionContent(input)).rejects.toMatchObject({code:'proposal_source_path_occupied',status:409});
+			await expect(commitProposalVersionContent({...input,proposal:{...input.proposal,body:'Different content cannot replace the original initial proposal.'}})).rejects.toMatchObject({code:'proposal_source_path_occupied',status:409});
 			expect(await head()).toBe(committed);
 			const unreviewedPath='.treeseed/governance/proposal-types/unreviewed.yaml';
 			const unreviewed=await workspace('refs/heads/staging','refs/heads/staging',[unreviewedPath]);
