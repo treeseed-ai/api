@@ -10,7 +10,7 @@ beforeEach(() => { vi.clearAllMocks(); vi.mocked(loadDiscussions).mockResolvedVa
 function fixture() {
 	const row = { id: 'proposal', team_id: 'team', project_id: 'project', kind: 'proposal', title: 'Real contribution plan',
 		status: 'outstanding', version: 5, discussion_id: 'topic', updated_at: '2026-10-27T19:00:00.000Z' };
-	const store = { run: vi.fn(async () => undefined), all: async () => [], first: async () => row,
+	const store = { run: vi.fn(async () => undefined), all: async (sql: string) => sql.includes('FROM inbox_items') ? [row] : [], first: async () => row,
 		getProjectDetails: async () => ({ project: { slug: 'project' } }), principalCanAccessTeam: async () => false };
 	return { row, store, inbox: createInboxService({ store, discussions: {}, communications: {}, governance: {} }) };
 }
@@ -35,4 +35,10 @@ it.each([401, 403, 404, 503])('propagates history read failure %s without claimi
 it('denies a foreign principal before reading history', async () => {
 	await expect(fixture().inbox.show({ id: 'outsider', roles: [] }, 'team', 'proposal')).rejects.toMatchObject({ status: 403 });
 	expect(loadDiscussions).not.toHaveBeenCalled();
+});
+it('keeps proposal summaries available without fetching discarded comment history', async () => {
+	vi.mocked(loadDiscussions).mockRejectedValue(new Error('History is unavailable.'));
+	const page = await fixture().inbox.list({ id: 'coordinator', roles: ['admin'] }, 'team', { kind: 'proposal' });
+	expect(page.items).toHaveLength(1); expect(page.items[0]?.id).toBe('proposal');
+	expect(page.items[0]).not.toHaveProperty('comments'); expect(loadDiscussions).not.toHaveBeenCalled();
 });
