@@ -42,7 +42,7 @@ describe('native initial proposal commit recovery', () => {
 			const provenance = object(retained.metadata.contentProvenance);
 			expect(provenance.repositoryId).toBe(repository); expect(String(provenance.commitSha)).toMatch(/^[a-f0-9]{40}$/u);
 			const read = async (ref: string, path: string) => {
-				const exact = await resolveKnowledgeGatewayConnection(f.store, { projectId, write: false, authoringPaths: true, readRefs: [ref] }); assert.ok(exact);
+				const exact = await resolveKnowledgeGatewayConnection(f.store, { projectId, write: false, workspacePaths: [path], readRefs: [ref] }); assert.ok(exact);
 				return object((await exact.client.readRepositoryFile({ repoId: repository, ref, path,
 					encoding: 'utf8', parseFrontmatter: false, allowProtected: true })).file);
 			};
