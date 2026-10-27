@@ -139,7 +139,7 @@ Browser acceptance checks the same SDK projections and revocation of the exact p
 
 ## Final Task 3C owner closure
 
-The next API review candidate consumes SDK16, Deployment73, Identity7, Admin10 and UI16
+The current API review candidate consumes SDK16, Deployment76, Identity7, Admin10 and UI16
 through their exact public archives. Its existing genuine installed programme must rebuild
 and measure the complete image/package/browser asset closure before exercising real
 Postgres, Keycloak, Caddy, login/refresh/logout and durable host generation read-back.
@@ -171,6 +171,15 @@ and owner before signaling it, then verifies retained containers remain running.
 The compiled default-worker correction is selected as Deployment75, source `f5b511999a9196759f22d827ee4ee8fb7b48c8ba`, archive `fea365585ceaa9b813ba18c01fa78de2eca6335351fef86eeb9dcb37afbe4109`. Genuine installed verification is rerun against these exact bytes; no older failed configuration is counted as passing.
 
 Final assembly now combines the separately qualified compiler and migration prefixes as
-Deployment76. The private pre-acceptance archive is rebuilt from exact source
-`8f1673608a1c748501aa8046f5ab256982a78a82` while the UI replacement/restart gate is completed;
-its source and archive hashes are explicit and no frozen prior candidate is overwritten.
+Deployment76. The frozen Deployment76 source is
+`5ea1b2e76abd2b5531a765049f3afbef47abe8d4`, archive SHA-256
+`021a67e0fb488114a12654667f72ebfefa5cbe95fc187a108c9694f1935ffbdf`.
+Earlier qualification paragraphs retain historical checkpoints; package.json cordisCandidate
+and Platform composition/task3c.json select current exact inputs. No frozen prior archive is overwritten.
+
+
+Public container metadata declarations reference the SDK's existing container schema return type
+explicitly. They must not inline an inferred schema whose union ordering can change with compiler
+traversal/project paths. This preserves the same executable contract while stabilizing the
+distributable declaration and exact archive identity. API5 records this correction; API4 remains
+a retained frozen historical candidate. Native provider behavior and Keycloak authority are unchanged.

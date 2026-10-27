@@ -1,6 +1,9 @@
 # Changelog
 
 ## [Unreleased]
+### Fixed
+- Stabilize public container declarations and final runtime closure (#624).
+
 
 ### Changed
 - Rebuild the genuine API runtime and browser asset closure against the final Task 3C public owner archives (#624).
