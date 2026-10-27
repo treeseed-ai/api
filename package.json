@@ -1,6 +1,6 @@
 {
   "name": "@treeseed-cordis/api",
-  "version": "0.0.0-cordis.5",
+  "version": "0.0.0-cordis.6",
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-only",
@@ -237,7 +237,7 @@
     "pluginId": "api",
     "package": {
       "name": "@treeseed-cordis/api",
-      "version": "0.0.0-cordis.5"
+      "version": "0.0.0-cordis.6"
     },
     "providers": [
       {
