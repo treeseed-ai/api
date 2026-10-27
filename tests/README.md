@@ -32,3 +32,8 @@ checks, build, CI and assembled-artifact smoke evidence. Report missing prerequi
 explicitly. A green unit suite or policy prose alone is never sufficient.
 
 
+
+Complete tier commands use `bun test ./tests/<tier>` with only non-filtering timeout or
+empty-tier reporting options. Individual-file selectors and shell wrappers do not prove
+complete discovery. Name-filtered CI matrices must cover each registered case exactly once
+and every partition must be nonempty; the shared layout guard verifies that inventory.
