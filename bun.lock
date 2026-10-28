@@ -23,11 +23,11 @@
         "typescript": "5.9.3",
       },
       "peerDependencies": {
-        "@treeseed-cordis/admin": "0.0.0-cordis.10",
-        "@treeseed-cordis/deployment": "0.0.0-cordis.76",
-        "@treeseed-cordis/identity": "0.0.0-cordis.7",
+        "@treeseed-cordis/admin": "0.0.0-cordis.11",
+        "@treeseed-cordis/deployment": "0.0.0-cordis.78",
+        "@treeseed-cordis/identity": "0.0.0-cordis.8",
         "@treeseed-cordis/sdk": "0.0.0-cordis.19",
-        "@treeseed-cordis/ui": "0.0.0-cordis.16",
+        "@treeseed-cordis/ui": "0.0.0-cordis.18",
       },
     },
   },
@@ -36,15 +36,15 @@
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
-    "@treeseed-cordis/admin": ["@treeseed-cordis/admin@vendor/admin.tgz", { "dependencies": { "cordis": "4.0.0-rc.12" }, "peerDependencies": { "@treeseed-cordis/identity": "0.0.0-cordis.7", "@treeseed-cordis/sdk": "0.0.0-cordis.16", "@treeseed-cordis/ui": "0.0.0-cordis.16", "react": "19.3.1", "react-dom": "19.3.1" } }, "sha512-nJEmqqvdGEUQ/uUk4A7tnxKlWZ3H1gAlFEZZceDUQ8B3wAMnue18LRZAk7uTGyRa+lrRnuZngYfObcW4WosObg=="],
+    "@treeseed-cordis/admin": ["@treeseed-cordis/admin@vendor/admin.tgz", { "dependencies": { "cordis": "4.0.0-rc.12" }, "peerDependencies": { "@treeseed-cordis/identity": "0.0.0-cordis.8", "@treeseed-cordis/sdk": "0.0.0-cordis.19", "@treeseed-cordis/ui": "0.0.0-cordis.18", "react": "19.3.1", "react-dom": "19.3.1" } }, "sha512-QxBvZ7WDgwMBA6nCJ6duKXA9cTLeoSiZEs3k1eHXpqBO9ubDGClx3VbPzI4m1MWQrM7QpgfRmq+9FmjRh2Qxrg=="],
 
-    "@treeseed-cordis/deployment": ["@treeseed-cordis/deployment@vendor/deployment.tgz", { "dependencies": { "ajv": "8.17.1", "ajv-formats": "3.0.1", "cordis": "4.0.0-rc.12", "jsonc-parser": "3.3.1", "postgres": "3.4.9", "semver": "7.8.5", "tar": "7.5.22", "zod": "4.6.7" }, "peerDependencies": { "@treeseed-cordis/sdk": "0.0.0-cordis.16" } }, "sha512-/+B2drru7gOnOGu0G+y24kTSV26iFilDKCIUQhjpOxN3e8vNlg0fN/7pCt9ZAejk+Pd0zOSmAzCfy6kkstGL+Q=="],
+    "@treeseed-cordis/deployment": ["@treeseed-cordis/deployment@vendor/deployment.tgz", { "dependencies": { "ajv": "8.17.1", "ajv-formats": "3.0.1", "cordis": "4.0.0-rc.12", "jsonc-parser": "3.3.1", "postgres": "3.4.9", "semver": "7.8.5", "tar": "7.5.22", "zod": "4.6.7" }, "peerDependencies": { "@treeseed-cordis/sdk": "0.0.0-cordis.19" } }, "sha512-C5TOuEwMibcI9bH55nZiY6VaaqDvnARQO2pu7xvFDGHVMst4aor2ACQ5OvgsH5TyU4bRjoTRgZerZ7MRS3gMUw=="],
 
-    "@treeseed-cordis/identity": ["@treeseed-cordis/identity@vendor/identity.tgz", { "dependencies": { "cordis": "4.0.0-rc.12", "openid-client": "6.8.8", "postgres": "3.4.9" }, "peerDependencies": { "@treeseed-cordis/sdk": "0.0.0-cordis.16" } }, "sha512-6HRxydsGkxlStDLD2VUORS94ats/OL/Cgue26y1Jr9ciuK60Q38xqMO9TxwcPCV0y++LQ08f38cgfKVrAJoDsQ=="],
+    "@treeseed-cordis/identity": ["@treeseed-cordis/identity@vendor/identity.tgz", { "dependencies": { "cordis": "4.0.0-rc.12", "openid-client": "6.8.8", "postgres": "3.4.9" }, "peerDependencies": { "@treeseed-cordis/sdk": "0.0.0-cordis.19" } }, "sha512-lv0ZBSpAa8X9XZOPLCuGwZdCvi8DW1NCS+rYqnM3jHiCXTZaBDKSSk1v+O7WPSG/dzxI3410n5sxu6eISY/uYg=="],
 
     "@treeseed-cordis/sdk": ["@treeseed-cordis/sdk@vendor/sdk.tgz", { "dependencies": { "cordis": "4.0.0-rc.12", "jsonc-parser": "3.3.1", "semver": "7.8.5", "zod": "4.6.7" } }, "sha512-Z3l9ZnIYwvICaafrklKPGKnIuuXYjopxpP9j9qxN/AdyP5NcjD4L47D+oYgJRVcsfNaQmka5IhuYmQ58ROS8dA=="],
 
-    "@treeseed-cordis/ui": ["@treeseed-cordis/ui@vendor/ui.tgz", { "dependencies": { "cordis": "4.0.0-rc.12", "zod": "4.6.7" }, "peerDependencies": { "@treeseed-cordis/sdk": "0.0.0-cordis.16", "react": "19.3.1", "react-dom": "19.3.1", "typescript": "5.9.3" }, "optionalPeers": ["typescript"] }, "sha512-0ZM+ysL8u97gcyKJrSwDZW9hawyeAAAJ9Ax5SUk/OMlJHG3MNqwijC/ewbcdhsSE77soqwW+VUP+ysAAOoLIxw=="],
+    "@treeseed-cordis/ui": ["@treeseed-cordis/ui@vendor/ui.tgz", { "dependencies": { "cordis": "4.0.0-rc.12", "zod": "4.6.7" }, "peerDependencies": { "@treeseed-cordis/sdk": "0.0.0-cordis.19", "react": "19.3.1", "react-dom": "19.3.1", "typescript": "5.9.3" }, "optionalPeers": ["typescript"] }, "sha512-cykVCpJC02KxtG+zaqR+2lh383GPjGZNzxi0u9u6iJUUhL59HWUL5nlLRTpo9c7ShdEJdNDNBX+8Y/Nc+FVWWQ=="],
 
     "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 
