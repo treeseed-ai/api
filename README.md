@@ -8,7 +8,7 @@ qualifies the existing default API root; the headless seed coordinator is a sepa
 | Owner | Version | Source | Archive SHA-256 |
 | --- | --- | --- | --- |
 | SDK | `0.0.0-cordis.19` | `90cf4f3cc62e166685280450c727499defd2af5b` | `93dd549c98aba180306e9b19cc1cbc37494544b2764ed341c531c9af618c6f81` |
-| Deployment | `0.0.0-cordis.78` | `83aedb8155f339ed218ac446cac7303d86314b03` | `21a39d7af625b4a2b3a3952ebc564cd1ab3f94b42fc2830f2a5b00d903bd2130` |
+| Deployment | `0.0.0-cordis.79` | `2cf1084843039fafccb8e427fcae913e0a44dffc` | `d02517f4fff3a1dedb3590d3c13bb1ea58a746c7ba6fc1f5227fd5f7c3b0a456` |
 | Identity | `0.0.0-cordis.8` | `cb86258e93337559aa4a248177a20bd2a07fd467` | `a308c71b0da1822e7786121092a05f2496d26614942aaeb459a78531e689cb76` |
 | Admin | `0.0.0-cordis.11` | `fe5c25e4a15fe9312c16ceeead93b684c3ab8580` | `043c05cf734e5b66e60d44fafbff34b15de6af13d98dc14d7a569ba26a51ad97` |
 | UI | `0.0.0-cordis.18` | `e2b9c5e10611c196834fd57ba5358a74304e373c` | `d09e6ed33f7f1bc2f7210208a94f33bbd2a6453d8fe886f75a1f950887223e48` |
