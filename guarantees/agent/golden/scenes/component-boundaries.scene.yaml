@@ -3237,6 +3237,12 @@ workflow:
   - id: qualified-mention-scope
     action: { verifier: api.golden.qualified-mention-scope }
     expect: { status: passed }
+  - id: discussion-history-authorship
+    action: { verifier: api.golden.discussion-history-authorship }
+    expect: { status: passed }
+  - id: discussion-authored-history
+    action: { verifier: api.golden.discussion-authored-history }
+    expect: { status: passed }
 
   - id: simulation-proposal-frozen-contract
     action: { verifier: api.golden.simulation-proposal-frozen-contract }
