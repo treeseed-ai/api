@@ -92,6 +92,8 @@ describe('original planning product admission', () => {
 			}
 			await expect(recordAssignmentContentIntegration(store, { ...scope, agentId: 'project/foreign' }, result, references))
 				.rejects.toMatchObject({ code: 'assignment_planning_proposal_invalid' });
+			await expect(recordAssignmentContentIntegration(store, { ...scope, assignmentAttempt: { ...attempt, status: 'running' } }, result, references))
+				.rejects.toMatchObject({ code: 'assignment_planning_proposal_invalid' });
 			await recordAssignmentContentIntegration(store, scope, result, references);
 			const proposals = (await f.query('SELECT * FROM governance_proposals')).rows;
 			expect(proposals).toHaveLength(1);
