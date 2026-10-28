@@ -134,8 +134,10 @@ workflow:
     expect: { status: passed }
   - id: subscriber-contribution-readback
     action: { verifier: api.golden.subscriber-contribution-readback }
+    expect: { status: passed }
   - id: obsolete-estimate-source
     action: { verifier: api.golden.obsolete-estimate-source }
+    expect: { status: passed }
   - id: estimate-source-failures
     action: { verifier: api.golden.estimate-source-failures }
     expect: { status: passed }
