@@ -77,6 +77,8 @@ export class FixtureJournal implements SeedJournal {
   events: string[] = [];
   locked = false;
   failPublication = false;
+  failIntent = false;
+  mismatchPublication = false;
   failClose = false;
   request: string | null = null;
 
@@ -95,6 +97,7 @@ class FixtureWriter implements SeedWriter {
   constructor(private readonly journal: FixtureJournal) {}
   async read(): Promise<SeedProgress> { return structuredClone(this.journal.progress); }
   async intent(resource: SeedResourcePlan): Promise<void> {
+    if (this.journal.failIntent) throw new Error('private-intent-canary');
     this.journal.events.push('intent:' + resource.key);
     if (!this.journal.progress.intents.includes(resource.key))
       this.journal.progress.intents.push(resource.key);
@@ -103,6 +106,7 @@ class FixtureWriter implements SeedWriter {
     this.journal.events.push('publish:' + receipt.state);
     if (this.journal.failPublication) throw new Error('private-publication-canary');
     this.journal.progress.receipt = structuredClone(receipt);
+    if (this.journal.mismatchPublication) return { ...receipt, requestId: 'foreign:request' };
     return structuredClone(receipt);
   }
   async close(): Promise<void> {
@@ -118,6 +122,7 @@ export class FixtureOwners implements SeedOwnerAccess {
   pending = false;
   changed = false;
   failClose = false;
+  failAdmission = false;
   beforeEffect: (() => void) | null = null;
 
   constructor(readonly journal: FixtureJournal) {}
@@ -132,6 +137,7 @@ class FixtureOwnerLease implements SeedOwnerLease {
   constructor(private readonly owner: FixtureOwners, private readonly resource: SeedResourcePlan) {}
   async admit(context: SeedResourceContext, retry: boolean): Promise<void> {
     context.signal.throwIfAborted();
+    if (this.owner.failAdmission) throw new Error('private-admission-canary');
     this.owner.journal.events.push('admit:' + this.resource.key + ':' + retry);
   }
   async reconcile(context: SeedResourceContext): Promise<unknown> {

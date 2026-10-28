@@ -95,6 +95,42 @@ class SeedReconciliationBoundaries {
     expect(fixture.journal.locked).toBe(false);
     expect(fixture.owners.effects).toEqual(['root']);
   }
+
+  async freshAggregate(): Promise<void> {
+    const fixture = new SeedFixture();
+    const plan = SeedData.plan([SeedData.resource('child', ['root']), SeedData.resource('root')]);
+    await fixture.apply(plan);
+    fixture.journal.events.length = 0;
+    await fixture.apply(plan);
+    const events = fixture.journal.events;
+    expect(events.indexOf('publish:completed')).toBeGreaterThan(events.indexOf('read:child'));
+    expect(events).toContain('publish:partial');
+    expect(fixture.owners.effects).toEqual(['root', 'child']);
+  }
+
+  async failedIntent(): Promise<void> {
+    const fixture = new SeedFixture();
+    fixture.journal.failIntent = true;
+    await expect(fixture.apply()).rejects.toThrow('SEED_JOURNAL_FAILED');
+    expect(fixture.owners.effects).toEqual([]);
+    expect(fixture.journal.progress.receipt).toBeNull();
+    expect(fixture.journal.locked).toBe(false);
+  }
+
+  async failedAdmission(): Promise<void> {
+    const fixture = new SeedFixture();
+    fixture.owners.failAdmission = true;
+    await expect(fixture.apply()).rejects.toThrow('SEED_OWNER_BLOCKED');
+    expect(fixture.owners.effects).toEqual([]);
+    expect(fixture.journal.progress.intents).toEqual([]);
+    expect(fixture.journal.progress.receipt).toBeNull();
+  }
+  async publicationMismatch(): Promise<void> {
+    const fixture = new SeedFixture();
+    fixture.journal.mismatchPublication = true;
+    await expect(fixture.apply()).rejects.toThrow('SEED_JOURNAL_FAILED');
+    expect(fixture.journal.locked).toBe(false);
+  }
 }
 
 const suite = new SeedReconciliationBoundaries();
@@ -109,3 +145,7 @@ test('integration: failed writer release cannot report completion', suite.failed
 test('integration: failed owner disposal records recovery', suite.failedOwnerClose.bind(suite));
 test('integration: concurrent seed writers cannot execute owner steps', suite.concurrentWriter.bind(suite));
 test('integration: foreign saved receipts cannot authorize seed resume', suite.foreignCheckpoint.bind(suite));
+test('integration: resumed aggregate completes only after every fresh owner read-back', suite.freshAggregate.bind(suite));
+test('integration: failed seed intent publication prevents owner execution', suite.failedIntent.bind(suite));
+test('integration: owner admission denial creates no intent or receipt', suite.failedAdmission.bind(suite));
+test('integration: seed publication read-back must equal the requested receipt', suite.publicationMismatch.bind(suite));
