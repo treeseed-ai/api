@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_WORKDAY_POLICY, compileWorkday, appliedWorkdaySchema, validateExecutionGraph, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
 import { projectActiveWorkdays } from '../../../../../../src/api/capacity/policy/execution/workday-execution-projector.ts';
 import { workdayParticipants } from '../../../../../../src/api/capacity/policy/execution/workday-participants.ts';
+import { compileWorkdayAgentProfileSnapshot } from '../../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-profile-policy.ts';
 
 import { readyContributionProposal } from '../../../governance/proposals/architecture/ready-proposal-fixture.ts';
 
@@ -369,6 +370,20 @@ function explicitReportingSelection(){
  const input={id:'one-configured-closeout',teamId:'team',policyId:'default',policyRevision:1,executionMode:'simulation' as const,startsAt:'2026-10-17T00:00:00.000Z',agentIds:participants.map(value=>value.id),reportingAgentId:selected.id,policy:{...DEFAULT_WORKDAY_POLICY,durationSeconds:3600,maximumConcurrency:5,communicationConcurrency:5}};
  return{selected,other,snapshot,input,plan:compileWorkday(input)};
 }
+
+it('retains verified frozen reporting authority after current team profile changes', () => {
+ const f=explicitReportingSelection(),profiles={'sdk:digest-writer':f.selected,'api:digest-writer':f.other};
+ const snapshots=Object.fromEntries(Object.entries(f.snapshot).map(([projectId,snapshot])=>[projectId,
+  compileWorkdayAgentProfileSnapshot(snapshot.agents.map(entry=>({id:`${projectId}:${entry.definition.agentClass}`,
+   slug:entry.definition.agentClass,handlerRefs:{agents:[entry.definition]}})))]));
+ const source={id:f.plan.id,teamId:'team',parameters:{groupIds:['workday-group'],appliedPlan:{...f.plan,state:'closing',closingAt:f.plan.endsAt},
+  scheduledProjectIds:['sdk','api'],agentProfilesByProjectId:snapshots}},held=structuredClone(source);
+ const original=projectActiveWorkdays({teamId:'team',revision:1,profiles,sources:[source]});
+ const changed={...f.selected,purpose:'Current team has new work.',groupIds:['future-closeout'],activityProfiles:{
+  ...f.selected.activityProfiles,reporting:{...f.selected.activityProfiles.reporting!,prompt:{system:'Instructions for future workdays.'}}}};
+ expect(projectActiveWorkdays({teamId:'team',revision:1,profiles:{...profiles,'sdk:digest-writer':changed},sources:[source]})).toEqual(original);
+ expect(original.nodes.filter(node=>node.kind==='reporting')).toHaveLength(1);expect(source).toEqual(held);
+});
 
 it('retains one explicitly selected configured Reporter in the canonical applied Workday before activation without a second authority',()=>{
  const f=explicitReportingSelection(),held=structuredClone(f.input);expect.soft(f.plan).toMatchObject({state:'planned',reportingAgentId:f.selected.id});expect.soft(appliedWorkdaySchema.safeParse({...f.plan,reportingAgentId:f.selected.id}).success).toBe(true);expect(f.input).toEqual(held);
