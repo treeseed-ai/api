@@ -4,6 +4,7 @@ import { assignment as original } from '../../execution/fixtures/assignment.ts';
 import { proposalNativeFixture } from '../../../governance/proposals/architecture/proposal-native-fixture.ts';
 import { isCurrentSubscriberContribution, mergeAssignmentEstimate } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/estimates/integration.ts';
 import { readFileSync } from 'node:fs';
+import { validatePortableContentData } from '@treeseed/sdk/content-validation';
 import { splitPostgresSqlStatements } from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
 import { loadProposalGroupContributions } from '../../../../../../src/api/capacity/services/capacity/execution/proposal-contributions.ts';
 import { projectTeamExecutionGraph } from '../../../../../../src/api/capacity/policy/execution/execution-graph-projector.ts';
@@ -176,6 +177,34 @@ describe('own contribution through owning SQL public HTTP client and native Git'
 				graph_revision_created,graph_revision_updated,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				['retained-node', 'team', 'project', 'acting', 'actor', JSON.stringify(accepted.ref), 1, 1,
 					'blocked', 1, 1, original.createdAt, original.createdAt]);
+			// A current proposal can still cite an estimate whose frozen source
+			// predates the group-only schema. Re-read the real obsolete Git bytes;
+			// never erase that estimate or count it as a current contribution.
+			const obsolete = { ...draft, executionPlan: { workItems: discussed.map(item => ({ ...item, agentClass: 'maintenance' })) } };
+			expect(validatePortableContentData('proposal', obsolete).ok).toBe(false);
+			const obsoleteSource = f.publishContent(path, obsolete), estimator = inputs[0]!;
+			const oldAttempt = assignmentAttemptSchema.parse({ ...estimator.assignment.assignmentAttempt,
+				sourceRef: { ...sourceRef, commit: obsoleteSource.commit, digest: `sha256:${obsoleteSource.digest}` } });
+			await f.query('BEGIN');
+			try {
+				await f.query('UPDATE capacity_provider_assignments SET assignment_attempt_json=? WHERE id=?',
+					[JSON.stringify(oldAttempt), estimator.assignment.id]);
+				const retainedEstimate = await f.snapshot();
+				await expect(isCurrentSubscriberContribution(store, subject, current,
+					{ ...estimator.assignment, assignmentAttempt: oldAttempt }, estimator.result)).resolves.toBe(false);
+				await expect(loadProposalGroupContributions(store as never, subject, current)).resolves.toMatchObject({
+					current: false, missing: ['project/project/technical-writer'] });
+				const frozen: unknown[] = [];
+				await expect(loadTeamExecutableProposalSources(store, 'team', undefined, source => frozen.push(source))).resolves.toEqual([]);
+				expect(frozen).toEqual([{ id: 'proposal', digest: accepted.ref.digest }]);
+				for (const fault of ['moved', 'denied'] as const) {
+					f.setFault(fault);
+					await expect(isCurrentSubscriberContribution(store, subject, current,
+						{ ...estimator.assignment, assignmentAttempt: oldAttempt }, estimator.result)).rejects.toThrow();
+				}
+				f.setFault('none');
+				expect(await f.snapshot()).toEqual(retainedEstimate);
+			} finally { f.setFault('none'); await f.query('ROLLBACK'); }
 			const newcomer = { ...definitions[1]!, id: 'project/integrator', name: 'integrator' };
 			const grown = f.publishContent('agents/integrator.mdx', newcomer);
 			await f.query('UPDATE project_agent_classes SET handler_refs_json=?,metadata_json=? WHERE id=?', [
