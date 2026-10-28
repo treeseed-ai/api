@@ -221,6 +221,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/planning/contributions/estimate-readback.test.ts
     testName: "reads actual estimator source and stored attempt ownership while preserving a concurrent peer through moved denied and altered-source observations"
+  api.golden.obsolete-estimate-source:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/contributions/estimate-history-schema.test.ts
+    testName: "marks a schema-obsolete frozen estimate as noncurrent without changing its retained authority"
+  api.golden.estimate-source-failures:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/contributions/estimate-history-schema.test.ts
+    testName: "preserves moved denied mismatched and unavailable frozen source failures instead of treating them as obsolete"
   api.golden.subscriber-contribution-order-replay:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

@@ -23,7 +23,8 @@ it('marks a schema-obsolete frozen estimate as noncurrent without changing its r
 	expect(failure.diagnostics).toEqual([{ path: 'executionPlan.workItems.0.agentClass' }]);
 });
 
-it.each([
+it('preserves moved denied mismatched and unavailable frozen source failures instead of treating them as obsolete', async () => {
+	for (const fields of [
 	{ status: 409, code: 'proposal_execution_plan_invalid' },
 	{ status: 409, code: 'proposal_snapshot_moved' },
 	{ status: 409, code: 'proposal_digest_mismatch' },
@@ -31,7 +32,7 @@ it.each([
 	{ status: 403, code: 'forbidden' },
 	{ status: 503, code: 'treedx_unavailable' },
 	{ status: 500, code: undefined },
-])('preserves a frozen estimate read failure rather than disguising it as obsolete content: $code/$status', async fields => {
+	]) {
 	const failure = Object.assign(new Error('Exact frozen source read failed.'), fields);
 	readExactProposal.mockRejectedValueOnce(failure);
 	const current = { executionPlan: { workItems: [{ estimateRef: {
@@ -41,4 +42,5 @@ it.each([
 		id: original.id, teamId: original.teamId, projectId: original.projectId,
 		agentId: original.effectiveProfile.profileRef.id, assignmentAttempt: original,
 	}, {} as never)).rejects.toBe(failure);
+	}
 });
