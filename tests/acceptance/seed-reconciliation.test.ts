@@ -4,7 +4,8 @@ import { spawnSync } from 'node:child_process';
 class SeedReconciliationProgramTest {
   run(): void {
     const result = spawnSync('node', ['dist/tests/support/seed-reconciliation-program.js'], {
-      encoding: 'utf8', timeout: 5000,
+      encoding: 'utf8',
+      timeout: 5000,
     });
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
@@ -13,4 +14,7 @@ class SeedReconciliationProgramTest {
 }
 
 const suite = new SeedReconciliationProgramTest();
-test('acceptance: built seed reconciliation component preserves exact resumable owner receipts', suite.run.bind(suite));
+test(
+  'acceptance: built seed reconciliation component preserves exact resumable owner receipts',
+  suite.run.bind(suite),
+);

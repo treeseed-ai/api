@@ -18,13 +18,24 @@ class SeedReconciliationContracts {
     expect(SeedPlanIdentity.read.bind(SeedPlanIdentity, plan)).toThrow('SEED_PLAN_INVALID');
   }
   order(): void {
-    const resources = [SeedData.resource('c', ['a']), SeedData.resource('b'), SeedData.resource('a')];
-    expect(SeedResourceOrder.sort(resources)).toEqual([resources[2]!, resources[1]!, resources[0]!]);
+    const resources = [
+      SeedData.resource('c', ['a']),
+      SeedData.resource('b'),
+      SeedData.resource('a'),
+    ];
+    expect(SeedResourceOrder.sort(resources)).toEqual([
+      resources[2]!,
+      resources[1]!,
+      resources[0]!,
+    ]);
   }
 }
 
 const suite = new SeedReconciliationContracts();
 test('unit: seed saved plan verifies its canonical content digest', suite.validPlan.bind(suite));
-test('unit: seed saved plan rejects tampering despite unchanged identity fields', suite.tamperedDigest.bind(suite));
+test(
+  'unit: seed saved plan rejects tampering despite unchanged identity fields',
+  suite.tamperedDigest.bind(suite),
+);
 test('unit: seed saved plan rejects invalid resource graphs', suite.invalidGraph.bind(suite));
 test('unit: seed resource order is deterministic across ready siblings', suite.order.bind(suite));
