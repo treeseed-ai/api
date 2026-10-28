@@ -49,10 +49,19 @@ describe('native planning result projection', () => {
 				assignmentId: attempt.id, status: 'completed', summary: 'Controlled native product; not a live agent result.',
 				references: [{ kind: 'treedx', projectId, repository, commit, path, workspaceId }], verification: [], diagnostics: [],
 				usage: { elapsedSeconds: 0 }, completedAt: original.createdAt });
+			// The original PostgreSQL migrations require actual custody parents.
+			// These are controlled fixture inputs, not provider enrollment/admission.
+			await f.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,created_at,updated_at)
+				VALUES (?,?,?,?,?,?,?)`, [agent.agentClass, 'team', projectId, agent.agentClass, agent.name, original.createdAt, original.createdAt]);
+			await f.query(`INSERT INTO capacity_providers (id,fingerprint,public_jwk_json,display_name,created_at,updated_at)
+				VALUES (?,?,?,?,?,?)`, [attempt.provider.providerId, 'controlled-planning-input', '{}', 'Controlled planning provider', original.createdAt, original.createdAt]);
+			await f.query(`INSERT INTO capacity_provider_team_memberships
+				(id,team_id,capacity_provider_id,approved_at,approved_by_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)`,
+				['controlled-member', 'team', attempt.provider.providerId, original.createdAt, 'operator', original.createdAt, original.createdAt]);
 			await f.query(`INSERT INTO capacity_provider_assignments
 				(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,mode,status,agent_id,
 				assignment_attempt_json,assignment_result_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				[attempt.id, 'controlled-member', 'team', projectId, 'controlled-provider', agent.agentClass, 'planning', 'completed', agentId,
+				[attempt.id, 'controlled-member', 'team', projectId, attempt.provider.providerId, agent.agentClass, 'planning', 'completed', agentId,
 					JSON.stringify(attempt), JSON.stringify(result), original.createdAt, original.createdAt]);
 			const scope = { id: attempt.id, teamId: 'team', projectId, agentId, assignmentAttempt: attempt };
 			const before = await f.snapshot(), refsBefore = await f.client.repositories.refs(repository);
