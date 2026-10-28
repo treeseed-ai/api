@@ -27,6 +27,8 @@ export interface ExecutableProposalSource {
 	proposalRevision: number;
 	frontmatter: Row;
 	estimatingAttempts?: AssignmentAttempt[];
+	/** Verified per-proposal profiles from original workdays, never another operator selector. */
+	profiles?: Record<string, AgentDefinition>;
 	feedback?: Array<{ id: string; kind: 'concern' | 'question'; resolved: boolean; sourceRef: ExactEntityReference }>;
 	decision: { id: string; revision: number; digest: string; current: boolean; repository?: string; commit?: string; path?: string } | null;
 }
@@ -234,7 +236,7 @@ export function projectTeamExecutionGraph(input: {
 		}
 		const workItems = rows(record(proposal.executionPlan).workItems);
 		const contributions = proposal.schemaVersion === 'treeseed.proposal/v2'
-			? contributionBindings(exactSource, input.profiles) : null;
+			? contributionBindings(exactSource, source.profiles ?? input.profiles) : null;
 		const actorByItem = new Map<string, ExecutionNode>();
 		const completionByItem = new Map<string, ExecutionNode>();
 

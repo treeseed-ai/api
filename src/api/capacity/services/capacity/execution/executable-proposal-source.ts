@@ -87,7 +87,8 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 		if (accepted && stable(recordedRef) !== stable(exact.ref)) throw new CapacityOperationError(
 			409, 'proposal_decision_ref_stale', 'The accepted decision does not match the current exact proposal revision.');
 		const contributions = exact.definition.schemaVersion === 'treeseed.proposal/v2'
-			? await loadProposalGroupContributions(store, { id: row.proposal_id, teamId, projectId: row.project_id }, exact.definition) : null;
+			? await loadProposalGroupContributions(store, { id: row.proposal_id, teamId, projectId: row.project_id,
+				...(accepted ? { decisionId: row.accepted_decision_id } : {}) }, exact.definition) : null;
 		if (contributions && !contributions.current) {
 			if (!accepted) continue;
 			// Team growth must not let non-admissible retained history block other
@@ -120,7 +121,7 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 			teamId, projectId: selectedProjectId, repository: exact.ref.repository!, path: exact.ref.path!, commit: exact.ref.commit!,
 			digest: exact.ref.digest!, proposalRevision: Number(accepted ? row.proposal_version : row.active_version),
 			frontmatter: exact.definition,
-			...(contributions ? { estimatingAttempts: contributions.attempts } : {}),
+			...(contributions ? { estimatingAttempts: contributions.attempts, profiles: contributions.profiles } : {}),
 			feedback: await loadProposalBlockingFeedback(store, text(row.proposal_id)),
 			decision: accepted ? {
 				id: decision!.ref.id, revision: Number(decision!.ref.revision), digest: decision!.ref.digest!,

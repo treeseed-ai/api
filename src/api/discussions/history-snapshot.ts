@@ -19,7 +19,7 @@ export function discussionHistorySnapshot(messages: Message[], discussionId: str
 		const body = bytes.subarray(0, limit).toString('utf8').replace(/\uFFFD$/u, '');
 		remaining -= Buffer.byteLength(body);
 		selected.push({ path: text(message.path), immutableRef: ref, createdAt: text(message.frontmatter?.createdAt),
-			author: text(message.frontmatter?.author).slice(0, 128) || null, body, truncated: Buffer.byteLength(body) < bytes.length,
+			author: text(message.frontmatter?.authorId).trim() || null, body, truncated: Buffer.byteLength(body) < bytes.length,
 			sourceDigest: `sha256:${createHash('sha256').update(source).digest('hex')}` });
 	}
 	return { kind: 'prior-discussion-messages', messages: selected.reverse(), omittedCount: candidates.length - selected.length };

@@ -296,7 +296,16 @@ export async function isCurrentSubscriberContribution(store: CapacityGovernanceD
 	const attempt = assignment.assignmentAttempt;
 	if (!attempt || !workItems(current).some(item => stable(item.estimateRef) === stable({
 		store: 'postgresql', model: 'assignment-attempt', id: attempt.id, revision: attempt.attempt }))) return false;
-	const frozen = await readExactProposal(store, proposal, attempt.sourceRef);
+	let frozen: Awaited<ReturnType<typeof readExactProposal>>;
+	try { frozen = await readExactProposal(store, proposal, attempt.sourceRef); }
+	catch (error) {
+		// Retain obsolete estimating history without treating it as a current
+		// subscriber contribution. Exact-ref, authority and availability failures
+		// still propagate; only a verified schema rejection is noncurrent.
+		const failure = record(error);
+		if (failure.status === 422 && failure.code === 'proposal_execution_plan_invalid') return false;
+		throw error;
+	}
 	const candidate = await readAssignmentEstimateProposal(store, assignment, result);
 	try {
 		return stable(mergeSubscriberEstimate({ frozen: frozen.definition, current, candidate, assignment,

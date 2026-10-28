@@ -12,6 +12,7 @@ import { assignment as original } from '../../../capacity/execution/fixtures/ass
 import { readyContributionProposal, nativeProposalProfileInputs } from './ready-proposal-fixture.ts';
 import type { relationAuthoringDatabase } from '../../../knowledge/workspaces/architecture/relation-authoring-fixture.ts';
 import { verifyAssignmentContent, recordAssignmentContentIntegration } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-content-readback.ts';
+import { compileWorkdayAgentProfileSnapshot } from '../../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-profile-policy.ts';
 
 /** Controlled governance inputs, not live agents, estimates, settlement or usage. */
 export function nativeSubscriberInputs(configured: Record<string, AgentDefinition>, projectId: string, id: string, canonicalSupply: boolean) {
@@ -59,6 +60,7 @@ export async function recordNativeSubscriberInputs(f: Awaited<ReturnType<typeof 
 		const workspaceId = created.workspaceId; open.add(workspaceId);
 		const estimating = profile.definition.activityProfiles.estimating!;
 		const attempt = assignmentAttemptSchema.parse({ ...original, id: item.estimateRef.id, idempotencyKey: item.estimateRef.id,
+			workdayId: `controlled-workday-${item.estimateRef.id}`,
 			projectId: input.declaration.projectId, agentClass: profile.definition.agentClass, workItemId: undefined, sourceRef,
 			status: 'completed', createdAt: now, deadline: new Date(Date.parse(now) + Date.parse(original.deadline) - Date.parse(original.createdAt)).toISOString(),
 			effectiveProfile: { ...original.effectiveProfile, handler: estimating.handler, prompt: estimating.prompt,
@@ -70,17 +72,31 @@ export async function recordNativeSubscriberInputs(f: Awaited<ReturnType<typeof 
 			assignmentId: attempt.id, status: 'completed', summary: 'Controlled native governance INPUT, no live completion or usage claimed.',
 			references: [{ kind: 'treedx', projectId: attempt.projectId, repository: sourceRef.repository,
 				commit: sourceRef.commit, path: sourceRef.path, workspaceId }], verification: [], diagnostics: [], usage: { elapsedSeconds: 0 }, completedAt: now });
+		await freezeEstimatorWorkday(f, attempt, input.declaration.groupIds);
 		await f.query(`INSERT INTO capacity_provider_assignments
-			(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,mode,status,agent_id,
-			assignment_attempt_json,assignment_result_json,completed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,mode,status,agent_id,work_day_id,
+			assignment_attempt_json,assignment_result_json,completed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			[attempt.id, 'controlled-membership', 'team', attempt.projectId, 'controlled-provider', `${attempt.projectId}:${attempt.agentClass}`,
-				'planning', 'completed', profile.definition.id, JSON.stringify(attempt), JSON.stringify(result), now, now, now]);
+				'planning', 'completed', profile.definition.id, attempt.workdayId, JSON.stringify(attempt), JSON.stringify(result), now, now, now]);
 		const scope = { id: attempt.id, teamId: 'team', projectId: attempt.projectId, agentId: profile.definition.id, assignmentAttempt: attempt };
 		const references = await verifyAssignmentContent(f.store, scope, result);
 		await recordAssignmentContentIntegration(f.store, scope, result, references);
 		await f.client.workspaces.close(workspaceId); open.delete(workspaceId); ids.push(attempt.id);
 	}
 	return ids.sort();
+}
+
+/** Original persisted profile authority for these controlled completed estimates. */
+async function freezeEstimatorWorkday(f: { query(sql: string, parameters?: unknown[]): Promise<{ rows: Record<string, unknown>[] }> },
+	attempt: import('@treeseed/sdk/agent-capacity').AssignmentAttempt, groups: readonly string[]) {
+	const classes = (await f.query('SELECT * FROM project_agent_classes WHERE project_id=? ORDER BY id', [attempt.projectId])).rows;
+	const snapshot = compileWorkdayAgentProfileSnapshot(classes.map(row => ({ ...row,
+		handlerRefs: typeof row.handler_refs_json === 'string' ? JSON.parse(row.handler_refs_json) : row.handler_refs_json })), undefined, groups);
+	await f.query(`INSERT INTO capacity_workday_runs
+		(id,team_id,capacity_provider_id,status,execution_kind,execution_mode,trigger_kind,parameters_json,created_at,updated_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`, [attempt.workdayId, attempt.teamId, 'controlled-provider',
+		'completed', 'workday', 'simulation', 'manual', JSON.stringify({ scheduledProjectIds: [attempt.projectId],
+			agentProfilesByProjectId: { [attempt.projectId]: snapshot } }), attempt.createdAt, attempt.createdAt]);
 }
 
 export function expectNativeSubscriberGraph(input: ReturnType<typeof nativeSubscriberInputs>, nodes: ExecutionNode[]) {
@@ -114,6 +130,7 @@ export function subscriberSourceProposal<T extends { executionPlan: { workItems:
 export async function subscriberSourceFixture() {
 	const f = await proposalNativeFixture();
 	try {
+		for (const sql of splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0031_workday_execution_mode_authority.sql', 'utf8'))) await f.query(sql);
 		const ddl = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
 		for (const table of ['project_agent_classes', 'audit_events']) {
 			const statement = ddl.find(sql => sql.startsWith(`CREATE TABLE "${table}" (`));
@@ -136,6 +153,7 @@ export async function subscriberSourceFixture() {
 						JSON.stringify({ agents: [profile.definition] }), JSON.stringify({ source: 'project-library', immutableRef: exact.commit,
 							definitionPaths: [profile.path] }), original.createdAt, original.createdAt]);
 				const attempt = assignmentAttemptSchema.parse({ ...original, id, workItemId: undefined, sourceRef, status: 'completed',
+					workdayId: `controlled-workday-${id}`,
 					agentClass: profile.definition.agentClass,
 					effectiveProfile: { ...original.effectiveProfile, activity: 'estimating', handler: 'writer',
 						profileRef: { store: 'treedx', model: 'agent', id: profile.definition.id, repository: 'repository', commit: exact.commit, path: profile.path } },
@@ -145,12 +163,13 @@ export async function subscriberSourceFixture() {
 					assignmentId: id, status: 'completed', summary: 'Controlled source-intake INPUT, no live agent completion or usage claimed.',
 					references: [{ kind: 'treedx', projectId: 'project', repository: 'repository', commit: exact.commit, path, workspaceId: `controlled-${id}` }],
 					verification: [], diagnostics: [], usage: { elapsedSeconds: 0 }, completedAt: original.createdAt });
+				await freezeEstimatorWorkday(f, attempt, Array.isArray(definition.groupIds) ? definition.groupIds.map(String) : []);
 				await f.query(`INSERT INTO capacity_provider_assignments
-					(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,mode,status,agent_id,
-					assignment_attempt_json,assignment_result_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-					ON CONFLICT(id) DO UPDATE SET assignment_attempt_json=EXCLUDED.assignment_attempt_json,assignment_result_json=EXCLUDED.assignment_result_json`,
+					(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,mode,status,agent_id,work_day_id,
+					assignment_attempt_json,assignment_result_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+					ON CONFLICT(id) DO UPDATE SET assignment_attempt_json=EXCLUDED.assignment_attempt_json,assignment_result_json=EXCLUDED.assignment_result_json,work_day_id=EXCLUDED.work_day_id`,
 					[id, 'controlled-membership', 'team', 'project', 'controlled-provider', profile.definition.agentClass, 'planning', 'completed',
-						profile.definition.id, JSON.stringify(attempt), JSON.stringify(result), original.createdAt, original.createdAt]);
+						profile.definition.id, attempt.workdayId, JSON.stringify(attempt), JSON.stringify(result), original.createdAt, original.createdAt]);
 				const scope = { id, teamId: 'team', projectId: 'project', agentId: profile.definition.id, assignmentAttempt: attempt };
 				const references = await verifyAssignmentContent(store, scope, result);
 				await recordAssignmentContentIntegration(store, scope, result, references);

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { parseFrontmatterDocument } from '../../../../src/api/content/frontmatter.ts';
+import { discussionHistorySnapshot } from '../../../../src/api/discussions/history-snapshot.ts';
 
 const mocks = vi.hoisted(() => ({
 	changes: [] as Array<{ path: string; after: string }>,
@@ -51,6 +52,9 @@ describe('canonical Discussion authoring', () => {
 			path: 'discussions/chat-1.mdx', revision: 1,
 			digest: `sha256:${createHash('sha256').update(threadSource).digest('hex')}` });
 		expect(message.authorRef).toMatchObject({ store: 'postgresql', model: 'user', id: 'user-1' });
+		expect(discussionHistorySnapshot([{ path: 'discussion-messages/chat-1/message-1.mdx',
+			immutableRef: result.commitSha, body: 'Hello team.', frontmatter: message }], 'chat-1', 'current').messages)
+			.toMatchObject([{ author: 'user-1', body: 'Hello team.', immutableRef: result.commitSha }]);
 		expect(result.commitSha).toBe('a'.repeat(40));
 		const grouped = await commitDiscussionMessage({ store: {}, projectId: 'project-1', teamId: 'team-1',
 			principal: { id: 'user-1', displayName: 'Test User' }, body: '@delivery @api/engineer Discuss the real repair.',

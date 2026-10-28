@@ -292,7 +292,7 @@ export class ProviderAssignmentLifecycleService {
 			assignmentResult,
 			reviewDisposition,
 		});
-		if (completed) await recordAssignmentContentIntegration(this.store, assignment, assignmentResult, contentReferences);
+			if (completed) await recordAssignmentContentIntegration(this.store, completed.assignment, assignmentResult, contentReferences);
 		if (completed && assignmentResult && assignment.assignmentAttempt?.effectiveProfile.activity === 'estimating') await reconcileExecutionGraph(this.store, assignment.teamId, {},
 			`assignment-result:${assignment.id}:${assignment.stateVersion}`);
 		if (completed && assignment.invocationId) {

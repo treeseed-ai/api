@@ -135,6 +135,24 @@ workflow:
   - id: subscriber-contribution-readback
     action: { verifier: api.golden.subscriber-contribution-readback }
     expect: { status: passed }
+  - id: accepted-contribution-profiles
+    action: { verifier: api.golden.accepted-contribution-profiles }
+    expect: { status: passed }
+  - id: obsolete-estimate-source
+    action: { verifier: api.golden.obsolete-estimate-source }
+    expect: { status: passed }
+  - id: planning-proposal-integration
+    action: { verifier: api.golden.planning-proposal-integration }
+    expect: { status: passed }
+  - id: planning-creation-interruption
+    action: { verifier: api.golden.planning-creation-interruption }
+    expect: { status: passed }
+  - id: planning-proposal-postgres-native
+    action: { verifier: api.golden.planning-proposal-postgres-native }
+    expect: { status: passed }
+  - id: estimate-source-failures
+    action: { verifier: api.golden.estimate-source-failures }
+    expect: { status: passed }
   - id: subscriber-contribution-order-replay
     action: { verifier: api.golden.subscriber-contribution-order-replay }
     expect: { status: passed }
@@ -3230,6 +3248,12 @@ workflow:
     expect: { status: passed }
   - id: qualified-mention-scope
     action: { verifier: api.golden.qualified-mention-scope }
+    expect: { status: passed }
+  - id: discussion-history-authorship
+    action: { verifier: api.golden.discussion-history-authorship }
+    expect: { status: passed }
+  - id: discussion-authored-history
+    action: { verifier: api.golden.discussion-authored-history }
     expect: { status: passed }
 
   - id: simulation-proposal-frozen-contract

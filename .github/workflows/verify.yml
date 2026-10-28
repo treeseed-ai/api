@@ -45,7 +45,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: treeseed-ai/treedx
-          ref: fbd1856f8fc1ce5b21febfab38c653220826f9d6
+          ref: 6336aaf0de38adbc88c26fb60c076e83f6fde4ea
           path: .treeseed/tools/treedx
       - name: Checkout exact execution authority
         uses: actions/checkout@v4
@@ -106,7 +106,7 @@ jobs:
       - name: Reproduce governed query initialization before complete verification
         run: node node_modules/vitest/vitest.mjs run --config ./vitest.control-plane.config.ts tests/unit/control-plane/capacity/context-query/execution-native.test.ts
       - name: Reproduce native group capacity and retained estimate recovery before complete verification
-        run: node node_modules/vitest/vitest.mjs run --config ./vitest.control-plane.config.ts tests/unit/control-plane/capacity/communication/discussion-admission-capacity.test.ts tests/unit/control-plane/capacity/communication/discussion-supply-postgres.test.ts tests/unit/control-plane/capacity/planning/contributions/estimate-ownership.test.ts tests/unit/control-plane/capacity/planning/contributions/cross-project-estimate-readback.test.ts
+        run: node node_modules/vitest/vitest.mjs run --config ./vitest.control-plane.config.ts tests/unit/control-plane/capacity/communication/discussion-admission-capacity.test.ts tests/unit/control-plane/capacity/communication/discussion-supply-postgres.test.ts tests/unit/control-plane/capacity/planning/contributions/estimate-ownership.test.ts tests/unit/control-plane/capacity/planning/contributions/cross-project-estimate-readback.test.ts tests/unit/control-plane/providers/assignments/planning/proposal-integration-native.test.ts
       - name: Verify Book body and expired closeout regressions before complete verification
         run: node node_modules/vitest/vitest.mjs run --config ./vitest.control-plane.config.ts tests/unit/control-plane/knowledge/workspaces/book-repin.test.ts tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-observation-postgres.test.ts
       - name: Reproduce native lease transition history before complete verification
