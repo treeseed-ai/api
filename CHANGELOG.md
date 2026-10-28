@@ -21,6 +21,7 @@
 
 ### Added
 
+- Reconcile seed owner steps with durable intent and verified resume (#644).
 - Specify durable seed owner-step ordering, resume identities and verified receipt admission (#644).
 - Define headless seed coordination and linked owner reconciliation boundaries (#644).
 

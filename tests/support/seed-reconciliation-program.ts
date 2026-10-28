@@ -1,54 +1,95 @@
 import assert from 'node:assert/strict';
 import {
-  CanonicalJson, SeedSchemas, type SeedBinding, type SeedPlan,
-  type SeedReceipt, type SeedResourceContext, type SeedResourcePlan,
+  CanonicalJson,
+  SeedSchemas,
+  type SeedBinding,
+  type SeedPlan,
+  type SeedReceipt,
+  type SeedResourceContext,
+  type SeedResourcePlan,
   type SeedResourceReceipt,
 } from '@treeseed-cordis/sdk';
 import {
-  SeedReconciliation, type SeedJournal, type SeedWriter, type SeedProgress,
-  type SeedAuthority, type SeedOwnerAccess, type SeedOwnerLease,
+  SeedReconciliation,
+  type SeedJournal,
+  type SeedWriter,
+  type SeedProgress,
+  type SeedAuthority,
+  type SeedOwnerAccess,
+  type SeedOwnerLease,
 } from '../../src/seed-reconciliation.js';
 
 /** Synthetic contract identities only; these fixtures never represent accepted package artifacts. */
 export class SeedData {
   static readonly hash = 'a'.repeat(64);
   static readonly provider = {
-    id: 'fixture.provider', capability: 'fixture.resource', target: 'agent',
-    scopeId: 'installation:fixture:agent:manager', contractVersion: '1.0.0',
+    id: 'fixture.provider',
+    capability: 'fixture.resource',
+    target: 'agent',
+    scopeId: 'installation:fixture:agent:manager',
+    contractVersion: '1.0.0',
     artifact: { package: '@fixture/provider', version: '1.0.0', integrity: this.hash },
     executableDigest: this.hash,
   };
   static readonly binding = {
-    installationId: 'installation:fixture', installationDirectory: '/fixture/installation',
-    project: 'fixture-project', profile: 'default', principalId: 'subject:fixture',
-    resourceScope: 'installation:fixture', grantId: 'grant:fixture', grantRevision: 1,
+    installationId: 'installation:fixture',
+    installationDirectory: '/fixture/installation',
+    project: 'fixture-project',
+    profile: 'default',
+    principalId: 'subject:fixture',
+    resourceScope: 'installation:fixture',
+    grantId: 'grant:fixture',
+    grantRevision: 1,
   };
 
   static resource(key: string, dependsOn: string[] = []): SeedResourcePlan {
     return SeedSchemas.resourcePlan.parse({
-      key, kind: 'fixture.resource', schema: { id: 'fixture.schema', version: '1.0.0', digest: this.hash },
-      requires: ['fixture.resource'], dependsOn, providerRequirement: 'fixture.resource',
-      provider: this.provider, owner: 'agent', configurationDigest: this.hash,
-      desiredDigest: this.hash, expectedGeneration: null, desiredGeneration: null,
-      previousRecord: null, effects: [{ kind: 'fixture.prepare', target: key }],
+      key,
+      kind: 'fixture.resource',
+      schema: { id: 'fixture.schema', version: '1.0.0', digest: this.hash },
+      requires: ['fixture.resource'],
+      dependsOn,
+      providerRequirement: 'fixture.resource',
+      provider: this.provider,
+      owner: 'agent',
+      configurationDigest: this.hash,
+      desiredDigest: this.hash,
+      expectedGeneration: null,
+      desiredGeneration: null,
+      previousRecord: null,
+      effects: [{ kind: 'fixture.prepare', target: key }],
     });
   }
 
   static lock(): SeedPlan['locks'][number] {
     const source = '@fixture/provider@1.0.0';
     return SeedSchemas.lock.parse({
-      requirement: 'fixture.resource', provider: this.provider, closureDigest: this.hash, source,
-      receipt: { kind: 'npm', locator: source, name: '@fixture/provider', version: '1.0.0',
-        archiveDigest: this.hash, closureDigest: this.hash, helperDigests: [this.hash],
+      requirement: 'fixture.resource',
+      provider: this.provider,
+      closureDigest: this.hash,
+      source,
+      receipt: {
+        kind: 'npm',
+        locator: source,
+        name: '@fixture/provider',
+        version: '1.0.0',
+        archiveDigest: this.hash,
+        closureDigest: this.hash,
+        helperDigests: [this.hash],
         sri: 'sha256-' + Buffer.from(this.hash, 'hex').toString('base64'),
-        registry: 'https://registry.example.invalid' },
+        registry: 'https://registry.example.invalid',
+      },
     });
   }
 
   static plan(resources = [this.resource('root')]): SeedPlan {
     const content = {
-      schemaVersion: 'treeseed.seed-plan/v1', seedDigest: this.hash,
-      binding: this.binding, locks: [this.lock()], resources, blockers: [],
+      schemaVersion: 'treeseed.seed-plan/v1',
+      seedDigest: this.hash,
+      binding: this.binding,
+      locks: [this.lock()],
+      resources,
+      blockers: [],
     };
     const digest = CanonicalJson.digest(content);
     return SeedSchemas.plan.parse({ ...content, id: 'seed-plan-' + digest, digest });
@@ -56,9 +97,15 @@ export class SeedData {
 
   static receipt(resource: SeedResourcePlan): SeedResourceReceipt {
     return SeedSchemas.resourceReceipt.parse({
-      key: resource.key, provider: resource.provider, desiredDigest: resource.desiredDigest,
-      state: 'verified', owner: resource.owner, record: 'fixture-record:' + resource.key,
-      observedDigest: resource.desiredDigest, generation: resource.desiredGeneration, blockers: [],
+      key: resource.key,
+      provider: resource.provider,
+      desiredDigest: resource.desiredDigest,
+      state: 'verified',
+      owner: resource.owner,
+      record: 'fixture-record:' + resource.key,
+      observedDigest: resource.desiredDigest,
+      generation: resource.desiredGeneration,
+      blockers: [],
     });
   }
 }
@@ -95,7 +142,9 @@ export class FixtureJournal implements SeedJournal {
 
 class FixtureWriter implements SeedWriter {
   constructor(private readonly journal: FixtureJournal) {}
-  async read(): Promise<SeedProgress> { return structuredClone(this.journal.progress); }
+  async read(): Promise<SeedProgress> {
+    return structuredClone(this.journal.progress);
+  }
   async intent(resource: SeedResourcePlan): Promise<void> {
     if (this.journal.failIntent) throw new Error('private-intent-canary');
     this.journal.events.push('intent:' + resource.key);
@@ -134,7 +183,10 @@ export class FixtureOwners implements SeedOwnerAccess {
 }
 
 class FixtureOwnerLease implements SeedOwnerLease {
-  constructor(private readonly owner: FixtureOwners, private readonly resource: SeedResourcePlan) {}
+  constructor(
+    private readonly owner: FixtureOwners,
+    private readonly resource: SeedResourcePlan,
+  ) {}
   async admit(context: SeedResourceContext, retry: boolean): Promise<void> {
     context.signal.throwIfAborted();
     if (this.owner.failAdmission) throw new Error('private-admission-canary');
@@ -157,7 +209,9 @@ class FixtureOwnerLease implements SeedOwnerLease {
   }
   private next(): SeedResourceReceipt {
     const receipt = SeedData.receipt(this.resource);
-    return this.owner.pending ? { ...receipt, state: 'pending', record: null, observedDigest: null } : receipt;
+    return this.owner.pending
+      ? { ...receipt, state: 'pending', record: null, observedDigest: null }
+      : receipt;
   }
   async readBack(receipt: SeedResourceReceipt, context: SeedResourceContext): Promise<unknown> {
     context.signal.throwIfAborted();

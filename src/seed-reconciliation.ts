@@ -1,7 +1,13 @@
 import {
-  CanonicalJson, SeedContractBinding, SeedSchemas,
-  type SeedBinding, type SeedPlan, type SeedReceipt, type SeedResourceContext,
-  type SeedResourcePlan, type SeedResourceReceipt,
+  CanonicalJson,
+  SeedContractBinding,
+  SeedSchemas,
+  type SeedBinding,
+  type SeedPlan,
+  type SeedReceipt,
+  type SeedResourceContext,
+  type SeedResourcePlan,
+  type SeedResourceReceipt,
 } from '@treeseed-cordis/sdk';
 
 export interface SeedAuthority {
@@ -16,7 +22,10 @@ export interface SeedOwnerLease {
 export interface SeedOwnerAccess {
   acquire(resource: SeedResourcePlan, context: SeedResourceContext): Promise<SeedOwnerLease>;
 }
-export interface SeedProgress { receipt: SeedReceipt | null; intents: string[]; }
+export interface SeedProgress {
+  receipt: SeedReceipt | null;
+  intents: string[];
+}
 export interface SeedWriter {
   read(): Promise<SeedProgress>;
   intent(resource: SeedResourcePlan): Promise<void>;
@@ -27,8 +36,13 @@ export interface SeedJournal {
   acquire(plan: SeedPlan, requestId: string, signal: AbortSignal): Promise<SeedWriter>;
 }
 
-type SeedFailureCode = 'SEED_PLAN_INVALID' | 'SEED_REQUEST_INVALID' |
-  'SEED_CANCELLED' | 'SEED_AUTHORITY_BLOCKED' | 'SEED_OWNER_BLOCKED' | 'SEED_JOURNAL_FAILED';
+type SeedFailureCode =
+  | 'SEED_PLAN_INVALID'
+  | 'SEED_REQUEST_INVALID'
+  | 'SEED_CANCELLED'
+  | 'SEED_AUTHORITY_BLOCKED'
+  | 'SEED_OWNER_BLOCKED'
+  | 'SEED_JOURNAL_FAILED';
 export class SeedReconciliationError extends Error {
   constructor(readonly code: SeedFailureCode) {
     super(code);
@@ -78,8 +92,11 @@ class SeedAuthorityAdmission {
   constructor(private readonly authority: SeedAuthority) {}
   async assert(binding: SeedBinding, signal: AbortSignal): Promise<void> {
     if (signal.aborted) throw new SeedReconciliationError('SEED_CANCELLED');
-    try { await this.authority.assert(structuredClone(binding), signal); }
-    catch { throw new SeedReconciliationError('SEED_AUTHORITY_BLOCKED'); }
+    try {
+      await this.authority.assert(structuredClone(binding), signal);
+    } catch {
+      throw new SeedReconciliationError('SEED_AUTHORITY_BLOCKED');
+    }
     if (signal.aborted) throw new SeedReconciliationError('SEED_CANCELLED');
   }
 }
@@ -92,14 +109,23 @@ class SeedEvidence {
   }
   static blockers(state: SeedResourceReceipt['state']): SeedResourceReceipt['blockers'] {
     if (state === 'verified') return [];
-    return [{ code: 'SEED_OWNER_' + state.toUpperCase().replaceAll('-', '_'),
-      message: 'The owner step has not been verified.' }];
+    return [
+      {
+        code: 'SEED_OWNER_' + state.toUpperCase().replaceAll('-', '_'),
+        message: 'The owner step has not been verified.',
+      },
+    ];
   }
   static recovery(resource: SeedResourcePlan): SeedResourceReceipt {
     return SeedSchemas.resourceReceipt.parse({
-      key: resource.key, provider: resource.provider, desiredDigest: resource.desiredDigest,
-      owner: resource.owner, state: 'recovery-required', record: null,
-      observedDigest: null, generation: resource.desiredGeneration,
+      key: resource.key,
+      provider: resource.provider,
+      desiredDigest: resource.desiredDigest,
+      owner: resource.owner,
+      state: 'recovery-required',
+      record: null,
+      observedDigest: null,
+      generation: resource.desiredGeneration,
       blockers: this.blockers('recovery-required'),
     });
   }
@@ -110,7 +136,8 @@ class SeedReceiptBuilder {
     const states = new Set<string>();
     for (const resource of resources) states.add(resource.state);
     if (states.has('recovery-required')) return 'recovery-required';
-    if (states.size === 1 && states.has('verified') && resources.length === count) return 'completed';
+    if (states.size === 1 && states.has('verified') && resources.length === count)
+      return 'completed';
     if (states.has('verified')) return 'partial';
     if (states.has('blocked')) return 'blocked';
     return 'pending';
@@ -118,11 +145,23 @@ class SeedReceiptBuilder {
   static create(plan: SeedPlan, requestId: string, resources: SeedResourceReceipt[]): SeedReceipt {
     const state = this.state(resources, plan.resources.length);
     return SeedSchemas.receipt.parse({
-      schemaVersion: 'treeseed.seed-receipt/v1', requestId, planId: plan.id,
-      planDigest: plan.digest, binding: plan.binding, expectedResources: plan.resources,
-      resources, state, blockers: state === 'completed' ? [] : [{
-        code: 'SEED_RECONCILIATION_INCOMPLETE', message: 'Not every owner step has been verified.',
-      }],
+      schemaVersion: 'treeseed.seed-receipt/v1',
+      requestId,
+      planId: plan.id,
+      planDigest: plan.digest,
+      binding: plan.binding,
+      expectedResources: plan.resources,
+      resources,
+      state,
+      blockers:
+        state === 'completed'
+          ? []
+          : [
+              {
+                code: 'SEED_RECONCILIATION_INCOMPLETE',
+                message: 'Not every owner step has been verified.',
+              },
+            ],
     });
   }
 }
@@ -130,7 +169,10 @@ class SeedReceiptBuilder {
 class SeedResume {
   readonly receipts = new Map<string, SeedResourceReceipt>();
   readonly intents = new Set<string>();
-  constructor(private readonly plan: SeedPlan, private readonly requestId: string) {}
+  constructor(
+    private readonly plan: SeedPlan,
+    private readonly requestId: string,
+  ) {}
   load(progress: SeedProgress): void {
     if (!Array.isArray(progress.intents)) throw new Error('Invalid seed intents');
     const keys = new Set<string>();
@@ -152,13 +194,21 @@ class SeedResume {
 }
 
 class SeedOwnerStep {
-  constructor(private readonly authority: SeedAuthorityAdmission,
-    private readonly owners: SeedOwnerAccess, private readonly writer: SeedWriter,
-    private readonly plan: SeedPlan, private readonly requestId: string,
-    private readonly signal: AbortSignal) {}
+  constructor(
+    private readonly authority: SeedAuthorityAdmission,
+    private readonly owners: SeedOwnerAccess,
+    private readonly writer: SeedWriter,
+    private readonly plan: SeedPlan,
+    private readonly requestId: string,
+    private readonly signal: AbortSignal,
+  ) {}
 
   private context(): SeedResourceContext {
-    return { binding: structuredClone(this.plan.binding), requestId: this.requestId, signal: this.signal };
+    return {
+      binding: structuredClone(this.plan.binding),
+      requestId: this.requestId,
+      signal: this.signal,
+    };
   }
   async run(resource: SeedResourcePlan, resume: SeedResume): Promise<SeedResourceReceipt> {
     await this.authority.assert(this.plan.binding, this.signal);
@@ -168,10 +218,15 @@ class SeedOwnerStep {
       const saved = resume.receipts.get(resource.key);
       if (saved?.state === 'verified') return await this.readBack(owner, resource, saved);
       return await this.reconcile(owner, resource, resume);
-    } finally { await owner.close(); }
+    } finally {
+      await owner.close();
+    }
   }
-  private async reconcile(owner: SeedOwnerLease, resource: SeedResourcePlan,
-    resume: SeedResume): Promise<SeedResourceReceipt> {
+  private async reconcile(
+    owner: SeedOwnerLease,
+    resource: SeedResourcePlan,
+    resume: SeedResume,
+  ): Promise<SeedResourceReceipt> {
     await this.authority.assert(this.plan.binding, this.signal);
     await this.intent(resource, resume);
     await this.authority.assert(this.plan.binding, this.signal);
@@ -180,14 +235,23 @@ class SeedOwnerStep {
     return this.readBack(owner, resource, receipt);
   }
   private async intent(resource: SeedResourcePlan, resume: SeedResume): Promise<void> {
-    try { await this.writer.intent(structuredClone(resource)); }
-    catch { throw new SeedReconciliationError('SEED_JOURNAL_FAILED'); }
+    try {
+      await this.writer.intent(structuredClone(resource));
+    } catch {
+      throw new SeedReconciliationError('SEED_JOURNAL_FAILED');
+    }
     resume.intents.add(resource.key);
   }
-  private async readBack(owner: SeedOwnerLease, resource: SeedResourcePlan,
-    receipt: SeedResourceReceipt): Promise<SeedResourceReceipt> {
+  private async readBack(
+    owner: SeedOwnerLease,
+    resource: SeedResourcePlan,
+    receipt: SeedResourceReceipt,
+  ): Promise<SeedResourceReceipt> {
     await this.authority.assert(this.plan.binding, this.signal);
-    return SeedEvidence.read(resource, await owner.readBack(structuredClone(receipt), this.context()));
+    return SeedEvidence.read(
+      resource,
+      await owner.readBack(structuredClone(receipt), this.context()),
+    );
   }
 }
 
@@ -195,9 +259,14 @@ class SeedApplySession {
   private readonly resume: SeedResume;
   private readonly step: SeedOwnerStep;
   private readonly observations: SeedResourceReceipt[] = [];
-  constructor(private readonly plan: SeedPlan, private readonly requestId: string,
-    private readonly writer: SeedWriter, authority: SeedAuthorityAdmission,
-    owners: SeedOwnerAccess, signal: AbortSignal) {
+  constructor(
+    private readonly plan: SeedPlan,
+    private readonly requestId: string,
+    private readonly writer: SeedWriter,
+    authority: SeedAuthorityAdmission,
+    owners: SeedOwnerAccess,
+    signal: AbortSignal,
+  ) {
     this.resume = new SeedResume(plan, requestId);
     this.step = new SeedOwnerStep(authority, owners, writer, plan, requestId, signal);
   }
@@ -213,8 +282,9 @@ class SeedApplySession {
     return receipt;
   }
   private async observe(resource: SeedResourcePlan): Promise<SeedResourceReceipt> {
-    try { return await this.step.run(resource, this.resume); }
-    catch (error) {
+    try {
+      return await this.step.run(resource, this.resume);
+    } catch (error) {
       if (error instanceof SeedReconciliationError) throw error;
       if (!this.resume.intents.has(resource.key))
         throw new SeedReconciliationError('SEED_OWNER_BLOCKED');
@@ -223,8 +293,12 @@ class SeedApplySession {
   }
   private async publish(): Promise<SeedReceipt> {
     const receipt = SeedReceiptBuilder.create(this.plan, this.requestId, this.observations);
-    const saved = SeedContractBinding.assertReceipt(await this.writer.publish(structuredClone(receipt)), this.plan);
-    if (CanonicalJson.stringify(saved) !== CanonicalJson.stringify(receipt)) throw new Error('Seed read-back failed');
+    const saved = SeedContractBinding.assertReceipt(
+      await this.writer.publish(structuredClone(receipt)),
+      this.plan,
+    );
+    if (CanonicalJson.stringify(saved) !== CanonicalJson.stringify(receipt))
+      throw new Error('Seed read-back failed');
     return saved;
   }
 }
@@ -232,24 +306,43 @@ class SeedApplySession {
 /** Internal sequencing capability. Native default adapters and public entrypoint are separate gates. */
 export class SeedReconciliation {
   private readonly admission: SeedAuthorityAdmission;
-  constructor(authority: SeedAuthority, private readonly owners: SeedOwnerAccess,
-    private readonly journal: SeedJournal) { this.admission = new SeedAuthorityAdmission(authority); }
+  constructor(
+    authority: SeedAuthority,
+    private readonly owners: SeedOwnerAccess,
+    private readonly journal: SeedJournal,
+  ) {
+    this.admission = new SeedAuthorityAdmission(authority);
+  }
 
   async apply(input: unknown, requestId: string, signal: AbortSignal): Promise<SeedReceipt> {
     const plan = SeedPlanIdentity.read(input);
     if (!SeedSchemas.key.safeParse(requestId).success)
       throw new SeedReconciliationError('SEED_REQUEST_INVALID');
     await this.admission.assert(plan.binding, signal);
-    try { return await this.written(plan, requestId, signal); }
-    catch (error) {
+    try {
+      return await this.written(plan, requestId, signal);
+    } catch (error) {
       if (error instanceof SeedReconciliationError) throw error;
       throw new SeedReconciliationError('SEED_JOURNAL_FAILED');
     }
   }
-  private async written(plan: SeedPlan, requestId: string, signal: AbortSignal): Promise<SeedReceipt> {
+  private async written(
+    plan: SeedPlan,
+    requestId: string,
+    signal: AbortSignal,
+  ): Promise<SeedReceipt> {
     const writer = await this.journal.acquire(structuredClone(plan), requestId, signal);
     try {
-      return await new SeedApplySession(plan, requestId, writer, this.admission, this.owners, signal).run();
-    } finally { await writer.close(); }
+      return await new SeedApplySession(
+        plan,
+        requestId,
+        writer,
+        this.admission,
+        this.owners,
+        signal,
+      ).run();
+    } finally {
+      await writer.close();
+    }
   }
 }

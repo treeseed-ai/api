@@ -4,7 +4,11 @@ import { SeedData, SeedFixture } from '../support/seed-reconciliation-program.js
 class SeedReconciliationBoundaries {
   async dependencyOrder(): Promise<void> {
     const fixture = new SeedFixture();
-    const resources = [SeedData.resource('z', ['a']), SeedData.resource('b'), SeedData.resource('a')];
+    const resources = [
+      SeedData.resource('z', ['a']),
+      SeedData.resource('b'),
+      SeedData.resource('a'),
+    ];
     expect((await fixture.apply(SeedData.plan(resources))).state).toBe('completed');
     expect(fixture.owners.effects).toEqual(['a', 'b', 'z']);
     expect(fixture.journal.events.indexOf('intent:a')).toBeLessThan(
@@ -81,7 +85,11 @@ class SeedReconciliationBoundaries {
   async concurrentWriter(): Promise<void> {
     const fixture = new SeedFixture();
     const plan = SeedData.plan();
-    const writer = await fixture.journal.acquire(plan, 'request:fixture', fixture.controller.signal);
+    const writer = await fixture.journal.acquire(
+      plan,
+      'request:fixture',
+      fixture.controller.signal,
+    );
     await expect(fixture.apply()).rejects.toThrow('SEED_JOURNAL_FAILED');
     expect(fixture.owners.effects).toEqual([]);
     await writer.close();
@@ -134,18 +142,60 @@ class SeedReconciliationBoundaries {
 }
 
 const suite = new SeedReconciliationBoundaries();
-test('integration: seed resources execute in stable dependency order', suite.dependencyOrder.bind(suite));
-test('integration: lost owner replies resume with exact request identity', suite.resume.bind(suite));
-test('integration: repeated apply freshly verifies owner records', suite.changedReadBack.bind(suite));
-test('integration: denied authority creates no seed journal state', suite.deniedAuthority.bind(suite));
-test('integration: cancellation prevents seed state and owner effects', suite.cancellation.bind(suite));
-test('integration: pending resources prevent dependent effects', suite.pendingDependency.bind(suite));
-test('integration: failed receipt publication never reports acceptance', suite.failedPublication.bind(suite));
-test('integration: failed writer release cannot report completion', suite.failedWriterClose.bind(suite));
+test(
+  'integration: seed resources execute in stable dependency order',
+  suite.dependencyOrder.bind(suite),
+);
+test(
+  'integration: lost owner replies resume with exact request identity',
+  suite.resume.bind(suite),
+);
+test(
+  'integration: repeated apply freshly verifies owner records',
+  suite.changedReadBack.bind(suite),
+);
+test(
+  'integration: denied authority creates no seed journal state',
+  suite.deniedAuthority.bind(suite),
+);
+test(
+  'integration: cancellation prevents seed state and owner effects',
+  suite.cancellation.bind(suite),
+);
+test(
+  'integration: pending resources prevent dependent effects',
+  suite.pendingDependency.bind(suite),
+);
+test(
+  'integration: failed receipt publication never reports acceptance',
+  suite.failedPublication.bind(suite),
+);
+test(
+  'integration: failed writer release cannot report completion',
+  suite.failedWriterClose.bind(suite),
+);
 test('integration: failed owner disposal records recovery', suite.failedOwnerClose.bind(suite));
-test('integration: concurrent seed writers cannot execute owner steps', suite.concurrentWriter.bind(suite));
-test('integration: foreign saved receipts cannot authorize seed resume', suite.foreignCheckpoint.bind(suite));
-test('integration: resumed aggregate completes only after every fresh owner read-back', suite.freshAggregate.bind(suite));
-test('integration: failed seed intent publication prevents owner execution', suite.failedIntent.bind(suite));
-test('integration: owner admission denial creates no intent or receipt', suite.failedAdmission.bind(suite));
-test('integration: seed publication read-back must equal the requested receipt', suite.publicationMismatch.bind(suite));
+test(
+  'integration: concurrent seed writers cannot execute owner steps',
+  suite.concurrentWriter.bind(suite),
+);
+test(
+  'integration: foreign saved receipts cannot authorize seed resume',
+  suite.foreignCheckpoint.bind(suite),
+);
+test(
+  'integration: resumed aggregate completes only after every fresh owner read-back',
+  suite.freshAggregate.bind(suite),
+);
+test(
+  'integration: failed seed intent publication prevents owner execution',
+  suite.failedIntent.bind(suite),
+);
+test(
+  'integration: owner admission denial creates no intent or receipt',
+  suite.failedAdmission.bind(suite),
+);
+test(
+  'integration: seed publication read-back must equal the requested receipt',
+  suite.publicationMismatch.bind(suite),
+);
