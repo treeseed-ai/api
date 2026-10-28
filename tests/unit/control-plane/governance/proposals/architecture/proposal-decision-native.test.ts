@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { validateDecisionAuthority, validateExecutionAuthorityReceipt } from '../../../../../../src/api/governance/decision-authority.ts';
 import { prepareNativeProposalVoting } from './ready-proposal-fixture.ts';
 import { nativeSubscriberInputs, recordNativeSubscriberInputs, expectNativeSubscriberGraph } from './native-subscriber-inputs.ts';
-import { verifyNativeProposalReconciliation, verifyScopedInboxQuestionGates } from './proposal-reconciliation-fixture.ts';
+import { verifyNativeProposalReconciliation, verifyScopedInboxQuestionGates, verifyNativeAcceptedTeamGrowth } from './proposal-reconciliation-fixture.ts';
 import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { stringify } from 'yaml';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
@@ -30,9 +30,8 @@ import { createDiscussionService } from '../../../../../../src/api/discussions/d
 import { SessionEventService } from '../../../../../../src/api/realtime/session-events.ts';
 describe('native proposal Decision authority', () => {
 	it('original governance accepts both group subscriber contributions into one exact native Decision and preserves content and history through replay', async () => {
-		// Native proposal bytes and the administrative principal are INPUTS. The
-		// Decision must be produced by the ORIGINAL governance method, not seeded
-		// by this test. This is not authenticated operator HTTP or managed dispatch.
+		// INPUTS: native proposal bytes and the administrative principal. ORIGINAL governance produces the Decision.
+		// No seeded Decision, authenticated operator HTTP or managed dispatch is claimed.
 		for (const canonicalSupply of [false, true]) {
 		const f = await relationAuthoringDatabase(true), extraWorkspaces = new Set<string>(); assert.ok(f.peerStore);
 		let teamRepository: string | undefined;
@@ -483,6 +482,7 @@ describe('native proposal Decision authority', () => {
 				expect(readback.resolvedRef).toBe(retainedContent.commit); expect(object(readback.file).content).toBe(retainedContent.raw);
 			}
 			if (!canonicalSupply) await verifyScopedInboxQuestionGates(f, declaration.id, decisionId); // No live model execution or usage is proved by native admission/claim.
+			await verifyNativeAcceptedTeamGrowth(f, projectId, declaration.id, subscriberInputs.subscribers[0]!.definition);
 		} finally {
 			const cleanupErrors: unknown[] = [];
 			for (const workspace of extraWorkspaces) try { await f.client.workspaces.close(workspace); } catch (error) { cleanupErrors.push(error); }

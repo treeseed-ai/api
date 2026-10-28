@@ -242,7 +242,8 @@ describe('own contribution through owning SQL public HTTP client and native Git'
 					'retained-node', original.createdAt, original.createdAt]);
 			const active = await f.snapshot();
 			await expect(loadTeamExecutableProposalSources(store, 'team', undefined, () => undefined))
-				.rejects.toMatchObject({ code: 'proposal_contributions_unverified', details: { missing: ['project/project/integrator'] } });
+				.rejects.toMatchObject({ code: 'proposal_contributions_unverified', details: { missing: [
+					'original workday contribution engineer-work', 'original workday contribution technical-writer-work', 'shared group subscribers'] } });
 			expect(await f.snapshot()).toEqual(active);
 			// Actual owning SQL, SDK HTTP transport and committed Git are exercised.
 			// The existing isolated endpoint is not a native TreeDX server or managed

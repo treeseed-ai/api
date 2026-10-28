@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 export { verifyScopedInboxQuestionGates } from '../../../knowledge/inbox/question-gate-native-contract.ts';
+export { verifyNativeAcceptedTeamGrowth } from './recovery/accepted-team-growth-native.ts';
 import { graphRevisionSchema } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../../../src/api/capacity/database.ts';
 import { reconcileExecutionGraph } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';

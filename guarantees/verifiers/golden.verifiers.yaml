@@ -221,6 +221,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/planning/contributions/estimate-readback.test.ts
     testName: "reads actual estimator source and stored attempt ownership while preserving a concurrent peer through moved denied and altered-source observations"
+  api.golden.accepted-contribution-profiles:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/contributions/accepted-contribution-readback.test.ts
+    testName: "keeps accepted contribution owners and their original profiles after team growth while drafts require the newcomer"
   api.golden.planning-proposal-integration:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
