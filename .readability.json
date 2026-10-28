@@ -1,0 +1,462 @@
+{
+  "formatVersion": 1,
+  "baselineCommit": "89441a9b97e691ec6e30fb47bb6f6eaec7dbbed3",
+  "violations": [
+    {
+      "file": ".agents/skills/release-workflow/scripts/test-layout.ts",
+      "symbol": "TestLayout.inspect",
+      "fingerprint": "bfff01a3fe612610a72c2bcc0f00c92fdb5abbe557d2b876614a24990d557a0c"
+    },
+    {
+      "file": ".agents/skills/release-workflow/scripts/test-layout.ts",
+      "symbol": "TestLayout.check",
+      "fingerprint": "aec11cb99ea6438078fa6cbf353bbf8c4b5f5803a1e0102c86b725180f20e669"
+    },
+    {
+      "file": ".agents/skills/release-workflow/scripts/test-layout.ts",
+      "symbol": "TestLayout.discovery",
+      "fingerprint": "771becf2a0f493fa9ee054d98379140581968b2134e1ccfd778ac1618eb4074b"
+    },
+    {
+      "file": ".agents/skills/release-workflow/scripts/test-layout.ts",
+      "symbol": "TestLayout.partitions",
+      "fingerprint": "95cef1faa4182536c0be52904c7525d3ed245bac04f22d969ea73307ef0fa2bd"
+    },
+    {
+      "file": ".agents/skills/release-workflow/scripts/test-layout.ts",
+      "symbol": "TestLayout.directory",
+      "fingerprint": "fb2f15a07b290e17c566adedf0e37dd7b4093a59a6085ebbf4f787474f6adb0a"
+    },
+    {
+      "file": ".agents/skills/release-workflow/scripts/test-layout.ts",
+      "symbol": "TestRegistrationVisitor.inspect",
+      "fingerprint": "ccbfb614b5e447bf0eb3230ba9a80b6a369bae7ec130ef5e134c087a2d0c7058"
+    },
+    {
+      "file": ".agents/skills/release-workflow/scripts/test-layout.ts",
+      "symbol": "TestRegistrationVisitor.visit",
+      "fingerprint": "8740012694378c96522cedfa0f69377ee1f26c18d316baaee9050fcb4d6e752d"
+    },
+    {
+      "file": ".agents/skills/release-workflow/scripts/test-layout.ts",
+      "symbol": "TestRegistrationVisitor.test",
+      "fingerprint": "facc0ab411b33f7d001b6f8e5852eebf4ff02716394b318b20ec046794e30fe1"
+    },
+    {
+      "file": "scripts/tooling.ts",
+      "symbol": "ApiTooling.static run",
+      "fingerprint": "15f961282f8f87fc4537dc3b4ae41ecfbad3de5689e24b24a9fb8e3d4e0e2f6d"
+    },
+    {
+      "file": "src/configuration.ts",
+      "symbol": "ApiConfiguration.static parse",
+      "fingerprint": "d534fc6db4e9d549f2face76da93892fe38088affa5e4099a3527c8a8236eb3b"
+    },
+    {
+      "file": "src/configuration.ts",
+      "symbol": "ApiConfiguration.static owner",
+      "fingerprint": "461d60ec608909ee17fcad2be669ef10c2bdedf702c2b24bcfe222c2a526df54"
+    },
+    {
+      "file": "src/container.ts",
+      "symbol": "NodeApiContainerPlugin.[Service.init]",
+      "fingerprint": "8bd10ea063af82e50884a165914ebd35c849bbacdd8fbeb32c3bcad2763acf6c"
+    },
+    {
+      "file": "src/container.ts",
+      "symbol": "ApiContainerBuild.static run",
+      "fingerprint": "024107cd9ad47a8e0d8eea1868b16282f00cef0a6345f7dcbaabb691d2d12b6b"
+    },
+    {
+      "file": "src/image-context.ts",
+      "symbol": "ApiImageContext.static prepare",
+      "fingerprint": "404ec09187fc5e9f9ef053acce24f55cf9f0598067cc98cdca300acf6f1c2edd"
+    },
+    {
+      "file": "src/json.ts",
+      "symbol": "JsonKeys.property",
+      "fingerprint": "cb68dc1d68f8e366d5f45d144bd12755e8d3c5c29191add1ffc267043718af80"
+    },
+    {
+      "file": "src/json.ts",
+      "symbol": "ApiJson.static parse",
+      "fingerprint": "01032964ed2d335dbd21884fff151b0fcf09455ca73069268b924b02b74f55d5"
+    },
+    {
+      "file": "src/runtime-audit.ts",
+      "symbol": "ApiRuntimeClosure.static validate",
+      "fingerprint": "b4b32f4c49dd45e44947e2ba81f7989958b03705241c8bb5931f5be9bea7a70d"
+    },
+    {
+      "file": "src/runtime-audit.ts",
+      "symbol": "RuntimeFiles.directory",
+      "fingerprint": "4ab54cf7e077def22337ccedc93f28d0b1852b778764ed06154063ab5154902a"
+    },
+    {
+      "file": "src/runtime-audit.ts",
+      "symbol": "RuntimeFiles.read",
+      "fingerprint": "0c84d52d473062b8891738c66fc0dabfda480ad94f9c6c64c127574c0770d789"
+    },
+    {
+      "file": "src/runtime-audit.ts",
+      "symbol": "RuntimeFiles.files",
+      "fingerprint": "333035fd25ea25896d3b7ea1d215089aaaf9c7fa7e96632d006fc71fc5db7136"
+    },
+    {
+      "file": "src/runtime-audit.ts",
+      "symbol": "ApiRuntimeAudit.static assetOrder",
+      "fingerprint": "7b0ee4bd19a8015c266b83c2b9ec63b74e57017d8dfb6c846c7132b683228ff3"
+    },
+    {
+      "file": "src/runtime-audit.ts",
+      "symbol": "ApiRuntimeAudit.static archive",
+      "fingerprint": "b796ecee5cd778b1ee00cb0d4b07549b915b3d0cb00911c0b2621bc09be1503f"
+    },
+    {
+      "file": "src/runtime-audit.ts",
+      "symbol": "ApiRuntimeAudit.static inspect",
+      "fingerprint": "8bc90a1c5934356de2ba343087787d9f787dadbf4a8e4eb7cf023011f5639dad"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "Adapter.parse",
+      "fingerprint": "8fbdb8028114f9819477e3d835afcf491048754726b4f057c7063018344e7bd6"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "HostAdapter.constructor",
+      "fingerprint": "26cd5ea023cc3a7ca86355b3d053714ebdd1eade8cac6d816dc7ab167337dcd4"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "HostAdapter.initialize",
+      "fingerprint": "1ec1d0a232f849b96c62ae918cd3f0ba338708d4e0dd907fbebfff4c9c46a188"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "HostAdapter.evidence",
+      "fingerprint": "98e7975bf6cd4664b5ef2fca31acf426a3107f590c68a72e3f889eeb53581580"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "HostPlugin.[Service.init]",
+      "fingerprint": "2b03e6d4d63aa9e4bd6dc6701d3ea1239c6a1b627e51ee0cc66881ad73311c21"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "Invoker.invoke",
+      "fingerprint": "6dc57852265f8ddfc6c76e9f3f27ce1099b81dfb16dc1afc694a2a6b07d9f077"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "RequestWork.execute",
+      "fingerprint": "3804beb525d10afa43f83e3422dd67c59fbff47bf420f931987b07135251a4f1"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "Router.handle",
+      "fingerprint": "10f44e68a9a0c1a3baa799492c065d0302239b5a59d6f21dcbcbec4a02426d7a"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "HttpExchange.constructor",
+      "fingerprint": "0cf94ae255090c4afb4424debac6ac25b70d0592adc1bce475a0cd22caf4e229"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "HttpExchange.data",
+      "fingerprint": "a6754a4abd8035a6854bd7bd82353173eb83f94744becc2b18ad4e646e31a650"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "HttpExchange.respond",
+      "fingerprint": "bd0eedfb80f52e4890956f3932a77683490338edc02cc8f001ea42b4816dce09"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "HttpExchange.abort",
+      "fingerprint": "1238ffee21360c02a2aa7b253f008bee7246f4bc67bead63a45b6b2eb2a44dcc"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "HttpListener.listen",
+      "fingerprint": "6ed060223371417c87238fde5c2d5bc52ee3833edd58065c3ba2a50d33b2687d"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "HttpListener.address",
+      "fingerprint": "c107c900fe677fb9f94e770fd677ea0f6b4246802803475a000bf965bb4e4940"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "HttpListener.close",
+      "fingerprint": "6b549f4d13aa8d4df8a3138182ecef3d7da78141ee1aa7b5a7e13b69b5e528dd"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "HttpPlugin.[Service.init]",
+      "fingerprint": "f381e5ec7984e6ea4113585aa68331727c95c827965f1377ab8719286e28cfe8"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "ApiApplication.start",
+      "fingerprint": "632a76befd3e9b84d9dca94334dd9e01a29396914274deba19c1e3b53f452323"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "ApiApplication.close",
+      "fingerprint": "0285032d1e60f3731d167a065817376401b73e37190954f5f51f2685d3842472"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "ApiApplication.static configurationFile",
+      "fingerprint": "448854223449da8af05a30d904a05664a10ea30a5133782124d2d099a1960a7c"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "ApiBuild.static runtimeIdentity",
+      "fingerprint": "aced731bcf8f0ea56562f64d92891dd0592d651af41b0df0830217cbdb2d27d6"
+    },
+    {
+      "file": "src/server.ts",
+      "symbol": "ApiProgram.static run",
+      "fingerprint": "d85a8e8a06bec075b1055a52f3be01cfc8daff8c1202f31917fe2d1acbc7826d"
+    },
+    {
+      "file": "src/services.ts",
+      "symbol": "NodeApiServicePlugin.constructor",
+      "fingerprint": "282f56bd5209f7ff6f3992e9cf04fc13c4b43cb99598e4d0af1768c5e0f09ed9"
+    },
+    {
+      "file": "src/services.ts",
+      "symbol": "NodeApiServicePlugin.[Service.init]",
+      "fingerprint": "81172a3ac40c6aca2abc7537c5cbe45b85e9cf48f7e0dd86eba04a943c1a7fe0"
+    },
+    {
+      "file": "src/services.ts",
+      "symbol": "ApiReadinessPlugin.constructor",
+      "fingerprint": "e25ed967ab7ef127584af9133d16bbf5deecce917698c82b04afb12435c5696c"
+    },
+    {
+      "file": "src/services.ts",
+      "symbol": "ApiReadinessPlugin.target",
+      "fingerprint": "4b71c1b0cd50e03b752ccc5190a387b19a549ac6e7055e0bca0cc0f2dccf850d"
+    },
+    {
+      "file": "src/services.ts",
+      "symbol": "ApiReadinessPlugin.observe",
+      "fingerprint": "bb5e455d0e9e2da7be39a9041cd81948d1dba844009d5f3bfaf9f656134acabd"
+    },
+    {
+      "file": "tests/acceptance/container.test.ts",
+      "symbol": "ApiContainerTestsAcceptance.program",
+      "fingerprint": "5c80abd49112b5915956838f7a56d1eb09bfe6b2f347ff9a1efebd772bcf0c5d"
+    },
+    {
+      "file": "tests/acceptance/installed-root.test.ts",
+      "symbol": "InstalledApiTests.lockDifference",
+      "fingerprint": "0e64e016b02bc7a88aa27934e7ca977ebcb56fac88da750a26b894dd83d79fa1"
+    },
+    {
+      "file": "tests/acceptance/installed-root.test.ts",
+      "symbol": "InstalledApiTests.program",
+      "fingerprint": "a2b84c23af1132ae94328d8dc2cb7679663274d9e181ebdbc6bf66754b903b42"
+    },
+    {
+      "file": "tests/acceptance/native-service.test.ts",
+      "symbol": "NativeApiServiceTestsAcceptance.publicProgram",
+      "fingerprint": "b5987a71a154072059b91d81c59e5fcfc7665c37c49511c4c015df46987c3e77"
+    },
+    {
+      "file": "tests/acceptance/runtime-audit.test.ts",
+      "symbol": "RuntimeAuditTests.program",
+      "fingerprint": "370efb8097dda210ad3022b11bb4c7f9cd07b3b51e17c1a1c2a3f2a195bd012b"
+    },
+    {
+      "file": "tests/acceptance/server.test.ts",
+      "symbol": "ApiTestsAcceptance.program",
+      "fingerprint": "98f5a8df5ee86e6fe49a04e15bd496d6c0acca96b4cf29d1605d620381080744"
+    },
+    {
+      "file": "tests/integration/container.test.ts",
+      "symbol": "ApiContainerTestsIntegration.metadata",
+      "fingerprint": "76a523b3d25d02c4c9b67ceb24b393db0903b5133f8433a5f1ca49ab6949ba2a"
+    },
+    {
+      "file": "tests/integration/native-service.test.ts",
+      "symbol": "NativeApiServiceTestsIntegration.protocol",
+      "fingerprint": "bf90d924e0849c9e72b4de3f707ff59b37925487ca7e6bcae674309afc68c19a"
+    },
+    {
+      "file": "tests/integration/public-fixture.test.ts",
+      "symbol": "PublicFixtureTests.contract",
+      "fingerprint": "56e5b9d8ad539b99c175cb780e503d2bf8abed0458902c0b2cae41e4d881114c"
+    },
+    {
+      "file": "tests/integration/server.test.ts",
+      "symbol": "ApiTestsIntegration.metadata",
+      "fingerprint": "2844484ed68823bd5f8768f577bdb3a04e5d6b2b72864da26e3eeeb7f2b70c86"
+    },
+    {
+      "file": "tests/regression/public-declarations.test.ts",
+      "symbol": "PublicDeclarationTests.legacy",
+      "fingerprint": "adc35d865ae02e5a5a00e82f59587e86c5e3aac13166c1458cd12a612be8227d"
+    },
+    {
+      "file": "tests/regression/public-declarations.test.ts",
+      "symbol": "PublicDeclarationTests.providers",
+      "fingerprint": "38888f94968891db415fc3cd5c406bcb06dd47cffdfb9707ca1cc6dbf0a5b7a8"
+    },
+    {
+      "file": "tests/regression/public-declarations.test.ts",
+      "symbol": "PublicDeclarationTests.schema",
+      "fingerprint": "8004d1f7a9b39f4b3b69e3ee0731164b2bc3fb176ead189fe3f025a41651e970"
+    },
+    {
+      "file": "tests/regression/test-layout.test.ts",
+      "symbol": "TestLayoutRegression.check",
+      "fingerprint": "58a1e54d5b4d5e806480547f2c44fc7fd4a30b548e11033ce1aec339518628f4"
+    },
+    {
+      "file": "tests/regression/test-layout.test.ts",
+      "symbol": "TestLayoutRegression.discovery",
+      "fingerprint": "9a2d5796d031c1f6b33cfe9b537b6ebaacb870e3bcdf578110c016bbc44dca2d"
+    },
+    {
+      "file": "tests/regression/test-layout.test.ts",
+      "symbol": "TestLayoutRegression.matrix",
+      "fingerprint": "ec2572e83c489f133b4c787afaaa99cc1106c22b8e76a2cbbc5dae077a23c0c5"
+    },
+    {
+      "file": "tests/regression/test-layout.test.ts",
+      "symbol": "TestLayoutRegression.partitions",
+      "fingerprint": "99923590bc7eb9c1f0b70fd32403786ecdc51b98ed1eec4241ae1a0693c17dcd"
+    },
+    {
+      "file": "tests/regression/test-layout.test.ts",
+      "symbol": "TestLayoutRegression.support",
+      "fingerprint": "e933ea0a60e46f10d31f0368c7d6413a5b60d3e5b392dca3f3c18daa81cb0966"
+    },
+    {
+      "file": "tests/support/installed-root-browser.ts",
+      "symbol": "BrowserRequest.static read",
+      "fingerprint": "ac3e7674390f4fb1ec4a127b0fec8f079d4a3348126fe22d456463a9c78137b9"
+    },
+    {
+      "file": "tests/support/installed-root-browser.ts",
+      "symbol": "InstalledApiBrowser.static command",
+      "fingerprint": "5d3afb2b8e0ab5e5a1ba62604bda5ec41d8b509953349602ffd788e6932b6691"
+    },
+    {
+      "file": "tests/support/installed-root-browser.ts",
+      "symbol": "InstalledApiBrowser.static verify",
+      "fingerprint": "79fedab174a306d41d0eb69c177bc4207ba7677c4e3f7b8e8fd623035297b550"
+    },
+    {
+      "file": "tests/support/installed-root-fixture.ts",
+      "symbol": "FixturePort.get",
+      "fingerprint": "dab549a0d11f3bf9aa315f2bac55d2a79aad5f1c63e5e3951372c000a17ac0dc"
+    },
+    {
+      "file": "tests/support/installed-root-fixture.ts",
+      "symbol": "InstalledApiFixture.static command",
+      "fingerprint": "a34e0460a335bfbf1151da8c5bfac3852813ac0a7c76b0132a51e2e4a0892ed5"
+    },
+    {
+      "file": "tests/support/installed-root-fixture.ts",
+      "symbol": "InstalledApiFixture.reference",
+      "fingerprint": "ce7e4005801c2f86f6d70845ff8f5d39275cdae88fabd5a135eeb73f51c4706a"
+    },
+    {
+      "file": "tests/support/installed-root-fixture.ts",
+      "symbol": "InstalledApiFixture.prepared",
+      "fingerprint": "f3be05d2085199d5b97aaa9d4fd60ae34bcee7a917adc7b5fbdd0071cbcfc064"
+    },
+    {
+      "file": "tests/support/installed-root-fixture.ts",
+      "symbol": "InstalledApiFixture.close",
+      "fingerprint": "6f027dfe6d62d1f4ba5b677468df161f601e216c6fde68e06f94a243f572021d"
+    },
+    {
+      "file": "tests/support/installed-root-program.ts",
+      "symbol": "EdgeRead.start",
+      "fingerprint": "0dc1d4466de66c959ec7148eaf031c45a17eae5ed0138b273b1c1a59dc4323a1"
+    },
+    {
+      "file": "tests/support/installed-root-program.ts",
+      "symbol": "EdgeRead.received",
+      "fingerprint": "0a6e52fbe8f696e7e8476a694752def2e316bd49e55dabbf238146d67ca5fe00"
+    },
+    {
+      "file": "tests/support/installed-root-program.ts",
+      "symbol": "EdgeRead.data",
+      "fingerprint": "ad9bac4d3f95372b28e821c917b1ec43bc8b28c32ac3e7c5c0e32b692ce85a2c"
+    },
+    {
+      "file": "tests/support/installed-root-program.ts",
+      "symbol": "EdgeRead.end",
+      "fingerprint": "39a8a9b2f11b68b8f3b2f22e75c5118fcceda18cf7a7139a7a864e8784831d6e"
+    },
+    {
+      "file": "tests/support/installed-root-program.ts",
+      "symbol": "InstalledApiProgram.static run",
+      "fingerprint": "b7bb3e03307ed2ce79beb98c0291b4cd60fafe006ceef71291c32142a310ac81"
+    },
+    {
+      "file": "tests/support/installed-root-program.ts",
+      "symbol": "InstalledApiProgram.static closeWorker",
+      "fingerprint": "9151aeeb7b04ec588a76c987e66248c1618308bd1b16990599e4e878d3cb10d4"
+    },
+    {
+      "file": "tests/support/installed-root-program.ts",
+      "symbol": "InstalledApiProgram.static credentialIdentity",
+      "fingerprint": "98fd074b2b2fa9ff4a590b8a91ec8be04c171331e5a74e61e674e02c5b45f74b"
+    },
+    {
+      "file": "tests/support/runtime-packages.ts",
+      "symbol": "PreparedApiPackages.constructor",
+      "fingerprint": "f31b022ee6414ac142deffef3797fe451c8c78548fc3d8d7489390007236ef4f"
+    },
+    {
+      "file": "tests/support/runtime-packages.ts",
+      "symbol": "PreparedApiPackages.inspect",
+      "fingerprint": "ad28910225bdfae1708e10b4c8a30253277f55613e498941d7f96e8c704fc0dc"
+    },
+    {
+      "file": "tests/support/runtime-packages.ts",
+      "symbol": "PreparedApiPackages.prepare",
+      "fingerprint": "5e1d4ee399e95575974597f4aa282b482d8ed784ee12ee47142fc19b90270db4"
+    },
+    {
+      "file": "tests/support/runtime-packages.ts",
+      "symbol": "PreparedApiPackages.body",
+      "fingerprint": "19d2d8a2325f2f0e5fd88e077cbb55cf4fa456c38d9c4618cf7b0f8f916787cd"
+    },
+    {
+      "file": "tests/support/runtime-packages.ts",
+      "symbol": "PreparedApiPackages.registry",
+      "fingerprint": "a17046e859defd7adba34e7614524e70be8d5873cd5b8a65ed6121be8fff967b"
+    },
+    {
+      "file": "tests/unit/application-view.test.ts",
+      "symbol": "ApplicationViewTests.privateRecord",
+      "fingerprint": "f35d9ee0fefde3faaaf53008dfff538b4c2bd76588014d004c908ee3778e6bfd"
+    },
+    {
+      "file": "tests/unit/container.test.ts",
+      "symbol": "ApiContainerTestsUnit.definition",
+      "fingerprint": "3be0bff5bc5e6ad97481c3b35243e7145c797eeb6237642a7a55ce88bb3f6f66"
+    },
+    {
+      "file": "tests/unit/native-service.test.ts",
+      "symbol": "NativeApiServiceTestsUnit.projection",
+      "fingerprint": "e36324afc1c5e446b01a7ec553e4e10fb9552ac8fa2daf8f1e400d5652970a2d"
+    },
+    {
+      "file": "tests/unit/server.test.ts",
+      "symbol": "ApiTestsUnit.invalidConfiguration",
+      "fingerprint": "14bfc4763e135d3403f8712d33783dabeca42566c612417b190526a2081200dd"
+    }
+  ],
+  "exceptions": []
+}

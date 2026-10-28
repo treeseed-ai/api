@@ -30,7 +30,7 @@
     "dist/tests/support/runtime-packages.*"
   ],
   "scripts": {
-    "check": "bun run check:test-layout && bun scripts/tooling.ts check",
+    "check": "bun run check:readability && bun run check:test-layout && bun scripts/tooling.ts check",
     "build": "bun scripts/tooling.ts build && bun dist/src/container.js --metadata && bun dist/src/server.js --metadata",
     "test:unit": "bun test ./tests/unit",
     "test:integration": "bun test ./tests/integration",
@@ -38,7 +38,8 @@
     "verify": "bun run check && bun run build && bun run test:acceptance && bun run test:regression && bun run test:integration && bun run test:unit",
     "check:test-layout": "bun .agents/skills/release-workflow/scripts/test-layout.ts",
     "test:regression": "bun test ./tests/regression",
-    "test:acceptance": "bun test ./tests/acceptance"
+    "test:acceptance": "bun test ./tests/acceptance",
+    "check:readability": "bun .agents/skills/release-workflow/scripts/source-readability.ts"
   },
   "peerDependencies": {
     "@treeseed-cordis/sdk": "0.0.0-cordis.19",
@@ -57,7 +58,8 @@
     "@treeseed-cordis/deployment": "file:vendor/deployment.tgz",
     "@treeseed-cordis/ui": "file:vendor/ui.tgz",
     "@types/semver": "7.8.0",
-    "playwright": "1.64.1"
+    "playwright": "1.64.1",
+    "prettier": "3.6.2"
   },
   "dependencies": {
     "cordis": "4.0.0-rc.12",
