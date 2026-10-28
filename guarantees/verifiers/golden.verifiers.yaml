@@ -5334,6 +5334,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/reporting/reporting-selection-native.test.ts
     testName: "native public preflight and start freeze all subscribed project closeout profiles and reject actor selectors through denial and replay"
+  api.golden.frozen-reporting-recovery-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "retains verified frozen reporting authority after current team profile changes"
+  api.golden.frozen-reporting-recovery-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/reporting/reporting-selection-native.test.ts
+    testName: "native graph reconciliation preserves original closeout authority after profile edits and rejects corrupted frozen custody"
   api.golden.group-closeout-projection:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

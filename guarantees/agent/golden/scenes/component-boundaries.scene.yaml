@@ -3152,6 +3152,12 @@ workflow:
   - id: reporting-selection-native
     action: { verifier: api.golden.reporting-selection-native }
     expect: { status: passed }
+  - id: frozen-reporting-recovery-unit
+    action: { verifier: api.golden.frozen-reporting-recovery-unit }
+    expect: { status: passed }
+  - id: frozen-reporting-recovery-native
+    action: { verifier: api.golden.frozen-reporting-recovery-native }
+    expect: { status: passed }
   - id: group-closeout-projection
     action: { verifier: api.golden.group-closeout-projection }
     expect: { status: passed }

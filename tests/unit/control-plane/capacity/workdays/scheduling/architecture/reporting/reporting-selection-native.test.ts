@@ -2,7 +2,37 @@ import {expect,it} from 'vitest';
 import {normalizeWorkdayAgentSelection} from '@treeseed/sdk/operator-contracts';
 import type {AgentDefinition} from '@treeseed/sdk/agent-capacity';
 import {workdayStartDatabase} from '../workday-start-fixture.ts';
+import {createExecutionGraphService} from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 function configuredCloseout(definition:AgentDefinition):AgentDefinition{return {...definition,activityProfiles:{...definition.activityProfiles,reporting:{handler:'reporter',prompt:{system:'Commit the deterministic closeout.'},permissions:definition.activityProfiles.planning!.permissions,dependsOn:{events:['workday-closing']}}}};}
+
+it('native graph reconciliation preserves original closeout authority after profile edits and rejects corrupted frozen custody',async()=>{
+ const f=await workdayStartDatabase();try{
+  const original=configuredCloseout(f.definition);
+  await f.query('UPDATE project_agent_classes SET handler_refs_json=? WHERE id=?',[JSON.stringify({agents:[original]}),'class']);
+  const planned=await f.preflight();await f.start(planned);
+  const service=createExecutionGraphService(f.store),before=await f.snapshot();
+  const graph=await service.show(f.principal,'team',{}),reports=graph.nodes.filter(node=>node.kind==='reporting');
+  expect(reports).toHaveLength(1);
+  const changed={...original,purpose:'Future governed team work.',groupIds:['future-work'],activityProfiles:{...original.activityProfiles,
+   reporting:{...original.activityProfiles.reporting!,prompt:{system:'Future closeout instructions.'}}}};
+  await f.query('UPDATE project_agent_classes SET handler_refs_json=? WHERE id=?',[JSON.stringify({agents:[changed]}),'class']);
+  await service.reconcile(f.principal,'team',{});
+  const after=await f.snapshot(),refreshed=await service.show(f.principal,'team',{});
+  expect(refreshed.nodes.filter(node=>node.kind==='reporting').map(node=>({id:node.id,revision:node.nodeRevision,source:node.sourceRef,
+   authority:node.authorityRefs,permissions:node.requestedPermissions,criteria:node.acceptanceCriteria})))
+   .toEqual(reports.map(node=>({id:node.id,revision:node.nodeRevision,source:node.sourceRef,authority:node.authorityRefs,
+    permissions:node.requestedPermissions,criteria:node.acceptanceCriteria})));
+  expect(after.workdays).toEqual(before.workdays.map(row=>({...row,next_event_index:Number(row.next_event_index)+1})));
+  expect(after.events.slice(before.events.length)).toMatchObject([{event_type:'execution.node.state'}]);
+  for(const key of ['assignments','reservations','usage','ledger'] as const)expect(after[key]).toEqual(before[key]);
+  const row=after.workdays[0]!,parameters=JSON.parse(String(row.parameters_json));
+  parameters.agentProfilesByProjectId.project.agents[0].definition.purpose='Unverified frozen mutation.';
+  await f.query('UPDATE capacity_workday_runs SET parameters_json=? WHERE id=?',[JSON.stringify(parameters),row.id]);
+  const poisoned=await f.snapshot();
+  await expect(service.reconcile(f.principal,'team',{})).rejects.toMatchObject({code:'capacity_workday_agent_profile_snapshot_invalid'});
+  expect(await f.snapshot()).toEqual(poisoned);
+ }finally{await f.close();}
+},30_000);
 
 it('native public preflight and start freeze all subscribed project closeout profiles and reject actor selectors through denial and replay',async()=>{
  const f=await workdayStartDatabase();try{

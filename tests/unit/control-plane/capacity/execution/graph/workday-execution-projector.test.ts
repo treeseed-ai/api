@@ -246,7 +246,8 @@ describe('workday living-graph projection', () => {
 			agentIds: ['sdk/sdk/architect:planning', 'sdk/sdk/engineer:planning', 'sdk/sdk/reporter:planning'], startsAt: '2026-09-13T12:00:00.000Z' });
 		const graph = projectActiveWorkdays({ teamId: 'team', revision: 1,
 			sources: [{ id: 'workday', teamId: 'team', parameters: { groupIds: ['workday-group'], appliedPlan, scheduledProjectIds: ['sdk'],
-				agentProfilesByProjectId: { sdk: { revision: 'test', agents: Object.values(profiles).map((candidate) => ({ definition: candidate, activities: ['planning'] })) } } } }], profiles });
+				agentProfilesByProjectId: { sdk: compileWorkdayAgentProfileSnapshot(Object.values(profiles).map(candidate => ({
+					id: `sdk:${candidate.agentClass}`, slug: candidate.agentClass, handlerRefs: { agents: [candidate] } }))) } } }], profiles });
 		expect(graph.nodes.filter((node) => node.kind === 'planning')).toHaveLength(3);
 		expect(graph.nodes.map((node) => node.kind)).toEqual(expect.arrayContaining(['condition', 'reporting']));
 		expect(graph.nodes.find((node) => node.kind === 'reporting')?.estimate)
@@ -383,6 +384,16 @@ it('retains verified frozen reporting authority after current team profile chang
   ...f.selected.activityProfiles,reporting:{...f.selected.activityProfiles.reporting!,prompt:{system:'Instructions for future workdays.'}}}};
  expect(projectActiveWorkdays({teamId:'team',revision:1,profiles:{...profiles,'sdk:digest-writer':changed},sources:[source]})).toEqual(original);
  expect(original.nodes.filter(node=>node.kind==='reporting')).toHaveLength(1);expect(source).toEqual(held);
+ const all=structuredClone(source);delete all.parameters.appliedPlan.reportingAgentId;
+ const allOriginal=projectActiveWorkdays({teamId:'team',revision:1,profiles,sources:[all]});
+ expect(allOriginal.nodes.filter(node=>node.kind==='reporting')).toHaveLength(2);
+ expect(projectActiveWorkdays({teamId:'team',revision:1,profiles:{...profiles,'sdk:digest-writer':changed},sources:[all]})).toEqual(allOriginal);
+ const poisoned=structuredClone(source);poisoned.parameters.agentProfilesByProjectId.sdk!.agents[0]!.definition.purpose='Unverified frozen edit.';
+ expect(()=>projectActiveWorkdays({teamId:'team',revision:1,profiles,sources:[poisoned]})).toThrow(/snapshot changed after scheduling/);
+ for(const revision of ['',null,1,'not-a-revision']) {
+  const malformed=structuredClone(source);Object.assign(malformed.parameters.agentProfilesByProjectId.sdk!,{revision});
+  expect(()=>projectActiveWorkdays({teamId:'team',revision:1,profiles,sources:[malformed]})).toThrow();
+ }
 });
 
 it('retains one explicitly selected configured Reporter in the canonical applied Workday before activation without a second authority',()=>{
