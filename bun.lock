@@ -23,7 +23,7 @@
       },
       "peerDependencies": {
         "@treeseed-cordis/admin": "0.0.0-cordis.11",
-        "@treeseed-cordis/deployment": "0.0.0-cordis.78",
+        "@treeseed-cordis/deployment": "0.0.0-cordis.79",
         "@treeseed-cordis/identity": "0.0.0-cordis.8",
         "@treeseed-cordis/sdk": "0.0.0-cordis.19",
         "@treeseed-cordis/ui": "0.0.0-cordis.18",
@@ -37,7 +37,7 @@
 
     "@treeseed-cordis/admin": ["@treeseed-cordis/admin@vendor/admin.tgz", { "dependencies": { "cordis": "4.0.0-rc.12" }, "peerDependencies": { "@treeseed-cordis/identity": "0.0.0-cordis.8", "@treeseed-cordis/sdk": "0.0.0-cordis.19", "@treeseed-cordis/ui": "0.0.0-cordis.18", "react": "19.3.1", "react-dom": "19.3.1" } }, "sha512-QxBvZ7WDgwMBA6nCJ6duKXA9cTLeoSiZEs3k1eHXpqBO9ubDGClx3VbPzI4m1MWQrM7QpgfRmq+9FmjRh2Qxrg=="],
 
-    "@treeseed-cordis/deployment": ["@treeseed-cordis/deployment@vendor/deployment.tgz", { "dependencies": { "ajv": "8.17.1", "ajv-formats": "3.0.1", "cordis": "4.0.0-rc.12", "jsonc-parser": "3.3.1", "postgres": "3.4.9", "semver": "7.8.5", "tar": "7.5.22", "zod": "4.6.7" }, "peerDependencies": { "@treeseed-cordis/sdk": "0.0.0-cordis.19" } }, "sha512-C5TOuEwMibcI9bH55nZiY6VaaqDvnARQO2pu7xvFDGHVMst4aor2ACQ5OvgsH5TyU4bRjoTRgZerZ7MRS3gMUw=="],
+    "@treeseed-cordis/deployment": ["@treeseed-cordis/deployment@vendor/deployment.tgz", { "dependencies": { "ajv": "8.17.1", "ajv-formats": "3.0.1", "cordis": "4.0.0-rc.12", "jsonc-parser": "3.3.1", "postgres": "3.4.9", "semver": "7.8.5", "tar": "7.5.22", "zod": "4.6.7" }, "peerDependencies": { "@treeseed-cordis/sdk": "0.0.0-cordis.19" } }, "sha512-0N/5MXtOpOVmAdEh4hiKBvSH5ZSSkbTL32aWJpBd6UlhJK6IG7ewAXKoKbF+J5zQINrRC7LmFOSf0n1xStyYiQ=="],
 
     "@treeseed-cordis/identity": ["@treeseed-cordis/identity@vendor/identity.tgz", { "dependencies": { "cordis": "4.0.0-rc.12", "openid-client": "6.8.8", "postgres": "3.4.9" }, "peerDependencies": { "@treeseed-cordis/sdk": "0.0.0-cordis.19" } }, "sha512-lv0ZBSpAa8X9XZOPLCuGwZdCvi8DW1NCS+rYqnM3jHiCXTZaBDKSSk1v+O7WPSG/dzxI3410n5sxu6eISY/uYg=="],
 
