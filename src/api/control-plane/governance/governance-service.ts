@@ -40,7 +40,9 @@ async function projectFor(store: any, principal: Principal, projectId: string, p
 function optionalText(value: unknown) { return typeof value === 'string' && value.trim() ? value.trim() : undefined; }
 function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 
-async function bindInitialProposalContent(store: any, proposal: any, authored: Awaited<ReturnType<typeof commitProposalVersionContent>>) {
+export async function bindInitialProposalContent(store: any, proposal: any, authored: {
+	update: Record<string, unknown>; receipt: { commitSha: string };
+}) {
 	const update = authored.update;
 	const metadata = { ...record(proposal.metadata), ...record(update.metadata), contentProvenance: update.contentProvenance };
 	const title = optionalText(update.title) ?? String(proposal.title ?? '');

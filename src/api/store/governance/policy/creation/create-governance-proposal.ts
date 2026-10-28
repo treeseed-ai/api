@@ -1,6 +1,7 @@
 import { governanceVotingProvider } from '../../../../governance/voting.ts';
 import { decisionDependencyReferencesAreComplete,normalizeDecisionDependencyReferences } from '../../../../governance/decision-authority.ts';
 import { randomUUID } from 'node:crypto';
+import { governanceEventWrite } from '../updates/record-governance-event.ts';
 import { governanceContentHash,governanceSlug,isoNow,ControlPlaneStore,optionalStringValue,stringValue } from "../../../../persistence/store.ts";
 export async function createGovernanceProposalMethod(this: ControlPlaneStore, principal: ApiPrincipal | null | undefined, input: any = {}) {
     await this.ensureInitialized();
@@ -38,13 +39,13 @@ export async function createGovernanceProposalMethod(this: ControlPlaneStore, pr
 	delete metadata.executionPlan;
     const contentHash = governanceContentHash({ title, summary, body, proposalType, ...metadata });
     const contentProposalSlug = optionalStringValue(input.contentProposalSlug) ?? governanceSlug(title, 'proposal');
-    await this.run(`INSERT INTO governance_proposals (
+    const proposalWrite = { query: `INSERT INTO governance_proposals (
 				id, team_id, project_id, scope, status, title, summary, body, proposal_type, proposal_types_json,
 				content_proposal_slug, content_decision_slug, active_version, active_content_hash,
 				governance_provider_id, governance_provider_version, governance_policy_id, decision_id,
 				voting_starts_at, voting_ends_at, closed_at, closed_reason, created_by_type, created_by_id,
 				metadata_json, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?)`, [
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?)`, params: [
         id,
         teamId,
         project?.id ?? input.projectId ?? null,
@@ -65,12 +66,12 @@ export async function createGovernanceProposalMethod(this: ControlPlaneStore, pr
         JSON.stringify(metadata),
         timestamp,
         timestamp,
-    ]);
-    await this.run(`INSERT INTO governance_proposal_versions (
+    ] };
+    const versionWrite = { query: `INSERT INTO governance_proposal_versions (
 				id, proposal_id, version, title, summary, body, content_hash, change_reason,
 				created_by_type, created_by_id, created_at
-			) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`, [randomUUID(), id, title, summary, body, contentHash, 'Initial proposal version.', input.createdByType ?? 'user', input.createdById ?? principal?.id ?? null, timestamp]);
-    await this.recordGovernanceEvent({
+			) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`, params: [randomUUID(), id, title, summary, body, contentHash, 'Initial proposal version.', input.createdByType ?? 'user', input.createdById ?? principal?.id ?? null, timestamp] };
+    const eventWrite = governanceEventWrite({
         eventType: 'proposal.created',
         actorType: input.createdByType ?? 'user',
         actorId: input.createdById ?? principal?.id ?? null,
@@ -79,8 +80,13 @@ export async function createGovernanceProposalMethod(this: ControlPlaneStore, pr
         proposalId: id,
         proposalVersion: 1,
         nextState: input.status === 'open' || input.status === 'submitted' ? 'open' : 'draft',
-        evidence: { providerId: provider.id, policyId: policy?.id ?? null },
-    });
+        evidence: { providerId: provider.id, policyId: policy?.id ?? null,
+            // Later revisions replace current provenance. Creation history must
+            // retain the original source for interrupted product integration.
+            ...(metadata.contentProvenance ? { contentProvenance: metadata.contentProvenance } : {}) },
+    }, timestamp);
+    // A failed version/event write must not strand an unbound initial row.
+    await this.batch([proposalWrite, versionWrite, eventWrite]);
     return this.getGovernanceProposal(id);
 }
 import type { ApiPrincipal } from '../../../../types.ts';
