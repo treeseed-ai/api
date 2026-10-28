@@ -5461,6 +5461,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/discussions/discussion-content-cutover.test.ts
     testName: "keeps qualified cross-project mentions in their addressed project only"
+  api.golden.discussion-history-authorship:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/discussions/history-snapshot.test.ts
+    testName: "preserves canonical message authors without confusing peer history with the receiving agent"
+  api.golden.discussion-authored-history:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/discussions/discussion-content-cutover.test.ts
+    testName: "commits a new thread and message with an exact same-changeset Discussion reference"
 
   api.golden.simulation-proposal-frozen-contract:
     kind: vitestCase
