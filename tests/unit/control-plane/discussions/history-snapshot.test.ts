@@ -3,8 +3,24 @@ import { discussionHistorySnapshot } from '../../../../src/api/discussions/histo
 import { workItemContext } from '../../../../src/api/capacity/services/build/ready-execution-node.ts';
 
 const ref = 'a'.repeat(40);
-const message = (id: string, body: string, createdAt = id) => ({ path: `discussion-messages/topic/${id}.mdx`, body, immutableRef: ref, frontmatter: { createdAt, author: 'architect' } });
+const message = (id: string, body: string, createdAt = id) => ({ path: `discussion-messages/topic/${id}.mdx`, body, immutableRef: ref, frontmatter: { createdAt, authorId: 'project/architect' } });
 describe('chat history snapshot', () => {
+	it('preserves canonical message authors without confusing peer history with the receiving agent', () => {
+		for (const authorId of ['api/architect', 'ui/architect', `portfolio/${'renamed-agent-'.repeat(12)}`]) {
+			const prior = { ...message('prior', 'A peer recommendation, not the receiver\'s own past work.'),
+				frontmatter: { createdAt: '2026-10-28T13:00:00Z', authorId, authorType: 'agent',
+					authorRef: { store: 'postgresql', model: 'agent', id: authorId }, author: 'api/engineer' } };
+			const held = structuredClone(prior);
+			expect(discussionHistorySnapshot([prior], 'topic', 'current').messages[0]).toMatchObject({
+				author: authorId, body: prior.body, immutableRef: ref, path: prior.path,
+			});
+			expect(prior).toEqual(held);
+		}
+		for (const authorId of [undefined, null, 7, '', '   ']) {
+			const prior = { ...message('prior', 'Unknown authorship stays unknown.'), frontmatter: { authorId, author: 'api/engineer' } };
+			expect(discussionHistorySnapshot([prior], 'topic', 'current').messages[0]?.author).toBeNull();
+		}
+	});
 	it('hands the frozen prior-message references to canonical communication context without copying their body into instructions', async () => {
 		const source = { store: 'treedx', model: 'discussion', id: 'invocation', repository: 'project-library',
 			commit: 'b'.repeat(40), path: 'discussion-messages/topic/current.mdx' };

@@ -87,12 +87,18 @@ describe('current communication supply in PostgreSQL', () => {
 				executionMode: 'simulation', executionKind: 'workday', environment: 'local', status: 'running', startedAt: now,
 				parameters: { durationSeconds: 600, planningPercent: 20, agentProfilesByProjectId: { project: snapshot } } });
 			const priorPath = 'discussion-messages/acceptance/prior.mdx', priorCommit = 'd'.repeat(40);
-			const historySnapshot = discussionHistorySnapshot([{ path: priorPath, immutableRef: priorCommit, body: 'Prior scoped planning evidence' }], input.discussionId, input.messagePath);
+			const historySnapshot = discussionHistorySnapshot([{ path: priorPath, immutableRef: priorCommit, body: 'Prior scoped planning evidence',
+				frontmatter: { authorId: 'project/technical-writer', authorType: 'agent',
+					authorRef: { store: 'postgresql', model: 'agent', id: 'project/technical-writer' } } }], input.discussionId, input.messagePath);
 			const parentInput = { ...input, idempotencyKey: 'parent-send', parentWorkdayId: 'parent', communication: { historySnapshot } };
 			const parentResult = await admitDiscussionInvocations(realStore, parentInput);
 			expect(parentResult).toMatchObject([{ status: 'admitted', executionId: 'parent' }]);
 			expect((await database.pool.query('SELECT status,execution_id FROM agent_invocation_requests WHERE id=$1', [parentResult[0]!.id])).rows)
 				.toEqual([{ status: 'admitted', execution_id: 'parent' }]);
+			const persisted = (await database.pool.query('SELECT metadata_json FROM agent_invocation_requests WHERE id=$1', [parentResult[0]!.id])).rows[0]!.metadata_json;
+			expect(typeof persisted === 'string' ? JSON.parse(persisted) : persisted).toMatchObject({
+				communication: { historySnapshot: { messages: [{ author: 'project/technical-writer', immutableRef: priorCommit, path: priorPath }] } },
+			});
 			const contextNode = { teamId: 'team', kind: 'communication', sourceRef: { store: 'treedx', model: 'discussion',
 				id: parentResult[0]!.id, repository: 'project-library', commit: input.messageCommit, path: input.messagePath } };
 			expect(await workItemContext(realStore, contextNode as never)).toEqual([
