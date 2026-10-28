@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Align API with the exact capacity-compatible owner archive closure (#644).
+
 ### Fixed
 
 - Stabilize public metadata declarations and final runtime closure (#624).

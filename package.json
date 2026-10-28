@@ -1,6 +1,6 @@
 {
   "name": "@treeseed-cordis/api",
-  "version": "0.0.0-cordis.6",
+  "version": "0.0.0-cordis.8",
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-only",
@@ -42,11 +42,11 @@
     "check:readability": "bun .agents/skills/release-workflow/scripts/source-readability.ts"
   },
   "peerDependencies": {
-    "@treeseed-cordis/sdk": "0.0.0-cordis.16",
-    "@treeseed-cordis/identity": "0.0.0-cordis.7",
-    "@treeseed-cordis/admin": "0.0.0-cordis.10",
-    "@treeseed-cordis/deployment": "0.0.0-cordis.76",
-    "@treeseed-cordis/ui": "0.0.0-cordis.16"
+    "@treeseed-cordis/sdk": "0.0.0-cordis.19",
+    "@treeseed-cordis/identity": "0.0.0-cordis.8",
+    "@treeseed-cordis/admin": "0.0.0-cordis.11",
+    "@treeseed-cordis/deployment": "0.0.0-cordis.79",
+    "@treeseed-cordis/ui": "0.0.0-cordis.18"
   },
   "devDependencies": {
     "@treeseed-cordis/sdk": "file:vendor/sdk.tgz",
@@ -69,28 +69,28 @@
   "cordisCandidate": {
     "sdk": {
       "repository": "https://github.com/treeseed-ai/sdk.git",
-      "commit": "4c0ecd2a0fc28545dbf677cc988ce69f0cf2f15d",
-      "sha256": "4084aa8dbe9767984fac9fef7f5cea30a0bec93ed416138d32c804e6389fdba5"
+      "commit": "90cf4f3cc62e166685280450c727499defd2af5b",
+      "sha256": "93dd549c98aba180306e9b19cc1cbc37494544b2764ed341c531c9af618c6f81"
     },
     "identity": {
       "repository": "https://github.com/treeseed-ai/identity.git",
-      "commit": "f29824578d0aa8fc7725a195b72c698b476da429",
-      "sha256": "90ac95f3e1d953f0aeddb5d0da01e9e596b226bbbc806bff3566d274a34f22d6"
+      "commit": "cb86258e93337559aa4a248177a20bd2a07fd467",
+      "sha256": "a308c71b0da1822e7786121092a05f2496d26614942aaeb459a78531e689cb76"
     },
     "admin": {
       "repository": "https://github.com/treeseed-ai/admin.git",
-      "commit": "227011825a885f184f1b2540d72d830a905ba8a2",
-      "sha256": "4891b1e51515ae79827ae801cc14abad4e7b66f3cd6d924860113e934c92cfe5"
+      "commit": "fe5c25e4a15fe9312c16ceeead93b684c3ab8580",
+      "sha256": "043c05cf734e5b66e60d44fafbff34b15de6af13d98dc14d7a569ba26a51ad97"
     },
     "deployment": {
       "repository": "https://github.com/treeseed-ai/deployment.git",
-      "commit": "5ea1b2e76abd2b5531a765049f3afbef47abe8d4",
-      "sha256": "021a67e0fb488114a12654667f72ebfefa5cbe95fc187a108c9694f1935ffbdf"
+      "commit": "2cf1084843039fafccb8e427fcae913e0a44dffc",
+      "sha256": "d02517f4fff3a1dedb3590d3c13bb1ea58a746c7ba6fc1f5227fd5f7c3b0a456"
     },
     "ui": {
       "repository": "https://github.com/treeseed-ai/ui.git",
-      "commit": "32f16876aa6f0eb1f99a4ab339296609c830df23",
-      "sha256": "0251c6ff1f5c4b6a628d85113d1e10b9ab019f26d1dda38c7aad3c12f84ef571"
+      "commit": "e2b9c5e10611c196834fd57ba5358a74304e373c",
+      "sha256": "d09e6ed33f7f1bc2f7210208a94f33bbd2a6453d8fe886f75a1f950887223e48"
     }
   },
   "cordis": {
@@ -242,7 +242,7 @@
     "pluginId": "api",
     "package": {
       "name": "@treeseed-cordis/api",
-      "version": "0.0.0-cordis.6"
+      "version": "0.0.0-cordis.8"
     },
     "providers": [
       {
