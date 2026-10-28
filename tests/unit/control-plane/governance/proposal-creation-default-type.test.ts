@@ -8,8 +8,9 @@ describe('governance proposal creation defaults', () => {
 			ensureInitialized: vi.fn(async () => undefined),
 			getProject: vi.fn(async () => ({ id: 'project-1', teamId: 'team-1' })),
 			resolveGovernancePolicy: vi.fn(async () => null),
-			run: vi.fn(async (sql: string, params: unknown[]) => { writes.push({ sql, params }); }),
-			recordGovernanceEvent: vi.fn(async () => undefined),
+			batch: vi.fn(async (operations: Array<{ query: string; params: unknown[] }>) => {
+				for (const operation of operations) writes.push({ sql: operation.query, params: operation.params });
+			}),
 			getGovernanceProposal: vi.fn(async () => ({ id: 'proposal-1', proposalType: 'implementation', proposalTypes: ['implementation'] })),
 		};
 

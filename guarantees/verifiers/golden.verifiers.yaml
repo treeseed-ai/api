@@ -221,6 +221,21 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/planning/contributions/estimate-readback.test.ts
     testName: "reads actual estimator source and stored attempt ownership while preserving a concurrent peer through moved denied and altered-source observations"
+  api.golden.planning-proposal-integration:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/planning-proposal-native.test.ts
+    testName: "binds the completed agent proposal bytes into one canonical draft before recording integration"
+  api.golden.planning-creation-interruption:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/planning-proposal-native.test.ts
+    testName: "rolls back the original initial proposal and version when its creation event fails, then recovers once"
+  api.golden.planning-proposal-postgres-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/planning/proposal-integration-native.test.ts
+    testName: "concurrent completed-product integration creates one exact agent-owned draft through original PostgreSQL and signed TreeDX"
   api.golden.obsolete-estimate-source:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
