@@ -2,6 +2,22 @@ import { describe, expect, it } from 'vitest';
 import { requireTreeDxOperation, treeDxBoundedScopedPaths, treeDxOperationScope, treeDxPathParameters, treeDxQuery, treeDxScopedPathAllows } from '../../../../src/api/control-plane/treedx/upstream-operation.ts';
 
 describe('authoritative TreeDX upstream operations', () => {
+	it.each([
+		['path', 'files:read'],
+		['frontmatter', 'files:read'],
+		['section', 'files:read'],
+		['link', 'files:read'],
+		['text', 'files:search'],
+		['combined', 'files:search'],
+		['changed_path', 'git:diff'],
+	])('delegates only the native file capability required by federated %s queries', (type, capability) => {
+		const scope = treeDxOperationScope(requireTreeDxOperation('federatedQuery'), {
+			body: { type, ref: 'a'.repeat(40), paths: ['objectives/**'] },
+		}, ['repo-owned']);
+		expect(scope).toEqual({ repoIds: ['repo-owned'], capabilities: ['query:federated', capability],
+			refs: ['a'.repeat(40)], paths: ['objectives/**'] });
+	});
+
 	it('delegates only the exact source and destination branch refs for reviewed authoring promotion', () => {
 		const operation = requireTreeDxOperation('promoteRepositoryRef');
 		const scope = treeDxOperationScope(operation, { path: { repoId: 'repo-owned' }, body: {
