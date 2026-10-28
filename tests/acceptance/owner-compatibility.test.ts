@@ -7,8 +7,8 @@ class ApiOwnerCompatibility {
   private static readonly owners: Record<string, OwnerSelection> = {
     sdk: { version: '0.0.0-cordis.19', commit: '90cf4f3cc62e166685280450c727499defd2af5b',
       sha256: '93dd549c98aba180306e9b19cc1cbc37494544b2764ed341c531c9af618c6f81' },
-    deployment: { version: '0.0.0-cordis.78', commit: '83aedb8155f339ed218ac446cac7303d86314b03',
-      sha256: '21a39d7af625b4a2b3a3952ebc564cd1ab3f94b42fc2830f2a5b00d903bd2130' },
+    deployment: { version: '0.0.0-cordis.79', commit: '2cf1084843039fafccb8e427fcae913e0a44dffc',
+      sha256: 'd02517f4fff3a1dedb3590d3c13bb1ea58a746c7ba6fc1f5227fd5f7c3b0a456' },
     identity: { version: '0.0.0-cordis.8', commit: 'cb86258e93337559aa4a248177a20bd2a07fd467',
       sha256: 'a308c71b0da1822e7786121092a05f2496d26614942aaeb459a78531e689cb76' },
     admin: { version: '0.0.0-cordis.11', commit: 'fe5c25e4a15fe9312c16ceeead93b684c3ab8580',
