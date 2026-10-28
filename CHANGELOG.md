@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Reconcile seed owner steps with durable intent and verified resume (#644).
+
 ### Fixed
 
 - Stabilize public metadata declarations and final runtime closure (#624).
