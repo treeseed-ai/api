@@ -4,6 +4,7 @@ import { appliedWorkdaySchema, executionEdgeSchema, executionNodeSchema, validat
 import { workdayParticipants, declaredWorkdayParticipants, selectWorkdayReportingAgents, type WorkdayParticipant } from './workday-participants.ts';
 import { modelTurnEstimate } from './model-turn-estimate.ts';
 import { agentProfileReference } from './agent-profile-reference.ts';
+import { decodeWorkdayAgentProfileSnapshot } from '../../services/capacity/workdays/policy/workday-agent-profile-policy.ts';
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
@@ -176,16 +177,24 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 				}
 			}
 		}
-		const reportingAgents = selectWorkdayReportingAgents(projectIds.flatMap(projectId =>
-			array(record(record(source.parameters.agentProfilesByProjectId)[projectId]).agents).flatMap(entry => {
+		const reportingAgents = selectWorkdayReportingAgents(projectIds.flatMap(projectId => {
+			const snapshot = record(record(source.parameters.agentProfilesByProjectId)[projectId]);
+			let verified = false;
+			return array(snapshot.agents).flatMap(entry => {
 				const checked = validateAgentDefinitionModel(record(entry).definition);
 				if (!checked.ok || !checked.data) throw new Error('The frozen reporting profile is invalid.');
 				if (!checked.data.activityProfiles.reporting) return [];
+				// Captured closeout survives later team edits. Unverifiable legacy
+				// snapshots retain the original exact-current-profile requirement.
+				if (!verified && snapshot.revision !== undefined) {
+					decodeWorkdayAgentProfileSnapshot(snapshot, projectId); verified = true;
+				}
 				const definition = checked.data;
 				const current = Object.entries(input.profiles).filter(([key, candidate]) => key.startsWith(`${projectId}:`) && candidate.id === definition.id);
-				if (current.length !== 1 || stable(current[0]![1]) !== stable(definition)) throw new Error('The reporting profile differs from its frozen Workday authority.');
+				if (!verified && (current.length !== 1 || stable(current[0]![1]) !== stable(definition))) throw new Error('The reporting profile differs from its frozen Workday authority.');
 				return [{ projectId, definition }];
-			})), workday.reportingAgentId);
+			});
+		}), workday.reportingAgentId);
 		for (const { projectId, definition: reporter } of reportingAgents) {
 			const reporting = reporter.activityProfiles.reporting!;
 			const reporterId = `reporting:${workday.id}:${projectId}/${reporter.id}`;
