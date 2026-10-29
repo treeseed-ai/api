@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { expect, it } from 'vitest';
 import { stringify } from 'yaml';
 import { TreeDxClient } from '@treeseed/treedx/treedx/client';
@@ -10,6 +10,9 @@ import { requireTreeDxOperation } from '../../../../../src/api/control-plane/tre
 import { splitPostgresSqlStatements } from '../../../../../src/api/persistence/postgres-sql-statements.ts';
 import { cancellationDatabase } from '../../providers/assignments/architecture/cancellation-fixture.ts';
 import { projectTreeDxCommitSignals } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-change-projector.ts';
+import { executionNodeSchema } from '@treeseed/sdk/agent-capacity';
+import { workItemContext } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
+import { candidate } from '../execution/fixtures/assignment-attempt-fixtures.ts';
 
 const object = (value: unknown): Record<string, unknown> => {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Native object response required.');
@@ -130,3 +133,82 @@ it('executes checked global and activity queries on new native data without expa
 		finally { try { await native.repositories.retire(repositoryId); } finally { await f.db.close(); } }
 	}
 }, 120_000);
+
+it('native workday context resolves selected objective identities at frozen source and rejects duplicate foreign or invalid documents without changing SQL authority', async () => {
+	const baseUrl = process.env.TREEDX_BASE_URL;
+	if (!baseUrl || !process.env.API_NATIVE_TREEDX_ROOT || !process.env.TREESEED_TREEDX_DELEGATION_PRIVATE_KEY)
+		throw new Error('The original disposable signed native TreeDX prerequisite is required.');
+	const operations = ['createRepository', 'listRepositoryRefs', 'createWorkspace', 'writeWorkspaceFile', 'commitWorkspace', 'getWorkspace', 'closeWorkspace', 'retireRepository'];
+	const authority = new TreeDxDelegationAuthority(process.env);
+	const token = authority.mint({ actorId: 'treeseed-api', tenantId: 'treeseed-control-plane', projectId: 'disposable-conformance',
+		connectionId: 'disposable-conformance', scope: { repositoryIds: ['*'], capabilities: [...new Set(operations.flatMap(id => requireTreeDxOperation(id).requiredCapabilities))], refs: ['*'], paths: ['**'] } }).token;
+	const native = new TreeDxClient({ baseUrl, token });
+	const f = await cancellationDatabase();
+	let repositoryId = '';
+	let workspaceId: string | undefined;
+	try {
+		const created = object(await native.repositories.create({ repositoryName: `workday-objectives-${randomUUID()}` }));
+		repositoryId = String(object(created.repo).repoId ?? '');
+		if (!repositoryId) throw new Error('Allocated native repository required.');
+		const ddl = splitPostgresSqlStatements(readFileSync('drizzle/control-plane/0000_control_plane.sql', 'utf8'));
+		for (const table of ['projects', 'treedx_project_libraries']) {
+			const source = ddl.filter(sql => sql.startsWith(`CREATE TABLE "${table}" (`));
+			expect(source).toHaveLength(1); await f.db.exec(source[0]!);
+		}
+		const at = new Date().toISOString();
+		await f.owner.run("INSERT INTO teams(id,slug,name,created_at,updated_at) VALUES('team','team','Native workday context',?,?)", [at, at]);
+		await f.owner.run("INSERT INTO projects(id,team_id,slug,name,created_at,updated_at) VALUES('project','team','deployment','Deployment context',?,?)", [at, at]);
+		await f.owner.run("INSERT INTO treedx_project_libraries(id,team_id,project_id,instance_id,library_id,repository_id,content_path,created_at,updated_at) VALUES('library','team','project','isolated-native-connection','library',?,'.',?,?)", [repositoryId, at, at]);
+		const refs = object(await native.repositories.refs(repositoryId)).refs as Array<{ name: string; target: string }>;
+		const base = refs.find(ref => ref.name === 'refs/heads/main')?.target;
+		if (!base) throw new Error('Native initialized main required.');
+		const initial = object(await native.workspaces.create(repositoryId, { mode: 'writable', baseRef: base,
+			branchName: 'refs/heads/knowledge/workday-objectives', allowedPaths: ['README.md', 'objectives/**'] }));
+		workspaceId = String(initial.workspaceId ?? ''); if (!workspaceId) throw new Error('Native workspace required.');
+		const definition = { schemaVersion: 'treeseed.objective/v1', id: 'retained-release', projectId: 'project',
+			title: 'Release retained reviewed work', outcome: 'Provide the ordinary isolated upstream.', status: 'active' };
+		const path = 'objectives/release/actual-canonical-path.mdx';
+		const source = `---\n${stringify(definition)}---\n\nOriginal retained release objective.\n`;
+		const write = (filePath: string, content: string) => native.files.write(workspaceId!, { path: filePath, content, encoding: 'utf8' });
+		await write('README.md', '# Scoped project context\n'); await write(path, source);
+		const commit = async (message: string) => String(object(await native.files.commit(workspaceId!, { message,
+			author: { name: 'Native workday context', email: 'native@example.invalid' } })).commitSha ?? '');
+		const heldCommit = await commit('Record the selected objective at its canonical source path');
+		let currentCommit = heldCommit;
+		const held = { store: 'treedx' as const, model: 'knowledge', id: 'project-context', repository: repositoryId, commit: heldCommit, path: 'README.md' };
+		const parameters = { objectiveRefs: [definition.id], workdayContextByProjectId: { project: held } };
+		await f.owner.run("UPDATE capacity_workday_runs SET parameters_json=? WHERE id='workday'", [JSON.stringify(parameters)]);
+		const store = { ...f.owner, config: { TREESEED_ENVIRONMENT: 'test', TREESEED_TREEDX_URL: baseUrl },
+			getProjectTreeDxLibrary: async () => ({ repositoryId, instanceId: 'isolated-native-connection', contentPath: '.', contentRepositoryRef: currentCommit }) };
+		const node = executionNodeSchema.parse({ ...candidate.node, kind: 'planning', pairRole: null, workItemId: undefined,
+			workdayId: 'workday', workspace: 'treedx', sourceRef: { store: 'postgresql', model: 'workday', id: 'workday' },
+			requestedPermissions: { content: { read: ['knowledge', 'objective'], write: ['proposal'] }, tools: [] } });
+		const original = await f.owner.first("SELECT * FROM capacity_workday_runs WHERE id='workday'", []), frozen = structuredClone(node);
+		const expected = [held, { store: 'treedx', model: 'objective', id: definition.id, repository: repositoryId,
+			commit: heldCommit, path, digest: `sha256:${createHash('sha256').update(source).digest('hex')}` }];
+		expect(await workItemContext(store, node)).toEqual(expected);
+		await native.workspaces.close(workspaceId);
+		const later = object(await native.workspaces.create(repositoryId, { mode: 'writable', baseRef: heldCommit,
+			branchName: 'refs/heads/knowledge/workday-objectives-later', allowedPaths: ['objectives/**'] }));
+		workspaceId = String(later.workspaceId ?? ''); if (!workspaceId) throw new Error('Later native workspace required.');
+		await write(path, `---\n${stringify({ ...definition, outcome: 'Later content must not replace the held objective.' })}---\n`);
+		await write('objectives/duplicate.mdx', source);
+		await write('objectives/foreign.mdx', `---\n${stringify({ ...definition, id: 'foreign', projectId: 'other-project' })}---\n`);
+		await write('objectives/invalid.mdx', `---\n${stringify({ ...definition, id: 'invalid', schemaVersion: 'treeseed.objective/v99' })}---\n`);
+		currentCommit = await commit('Retain later duplicate and denied objective observations');
+		expect(currentCommit).not.toBe(heldCommit);
+		expect(await workItemContext(store, node)).toEqual(expected);
+		expect(await f.owner.first("SELECT * FROM capacity_workday_runs WHERE id='workday'", [])).toEqual(original);
+		for (const selected of [definition.id, 'missing', 'foreign', 'invalid']) {
+			const laterParameters = { objectiveRefs: [selected], workdayContextByProjectId: { project: { ...held, commit: currentCommit } } };
+			await f.owner.run("UPDATE capacity_workday_runs SET parameters_json=? WHERE id='workday'", [JSON.stringify(laterParameters)]);
+			const before = await f.owner.first("SELECT * FROM capacity_workday_runs WHERE id='workday'", []);
+			await expect(workItemContext(store, node)).rejects.toMatchObject({ code: 'execution_node_workday_objective_invalid', status: 409 });
+			expect(await f.owner.first("SELECT * FROM capacity_workday_runs WHERE id='workday'", [])).toEqual(before);
+		}
+		expect(node).toEqual(frozen);
+	} finally {
+		try { if (workspaceId) { await native.workspaces.close(workspaceId); expect(object(await native.workspaces.get(workspaceId)).status).toBe('closed'); } }
+		finally { try { if (repositoryId) await native.repositories.retire(repositoryId); } finally { await f.db.close(); } }
+	}
+}, 30_000);

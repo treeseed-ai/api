@@ -39,6 +39,10 @@ export async function workdayObjectiveContext(store: any, projectId: string, sel
 		if (response.resolvedRef !== context.commit || results.length !== 1 || page.hasMore === true || page.nextCursor) {
 			return invalid('A selected workday objective did not resolve to one exact project document.');
 		}
+		const projected = record(results[0]!.frontmatter);
+		if (projected.id !== id || projected.projectId !== projectId) {
+			return invalid('The selected workday objective query returned another identity or project.');
+		}
 		const path = results[0]!.path;
 		if (typeof path !== 'string' || !path.startsWith(`${root}/`) || path.includes('\\')
 			|| path.split('/').some(part => !part || part === '.' || part === '..')) {
@@ -50,7 +54,9 @@ export async function workdayObjectiveContext(store: any, projectId: string, sel
 		if (read.resolvedRef !== context.commit || file.path !== path || typeof source !== 'string' || !source) {
 			return invalid('The selected workday objective changed during exact source read-back.');
 		}
-		const definition = record(parseFrontmatterDocument(source).frontmatter);
+		let definition: Row;
+		try { definition = record(parseFrontmatterDocument(source).frontmatter); }
+		catch { return invalid('The selected workday objective frontmatter is malformed.'); }
 		if (!validateContentFrontmatter('objective', definition).ok || definition.id !== id || definition.projectId !== projectId) {
 			return invalid('The selected workday objective does not match its canonical identity and project.');
 		}

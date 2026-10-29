@@ -133,6 +133,7 @@ describe('direct ready-node admission input', () => {
 		const book = { ...sourceRef, model: 'book', id: 'core', path: 'books/core.md' };
 		const parameters = { workdayContextByProjectId: { project: book }, planningSourceByProposalId: { proposal: frozen } };
 		const store = { first: vi.fn(async () => ({ parameters_json: JSON.stringify(parameters) })),
+			listHubRepositories: teamContextStore.listHubRepositories,
 			getGovernanceProposal: vi.fn(async () => ({ id: 'proposal', teamId: 'team', projectId: 'project', activeVersion: 2,
 				activeContentHash: 'f'.repeat(64), metadata: { contentProvenance: { commitSha: 'f'.repeat(40) } } })),
 			getProjectTreeDxLibrary: vi.fn(async () => ({ repositoryId: 'repository' })) };

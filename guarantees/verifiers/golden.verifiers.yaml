@@ -71,6 +71,26 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/context-query/execution-native.test.ts
     testName: "executes checked global and activity queries on new native data without expanding bounded text or persisting query payloads as check evidence"
+  api.golden.workday-selected-objective-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/context-query/execution-native.test.ts
+    testName: "native workday context resolves selected objective identities at frozen source and rejects duplicate foreign or invalid documents without changing SQL authority"
+  api.golden.workday-source-context-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/communication/communication-source-context.test.ts
+    testName: "native PostgreSQL workday planning pins granted source over HTTP and preserves original context across source denials without granting absent authority"
+  api.golden.workday-selected-objective-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/context/workday-planning-context.test.ts
+    testName: "resolves the selected objective ID to its canonical path at the frozen project context commit"
+  api.golden.workday-source-context-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/context/workday-planning-context.test.ts
+    testName: "pins authorized read-only source before issuing a TreeDX planning assignment"
   api.golden.canonical-query-budget-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
