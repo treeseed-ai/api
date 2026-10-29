@@ -170,6 +170,7 @@ export class FixtureOwners implements SeedOwnerAccess {
   loseReply = false;
   pending = false;
   changed = false;
+  changedKey: string | null = null;
   failClose = false;
   failAdmission = false;
   beforeEffect: (() => void) | null = null;
@@ -216,7 +217,8 @@ class FixtureOwnerLease implements SeedOwnerLease {
   async readBack(receipt: SeedResourceReceipt, context: SeedResourceContext): Promise<unknown> {
     context.signal.throwIfAborted();
     this.owner.journal.events.push('read:' + this.resource.key);
-    return this.owner.changed ? { ...receipt, observedDigest: 'b'.repeat(64) } : receipt;
+    const changed = this.owner.changed || this.owner.changedKey === this.resource.key;
+    return changed ? { ...receipt, observedDigest: 'b'.repeat(64) } : receipt;
   }
   async close(): Promise<void> {
     this.owner.journal.events.push('owner-close:' + this.resource.key);
@@ -236,6 +238,20 @@ export class SeedFixture {
 }
 
 class ReconciliationProgram {
+  async lateChange(): Promise<void> {
+    const fixture = new SeedFixture();
+    fixture.owners.beforeEffect = this.invalidate.bind(this, fixture);
+    const plan = SeedData.plan([SeedData.resource('child', ['root']), SeedData.resource('root')]);
+    const result = await fixture.apply(plan);
+    assert.equal(result.state, 'recovery-required');
+    assert(!fixture.journal.events.includes('publish:completed'));
+    assert.deepEqual(fixture.owners.effects, ['root', 'child']);
+    assert.equal(fixture.journal.locked, false);
+    process.stdout.write('seed-late-owner-change-fixture-ok\n');
+  }
+  private invalidate(fixture: SeedFixture): void {
+    if (fixture.owners.effects.includes('root')) fixture.owners.changedKey = 'root';
+  }
   async run(): Promise<void> {
     const fixture = new SeedFixture();
     fixture.owners.loseReply = true;
@@ -249,4 +265,8 @@ class ReconciliationProgram {
   }
 }
 
-if (import.meta.main) await new ReconciliationProgram().run();
+if (import.meta.main) {
+  const program = new ReconciliationProgram();
+  if (process.argv[2] === 'late-change') await program.lateChange();
+  else await program.run();
+}
