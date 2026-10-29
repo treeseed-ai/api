@@ -9,8 +9,10 @@ Those adapters must pass their own production-construction and assembled gates b
 Development consumes SDK `0.0.0-cordis.19`, source
 `90cf4f3cc62e166685280450c727499defd2af5b`, archive SHA-256
 `93dd549c98aba180306e9b19cc1cbc37494544b2764ed341c531c9af618c6f81`.
-Other owner archives still need their final compatible peer selections; this development
-adoption does not qualify the complete installed API package closure.
+The accepted API closure selects Identity .8, Admin .11, Deployment .79 and UI .18 with
+this same SDK .19. This internal reconciliation slice must freshly verify that exact public
+archive closure after syncing origin/cordis. It does not yet adopt the newer manager/worker
+SDK closure or establish the default headless coordinator and real journal/authority adapters.
 
 `SeedReconciliation.apply(plan, requestId, signal)` accepts a schema-valid saved plan whose
 canonical SHA-256, excluding only `id` and `digest`, matches its identity. It validates live

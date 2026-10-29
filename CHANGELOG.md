@@ -6,6 +6,10 @@
 
 - Reconcile seed owner steps with durable intent and verified resume (#644).
 
+### Changed
+
+- Align API with the exact capacity-compatible owner archive closure (#644).
+
 ### Fixed
 
 - Stabilize public metadata declarations and final runtime closure (#624).
@@ -13,6 +17,7 @@
 - Restore the existing API committer policy to Cordis (#620).
 
 ### Changed
+- Require readable capability layers and contextual refactoring with a twenty-line method gate (#642).
 
 - Organize permanent tests by tier and enforce the shared development/testing strategy (#638).
 
