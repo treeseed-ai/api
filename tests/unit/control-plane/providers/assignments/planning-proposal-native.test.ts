@@ -202,6 +202,20 @@ describe('original planning product admission', () => {
 				[staleScope.id, 'controlled-membership', 'team', 'project', 'controlled-provider', attempt.agentClass, 'planning',
 					'completed', scope.agentId, JSON.stringify(staleAttempt), JSON.stringify(staleResult), original.createdAt, original.createdAt]);
 			const staleBefore = await f.snapshot(), staleReferences = await verifyAssignmentContent(store, staleScope, staleResult);
+			for (const [version, hash] of [[1, published.digest], [2, revision.digest]] as const) {
+				await f.query('UPDATE governance_proposal_versions SET content_hash=? WHERE version=?', ['f'.repeat(64), version]);
+				const corrupt = await f.snapshot();
+				await expect(recordAssignmentContentIntegration(store, staleScope, staleResult, staleReferences))
+					.rejects.toMatchObject({ code: 'assignment_planning_proposal_invalid' });
+				expect(await f.snapshot()).toEqual(corrupt);
+				await f.query('UPDATE governance_proposal_versions SET content_hash=? WHERE version=?', [hash, version]);
+			}
+			for (const fault of ['moved', 'denied'] as const) {
+				f.setFault(fault);
+				await expect(recordAssignmentContentIntegration(store, staleScope, staleResult, staleReferences)).rejects.toThrow();
+				expect(await f.snapshot()).toEqual(staleBefore);
+			}
+			f.setFault('none');
 			await recordAssignmentContentIntegration(store, staleScope, staleResult, staleReferences);
 			expect(await f.snapshot()).toEqual(staleBefore);
 			const admission = (await f.query('SELECT data_json FROM audit_events WHERE target_id=?', [staleScope.id])).rows[0];

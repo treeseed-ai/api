@@ -44,7 +44,16 @@ export function createAssignmentService(store: any) {
 		},
 		show: assignment,
 		async explain(principal: CapacityPrincipal, teamId: string, assignmentId: string) {
-			return (await assignment(principal, teamId, assignmentId)).explanation ?? {};
+			const row = await assignment(principal, teamId, assignmentId), explanation = row.explanation ?? {};
+			if (row.assignmentAttempt?.effectiveProfile.activity !== 'planning' || !row.assignmentResult?.id) return explanation;
+			const audit = await store.first(`SELECT data_json FROM audit_events WHERE id=? AND target_type='capacity_provider_assignment'
+				AND target_id=? AND event_type='assignment.content.integrated'`,
+				[`assignment-content-integrated:${assignmentId}:${row.assignmentResult.id}`, assignmentId]);
+			const data = typeof audit?.data_json === 'string' ? JSON.parse(audit.data_json) : audit?.data_json;
+			const metadata = explanation.metadata && typeof explanation.metadata === 'object' && !Array.isArray(explanation.metadata)
+				? explanation.metadata : {};
+			return Array.isArray(data?.planningAdmissions)
+				? { ...explanation, metadata: { ...metadata, planningAdmissions: data.planningAdmissions } } : explanation;
 		},
 		async cancel(principal: CapacityPrincipal, teamId: string, assignmentId: string,
 			body: Record<string, unknown>, idempotencyKey?: string) {

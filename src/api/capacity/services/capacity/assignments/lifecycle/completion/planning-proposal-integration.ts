@@ -40,6 +40,9 @@ export async function integratePlanningProposal(store: Store, scope: Scope, resu
 	const receipt = await store.first(`SELECT id FROM audit_events WHERE id=? AND event_type='assignment.content.integrated'`,
 		[`assignment-content-integrated:${scope.id}:${result.id}`]);
 	if (receipt) return;
+	const planningAdmissions: Array<{ proposalId: string; disposition: 'not_adopted'; reason: 'source_advanced';
+		sourceRef: AssignmentAttempt['sourceRef']; currentRef: AssignmentAttempt['sourceRef'];
+		productRef: Extract<AssignmentResult['references'][number], { kind: 'treedx' }> }> = [];
 	for (const reference of products) {
 		if (reference.kind !== 'treedx') continue;
 		const workspace = attempt.workspace;
@@ -115,8 +118,25 @@ export async function integratePlanningProposal(store: Store, scope: Scope, resu
 				continue;
 			}
 			const current = await readExactProposal(store, proposal);
-			if (canonicalJson(current.ref) !== canonicalJson(frozen) || !['draft', 'discussing', 'open'].includes(proposal.status)) {
+			if (!['draft', 'discussing', 'open'].includes(proposal.status)) {
 				deny('The shared proposal changed or closed after this planning revision was admitted.');
+			}
+			if (canonicalJson(current.ref) !== canonicalJson(frozen)) {
+				const [originalVersion, currentVersion] = await Promise.all([
+					store.first('SELECT content_hash FROM governance_proposal_versions WHERE proposal_id=? AND version=?', [proposal.id, frozen.revision]),
+					store.first('SELECT content_hash FROM governance_proposal_versions WHERE proposal_id=? AND version=?', [proposal.id, current.ref.revision]),
+				]);
+				if (Number(current.ref.revision) <= Number(frozen.revision)
+					|| originalVersion?.content_hash !== String(frozen.digest).replace(/^sha256:/u, '')
+					|| currentVersion?.content_hash !== proposal.activeContentHash) {
+					deny('The shared proposal changed or closed after this planning revision was admitted.');
+				}
+				// Delivery is not adoption. Keep this exact completed product and
+				// expose its refusal without overwriting the newer discussed plan
+				// or making ordinary workday closeout depend on adopting it.
+				planningAdmissions.push({ proposalId: proposal.id, disposition: 'not_adopted', reason: 'source_advanced',
+					sourceRef: frozen, currentRef: current.ref, productRef: reference });
+				continue;
 			}
 			if (digest === proposal.activeContentHash) continue;
 			if (typeof store.updateGovernanceProposalDraft !== 'function') {
@@ -160,4 +180,5 @@ export async function integratePlanningProposal(store: Store, scope: Scope, resu
 		const boundVersion = await store.first('SELECT content_hash FROM governance_proposal_versions WHERE proposal_id=? AND version=1', [proposal.id]);
 		if (bound.activeContentHash !== digest || boundVersion?.content_hash !== digest) deny('Initial planning source binding remains incomplete.');
 	}
+	return planningAdmissions.length ? planningAdmissions : undefined;
 }

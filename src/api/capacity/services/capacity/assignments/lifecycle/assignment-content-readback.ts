@@ -41,13 +41,13 @@ export async function verifyAssignmentContent(store: Store, scope: Scope, result
 
 export async function recordAssignmentContentIntegration(store: Store, scope: Scope, result: AssignmentResult, references: Reference[]) {
 	if (!references.length) return;
-	await integratePlanningProposal(store, scope, result);
+	const planningAdmissions = await integratePlanningProposal(store, scope, result);
 	await store.run(`INSERT INTO audit_events (id,actor_type,actor_id,event_type,target_type,target_id,data_json,created_at)
 		SELECT ?, 'service', 'assignment-result-readback', 'assignment.content.integrated', 'capacity_provider_assignment', ?, ?, ?
 		WHERE EXISTS (SELECT 1 FROM capacity_provider_assignments WHERE id=? AND team_id=? AND project_id=?
 			AND status='completed' AND assignment_result_json::jsonb->>'id'=?) ON CONFLICT (id) DO NOTHING`,
 	[`assignment-content-integrated:${scope.id}:${result.id}`, scope.id, JSON.stringify({ resultId: result.id,
-		references, publication: false }), new Date().toISOString(), scope.id, scope.teamId, scope.projectId, result.id]);
+		references, publication: false, ...(planningAdmissions ? { planningAdmissions } : {}) }), new Date().toISOString(), scope.id, scope.teamId, scope.projectId, result.id]);
 }
 
 /** Retry the same result read-back after a crash between canonical completion and its receipt. */
