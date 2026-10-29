@@ -8,7 +8,7 @@ qualifies the existing default API root; the headless seed coordinator is a sepa
 | Owner | Version | Source | Archive SHA-256 |
 | --- | --- | --- | --- |
 | SDK | `0.0.0-cordis.42` | `afdfac7bdd3c9c1f783362cd1d50324181e1d725` | `0ecfe599916fe8ef364fc4b73203c810981f163109fbe71a0dd4c01a9dfb7bbc` |
-| Deployment | `0.0.0-cordis.120` | `04a1a3f53db809701c4ec69024232c309ffaa018` | `0ea968259f71ab18698e0d6c1b022a6d47d2d9e570b4b120cbd1ff078f5e73db` |
+| Deployment | `0.0.0-cordis.122` | `29c801af896bd4bdae2ce310c88319b503a07b50` | `295ec9e2cd9d9e68730867952b222eb1064ac0722cd273dd675957d356d7a95a` |
 | Identity | `0.0.0-cordis.9` | `c60dfdbc53ce78ddee3c2f18ec7f91358878d49c` | `2999a78da5c04f6a894c643d49ab3881ff702fb4325d74fec469a4496f034c67` |
 | Admin | `0.0.0-cordis.12` | `dae3d32083b3ed3f4a65908a78e332cb5a38d0d2` | `1ad95ccb6204df57590adc009b17f18670ffccf1146c98dfa165df8ae114f5ac` |
 | UI | `0.0.0-cordis.23` | `d5d33c33791fe8b94aada605dba4aa9392559637` | `7291d35fe8758fd27b23f663dcf1f254bd915b5ae3569dde8c9a2f443e45a14f` |
@@ -226,3 +226,16 @@ dependencies does not fix it. The candidate must remain unaccepted until this re
 passes without assertion/deadline relaxation. Temporary bounded generated-module diagnostics
 are restored byte-for-byte and provide no substitute for the required genuine program gate.
 The internal seed reconciliation draft is separate; no public seed coordinator is claimed here.
+
+
+## Cooperative owner continuation
+
+The `.11` continuation will consume accepted Deployment #1053 at immutable producer
+`29c801af896bd4bdae2ce310c88319b503a07b50`, archive SHA-256
+`295ec9e2cd9d9e68730867952b222eb1064ac0722cd273dd675957d356d7a95a` (.122).
+It preserves SDK .42, Identity .9, Admin .12 and UI .23. Deployment now yields between bounded
+verified archive inputs while retaining the original guards/deadlines; both owner hosted gates
+and the public queued-observation regression passed. The preceding .10 archive/failure evidence
+remains immutable. Before claiming the API failure fixed, require the actual installed API/
+Keycloak/database/edge/browser gate locally and on both exact-head hosted runs. No test deadline
+or assertion is relaxed. The seed engine remains separate; all issues remain open.
