@@ -222,6 +222,19 @@ class SeedOwnerStep {
       await owner.close();
     }
   }
+  async verify(
+    resource: SeedResourcePlan,
+    receipt: SeedResourceReceipt,
+  ): Promise<SeedResourceReceipt> {
+    await this.authority.assert(this.plan.binding, this.signal);
+    const owner = await this.owners.acquire(structuredClone(resource), this.context());
+    try {
+      await owner.admit(this.context(), true);
+      return await this.readBack(owner, resource, receipt);
+    } finally {
+      await owner.close();
+    }
+  }
   private async reconcile(
     owner: SeedOwnerLease,
     resource: SeedResourcePlan,
@@ -292,6 +305,7 @@ class SeedApplySession {
     }
   }
   private async publish(): Promise<SeedReceipt> {
+    if (this.observations.length === this.plan.resources.length) await this.refresh();
     const receipt = SeedReceiptBuilder.create(this.plan, this.requestId, this.observations);
     const saved = SeedContractBinding.assertReceipt(
       await this.writer.publish(structuredClone(receipt)),
@@ -300,6 +314,19 @@ class SeedApplySession {
     if (CanonicalJson.stringify(saved) !== CanonicalJson.stringify(receipt))
       throw new Error('Seed read-back failed');
     return saved;
+  }
+  private async refresh(): Promise<void> {
+    const resources = SeedResourceOrder.sort(this.plan.resources);
+    for (const [index, resource] of resources.entries()) {
+      const observed = this.observations[index]!;
+      if (observed.state !== 'verified') continue;
+      try {
+        this.observations[index] = await this.step.verify(resource, observed);
+      } catch (error) {
+        if (error instanceof SeedReconciliationError) throw error;
+        this.observations[index] = SeedEvidence.recovery(resource);
+      }
+    }
   }
 }
 

@@ -4,7 +4,7 @@
 
 ### Added
 
-- Reconcile seed owner steps with durable intent and verified resume (#644).
+- Reconcile seed owner steps with durable intent and verified final read-back (#644, #652).
 
 ### Changed
 
