@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Reconcile seed owner steps with durable intent and verified final read-back (#644, #652).
+
 ### Changed
 
 - Align API with the exact capacity-compatible owner archive closure (#644).
