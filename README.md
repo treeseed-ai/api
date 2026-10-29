@@ -209,3 +209,20 @@ The retained NodeApiContainerPlugin.definition/declaration and generic native de
 also name their public SDK contracts explicitly. Historical four-role metadata remains only
 in that compatibility export; the generic service host remains extensible. Hosted artifact
 member diagnostics isolated the remaining variation to container.d.ts, with runtime files unchanged.
+
+## Manager closure qualification checkpoint
+
+The `.10` closure producer `60dd1182123906764f746af5fa037b1a51b5accb` packages 23 exact files/modes;
+archive SHA-256 `bc4df686c80d4b8f42848bf747113afd8b0efd7db41372841d01c057be71324b`.
+Checks/build, exact owner compatibility, 9 regression, 4 integration and 5 unit cases pass.
+An empty-cache script-disabled strict TypeScript/Node consumer executes the installed public
+program (`api10-public-native-program-ok`). These checks establish package compatibility only.
+
+Full acceptance remains blocked: 15 pass / 1 fail in the genuine installed API root, with
+`SERVICE_WORKER_EXCHANGE_FAILED` followed by failure to remove the worker's writer lock during
+bounded drain. Emitted source identifies the final lock-removal assertion; executable-identity
+mismatch is not established. The same failure exists with the previous owner closure. Upgrading
+dependencies does not fix it. The candidate must remain unaccepted until this real boundary
+passes without assertion/deadline relaxation. Temporary bounded generated-module diagnostics
+are restored byte-for-byte and provide no substitute for the required genuine program gate.
+The internal seed reconciliation draft is separate; no public seed coordinator is claimed here.
