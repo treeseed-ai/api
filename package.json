@@ -1,6 +1,6 @@
 {
   "name": "@treeseed-cordis/api",
-  "version": "0.0.0-cordis.10",
+  "version": "0.0.0-cordis.11",
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-only",
@@ -45,7 +45,7 @@
     "@treeseed-cordis/sdk": "0.0.0-cordis.42",
     "@treeseed-cordis/identity": "0.0.0-cordis.9",
     "@treeseed-cordis/admin": "0.0.0-cordis.12",
-    "@treeseed-cordis/deployment": "0.0.0-cordis.120",
+    "@treeseed-cordis/deployment": "0.0.0-cordis.122",
     "@treeseed-cordis/ui": "0.0.0-cordis.23"
   },
   "devDependencies": {
@@ -84,8 +84,8 @@
     },
     "deployment": {
       "repository": "https://github.com/treeseed-ai/deployment.git",
-      "commit": "04a1a3f53db809701c4ec69024232c309ffaa018",
-      "sha256": "0ea968259f71ab18698e0d6c1b022a6d47d2d9e570b4b120cbd1ff078f5e73db"
+      "commit": "29c801af896bd4bdae2ce310c88319b503a07b50",
+      "sha256": "295ec9e2cd9d9e68730867952b222eb1064ac0722cd273dd675957d356d7a95a"
     },
     "ui": {
       "repository": "https://github.com/treeseed-ai/ui.git",
@@ -242,7 +242,7 @@
     "pluginId": "api",
     "package": {
       "name": "@treeseed-cordis/api",
-      "version": "0.0.0-cordis.10"
+      "version": "0.0.0-cordis.11"
     },
     "providers": [
       {
