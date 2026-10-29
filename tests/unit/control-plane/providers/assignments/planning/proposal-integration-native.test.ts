@@ -7,6 +7,9 @@ import { assignment as original } from '../../../capacity/execution/fixtures/ass
 import { relationAuthoringDatabase, object } from '../../../knowledge/workspaces/architecture/relation-authoring-fixture.ts';
 import { recordAssignmentContentIntegration, verifyAssignmentContent } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-content-readback.ts';
 import { readExactProposal } from '../../../../../../src/api/governance/executable-proposal.ts';
+import { createAssignmentService } from '../../../../../../src/api/control-plane/repositories/capacity/assignment-service.ts';
+import { completedPlanningRow } from './completed-assignment-row.ts';
+import { serializeProviderAssignmentRow } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 
 describe('native planning result projection', () => {
 	it('concurrent completed-product integration creates one exact agent-owned draft through original PostgreSQL and signed TreeDX', async () => {
@@ -58,11 +61,21 @@ describe('native planning result projection', () => {
 			await f.query(`INSERT INTO capacity_provider_team_memberships
 				(id,team_id,capacity_provider_id,approved_at,approved_by_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)`,
 				['controlled-member', 'team', attempt.provider.providerId, original.createdAt, 'operator', original.createdAt, original.createdAt]);
-			await f.query(`INSERT INTO capacity_provider_assignments
-				(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,mode,status,agent_id,
-				assignment_attempt_json,assignment_result_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				[attempt.id, 'controlled-member', 'team', projectId, attempt.provider.providerId, agent.agentClass, 'planning', 'completed', agentId,
-					JSON.stringify(attempt), JSON.stringify(result), original.createdAt, original.createdAt]);
+			await f.query(`INSERT INTO capacity_execution_providers
+				(id,capacity_provider_id,display_name,adapter,native_unit,max_concurrent_runners,created_at,updated_at)
+				VALUES (?,?,?,?,?,?,?,?)`, [attempt.provider.executionProviderId, attempt.provider.providerId,
+					'Controlled planning executor', 'controlled', 'seconds', 1, original.createdAt, original.createdAt]);
+			await f.query(`INSERT INTO capacity_reservations
+				(id,idempotency_key,admission_token,membership_id,capacity_provider_id,execution_provider_id,
+				project_agent_class_id,mode,team_id,project_id,requested_seconds,reserved_seconds,created_at,updated_at)
+				VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [attempt.reservationId, 'controlled-planning-reservation',
+					'controlled-input-not-provider-admission', 'controlled-member', attempt.provider.providerId,
+					attempt.provider.executionProviderId, agent.agentClass, 'planning', 'team', projectId,
+					attempt.limits.maximumSeconds, attempt.limits.maximumSeconds, original.createdAt, original.createdAt]);
+			const row = completedPlanningRow(attempt, result, agentId);
+			expect(serializeProviderAssignmentRow(row)).toMatchObject({ assignmentAttempt: attempt, assignmentResult: result });
+			await f.query(`INSERT INTO capacity_provider_assignments (${Object.keys(row).join(',')})
+				VALUES (${Object.keys(row).map(() => '?').join(',')})`, Object.values(row));
 			const scope = { id: attempt.id, teamId: 'team', projectId, agentId, assignmentAttempt: attempt };
 			const before = await f.snapshot(), refsBefore = await f.client.repositories.refs(repository);
 			const references = await verifyAssignmentContent(f.store, scope, result);
@@ -101,11 +114,9 @@ describe('native planning result projection', () => {
 				grant: { ...attempt.grant, contentRead: [revisionRef, exact.ref], contentWrite: [exact.ref] } });
 			const revisionResult = assignmentResultSchema.parse({ ...result, id: `result-${id}-revision`, assignmentId: revisionAttempt.id,
 				references: [{ kind: 'treedx', projectId, repository, commit: String(revisionCommit.commitSha), path, workspaceId }] });
-			await f.query(`INSERT INTO capacity_provider_assignments
-				(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,mode,status,agent_id,
-				assignment_attempt_json,assignment_result_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				[revisionAttempt.id, 'controlled-member', 'team', projectId, attempt.provider.providerId, agent.agentClass, 'planning',
-					'completed', collaboratorId, JSON.stringify(revisionAttempt), JSON.stringify(revisionResult), original.createdAt, original.createdAt]);
+			const revisionRow = completedPlanningRow(revisionAttempt, revisionResult, collaboratorId);
+			await f.query(`INSERT INTO capacity_provider_assignments (${Object.keys(revisionRow).join(',')})
+				VALUES (${Object.keys(revisionRow).map(() => '?').join(',')})`, Object.values(revisionRow));
 			const revisionScope = { ...scope, id: revisionAttempt.id, agentId: collaboratorId, assignmentAttempt: revisionAttempt };
 			const revisionBefore = await f.snapshot(), revisionRefsBefore = await f.client.repositories.refs(repository);
 			const revisionReferences = await verifyAssignmentContent(f.store, revisionScope, revisionResult);
@@ -130,6 +141,47 @@ describe('native planning result projection', () => {
 			expect(await f.store.all('SELECT id FROM governance_proposal_versions')).toHaveLength(2);
 			expect(await f.client.repositories.refs(repository)).toEqual(revisionRefsBefore);
 			expect((await f.snapshot()).ledger).toEqual(revisionBefore.ledger);
+			// A peer's independently delivered candidate used the original frozen
+			// source. Retain it without adopting it or blocking content closeout.
+			const staleWorkspace = object(await f.client.workspaces.create(repository, { baseRef: commit,
+				branchName: `refs/heads/${id}-stale`, mode: 'writable', allowedPaths: [path] }));
+			workspaceId = String(staleWorkspace.workspaceId);
+			await f.client.files.write(workspaceId, { path, content: `---\n${stringify({ ...definition,
+				summary: 'Independent implementation scope, not the current consolidated plan.' })}---\n` });
+			const staleCommit = object(await f.client.files.commit(workspaceId, { message: 'Controlled stale planning product',
+				author: { name: agent.name, email: 'planning-fixture@example.invalid' } }));
+			await f.client.workspaces.close(workspaceId);
+			expect(await f.client.workspaces.get(workspaceId)).toMatchObject({ status: 'closed' });
+			const staleAttempt = assignmentAttemptSchema.parse({ ...attempt, id: `assignment-${id}-stale`, sourceRef: exact.ref,
+				workspace: { ...attempt.workspace, workspaceId, baseCommit: commit },
+				grant: { ...attempt.grant, contentRead: [profileRef, exact.ref], contentWrite: [exact.ref] } });
+			const staleResult = assignmentResultSchema.parse({ ...result, id: `result-${id}-stale`, assignmentId: staleAttempt.id,
+				references: [{ kind: 'treedx', projectId, repository, commit: String(staleCommit.commitSha), path, workspaceId }] });
+			const staleRow = completedPlanningRow(staleAttempt, staleResult, agentId);
+			await f.query(`INSERT INTO capacity_provider_assignments (${Object.keys(staleRow).join(',')})
+				VALUES (${Object.keys(staleRow).map(() => '?').join(',')})`, Object.values(staleRow));
+			const staleScope = { ...scope, id: staleAttempt.id, assignmentAttempt: staleAttempt };
+			const staleBefore = await f.snapshot(), staleRefsBefore = await f.client.repositories.refs(repository);
+			const staleReferences = await verifyAssignmentContent(f.store, staleScope, staleResult);
+			const canonicalBefore = await f.store.getGovernanceProposal(id);
+			await Promise.all([recordAssignmentContentIntegration(f.store, staleScope, staleResult, staleReferences),
+				recordAssignmentContentIntegration(f.peerStore, staleScope, staleResult, staleReferences)]);
+			const audits = await f.store.all('SELECT data_json FROM audit_events WHERE target_id=?', [staleAttempt.id]);
+			expect(audits).toHaveLength(1);
+			const admission = typeof audits[0]!.data_json === 'string' ? JSON.parse(audits[0]!.data_json) : audits[0]!.data_json;
+			expect(admission).toMatchObject({ resultId: staleResult.id, publication: false, references: staleReferences,
+				planningAdmissions: [{ proposalId: id, disposition: 'not_adopted', reason: 'source_advanced',
+					sourceRef: exact.ref, currentRef: (await readExactProposal(f.store, updated)).ref, productRef: staleReferences[0] }] });
+			expect(await f.store.getGovernanceProposal(id)).toEqual(canonicalBefore);
+			expect(await f.store.all('SELECT id FROM governance_proposal_versions')).toHaveLength(2);
+			const assignments = createAssignmentService(f.store);
+			await expect(assignments.explain(undefined, 'team', staleAttempt.id)).rejects.toMatchObject({ code: 'authentication_required' });
+			expect((await assignments.explain({ id: 'operator', roles: ['admin'] }, 'team', staleAttempt.id)).metadata)
+				.toMatchObject({ planningAdmissions: admission.planningAdmissions });
+			await recordAssignmentContentIntegration(f.peerStore, staleScope, staleResult, staleReferences);
+			expect(await f.store.all('SELECT data_json FROM audit_events WHERE target_id=?', [staleAttempt.id])).toEqual(audits);
+			expect(await f.client.repositories.refs(repository)).toEqual(staleRefsBefore);
+			expect((await f.snapshot()).ledger).toEqual(staleBefore.ledger);
 		} finally {
 			try { if (workspaceId) await f.client.workspaces.close(workspaceId); } finally { await f.close(); }
 		}
