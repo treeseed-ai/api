@@ -60,6 +60,7 @@ export interface KnowledgeGatewayConnection {
 	accessToken: string;
 	repositoryId: string;
 	baseRef: string;
+	authoringBaseRef: string;
 	contentPath: string;
 	allowedPaths: string[];
 	nodeId: string;
@@ -67,8 +68,8 @@ export interface KnowledgeGatewayConnection {
 	publicationRef: string;
 }
 
-export function projectKnowledgeAuthoringBaseRef(connection: Pick<KnowledgeGatewayConnection, 'baseRef'>) {
-	return connection.baseRef;
+export function projectKnowledgeAuthoringBaseRef(connection: Pick<KnowledgeGatewayConnection, 'authoringBaseRef'>) {
+	return connection.authoringBaseRef;
 }
 
 export async function resolveKnowledgeGatewayConnection(store: any, input: {
@@ -118,10 +119,9 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 	// A private discussion cursor can predate published profiles. Author from
 	// the existing protected mirror (or local publication branch when there is
 	// no upstream), never from that unrelated private snapshot.
-	const authoringRef = text(library.contentRepositoryUrl, contentRepository.githubUrl)
+	const authoringBaseRef = text(library.contentRepositoryUrl, contentRepository.githubUrl)
 		? canonicalAuthoringRef.replace(/^refs\/heads\//u, 'refs/remotes/origin/') : canonicalAuthoringRef;
-	const baseRef = input.authoringPaths ? authoringRef
-		: text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main');
+	const baseRef = text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main');
 	const integrationRefs = (input.publishRefs ?? []).flatMap((ref) => {
 		const match = /^refs\/treedx\/commits\/([a-f0-9]{40})$/iu.exec(ref);
 		return match ? [`refs/heads/treedx/incoming/${match[1]}`] : [];
@@ -141,8 +141,9 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 			: input.write
 			? ['repos:read', 'repos:write', 'workspace:create', 'files:read', 'files:search', 'files:write', 'files:delete', 'git:read', 'git:diff', 'git:commit', 'graph:query', 'graph:refresh']
 			: ['repos:read', 'files:read', 'files:search', 'git:read', 'git:diff', 'graph:query', ...(input.refreshGraph ? ['graph:refresh'] : [])],
-		refs: [...new Set([baseRef, text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main'),
+		refs: [...new Set([baseRef,
 			canonicalTreeDxBranchRef(library.contentRepositoryDefaultBranch ?? 'main'),
+			...(input.authoringPaths ? [authoringBaseRef] : []),
 			...(input.write || input.communicationPaths || input.authoringPaths ? [canonicalAuthoringRef] : []),
 			...(input.readRefs ?? []), ...(input.publishRefs ?? []), ...integrationRefs,
 			...(input.maintenanceRefs ?? []), ...(input.replicationRefs ?? []),
@@ -156,6 +157,7 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 		accessToken: token,
 		repositoryId,
 		baseRef,
+		authoringBaseRef,
 		contentPath,
 		allowedPaths,
 		nodeId,
