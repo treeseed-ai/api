@@ -115,6 +115,13 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 		...normalizedWorkspaceScopePaths(input.workspacePaths)])];
 	const authoringBranch = text(contentRepository.authoringBranch, topology.authoringBranch, 'staging');
 	const canonicalAuthoringRef = canonicalTreeDxBranchRef(authoringBranch);
+	// A private discussion cursor can predate published profiles. Author from
+	// the existing protected mirror (or local publication branch when there is
+	// no upstream), never from that unrelated private snapshot.
+	const authoringRef = text(library.contentRepositoryUrl, contentRepository.githubUrl)
+		? canonicalAuthoringRef.replace(/^refs\/heads\//u, 'refs/remotes/origin/') : canonicalAuthoringRef;
+	const baseRef = input.authoringPaths ? authoringRef
+		: text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main');
 	const integrationRefs = (input.publishRefs ?? []).flatMap((ref) => {
 		const match = /^refs\/treedx\/commits\/([a-f0-9]{40})$/iu.exec(ref);
 		return match ? [`refs/heads/treedx/incoming/${match[1]}`] : [];
@@ -134,7 +141,7 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 			: input.write
 			? ['repos:read', 'repos:write', 'workspace:create', 'files:read', 'files:search', 'files:write', 'files:delete', 'git:read', 'git:diff', 'git:commit', 'graph:query', 'graph:refresh']
 			: ['repos:read', 'files:read', 'files:search', 'git:read', 'git:diff', 'graph:query', ...(input.refreshGraph ? ['graph:refresh'] : [])],
-		refs: [...new Set([text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main'),
+		refs: [...new Set([baseRef, text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main'),
 			canonicalTreeDxBranchRef(library.contentRepositoryDefaultBranch ?? 'main'),
 			...(input.write || input.communicationPaths || input.authoringPaths ? [canonicalAuthoringRef] : []),
 			...(input.readRefs ?? []), ...(input.publishRefs ?? []), ...integrationRefs,
@@ -148,7 +155,7 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 		baseUrl: baseUrl.replace(/\/+$/u, ''),
 		accessToken: token,
 		repositoryId,
-		baseRef: text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main'),
+		baseRef,
 		contentPath,
 		allowedPaths,
 		nodeId,
