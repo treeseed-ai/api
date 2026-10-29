@@ -24,7 +24,7 @@
       },
       "peerDependencies": {
         "@treeseed-cordis/admin": "0.0.0-cordis.13",
-        "@treeseed-cordis/deployment": "0.0.0-cordis.129",
+        "@treeseed-cordis/deployment": "0.0.0-cordis.130",
         "@treeseed-cordis/identity": "0.0.0-cordis.10",
         "@treeseed-cordis/sdk": "0.0.0-cordis.44",
         "@treeseed-cordis/ui": "0.0.0-cordis.24",
@@ -38,7 +38,7 @@
 
     "@treeseed-cordis/admin": ["@treeseed-cordis/admin@vendor/admin.tgz", { "dependencies": { "cordis": "4.0.0-rc.12" }, "peerDependencies": { "@treeseed-cordis/identity": "0.0.0-cordis.10", "@treeseed-cordis/sdk": "0.0.0-cordis.44", "@treeseed-cordis/ui": "0.0.0-cordis.24", "react": "19.3.1", "react-dom": "19.3.1" } }, "sha512-+4A+yOJ+OJhxKrBYfF0OVf6wb6pYlpqNdAjhTCFgjeAIaWlY2VoQN4SazsjYAUV4G0ndewe2q167I6h2x5vnNw=="],
 
-    "@treeseed-cordis/deployment": ["@treeseed-cordis/deployment@vendor/deployment.tgz", { "dependencies": { "ajv": "8.17.1", "ajv-formats": "3.0.1", "cordis": "4.0.0-rc.12", "jsonc-parser": "3.3.1", "postgres": "3.4.9", "semver": "7.8.5", "smol-toml": "1.9.1", "tar": "7.5.22", "zod": "4.6.7" }, "peerDependencies": { "@treeseed-cordis/sdk": "0.0.0-cordis.44" } }, "sha512-cqlmfSVQ9WfwXGGD+nZfktTuasgjTKOERs0/mpkSj0KKx98fJ+LudDaKwwfd7tUnOumDfyF16LS301QIxcfsng=="],
+    "@treeseed-cordis/deployment": ["@treeseed-cordis/deployment@vendor/deployment.tgz", { "dependencies": { "ajv": "8.17.1", "ajv-formats": "3.0.1", "cordis": "4.0.0-rc.12", "jsonc-parser": "3.3.1", "postgres": "3.4.9", "semver": "7.8.5", "smol-toml": "1.9.1", "tar": "7.5.22", "zod": "4.6.7" }, "peerDependencies": { "@treeseed-cordis/sdk": "0.0.0-cordis.44" } }, "sha512-86mxK+9W9bqQabLqmpouhU02hgGiqnA6HV+ScPPQoEThobaDbU3fx9hl2ORNKw/zXEMUpgptal9hUW0htqeJLA=="],
 
     "@treeseed-cordis/identity": ["@treeseed-cordis/identity@vendor/identity.tgz", { "dependencies": { "cordis": "4.0.0-rc.12", "openid-client": "6.8.8", "postgres": "3.4.9" }, "peerDependencies": { "@treeseed-cordis/sdk": "0.0.0-cordis.44" } }, "sha512-xA7MD+YUBojDmPD47zv9uURQ0gaRSdv0SbNexFfzz9EK2MfeBQb6mzZ1DgpA3eit017D19bpvWPnmjFvN6GpUQ=="],
 
