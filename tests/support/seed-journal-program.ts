@@ -17,7 +17,9 @@ class SeedJournalProgram {
       assert.deepEqual(await resumed.read(), { receipt, intents: ['root'] });
       assert.deepEqual(fixture.marker(), marker);
       fixture.permissions();
-    } finally { await fixture.close(); }
+    } finally {
+      await fixture.close();
+    }
     process.stdout.write('seed-journal-public-ok\n');
   }
 }
