@@ -39,6 +39,45 @@ function fixture(mode = 'simulation') {
 
 describe('workday-scoped proposal authoring', () => {
 	beforeEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); });
+	it.each(['body', 'discussionRef'])('preserves canonical private fields on a partial %s revision when staging lacks the proposal', async field => {
+		const { input, client, base, path } = fixture('production'), active = 'c'.repeat(40);
+		const definition = { ...readyContributionProposal(), id: input.proposal.id, projectId: input.proposal.projectId,
+			objectiveRefs: [{ store: 'treedx', model: 'objective', id: 'delivery', repository: 'repository-1', commit: base, path: 'objectives/delivery.mdx' }] };
+		const source = serializeFrontmatterDocument(definition, 'Agent-authored planning content.');
+		const hash = createHash('sha256').update(source).digest('hex');
+		const proposal = { ...input.proposal, activeContentHash: hash,
+			metadata: { contentProvenance: { repositoryId: 'repository-1', contentPath: path, commitSha: active, digest: hash } } };
+		client.readRepositoryFile.mockImplementation(async request => {
+			if (request.ref === active) return { resolvedRef: active, file: { content: source, frontmatter: definition } };
+			throw Object.assign(new Error('Private proposal is absent from staging.'), { status: 404 });
+		});
+		const discussionRef = { store: 'treedx', model: 'discussion-message', id: 'feedback', repository: 'repository-1', commit: base,
+			path: 'discussion-messages/planning/feedback.mdx' };
+		await commitProposalVersionContent({ ...input, proposal, update: field === 'body' ? { body: 'Coordinator feedback.' } : { discussionRef } });
+		expect(serializeProposalDocument).toHaveBeenLastCalledWith(expect.objectContaining({
+			schemaVersion: definition.schemaVersion, groupIds: definition.groupIds, objectiveRefs: definition.objectiveRefs,
+			executionPlan: definition.executionPlan, ...(field === 'discussionRef' ? { discussionRef } : { request: 'Coordinator feedback.' }),
+		}));
+		expect(client.readRepositoryFile).toHaveBeenCalledWith(expect.objectContaining({ ref: active, path }));
+	});
+	it.each(['missing', 'moved', 'digest', 'identity'])('denies %s canonical private content before a partial revision can commit', async invalid => {
+		const { input, client, path } = fixture('production'), active = 'c'.repeat(40);
+		const definition = { ...readyContributionProposal(), id: invalid === 'identity' ? 'another-proposal' : input.proposal.id,
+			projectId: input.proposal.projectId };
+		const source = serializeFrontmatterDocument(definition, ''), hash = createHash('sha256').update(source).digest('hex');
+		const proposal = { ...input.proposal, activeContentHash: hash,
+			metadata: { contentProvenance: { repositoryId: 'repository-1', contentPath: path, commitSha: active, digest: hash } } };
+		client.readRepositoryFile.mockImplementation(async request => {
+			if (request.ref !== active || invalid === 'missing') throw Object.assign(new Error('Missing proposal.'), { status: 404 });
+			return { resolvedRef: invalid === 'moved' ? 'd'.repeat(40) : active,
+				file: { content: invalid === 'digest' ? source + 'changed' : source, frontmatter: definition } };
+		});
+		await expect(commitProposalVersionContent({ ...input, proposal, update: { body: 'Feedback.' } })).rejects.toMatchObject({
+			...(invalid === 'missing' ? { status: 404 } : { code: { moved: 'proposal_snapshot_moved', digest: 'proposal_digest_mismatch', identity: 'proposal_identity_mismatch' }[invalid] }),
+		});
+		expect(client.commit).not.toHaveBeenCalled();
+		expect(client.closeWorkspace).toHaveBeenCalledTimes(1);
+	});
 	it('retains the exact active private plan and links on a body-only Inbox revision', async () => {
 		const { input, client, base, path } = fixture('production'), active = 'c'.repeat(40);
 		const definition = { ...readyProposal(), id: input.proposal.id, projectId: input.proposal.projectId,
