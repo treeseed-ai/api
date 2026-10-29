@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- Persist installation-scoped seed progress through owner custody (#655).
+
 ### Changed
 - Align API with the manager-compatible owner closure and bounded durable package publication (#644).
 

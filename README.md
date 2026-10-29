@@ -1,5 +1,53 @@
 # Cordis Api
 
+## Private seed progress journal
+
+`@treeseed-cordis/api/seed-journal` exports `SeedJournalComposition`, the typed
+`SeedJournal`/`SeedWriter` contracts, `SeedJournalPlugin`, `SeedJournalToken` and
+`SeedJournalError`. `SeedJournalComposition.start(authority)` mounts the default native
+Cordis provider without starting HTTP, Identity, Docker or managed services. Its trusted
+composition authority describes the caller's selected API scope; it does not verify a live
+Keycloak grant. The coordinator must independently recheck live authority before owner effects.
+
+Acquire `root.journal.acquire(plan, requestId, signal)` to obtain one installation writer.
+`read()` returns `{ receipt, intents }`; `intent(resource)` durably records the exact planned
+resource before reconciliation; `publish(receipt)` returns the validated, saved/read-back
+receipt; `close()` releases the writer. `root.close()` disposes native composition and closes
+any remaining writer. A failed close is a failure, never a successful cleanup claim. There is
+no unqualified live replacement: journal provider/format changes require restart or migration.
+
+The API owns `treeseed.seed-journal/v1` request, intent and receipt records. Deployment's
+public `InstallationRecords` owns descriptor-anchored private custody, single-writer exclusion,
+hash chaining and no-overwrite publication in `.cordis/artifacts/records/seeds`. An existing
+valid plan-only or installed receipt is required. SDK owns plan/receipt schemas and exact
+owner bindings. No cross-checkout source imports, scripts, credential reads, activation, new
+HTTP endpoints or additional global platform operations are introduced.
+
+Validate and snapshot plain JSON input before filesystem acquisition: reject getters, cycles,
+non-JSON values, unsafe keys, depth over 64, more than 8192 nodes or canonical input over
+256 KiB. Plans must be unblocked and have a recomputed canonical digest. Request IDs use the
+SDK receipt contract. Reusing an ID requires the identical full plan, including installation,
+principal/grant, selected executables, artifact locks and preconditions. Every saved record is
+validated on every read, including records for other requests; unknown kinds, foreign scope,
+duplicate initialization, receipts without matching intents and mismatched owner evidence fail.
+Intents are idempotent; repeated identical latest receipts add no record. Lost publication replies
+require verified read-back; malformed or interrupted custody requires explicit repair. The
+Deployment limits of 4096 records, 1 MiB per record and 64 MiB per chain also apply.
+
+Partial, pending, blocked and recovery-required receipts remain explicit. A later fresh owner
+read-back may demote earlier verified progress to recovery-required. The journal records that
+evidence; it does not prove live authority, perform owner reconciliation, infer cross-owner
+atomicity, roll back effects or auto-repair uncertain state. Stored progress is readable after
+the original bundle is removed. Errors expose fixed `SEED_JOURNAL_*` codes only, with no private
+paths, payloads or nested errors. Cancellation and concurrent operations fail safely.
+
+Implementation sequence under #655: commit this contract; add a built-program acceptance
+specification, real filesystem/Cordis integration cases and isolated validation cases; implement
+the public provider and replay; run owner checks/build/all four tiers and exact public archive
+smoke, then hosted checks and review. Existing regression coverage remains unchanged; this is
+a new capability, not a claimed historical regression. The full seed coordinator is subsequent
+Task 3D work. Real Work/model execution remains Task 10 and all issues remain open.
+
 ## Task 3D exact owner compatibility
 
 Under #644 the API consumes one SDK `.42` closure through exact public archives. This slice
