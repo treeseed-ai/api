@@ -22,6 +22,7 @@ import { resolveGitHubSourceAuthority } from '../../../../security/provider-cred
 import { resolveAuthorizedSourceCommit } from '../../../control-plane/repositories/providers/source/source-pin.ts';
 import { effectiveProfile } from './execution-node-profile.ts';
 import { ContextQueryCheckService, type AssignmentQueryContext } from '../capacity/agents/context-query-check-service.ts';
+import { workdayObjectiveContext } from '../capacity/assignments/context/workday-objective-context.ts';
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {
 	if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row;
@@ -212,6 +213,8 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 		if (!context) throw new CapacityGovernanceError('execution_node_workday_context_missing',
 			`Node ${node.id} lacks an exact project context reference.`, 409);
 		const resolved: ExactEntityReference[] = [context as ExactEntityReference];
+		resolved.push(...await workdayObjectiveContext(store, node.projectId, parameters.objectiveRefs,
+			context as ExactEntityReference));
 		for (const [id, reference] of Object.entries(record(parameters.planningSourceByProposalId))) {
 			const proposal = await store.getGovernanceProposal(id);
 			if (!proposal || text(proposal.teamId ?? proposal.team_id) !== node.teamId) throw new CapacityGovernanceError(
