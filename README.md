@@ -52,7 +52,7 @@ Task 3D work. Real Work/model execution remains Task 10 and all issues remain op
 
 ## Task 3D exact owner compatibility
 
-Under #657, API `.15` selects one SDK44/Deployment129/Identity10/Admin13/UI24 public archive
+Under #657, API `.16` selects one SDK44/Deployment130/Identity10/Admin13/UI24 public archive
 composition. Keep this candidate held until Deployment#1062 passes full hosted qualification,
 review and integration. Identity#61, Admin#154 and UI#108 are accepted. API retains its native
 server and private seed journal; full headless seed coordination remains subsequent work.
@@ -60,7 +60,7 @@ server and private seed journal; full headless seed coordination remains subsequ
 | Owner | Version | Source | Archive SHA-256 |
 | --- | --- | --- | --- |
 | sdk | `0.0.0-cordis.44` | `00be028b92998f8d7039a3906e784c6b8598e730` | `d95c54cf6081c7634498dfb4f3235d42d65b8664a5d62cc87c4dd4e85381f0f3` |
-| deployment | `0.0.0-cordis.129` | `ec2c24513fcdcd94de17a21ae8350a8138294cbe` | `ba4a51643ac421acfff21d38e069ecff98e49d56c09b0b531bcc063cb427c844` |
+| deployment | `0.0.0-cordis.130` | `7447e978a7721dbb2bec06ed7ecdaf67331e6836` | `fc95dac205890c63eb22048df8b39c3aaac652880c735ffa2a44ecbf770c571c` |
 | identity | `0.0.0-cordis.10` | `1ed37c2384ceb23fba8b0a96ca9abe208a2cb2e5` | `3e2e4bd25c21a4be99e927a5431f474be3903fbd509cc617adaf6c4c83183600` |
 | admin | `0.0.0-cordis.13` | `7fd25302a85722bd642c676231f451bbabb6aec2` | `cc8d32818839b8d1b0265b7b77f5fc76910e1203172644c6dd1cffaa12abc1c1` |
 | ui | `0.0.0-cordis.24` | `b4a1490c5b06ba49b4f3408391b236be2400553a` | `ad7be6878932ac76a0b8d81622dd826a5152062185852bf40dc0c6c63d41c4e1` |
@@ -293,3 +293,9 @@ Keep all assertions and deadlines, repository boundaries, Keycloak and #620 poli
 Temporary diagnostic modules are restored byte-for-byte; no permanent process proposal is added.
 Keep earlier owner/API archives immutable. The seed coordinator remains a separate owner delivery;
 all issues stay open and real Work/model execution remains Task 10.
+
+The unpublished API15 archive remains immutable local evidence of the earlier Deployment129
+composition: all17 acceptance cases including genuine installed services,9 regression,21 integration
+and13 unit passed, as did independent strict public native-journal consumption. API16 must be
+requalified with Deployment130 after its directory-anchor disposal correction; prior-head evidence
+does not replace the current owner/hosted gates.
