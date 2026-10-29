@@ -13,10 +13,10 @@ qualifies the existing default API root; the headless seed coordinator is a sepa
 | Admin | `0.0.0-cordis.12` | `dae3d32083b3ed3f4a65908a78e332cb5a38d0d2` | `1ad95ccb6204df57590adc009b17f18670ffccf1146c98dfa165df8ae114f5ac` |
 | UI | `0.0.0-cordis.23` | `d5d33c33791fe8b94aada605dba4aa9392559637` | `7291d35fe8758fd27b23f663dcf1f254bd915b5ae3569dde8c9a2f443e45a14f` |
 
-API .10 advances this dependency-only composition without adopting the internal seed draft.
+API .11 advances this dependency-only composition without adopting the internal seed draft.
 The built compatibility gate also requires manager-channel 1.1.0-cordis.1 while preserving the
-seven global operations. Adopt Admin .12 / Deployment .120 only after their owner gates and
-acceptance. Every peer pin, installed owner version and vendored archive must match. The existing genuine
+seven global operations. Admin .12 and Deployment .122 have passed their owner gates and
+were accepted through cordis PRs. Every peer pin, installed owner version and vendored archive must match. The existing genuine
 installed-root gate remains required; metadata checks alone cannot establish readiness. Preserve
 Keycloak, mobile-first UI, repository boundaries, historical artifacts, AGPL and the exact #620
 committer policy. Work/model execution remains Task 10. All issues stay open until release.
