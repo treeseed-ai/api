@@ -15,9 +15,9 @@ class ApiOwnerCompatibility {
       sha256: '0ecfe599916fe8ef364fc4b73203c810981f163109fbe71a0dd4c01a9dfb7bbc',
     },
     deployment: {
-      version: '0.0.0-cordis.122',
-      commit: '29c801af896bd4bdae2ce310c88319b503a07b50',
-      sha256: '295ec9e2cd9d9e68730867952b222eb1064ac0722cd273dd675957d356d7a95a',
+      version: '0.0.0-cordis.126',
+      commit: 'd6695ffa90bff4cf7f0108af00a8a28b242833bc',
+      sha256: 'c0d03d85e1dc83921fc1b9d2193b11a5c0fe4f5a5db93d91fcd4fc95eb0e23ca',
     },
     identity: {
       version: '0.0.0-cordis.9',
