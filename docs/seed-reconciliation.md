@@ -33,6 +33,13 @@ An admission failure blocks before new intent or effects. An uncertain owner res
 `recovery-required`; it cannot become completed by catching an exception. Unverified dependencies
 prevent their dependants from executing. Pending, blocked and recovery states remain explicit.
 
+Before publishing a completed aggregate, perform a fresh read-only sweep of every observed
+owner receipt after all reconciliation effects. Recheck live authority and owner admission for
+each lease, read back the exact record and dispose the lease. This sweep must neither repeat
+reconciliation nor publish a new intent. A later resource effect that invalidates an earlier
+record prevents completion and retains explicit recovery evidence. Sequential observations do
+not claim a cross-owner atomic snapshot or reserve resources against later external changes.
+
 Completion requires an exact verified receipt for every resource and successful publication,
 read-back, owner-lease disposal and writer release. Invalid, stale, cross-owner or cross-plan
 receipts cannot establish completion. Unknown exception messages and resource payloads never
