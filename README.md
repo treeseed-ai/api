@@ -221,7 +221,7 @@ program (`api10-public-native-program-ok`). These checks establish package compa
 ## Genuine installed verification boundary
 
 Previous .10 exchange/drain failures and .11 activation-budget failure remain retained evidence.
-The .11 diagnostic measured146.631seconds staging before prepare/activate inside the unchanged
+The .11 diagnostic measured 146.631 seconds staging before prepare/activate inside the unchanged
 180-second application window. Neither failed observation establishes installed readiness.
 
 The .12 continuation selects Deployment .126 from immutable producer
@@ -237,4 +237,4 @@ exact-head hosted runs before acceptance. Metadata/declaration checks cannot sub
 Keep all assertions and deadlines, repository boundaries, Keycloak and #620 policy unchanged.
 Temporary diagnostic modules are restored byte-for-byte; no permanent process proposal is added.
 Keep earlier owner/API archives immutable. The seed coordinator remains a separate owner delivery;
-all issues stay open and real Work/model execution remains Task10.
+all issues stay open and real Work/model execution remains Task 10.
