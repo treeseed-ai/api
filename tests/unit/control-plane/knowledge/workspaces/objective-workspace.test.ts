@@ -43,7 +43,7 @@ describe('objective TreeDX workspace authority', () => {
 	});
 
 	it('bases authoring on the reconciled protected branch', () => {
-		expect(projectKnowledgeAuthoringBaseRef({ baseRef: 'refs/remotes/origin/staging' })).toBe('refs/remotes/origin/staging');
+		expect(projectKnowledgeAuthoringBaseRef({ authoringBaseRef: 'refs/remotes/origin/staging' })).toBe('refs/remotes/origin/staging');
 	});
 
 	it('retains a divergent external mirror as a reviewed merge parent', async () => {

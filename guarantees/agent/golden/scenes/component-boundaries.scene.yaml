@@ -3245,6 +3245,24 @@ workflow:
   - id: proposal-contract-authority-native
     action: { verifier: api.golden.proposal-contract-authority-native }
     expect: { status: passed }
+  - id: private-proposal-partial-revision
+    action: { verifier: api.golden.private-proposal-partial-revision }
+    expect: { status: passed }
+  - id: private-proposal-moved-source
+    action: { verifier: api.golden.private-proposal-moved-source }
+    expect: { status: passed }
+  - id: private-proposal-prose-revision
+    action: { verifier: api.golden.private-proposal-prose-revision }
+    expect: { status: passed }
+  - id: private-proposal-missing-source
+    action: { verifier: api.golden.private-proposal-missing-source }
+    expect: { status: passed }
+  - id: private-proposal-digest-mismatch
+    action: { verifier: api.golden.private-proposal-digest-mismatch }
+    expect: { status: passed }
+  - id: private-proposal-foreign-identity
+    action: { verifier: api.golden.private-proposal-foreign-identity }
+    expect: { status: passed }
 
   - id: proposal-plan-readback-native
     action: { verifier: api.golden.proposal-plan-readback-native }

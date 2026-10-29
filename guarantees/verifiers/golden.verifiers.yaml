@@ -5488,6 +5488,39 @@ verifiers:
     testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-contract-authority-native.test.ts
     testName: "creates from the selected governed schema without replacing local products and denies unpublished local-only types"
 
+  api.golden.private-proposal-partial-revision:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/proposal-workday-custody.test.ts
+    testName: "preserves canonical private fields on a partial discussionRef revision when staging lacks the proposal"
+
+  api.golden.private-proposal-moved-source:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/proposal-workday-custody.test.ts
+    testName: "denies moved canonical private content before a partial revision can commit"
+
+  api.golden.private-proposal-prose-revision:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/proposal-workday-custody.test.ts
+    testName: "preserves canonical private fields on a partial body revision when staging lacks the proposal"
+  api.golden.private-proposal-missing-source:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/proposal-workday-custody.test.ts
+    testName: "denies missing canonical private content before a partial revision can commit"
+  api.golden.private-proposal-digest-mismatch:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/proposal-workday-custody.test.ts
+    testName: "denies digest canonical private content before a partial revision can commit"
+  api.golden.private-proposal-foreign-identity:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/proposal-workday-custody.test.ts
+    testName: "denies identity canonical private content before a partial revision can commit"
+
   api.golden.proposal-plan-readback-native:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

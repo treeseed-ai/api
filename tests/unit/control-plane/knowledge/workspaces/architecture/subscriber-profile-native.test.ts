@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { serializeFrontmatterDocument } from '../../../../../../src/api/content/frontmatter.ts';
 import { relationSchedulingDatabase } from './relation-scheduling-fixture.ts';
 import { object } from './relation-authoring-fixture.ts';
@@ -9,6 +10,7 @@ import { resolveWorkdayAgentProfileSnapshot, resolveDiscussionAgentProfileSnapsh
 import { projectCommunicationInvocations } from '../../../../../../src/api/capacity/policy/execution/communication-execution-projector.ts';
 import { effectiveProfile } from '../../../../../../src/api/capacity/services/build/execution-node-profile.ts';
 import { ProjectAgentClassRepository } from '../../../../../../src/api/capacity/repositories/projects/agents/project-agent-class.ts';
+import { recordTreeDxAuthoringState } from '../../../../../../src/api/capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 
 it('native governed shared-class subscribers retain both YAML profiles through publication group discovery and exact addressed execution binding', async () => {
 	const f = await relationSchedulingDatabase();
@@ -81,6 +83,51 @@ it('native governed shared-class subscribers retain both YAML profiles through p
 		await projectTreeDxCommitSignals(f.store, signal);
 		const replayed = await f.store.all('SELECT * FROM project_agent_classes WHERE project_id=? AND slug=?', [source.projectId, 'maintenance']);
 		expect(JSON.parse(String(replayed[0]!.handler_refs_json))).toEqual(JSON.parse(String(shared[0]!.handler_refs_json)));
+		// A real private discussion branch starts before the newer published
+		// subscriber profiles. Its integrated cursor must not roll those profiles
+		// back when a human next authors and publishes only an objective.
+		const historyPath = 'discussion-messages/cache-recovery/private.mdx';
+		const history = object(await f.client.workspaces.create(source.repository, { baseRef: source.commit,
+			branchName: `refs/heads/discussion-${randomUUID()}`, mode: 'writable', allowedPaths: [historyPath] }));
+		let privateCommit: string;
+		try {
+			await f.client.files.write(String(history.workspaceId), { path: historyPath, content: 'Original private discussion context.\n' });
+			privateCommit = String(object(await f.client.files.commit(String(history.workspaceId), {
+				message: 'Earlier exact discussion source', author: { name: 'Fixture', email: 'fixture@example.invalid' } })).commitSha);
+		} finally { await f.client.workspaces.close(String(history.workspaceId)); }
+		await recordTreeDxAuthoringState(f.store, 'integrated', { projectId: source.projectId, repositoryId: source.repository,
+			commitSha: privateCommit, ref: String(history.branchName), changedPaths: [historyPath], actorType: 'user', actorId: 'operator' });
+		expect((await f.store.getProjectTreeDxLibrary(source.projectId))?.contentRepositoryRef).toBe(privateCommit);
+		const ordinary = await f.service.create(f.principal, source.projectId, { requestId: randomUUID() });
+		try {
+			expect(ordinary.baseCommitSha).toBe(commit);
+			for (const [index, definition] of definitions.entries())
+				expect((await f.service.readContent(f.principal, ordinary.id, paths[index]!)).content)
+					.toBe(serializeFrontmatterDocument(definition));
+			const objective = serializeFrontmatterDocument({ schemaVersion: 'treeseed.objective/v1', id: 'cache-recovery',
+				projectId: source.projectId, title: 'Diagnose retained source cleanup', outcome: 'Retain every current subscriber while adding the diagnostic objective.', status: 'active' });
+			const written = await f.service.updateContent(f.principal, ordinary.id, { kind: 'operational-content', create: true,
+				version: ordinary.version, sourcePath: 'objectives/cache-recovery.mdx', content: objective });
+			expect((await f.service.diff(f.principal, ordinary.id)).changedPaths).toEqual(['objectives/cache-recovery.mdx']);
+			const submitted = await f.service.submit(f.principal, ordinary.id, { version: written.workspace.version,
+				message: 'Add objective without replacing published subscribers' });
+			if (!submitted.integration) throw new Error('Ordinary objective publication operation required');
+			expect(await f.run(submitted.integration.operation.id)).toMatchObject({ ok: true, operation: { status: 'succeeded' } });
+			const observed = await resolveKnowledgeGatewayConnection(f.store, { projectId: source.projectId, write: false,
+				readRefs: [submitted.commit.commitSha, privateCommit], workspacePaths: ['agents/**', historyPath, 'objectives/**'] });
+			if (!observed) throw new Error('Native exact objective/profile readback required');
+			for (const [index, definition] of definitions.entries()) {
+				const file = await observed.client.readRepositoryFiles({ repoId: source.repository, ref: submitted.commit.commitSha,
+					paths: [paths[index]!], encoding: 'utf8', parseFrontmatter: false, allowProtected: true });
+				expect(file.files[0]?.content).toBe(serializeFrontmatterDocument(definition));
+			}
+			const historyFile = await observed.client.readRepositoryFiles({ repoId: source.repository, ref: privateCommit,
+				paths: [historyPath], encoding: 'utf8', parseFrontmatter: false, allowProtected: true });
+			expect(historyFile.files[0]?.content).toBe('Original private discussion context.\n');
+			const retained = await resolveWorkdayAgentProfileSnapshot({ listProjectAgentClassesPage: (id, page) =>
+				repository.listPage(id, { ...page, cursor: null }) }, source.projectId, undefined, ['native-shared-team']);
+			expect(retained.agents.map(entry => entry.definition)).toEqual(definitions);
+		} finally { await f.client.workspaces.close(ordinary.treeDxWorkspaceId); }
 		// Actual native TreeDX, owning PostgreSQL, group discovery and exact profile
 		// read-back. No agent/model execution, assignment or measured usage claimed.
 	} finally { await f.close(); }

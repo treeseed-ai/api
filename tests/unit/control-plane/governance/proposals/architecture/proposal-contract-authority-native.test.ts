@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { relationAuthoringDatabase, object } from '../../../knowledge/workspaces/architecture/relation-authoring-fixture.ts';
 import { commitProposalVersionContent } from '../../../../../../src/api/control-plane/governance/proposal-version-content.ts';
 import { requireTreeDxOperation } from '../../../../../../src/api/control-plane/treedx/upstream-operation.ts';
-import { parseFrontmatterDocument } from '../../../../../../src/api/content/frontmatter.ts';
+import { parseFrontmatterDocument, serializeFrontmatterDocument } from '../../../../../../src/api/content/frontmatter.ts';
 import { readyContributionProposal } from './ready-proposal-fixture.ts';
 
 // Real signed TreeDX and the original store on disposable native PostgreSQL.
@@ -101,6 +101,43 @@ describe('governed proposal contract authority with divergent native authoring',
 			const committed=await head();expect(committed).toBe(created.receipt.commitSha);
 			await expect(commitProposalVersionContent({...input,proposal:{...input.proposal,body:'Different content cannot replace the original initial proposal.'}})).rejects.toMatchObject({code:'proposal_source_path_occupied',status:409});
 			expect(await head()).toBe(committed);
+			// Agent planning publishes a private document that need never exist on
+			// staging. A normal human partial revision must preserve that exact plan.
+			const privatePath='proposals/native-private-planning.mdx',privateBranch='refs/heads/native-private-'+randomUUID();
+			const privateDefinition={...readyContributionProposal(),id:'native-private-planning',projectId};
+			const privateSource=serializeFrontmatterDocument(privateDefinition,'Retained agent planning source.');
+			const privateWorkspace=await workspace(committed,privateBranch,[privatePath]);
+			await f.client.files.write(privateWorkspace,{path:privatePath,content:privateSource});
+			const privateCommit=object(await f.client.files.commit(privateWorkspace,{message:'Controlled private planning input',author}));
+			await f.client.workspaces.close(privateWorkspace);owned.delete(privateWorkspace);
+			await expect(read('refs/heads/staging',privatePath)).rejects.toMatchObject({status:404});
+			const privateDigest=createHash('sha256').update(privateSource).digest('hex');
+			const privateProposal={...input.proposal,id:privateDefinition.id,title:privateDefinition.title,body:privateDefinition.request,
+				summary:privateDefinition.summary,activeVersion:1,activeContentHash:privateDigest,metadata:{contentProvenance:{
+					repositoryId:repoId,contentPath:privatePath,commitSha:privateCommit.commitSha,digest:privateDigest}}};
+			const custody=privateProposal.metadata.contentProvenance;
+			for(const [invalid,code] of [
+				[{...privateProposal,id:'foreign-proposal'},'proposal_identity_mismatch'],
+				[{...privateProposal,activeContentHash:'0'.repeat(64)},'proposal_digest_mismatch'],
+				[{...privateProposal,metadata:{contentProvenance:{...custody,commitSha:'staging'}}},'proposal_exact_source_missing'],
+			] as const){
+				await expect(commitProposalVersionContent({store:f.store,principal:{id:'operator-fixture'},proposal:invalid,
+					update:{body:'Denied partial edit.'}})).rejects.toMatchObject({status:409,code});
+				expect(await head()).toBe(committed);
+			}
+			const partial=await commitProposalVersionContent({store:f.store,principal:{id:'operator-fixture'},proposal:privateProposal,
+				update:{body:'Operator feedback; preserve every existing contribution and estimate.'}});
+			const partialSource=String(object((await read(partial.receipt.commitSha,privatePath)).file).content);
+			const partialDefinition=parseFrontmatterDocument(partialSource).frontmatter;
+			expect(partialDefinition.executionPlan).toEqual(privateDefinition.executionPlan);
+			expect(partialDefinition.groupIds).toEqual(privateDefinition.groupIds);
+			expect(partialDefinition.request).toBe(partial.update.body);
+			expect(partial.receipt.changedPaths).toEqual([privatePath]);
+			expect(createHash('sha256').update(partialSource).digest('hex')).toBe(partial.receipt.digest);
+			expect(object((await read(String(privateCommit.commitSha),privatePath)).file).content).toBe(privateSource);
+			expect((await read(partial.receipt.commitSha,retainedPath)).file).toMatchObject({content:retained});
+			const partialWorkspace=String(partial.receipt.changeset.workspaceId??'');assert.ok(partialWorkspace);
+			owned.add(partialWorkspace);await f.client.workspaces.close(partialWorkspace);owned.delete(partialWorkspace);
 			const unreviewedPath='.treeseed/governance/proposal-types/unreviewed.yaml';
 			const unreviewed=await workspace('refs/heads/staging','refs/heads/staging',[unreviewedPath]);
 			await f.client.files.write(unreviewed,{path:unreviewedPath,content:JSON.stringify({...contract,id:'unreviewed'}),allowProtected:true});

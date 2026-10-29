@@ -5,7 +5,7 @@ vi.mock('../../../../../src/api/control-plane/treedx/delegation-authority.ts', (
 	treeDxDelegationAuthority: () => ({ mint }),
 }));
 
-import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
+import { projectKnowledgeAuthoringBaseRef, resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 
 function store(config: Record<string, string> = {}, treeDx: Record<string, string> = {}) {
 	return { config, getProjectTreeDxLibrary: async () => ({
@@ -17,6 +17,33 @@ function store(config: Record<string, string> = {}, treeDx: Record<string, strin
 afterEach(() => vi.unstubAllEnvs());
 
 describe('knowledge gateway broker identity', () => {
+	it('authors against the configured protected content ref after a private discussion advances the project cursor', async () => {
+		const privateDiscussion = 'c'.repeat(40);
+		const authority = { config: {}, getProjectTreeDxLibrary: async () => ({
+			instanceId: 'instance', repositoryId: 'repository', contentPath: '.',
+			contentRepositoryRef: privateDiscussion, contentRepositoryUrl: 'https://github.com/example/library.git',
+			topology: { contentRepository: { ref: privateDiscussion } },
+		}) };
+		const connection = await resolveKnowledgeGatewayConnection(authority,
+			{ projectId: 'project', write: true, authoringPaths: true });
+		expect(connection?.baseRef).toBe(privateDiscussion);
+		if (!connection) throw new Error('Configured connection required');
+		expect(projectKnowledgeAuthoringBaseRef(connection)).toBe('refs/remotes/origin/staging');
+		expect(mint.mock.calls.at(-1)![0].scope.refs).toContain('refs/remotes/origin/staging');
+		// Reading private authoring history remains a distinct exact source.
+		expect((await resolveKnowledgeGatewayConnection(authority, { projectId: 'project', write: false }))?.baseRef)
+			.toBe(privateDiscussion);
+	});
+	it('authors against the existing local publication branch for a managed library without an upstream', async () => {
+		const authority = { config: {}, getProjectTreeDxLibrary: async () => ({
+			instanceId: 'instance', repositoryId: 'repository', contentPath: '.', contentRepositoryRef: 'b'.repeat(40),
+		}) };
+		const connection = await resolveKnowledgeGatewayConnection(authority,
+			{ projectId: 'project', write: true, authoringPaths: true });
+		if (!connection) throw new Error('Managed connection required');
+		expect(connection.baseRef).toBe('b'.repeat(40));
+		expect(projectKnowledgeAuthoringBaseRef(connection)).toBe('refs/heads/staging');
+	});
 	it('grants exact-snapshot indexing without content writes or remote publication only when requested', async () => {
 		const input = { projectId: 'project', write: false, relationPaths: true, readRefs: ['a'.repeat(40)] };
 		await resolveKnowledgeGatewayConnection(store(), input);
