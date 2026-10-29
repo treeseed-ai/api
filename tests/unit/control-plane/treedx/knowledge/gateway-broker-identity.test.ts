@@ -21,8 +21,8 @@ describe('knowledge gateway broker identity', () => {
 		const privateDiscussion = 'c'.repeat(40);
 		const authority = { config: {}, getProjectTreeDxLibrary: async () => ({
 			instanceId: 'instance', repositoryId: 'repository', contentPath: '.',
-			contentRepositoryRef: privateDiscussion,
-			topology: { contentRepository: { ref: 'refs/remotes/origin/staging' } },
+			contentRepositoryRef: privateDiscussion, contentRepositoryUrl: 'https://github.com/example/library.git',
+			topology: { contentRepository: { ref: privateDiscussion } },
 		}) };
 		const connection = await resolveKnowledgeGatewayConnection(authority,
 			{ projectId: 'project', write: true, authoringPaths: true });
@@ -32,12 +32,12 @@ describe('knowledge gateway broker identity', () => {
 		expect((await resolveKnowledgeGatewayConnection(authority, { projectId: 'project', write: false }))?.baseRef)
 			.toBe(privateDiscussion);
 	});
-	it('keeps the existing bound content ref when no distinct protected authoring ref is configured', async () => {
+	it('authors against the existing local publication branch for a managed library without an upstream', async () => {
 		const authority = { config: {}, getProjectTreeDxLibrary: async () => ({
 			instanceId: 'instance', repositoryId: 'repository', contentPath: '.', contentRepositoryRef: 'b'.repeat(40),
 		}) };
 		expect((await resolveKnowledgeGatewayConnection(authority,
-			{ projectId: 'project', write: true, authoringPaths: true }))?.baseRef).toBe('b'.repeat(40));
+			{ projectId: 'project', write: true, authoringPaths: true }))?.baseRef).toBe('refs/heads/staging');
 	});
 	it('grants exact-snapshot indexing without content writes or remote publication only when requested', async () => {
 		const input = { projectId: 'project', write: false, relationPaths: true, readRefs: ['a'.repeat(40)] };
