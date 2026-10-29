@@ -3,7 +3,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { InstallationRecords } from '@treeseed-cordis/deployment';
 import { join } from 'node:path';
 import { CanonicalJson } from '@treeseed-cordis/sdk';
-import { SeedJournalFixture, SeedJournalReplyFault } from '../support/seed-journal-fixture.js';
+import { SeedJournalFixture, SeedJournalReplyFault, SeedJournalStartFault } from '../support/seed-journal-fixture.js';
 class SeedJournalIntegration {
   static async idempotent(): Promise<void> {
     const fixture = new SeedJournalFixture();
@@ -255,6 +255,14 @@ class SeedJournalIntegration {
       await fixture.close();
     }
   }
+  static async failedStartCleanup(): Promise<void> {
+    SeedJournalStartFault.install();
+    try {
+      await expect(SeedJournalFixture.type().start({ scopeId: 'api:fixture', target: 'api',
+        principalId: 'subject:fixture', resourceScope: 'fixture' })).rejects.toThrow('SEED_JOURNAL_FAILED');
+    } finally { SeedJournalStartFault.restore(); }
+  }
+
 }
 test(
   'private seed progress is idempotent and read back from exact records',
@@ -322,3 +330,5 @@ test(
   'complete seed request envelope must fit before any custody creation',
   SeedJournalIntegration.envelopeBudget.bind(SeedJournalIntegration),
 );
+
+test('failed native startup cleanup preserves the public safe error boundary', SeedJournalIntegration.failedStartCleanup.bind(SeedJournalIntegration));

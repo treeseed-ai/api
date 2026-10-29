@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { CompositionHandle } from '@treeseed-cordis/sdk/runtime';
 import * as Api from '../../src/server.js';
 import {
   CanonicalJson,
@@ -246,5 +247,28 @@ export class SeedJournalReplyFault {
   failedClose(this: InstallationRecords): void {
     SeedJournalReplyFault.close.call(this);
     throw new Error('PRIVATE_CLOSE_CANARY');
+  }
+}
+
+export class SeedJournalStartFault {
+  private static readonly locator = CompositionHandle.prototype.locator;
+  private static readonly dispose = CompositionHandle.prototype.dispose;
+  static cleanupReached = false;
+  static install(): void {
+    this.cleanupReached = false;
+    CompositionHandle.prototype.locator = this.failedLocator;
+  }
+  static restore(): void {
+    CompositionHandle.prototype.locator = this.locator;
+    CompositionHandle.prototype.dispose = this.dispose;
+  }
+  private static failedLocator(): never {
+    CompositionHandle.prototype.dispose = SeedJournalStartFault.failedDispose;
+    throw new Error('PRIVATE_START_CANARY');
+  }
+  private static async failedDispose(this: CompositionHandle): Promise<void> {
+    SeedJournalStartFault.cleanupReached = true;
+    await SeedJournalStartFault.dispose.call(this);
+    throw new Error('PRIVATE_START_CLOSE_CANARY');
   }
 }
