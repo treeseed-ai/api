@@ -45,6 +45,18 @@ workflow:
   - id: canonical-query-context-native
     action: { verifier: api.golden.canonical-query-context-native }
     expect: { status: passed }
+  - id: workday-selected-objective-native
+    action: { verifier: api.golden.workday-selected-objective-native }
+    expect: { status: passed }
+  - id: workday-source-context-native
+    action: { verifier: api.golden.workday-source-context-native }
+    expect: { status: passed }
+  - id: workday-selected-objective-unit
+    action: { verifier: api.golden.workday-selected-objective-unit }
+    expect: { status: passed }
+  - id: workday-source-context-unit
+    action: { verifier: api.golden.workday-source-context-unit }
+    expect: { status: passed }
   - id: canonical-query-budget-unit
     action: { verifier: api.golden.canonical-query-budget-unit }
     expect: { status: passed }

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { describe, expect, it, vi } from 'vitest';
-import { agentDefinitionSchema } from '@treeseed/sdk/agent-capacity';
+import { agentDefinitionSchema, executionNodeSchema } from '@treeseed/sdk/agent-capacity';
 import { workItemContext } from '../../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import { projectCommunicationInvocations } from '../../../../../../../src/api/capacity/policy/execution/communication-execution-projector.ts';
 import { ControlPlaneStore } from '../../../../../../../src/api/persistence/store.ts';
@@ -10,6 +10,7 @@ import { postgresGraph } from '../../graph/architecture/living/living-postgres-f
 import { reconcileCommunicationExecutionGraph } from '../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { createCapacityControlPlane } from '../../../../../../../src/api/capacity/control-plane.ts';
 import { createWorkdayService } from '../../../../../../../src/api/control-plane/repositories/capacity/workday-service.ts';
+import { candidate } from '../../fixtures/assignment-attempt-fixtures.ts';
 
 const gateway = vi.hoisted(() => ({ readRepositoryFile: vi.fn() }));
 vi.mock('../../../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({
@@ -32,6 +33,55 @@ function communication(tools = ['discussion', 'source.read']) {
 			repository: 'library', commit: 'b'.repeat(40), path: 'discussion-messages/smoke/request.mdx', durationSeconds: 180 }] }).nodes[0]!;
 }
 const sourceRef = { store: 'git', model: 'repository', id: 'software', repository: 'example/project', commit };
+
+it('native PostgreSQL workday planning pins granted source over HTTP and preserves original context across source denials without granting absent authority', async () => {
+	const f = await postgresGraph(), calls: string[] = [];
+	let status = 200, body = commit;
+	const server = createServer((request, response) => { calls.push(`${request.method} ${request.url}`); response.writeHead(status); response.end(body); });
+	try {
+		await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+		const address = server.address(); if (!address || typeof address === 'string') throw new Error('Native HTTP address required');
+		const fetchImpl: typeof fetch = (url, options) => {
+			expect(String(url)).toBe('https://api.github.com/repos/example/project/commits/staging');
+			expect(options?.headers).not.toHaveProperty('authorization');
+			return fetch(`http://127.0.0.1:${address.port}/repos/example/project/commits/staging`, options);
+		};
+		const store = new ControlPlaneStore({ fetchImpl }, f.left); store.initializationPromise = Promise.resolve();
+		const now = new Date().toISOString(), held = { store: 'treedx', model: 'knowledge', id: 'project-context',
+			repository: 'library', commit: 'b'.repeat(40), path: 'README.md' };
+		const parameters = { workdayContextByProjectId: { project: held } };
+		await f.left.pool.query("INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('project','team','configured','Configured',$1,$1)", [now]);
+		await f.left.pool.query(`INSERT INTO hub_repositories (id,hub_id,team_id,role,provider,owner,name,current_branch,created_at,updated_at)
+			VALUES ('software','project','team','software','github','example','project','staging',$1,$1)`, [now]);
+		await f.left.pool.query(`INSERT INTO capacity_workday_runs (id,team_id,status,execution_kind,execution_mode,trigger_kind,parameters_json,created_at,updated_at)
+			VALUES ('planning-source','team','running','workday','simulation','manual',$1,$2,$2)`, [JSON.stringify(parameters), now]);
+		const subject = { store: 'postgresql', model: 'workday', id: 'planning-source' };
+		const node = executionNodeSchema.parse({ ...candidate.node, kind: 'planning', pairRole: null, workItemId: undefined,
+			workdayId: subject.id, sourceRef: subject, authorityRefs: [subject], agentClass: 'configured-read-planner',
+			requiredCapabilities: ['treeseed.coordination.planning'], workspace: 'treedx',
+			requestedPermissions: { content: { read: ['knowledge'], write: ['proposal'] }, tools: ['source.read'] } });
+		const frozen = structuredClone(node), snapshot = async () => ({ ...(await f.snapshot()),
+			run: (await f.left.pool.query("SELECT * FROM capacity_workday_runs WHERE id='planning-source'")).rows,
+			repositories: (await f.left.pool.query('SELECT * FROM hub_repositories ORDER BY id')).rows });
+		const before = await snapshot(), expected = [held, sourceRef];
+		expect(await workItemContext(store, node)).toEqual(expected);
+		for (const [rejected, response, code] of [[403, '', 'assignment_source_access_denied'], [503, '', 'assignment_source_unavailable'],
+			[200, 'not-an-exact-commit', 'assignment_source_revision_invalid']] as const) {
+			status = rejected; body = response;
+			await expect(workItemContext(store, node)).rejects.toMatchObject({ code });
+			expect(await snapshot()).toEqual(before); expect(node).toEqual(frozen);
+		}
+		const withoutSource = executionNodeSchema.parse({ ...node, requestedPermissions: { ...node.requestedPermissions, tools: [] } });
+		expect(await workItemContext(store, withoutSource)).toEqual([held]); expect(calls).toHaveLength(4);
+		status = 200; body = commit;
+		expect(await workItemContext(store, node)).toEqual(expected); expect(calls).toHaveLength(5);
+		expect(await snapshot()).toEqual(before); expect(node).toEqual(frozen);
+	} finally {
+		try { if (server.listening) {
+			server.closeAllConnections(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+		} } finally { await f.close(); }
+	}
+}, 30_000);
 
 describe('standalone communication exact source admission', () => {
 	it('native PostgreSQL initial conversation tick projects the exact addressed Chat node without a workday plan and replays only its original event', async () => {

@@ -59,7 +59,8 @@ describe('native proposal Decision authority', () => {
 			const parameters = { workdayContextByProjectId: { project: book }, planningSourceByProposalId: { proposal: frozen } };
 			await f.query(`INSERT INTO capacity_workday_runs (id,team_id,scenario_id,environment,parameters_json,created_at,updated_at)
 				VALUES ('run','team','native-planning','local',?,'2026-10-08T09:00:00.000Z','2026-10-08T09:00:00.000Z')`, [JSON.stringify(parameters)]);
-			const store = { ...f.store, getGovernanceProposal: (id: string) => f.store.first('SELECT * FROM governance_proposals WHERE id=?', [id]) };
+			const store = { ...f.store, getGovernanceProposal: (id: string) => f.store.first('SELECT * FROM governance_proposals WHERE id=?', [id]),
+				listHubRepositories: async () => [{ id: 'source', role: 'software', provider: 'github', owner: 'example', name: 'project', currentBranch: 'staging' }] };
 			const node = executionNodeSchema.parse({ ...candidate.node, kind: 'planning', pairRole: null, workItemId: undefined,
 				workdayId: 'run', workspace: 'treedx', sourceRef: { store: 'postgresql', model: 'workday', id: 'run' } });
 			const held = await f.snapshot(), heldRun = await f.query('SELECT * FROM capacity_workday_runs');
