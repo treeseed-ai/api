@@ -222,7 +222,7 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 				.flatMap(item => array(record(item).contextRefs));
 			resolved.push(exact.ref, ...await canonicalProposalContextRefs(store, node, workItemRefs));
 		}
-		return resolved;
+		return projectSourceContext(store, node, resolved);
 	}
 	if (source.store !== 'treedx' || !source.repository || !source.commit || !source.path) {
 		throw new CapacityGovernanceError('execution_node_source_invalid', `Node ${node.id} lacks exact proposal provenance.`, 409);
