@@ -2,6 +2,26 @@ import { expect, test } from 'bun:test';
 import { SeedData, SeedFixture } from '../support/seed-reconciliation-program.js';
 
 class SeedReconciliationBoundaries {
+  async finalAuthority(): Promise<void> {
+    const fixture = new SeedFixture();
+    fixture.owners.beforeAdmission = this.revoke.bind(this, fixture);
+    await expect(fixture.apply()).rejects.toThrow('SEED_AUTHORITY_BLOCKED');
+    expect(fixture.journal.events).not.toContain('publish:completed');
+    expect(fixture.owners.effects).toEqual(['root']);
+    expect(fixture.journal.locked).toBe(false);
+  }
+  private revoke(fixture: SeedFixture, retry: boolean): void {
+    if (retry) fixture.authority.allowed = false;
+  }
+  async finalDisposal(): Promise<void> {
+    const fixture = new SeedFixture();
+    fixture.owners.failCloseAt = 2;
+    const result = await fixture.apply();
+    expect(result.state).toBe('recovery-required');
+    expect(fixture.journal.events).not.toContain('publish:completed');
+    expect(fixture.owners.effects).toEqual(['root']);
+    expect(fixture.journal.locked).toBe(false);
+  }
   async dependencyOrder(): Promise<void> {
     const fixture = new SeedFixture();
     const resources = [
@@ -142,6 +162,14 @@ class SeedReconciliationBoundaries {
 }
 
 const suite = new SeedReconciliationBoundaries();
+test(
+  'integration: final seed owner verification rechecks authority after admission',
+  suite.finalAuthority.bind(suite),
+);
+test(
+  'integration: final seed owner disposal failure cannot publish completion',
+  suite.finalDisposal.bind(suite),
+);
 test(
   'integration: seed resources execute in stable dependency order',
   suite.dependencyOrder.bind(suite),

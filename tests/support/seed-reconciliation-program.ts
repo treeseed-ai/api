@@ -173,6 +173,9 @@ export class FixtureOwners implements SeedOwnerAccess {
   changedKey: string | null = null;
   failClose = false;
   failAdmission = false;
+  closeCount = 0;
+  failCloseAt: number | null = null;
+  beforeAdmission: ((retry: boolean) => void) | null = null;
   beforeEffect: (() => void) | null = null;
 
   constructor(readonly journal: FixtureJournal) {}
@@ -191,6 +194,7 @@ class FixtureOwnerLease implements SeedOwnerLease {
   async admit(context: SeedResourceContext, retry: boolean): Promise<void> {
     context.signal.throwIfAborted();
     if (this.owner.failAdmission) throw new Error('private-admission-canary');
+    this.owner.beforeAdmission?.(retry);
     this.owner.journal.events.push('admit:' + this.resource.key + ':' + retry);
   }
   async reconcile(context: SeedResourceContext): Promise<unknown> {
@@ -222,7 +226,9 @@ class FixtureOwnerLease implements SeedOwnerLease {
   }
   async close(): Promise<void> {
     this.owner.journal.events.push('owner-close:' + this.resource.key);
-    if (this.owner.failClose) throw new Error('owner-disposal-failed');
+    this.owner.closeCount++;
+    if (this.owner.failClose || this.owner.closeCount === this.owner.failCloseAt)
+      throw new Error('owner-disposal-failed');
   }
 }
 
