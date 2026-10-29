@@ -25,7 +25,9 @@ HTTP endpoints or additional global platform operations are introduced.
 
 Validate and snapshot plain JSON input before filesystem acquisition: reject getters, cycles,
 non-JSON values, unsafe keys, depth over 64, more than 8192 nodes or canonical input over
-256 KiB. Plans must be unblocked and have a recomputed canonical digest. Request IDs use the
+256 KiB, including the complete versioned request/intent/receipt wrapper. Preflight the
+request wrapper before acquiring custody and every event before publication; input-only
+measurement cannot justify creating state for an unreadable record. Plans must be unblocked and have a recomputed canonical digest. Request IDs use the
 SDK receipt contract. Reusing an ID requires the identical full plan, including installation,
 principal/grant, selected executables, artifact locks and preconditions. Every saved record is
 validated on every read, including records for other requests; unknown kinds, foreign scope,
