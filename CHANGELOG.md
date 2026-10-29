@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Changed
-- Align API with the exact manager-compatible owner archive closure (#644).
+- Align API with the manager-compatible owner closure and bounded durable package publication (#644).
 
 ### Changed
 
