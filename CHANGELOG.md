@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Changed
+- Align API with the exact manager-compatible owner archive closure (#644).
+
+### Changed
 
 - Align API with the exact capacity-compatible owner archive closure (#644).
 
