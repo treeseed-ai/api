@@ -182,6 +182,36 @@ describe('original planning product admission', () => {
 			await f.query('DELETE FROM audit_events WHERE target_id=?', [revisionScope.id]);
 			await recordAssignmentContentIntegration(store, revisionScope, revisionResult, revisionReferences);
 			expect(await f.snapshot()).toEqual(revisedSnapshot);
+			expect(revisedSnapshot.head).toBe(revisionBaseline.head); expect(revisedSnapshot.status).toBe(revisionBaseline.status);
+			expect(revisedSnapshot.rows.capacity_provider_assignments).toEqual(revisionBaseline.rows.capacity_provider_assignments);
+			// A different, genuinely completed planning product used the same
+			// admitted original version. Its author chose a proposal-shaped scope
+			// note without a plan, as in the real group round. It must remain
+			// retained and visibly unadopted, rather than block normal closeout.
+			const { executionPlan: _plan, ...scopeNote } = definition;
+			const stale = f.publishContent(path, { ...scopeNote, summary: 'My implementation scope; not the consolidated plan.' });
+			const staleAttempt = assignmentAttemptSchema.parse({ ...attempt, id: 'stale-planning-assignment', sourceRef: frozen,
+				workspace: { ...attempt.workspace, baseCommit: frozen.commit },
+				grant: { ...attempt.grant, contentRead: [profileRef, frozen], contentWrite: [frozen] } });
+			const staleScope = { ...scope, id: staleAttempt.id, assignmentAttempt: staleAttempt };
+			const staleResult = assignmentResultSchema.parse({ ...result, id: 'stale-planning-result', assignmentId: staleAttempt.id,
+				references: [{ ...result.references[0], commit: stale.commit }] });
+			await f.query(`INSERT INTO capacity_provider_assignments
+				(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,mode,status,agent_id,
+				assignment_attempt_json,assignment_result_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				[staleScope.id, 'controlled-membership', 'team', 'project', 'controlled-provider', attempt.agentClass, 'planning',
+					'completed', scope.agentId, JSON.stringify(staleAttempt), JSON.stringify(staleResult), original.createdAt, original.createdAt]);
+			const staleBefore = await f.snapshot(), staleReferences = await verifyAssignmentContent(store, staleScope, staleResult);
+			await recordAssignmentContentIntegration(store, staleScope, staleResult, staleReferences);
+			expect(await f.snapshot()).toEqual(staleBefore);
+			const admission = (await f.query('SELECT data_json FROM audit_events WHERE target_id=?', [staleScope.id])).rows[0];
+			const data = typeof admission?.data_json === 'string' ? JSON.parse(admission.data_json) : admission?.data_json;
+			expect(data).toMatchObject({ resultId: staleResult.id, publication: false, references: staleReferences,
+				planningAdmissions: [{ proposalId: definition.id, disposition: 'not_adopted', reason: 'source_advanced',
+					sourceRef: frozen, currentRef: (await readExactProposal(store, updated!)).ref, productRef: staleReferences[0] }] });
+			const staleAudits = (await f.query('SELECT * FROM audit_events ORDER BY id')).rows;
+			await recordAssignmentContentIntegration(store, staleScope, staleResult, staleReferences);
+			expect((await f.query('SELECT * FROM audit_events ORDER BY id')).rows).toEqual(staleAudits);
 			// Controlled later approval is an input to this recovery test, not a
 			// governance/agent approval claim. A lost receipt must not reset it.
 			await f.query('DELETE FROM audit_events');
@@ -190,8 +220,8 @@ describe('original planning product admission', () => {
 			await recordAssignmentContentIntegration(store, scope, result, references);
 			expect(await f.snapshot()).toEqual(advanced);
 			expect((await f.query('SELECT * FROM audit_events')).rows).toHaveLength(1);
-			const after = await f.snapshot(); expect(after.head).toBe(revisionBaseline.head); expect(after.status).toBe(revisionBaseline.status);
-			expect(after.rows.capacity_provider_assignments).toEqual(revisionBaseline.rows.capacity_provider_assignments);
+			const after = await f.snapshot(); expect(after.head).toBe(staleBefore.head); expect(after.status).toBe(staleBefore.status);
+			expect(after.rows.capacity_provider_assignments).toEqual(staleBefore.rows.capacity_provider_assignments);
 		} finally { await f.close(); vi.unstubAllEnvs(); }
 	});
 
