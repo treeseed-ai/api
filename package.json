@@ -1,6 +1,6 @@
 {
   "name": "@treeseed-cordis/api",
-  "version": "0.0.0-cordis.12",
+  "version": "0.0.0-cordis.14",
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-only",
@@ -20,6 +20,10 @@
     "./testing": {
       "types": "./dist/tests/support/installed-root-fixture.d.ts",
       "default": "./dist/tests/support/installed-root-fixture.js"
+    },
+    "./seed-journal": {
+      "types": "./dist/src/seed-journal.d.ts",
+      "default": "./dist/src/seed-journal.js"
     }
   },
   "files": [
@@ -242,7 +246,7 @@
     "pluginId": "api",
     "package": {
       "name": "@treeseed-cordis/api",
-      "version": "0.0.0-cordis.12"
+      "version": "0.0.0-cordis.14"
     },
     "providers": [
       {
@@ -819,6 +823,35 @@
             "workerSocket",
             "assetDigest"
           ],
+          "additionalProperties": false
+        },
+        "replacement": {
+          "kind": "restart",
+          "stateVersion": 1,
+          "qualificationDigest": null
+        },
+        "commandIds": []
+      },
+      {
+        "declaration": {
+          "id": "installation-seed-journal",
+          "pluginId": "api",
+          "capability": "seed.journal",
+          "contractVersion": "0.4.0-cordis.1",
+          "target": "api",
+          "provide": [
+            "seed.journal"
+          ],
+          "inject": [
+            "cordis.composition"
+          ]
+        },
+        "entry": "dist/src/seed-journal.js",
+        "classExport": "SeedJournalPlugin",
+        "configurationSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {},
           "additionalProperties": false
         },
         "replacement": {

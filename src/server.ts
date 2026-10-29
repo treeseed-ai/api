@@ -1,3 +1,5 @@
+import { SeedJournalPlugin } from './seed-journal.js';
+export * from './seed-journal.js';
 import {createServer,type Server,type IncomingMessage,type ServerResponse} from 'node:http';
 import {openSync,closeSync,fstatSync,lstatSync,readFileSync,writeFileSync,mkdirSync,constants} from 'node:fs';
 import {resolve,dirname,join} from 'node:path';
@@ -108,7 +110,31 @@ export class ApiBuild {
  static providers():NativeProviderDeclaration[]{return [HostPlugin.declaration,InvokerPlugin.declaration,RouterPlugin.declaration,HttpPlugin.declaration];}
  static runtimeIdentity(assetDigest:string):string{const path='/app/cordis-runtime.json',fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);try{const stat=fstatSync(fd);if(!stat.isFile()||stat.nlink!==1||stat.size>1024*1024||(stat.mode&0o022)!==0||![0,process.getuid?.()].includes(stat.uid))throw new Error('Runtime manifest refused');const manifest=ApiJson.parse(readFileSync(fd)) as {formatVersion?:unknown;baseImage?:unknown;packageDigest?:unknown;assetDigest?:unknown;packages?:unknown};if(manifest.formatVersion!==1||manifest.assetDigest!==assetDigest||!PlatformSchemas.imageReference.safeParse(manifest.baseImage).success||!Array.isArray(manifest.packages))throw new Error('Runtime identity refused');const packages=[];for(const value of manifest.packages){const artifact=PlatformSchemas.resolvedArtifact.parse(value);if(artifact.kind!=='package')throw new Error('Runtime identity refused');packages.push(artifact);}if(CanonicalJson.digest(packages)!==manifest.packageDigest)throw new Error('Runtime package identity refused');return CanonicalJson.digest({baseImage:manifest.baseImage,packageDigest:manifest.packageDigest,runtime:process.version});}finally{closeSync(fd);}}
  static imageContext(directory:string,baseImage:string,packages:ApiRuntimePackageSource[]):Promise<{packageDigest:string;assetDigest:string;entryDigest:string}>{return ApiImageContext.prepare(directory,baseImage,packages);}
- static packageMetadata(name:string,version:string):ReturnType<typeof PackageDefinition.define>{return PackageDefinition.define(name,version,'api',[PackageDefinition.export(NodeApiServicePlugin,'dist/src/server.js','NodeApiServicePlugin'),PackageDefinition.export(ApiReadinessPlugin,'dist/src/server.js','ApiReadinessPlugin'),PackageDefinition.export(HostPlugin,'dist/src/server.js','HostPlugin'),PackageDefinition.export(InvokerPlugin,'dist/src/server.js','InvokerPlugin'),PackageDefinition.export(RouterPlugin,'dist/src/server.js','RouterPlugin'),PackageDefinition.export(HttpPlugin,'dist/src/server.js','HttpPlugin')],[],[],NodeApiServicePlugin.runtimeImages);}
+  static packageMetadata(
+    name: string,
+    version: string,
+  ): ReturnType<typeof PackageDefinition.define> {
+    return PackageDefinition.define(
+      name,
+      version,
+      'api',
+      this.packageProviders(),
+      [],
+      [],
+      NodeApiServicePlugin.runtimeImages,
+    );
+  }
+  private static packageProviders(): ReturnType<typeof PackageDefinition.export>[] {
+    return [
+      PackageDefinition.export(NodeApiServicePlugin, 'dist/src/server.js', 'NodeApiServicePlugin'),
+      PackageDefinition.export(ApiReadinessPlugin, 'dist/src/server.js', 'ApiReadinessPlugin'),
+      PackageDefinition.export(HostPlugin, 'dist/src/server.js', 'HostPlugin'),
+      PackageDefinition.export(InvokerPlugin, 'dist/src/server.js', 'InvokerPlugin'),
+      PackageDefinition.export(RouterPlugin, 'dist/src/server.js', 'RouterPlugin'),
+      PackageDefinition.export(HttpPlugin, 'dist/src/server.js', 'HttpPlugin'),
+      PackageDefinition.export(SeedJournalPlugin, 'dist/src/seed-journal.js', 'SeedJournalPlugin'),
+    ];
+  }
 
 }
 class ApiProgram {
