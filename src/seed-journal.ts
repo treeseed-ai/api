@@ -161,6 +161,15 @@ class JournalInput {
   static same(left: unknown, right: unknown): boolean {
     return CanonicalJson.stringify(left) === CanonicalJson.stringify(right);
   }
+  static event(requestId: string, kind: JournalEvent['kind'], value: unknown): JournalEvent {
+    const field = kind === 'request' ? 'plan' : kind === 'intent' ? 'resource' : 'receipt';
+    return JournalValue.copy({
+      schemaVersion: 'treeseed.seed-journal/v1',
+      kind,
+      requestId,
+      [field]: value,
+    }) as JournalEvent;
+  }
   static scope(plan: SeedPlan): {
     installationId: string;
     installationDirectory: string;
@@ -258,13 +267,7 @@ class InstallationSeedWriter implements SeedWriter {
   async initialize(): Promise<void> {
     const request = await this.current();
     if (request) Check.require(JournalInput.same(request.plan, this.plan), 'SEED_JOURNAL_CONFLICT');
-    else
-      await this.append({
-        schemaVersion: 'treeseed.seed-journal/v1',
-        kind: 'request',
-        requestId: this.requestId,
-        plan: this.plan,
-      });
+    else await this.append(JournalInput.event(this.requestId, 'request', this.plan));
   }
   private enter(): void {
     Check.require(!this.closed, 'SEED_JOURNAL_CLOSED');
@@ -278,7 +281,7 @@ class InstallationSeedWriter implements SeedWriter {
     return replay.get(this.requestId);
   }
   private async append(event: JournalEvent): Promise<void> {
-    await this.records.append(this.head, event);
+    await this.records.append(this.head, JournalValue.copy(event));
     await this.current();
   }
   async read(): Promise<SeedProgress> {
@@ -385,6 +388,7 @@ class InstallationSeedJournal implements SeedJournal {
       plan.binding.principalId === this.authority.principalId &&
         plan.binding.resourceScope === this.authority.resourceScope,
     );
+    JournalInput.event(requestId, 'request', plan);
     return { plan, requestId };
   }
   private async writer(

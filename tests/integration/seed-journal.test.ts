@@ -242,13 +242,19 @@ class SeedJournalIntegration {
     const fixture = new SeedJournalFixture();
     try {
       await fixture.prepare();
-      const plan = SeedJournalFixture.nearLimitPlan(fixture.release.installation, fixture.plan.binding.installationId);
+      const plan = SeedJournalFixture.nearLimitPlan(
+        fixture.release.installation,
+        fixture.plan.binding.installationId,
+      );
       expect(Buffer.byteLength(CanonicalJson.stringify(plan))).toBe(256 * 1024 - 16);
-      await expect(fixture.acquire('fixture-request', plan)).rejects.toThrow('SEED_JOURNAL_INVALID');
+      await expect(fixture.acquire('fixture-request', plan)).rejects.toThrow(
+        'SEED_JOURNAL_INVALID',
+      );
       expect(existsSync(fixture.directory)).toBe(false);
-    } finally { await fixture.close(); }
+    } finally {
+      await fixture.close();
+    }
   }
-
 }
 test(
   'private seed progress is idempotent and read back from exact records',
@@ -312,4 +318,7 @@ test(
   SeedJournalIntegration.pendingDisposal.bind(SeedJournalIntegration),
 );
 
-test('complete seed request envelope must fit before any custody creation', SeedJournalIntegration.envelopeBudget.bind(SeedJournalIntegration));
+test(
+  'complete seed request envelope must fit before any custody creation',
+  SeedJournalIntegration.envelopeBudget.bind(SeedJournalIntegration),
+);

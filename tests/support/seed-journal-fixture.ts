@@ -126,20 +126,25 @@ export class SeedJournalFixture {
     for (let index = 0; index < 16; index++) {
       const resource = this.resource('resource-' + index);
       resource.effects = [];
-      for (let effect = 0; effect < 100; effect++) resource.effects.push({ kind: 'fixture.prepare', target: 'x' });
+      for (let effect = 0; effect < 100; effect++)
+        resource.effects.push({ kind: 'fixture.prepare', target: 'x' });
       plan.resources.push(resource);
     }
-    let remaining = 256 * 1024 - 16 - Buffer.byteLength(CanonicalJson.stringify(plan));
-    for (const resource of plan.resources) for (const effect of resource.effects) {
-      const amount = Math.min(127, remaining);
-      effect.target += 'x'.repeat(amount);
-      remaining -= amount;
-    }
-    assert.equal(remaining, 0);
+    this.padEffects(plan, 256 * 1024 - 16);
     const { id: _id, digest: _digest, ...content } = plan;
     plan.digest = CanonicalJson.digest(content);
     plan.id = 'seed-plan-' + plan.digest;
     return SeedSchemas.plan.parse(plan);
+  }
+  private static padEffects(plan: SeedPlan, bytes: number): void {
+    let remaining = bytes - Buffer.byteLength(CanonicalJson.stringify(plan));
+    for (const resource of plan.resources)
+      for (const effect of resource.effects) {
+        const amount = Math.min(127, remaining);
+        effect.target += 'x'.repeat(amount);
+        remaining -= amount;
+      }
+    assert.equal(remaining, 0);
   }
   static receipt(plan: SeedPlan, requestId = 'fixture-request'): SeedReceipt {
     const resource = plan.resources[0]!;
