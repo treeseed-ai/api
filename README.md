@@ -52,25 +52,30 @@ Task 3D work. Real Work/model execution remains Task 10 and all issues remain op
 
 ## Task 3D exact owner compatibility
 
-Under #644 the API consumes one SDK `.42` closure through exact public archives. This slice
-selects the existing default API root; the headless seed coordinator is a separate delivery.
+Under #657, API `.15` selects one SDK44/Deployment129/Identity10/Admin13/UI24 public archive
+composition. Keep this candidate held until Deployment#1062 passes full hosted qualification,
+review and integration. Identity#61, Admin#154 and UI#108 are accepted. API retains its native
+server and private seed journal; full headless seed coordination remains subsequent work.
 
 | Owner | Version | Source | Archive SHA-256 |
 | --- | --- | --- | --- |
-| SDK | `0.0.0-cordis.42` | `afdfac7bdd3c9c1f783362cd1d50324181e1d725` | `0ecfe599916fe8ef364fc4b73203c810981f163109fbe71a0dd4c01a9dfb7bbc` |
-| Deployment | `0.0.0-cordis.126` | `d6695ffa90bff4cf7f0108af00a8a28b242833bc` | `c0d03d85e1dc83921fc1b9d2193b11a5c0fe4f5a5db93d91fcd4fc95eb0e23ca` |
-| Identity | `0.0.0-cordis.9` | `c60dfdbc53ce78ddee3c2f18ec7f91358878d49c` | `2999a78da5c04f6a894c643d49ab3881ff702fb4325d74fec469a4496f034c67` |
-| Admin | `0.0.0-cordis.12` | `dae3d32083b3ed3f4a65908a78e332cb5a38d0d2` | `1ad95ccb6204df57590adc009b17f18670ffccf1146c98dfa165df8ae114f5ac` |
-| UI | `0.0.0-cordis.23` | `d5d33c33791fe8b94aada605dba4aa9392559637` | `7291d35fe8758fd27b23f663dcf1f254bd915b5ae3569dde8c9a2f443e45a14f` |
+| sdk | `0.0.0-cordis.44` | `00be028b92998f8d7039a3906e784c6b8598e730` | `d95c54cf6081c7634498dfb4f3235d42d65b8664a5d62cc87c4dd4e85381f0f3` |
+| deployment | `0.0.0-cordis.129` | `ec2c24513fcdcd94de17a21ae8350a8138294cbe` | `ba4a51643ac421acfff21d38e069ecff98e49d56c09b0b531bcc063cb427c844` |
+| identity | `0.0.0-cordis.10` | `1ed37c2384ceb23fba8b0a96ca9abe208a2cb2e5` | `3e2e4bd25c21a4be99e927a5431f474be3903fbd509cc617adaf6c4c83183600` |
+| admin | `0.0.0-cordis.13` | `7fd25302a85722bd642c676231f451bbabb6aec2` | `cc8d32818839b8d1b0265b7b77f5fc76910e1203172644c6dd1cffaa12abc1c1` |
+| ui | `0.0.0-cordis.24` | `b4a1490c5b06ba49b4f3408391b236be2400553a` | `ad7be6878932ac76a0b8d81622dd826a5152062185852bf40dc0c6c63d41c4e1` |
 
-API .12 advances this dependency-only composition without adopting the internal seed draft.
-The built compatibility gate also requires manager-channel 1.1.0-cordis.1 while preserving the
-seven global operations. Admin .12 is accepted. Deployment .126 is the exact combined #1057 candidate, including accepted
-private record custody #1055; its current-head hosted/review gates are required before integration. Every peer pin, installed owner version and vendored archive must match. The existing genuine
-installed-root gate remains required; metadata checks alone cannot establish readiness. Preserve
-Keycloak, mobile-first UI, repository boundaries, historical artifacts, AGPL and the exact #620
-committer policy. Work/model execution remains Task 10. All issues stay open until release.
+All peers, provenance, vendor, lock and installed identities must agree. This dependency-only
+slice changes no runtime source, native provider declarations, journal formats, seven global
+operations, assertions or deadlines. Preserve API#620 committer policy byte-for-byte at blob
+`b1a687db754ee2fac141919e6c63052d12bf2812`, mode100644. Identity owns Keycloak; Admin owns routes;
+UI owns reusable mobile-first React. Preserve original dirty checkouts and immutable older archives.
 
+Follow documentation, outside-in selection failure, exact archive adoption, checks/build/all four
+complete tiers, genuine isolated API/Keycloak/database/edge/browser assembly and independent strict
+public archive consumption, parent acceptance, hosted gates and review. Package metadata alone is
+not installed readiness. All issues stay open; productive Work/model execution remains Task10.
+No production publication, legacy mutation or cutover.
 
 ## Task 3B: Installed API root and container provider
 

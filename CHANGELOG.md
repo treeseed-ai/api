@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Select the coherent availability-ready API owner closure (#657).
+
 ### Added
 - Persist installation-scoped seed progress through owner custody (#655).
 
