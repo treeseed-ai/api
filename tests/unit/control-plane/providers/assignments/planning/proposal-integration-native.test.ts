@@ -79,6 +79,57 @@ describe('native planning result projection', () => {
 			await recordAssignmentContentIntegration(f.peerStore, scope, result, references);
 			expect(await f.store.all('SELECT * FROM governance_proposals')).toEqual(retained);
 			expect(await f.client.repositories.refs(repository)).toEqual(refsBefore); expect((await f.snapshot()).ledger).toEqual(before.ledger);
+			// A second subscribed identity revises the admitted shared proposal;
+			// original creation and source stay independently readable.
+			const collaboratorId = `${projectId}/integration-planner`, collaboratorPath = 'agents/integration-planner.mdx';
+			const collaborator = { ...agent, id: collaboratorId, name: 'Integration Planner' };
+			const revised = { ...definition, title: 'Retrieve and integrate reviewed original Git products through MCP' };
+			const revisionWorkspace = object(await f.client.workspaces.create(repository, { baseRef: commit,
+				branchName: `refs/heads/${id}-revision`, mode: 'writable', allowedPaths: [path, collaboratorPath] }));
+			workspaceId = String(revisionWorkspace.workspaceId);
+			for (const [file, value] of [[path, revised], [collaboratorPath, collaborator]] as const) {
+				await f.client.files.write(workspaceId, { path: file, content: `---\n${stringify(value)}---\n` });
+			}
+			const revisionCommit = object(await f.client.files.commit(workspaceId, { message: 'Controlled shared planning revision',
+				author: { name: collaborator.name, email: 'planning-fixture@example.invalid' } }));
+			await f.client.workspaces.close(workspaceId);
+			expect(await f.client.workspaces.get(workspaceId)).toMatchObject({ status: 'closed' });
+			const revisionRef = { ...profileRef, id: collaboratorId, path: collaboratorPath, commit: String(revisionCommit.commitSha) };
+			const revisionAttempt = assignmentAttemptSchema.parse({ ...attempt, id: `assignment-${id}-revision`, sourceRef: exact.ref,
+				effectiveProfile: { ...attempt.effectiveProfile, profileRef: revisionRef },
+				workspace: { ...attempt.workspace, workspaceId, baseCommit: commit },
+				grant: { ...attempt.grant, contentRead: [revisionRef, exact.ref], contentWrite: [exact.ref] } });
+			const revisionResult = assignmentResultSchema.parse({ ...result, id: `result-${id}-revision`, assignmentId: revisionAttempt.id,
+				references: [{ kind: 'treedx', projectId, repository, commit: String(revisionCommit.commitSha), path, workspaceId }] });
+			await f.query(`INSERT INTO capacity_provider_assignments
+				(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,mode,status,agent_id,
+				assignment_attempt_json,assignment_result_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				[revisionAttempt.id, 'controlled-member', 'team', projectId, attempt.provider.providerId, agent.agentClass, 'planning',
+					'completed', collaboratorId, JSON.stringify(revisionAttempt), JSON.stringify(revisionResult), original.createdAt, original.createdAt]);
+			const revisionScope = { ...scope, id: revisionAttempt.id, agentId: collaboratorId, assignmentAttempt: revisionAttempt };
+			const revisionBefore = await f.snapshot(), revisionRefsBefore = await f.client.repositories.refs(repository);
+			const revisionReferences = await verifyAssignmentContent(f.store, revisionScope, revisionResult);
+			const concurrent = await Promise.allSettled([recordAssignmentContentIntegration(f.store, revisionScope, revisionResult, revisionReferences),
+				recordAssignmentContentIntegration(f.peerStore, revisionScope, revisionResult, revisionReferences)]);
+			expect(concurrent.some(value => value.status === 'fulfilled')).toBe(true);
+			// A concurrent optimistic loser may require ordinary same-result
+			// reconciliation. It must never generate a third proposal version.
+			await recordAssignmentContentIntegration(f.peerStore, revisionScope, revisionResult, revisionReferences);
+			const updated = await f.store.getGovernanceProposal(id); assert.ok(updated);
+			expect(updated).toMatchObject({ activeVersion: 2, createdByType: 'agent', createdById: agentId });
+			expect((await readExactProposal(f.store, updated)).definition).toEqual(revised);
+			expect((await readExactProposal(f.store, updated, exact.ref)).definition).toEqual(definition);
+			expect(await f.store.all('SELECT id FROM governance_proposal_versions')).toHaveLength(2);
+			expect(await f.store.all("SELECT id FROM governance_events WHERE event_type='proposal.created'")).toHaveLength(1);
+			expect(await f.store.all("SELECT actor_id FROM governance_events WHERE event_type='proposal.version_published'"))
+				.toEqual([{ actor_id: collaboratorId }]);
+			expect(await f.store.all("SELECT id FROM audit_events WHERE event_type='assignment.content.integrated'")).toHaveLength(2);
+			await f.query('DELETE FROM audit_events WHERE target_id=?', [revisionAttempt.id]);
+			await recordAssignmentContentIntegration(f.peerStore, revisionScope, revisionResult, revisionReferences);
+			expect(await f.store.all("SELECT id FROM audit_events WHERE event_type='assignment.content.integrated'")).toHaveLength(2);
+			expect(await f.store.all('SELECT id FROM governance_proposal_versions')).toHaveLength(2);
+			expect(await f.client.repositories.refs(repository)).toEqual(revisionRefsBefore);
+			expect((await f.snapshot()).ledger).toEqual(revisionBefore.ledger);
 		} finally {
 			try { if (workspaceId) await f.client.workspaces.close(workspaceId); } finally { await f.close(); }
 		}

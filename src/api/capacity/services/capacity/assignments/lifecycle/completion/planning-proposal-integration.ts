@@ -7,10 +7,11 @@ import { bindInitialProposalContent } from '../../../../../../control-plane/gove
 import { resolveKnowledgeGatewayConnection } from '../../../../../../knowledge/gateway-treedx-connection.ts';
 import { canonicalJson } from '../../../../../security.ts';
 import type { ControlPlaneStore } from '../../../../../../persistence/store.ts';
+import { readExactProposal } from '../../../../../../governance/executable-proposal.ts';
 
 type Row = Record<string, unknown>;
 type Store = { all(sql: string, params?: unknown[]): Promise<Row[]> }
-	& Partial<Pick<ControlPlaneStore, 'first' | 'batch' | 'createGovernanceProposal' | 'getGovernanceProposal'>>;
+	& Partial<Pick<ControlPlaneStore, 'first' | 'batch' | 'createGovernanceProposal' | 'getGovernanceProposal' | 'updateGovernanceProposalDraft'>>;
 type Scope = { id: string; teamId: string; projectId: string; agentId?: string | null; assignmentAttempt?: AssignmentAttempt | null };
 const record = (value: unknown): Row => typeof value === 'string' ? record(JSON.parse(value))
 	: value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
@@ -80,6 +81,54 @@ export async function integratePlanningProposal(store: Store, scope: Scope, resu
 			title: definition.title, summary: definition.summary, request: definition.request, proposalTypes: definition.proposalTypes,
 			createdByType: 'agent', createdById: scope.agentId, contentProvenance: provenance };
 		let proposal = await store.getGovernanceProposal(String(definition.id));
+		if (proposal && attempt.sourceRef.store === 'treedx' && attempt.sourceRef.model === 'proposal'
+			&& attempt.sourceRef.id === definition.id) {
+			const frozen = attempt.sourceRef;
+			if (proposal.teamId !== scope.teamId || proposal.projectId !== scope.projectId
+				|| frozen.repository !== reference.repository || frozen.path !== reference.path
+				|| workspace.baseCommit !== frozen.commit
+				|| !attempt.grant.contentRead.some(grant => canonicalJson(grant) === canonicalJson(frozen))
+				|| !targets.some(target => canonicalJson(target) === canonicalJson(frozen))) {
+				deny('Planning revision requires its exact admitted shared proposal source and workspace.');
+			}
+			// Verify the original source even when recovering a lost integration
+			// receipt after later versions. Its bytes and group authority remain
+			// frozen; the current proposal creator need not be this contributor.
+			const original = await readExactProposal(store, proposal, frozen);
+			if (canonicalJson(original.definition.groupIds) !== canonicalJson(definition.groupIds)) {
+				deny('Planning revision cannot change its admitted proposal groups.');
+			}
+			const integrated = await store.first(`SELECT version FROM governance_proposal_versions
+				WHERE proposal_id=? AND content_hash=? AND created_by_type='agent' AND created_by_id=?`,
+				[proposal.id, digest, scope.agentId]);
+			if (integrated && Number(integrated.version) > Number(frozen.revision)) {
+				const event = await store.first(`SELECT id FROM governance_events WHERE proposal_id=? AND proposal_version=?
+					AND event_type='proposal.version_published' AND actor_type='agent' AND actor_id=?`,
+					[proposal.id, integrated.version, scope.agentId]);
+				if (!event) {
+					if (proposal.activeVersion !== integrated.version || proposal.activeContentHash !== digest
+						|| typeof store.updateGovernanceProposalDraft !== 'function') deny('The planning revision event requires its unchanged current version.');
+					await store.updateGovernanceProposalDraft(null, proposal.id, { ...input, body: definition.request,
+						expectedProposalVersion: proposal.activeVersion, repairExistingVersion: true,
+						changeReason: `Recover completed planning result ${result.id}.` });
+				}
+				continue;
+			}
+			const current = await readExactProposal(store, proposal);
+			if (canonicalJson(current.ref) !== canonicalJson(frozen) || !['draft', 'discussing', 'open'].includes(proposal.status)) {
+				deny('The shared proposal changed or closed after this planning revision was admitted.');
+			}
+			if (digest === proposal.activeContentHash) continue;
+			if (typeof store.updateGovernanceProposalDraft !== 'function') {
+				throw new CapacityGovernanceError('assignment_planning_integration_unavailable', 'Original governance revision is required.', 503);
+			}
+			const updated = await store.updateGovernanceProposalDraft(null, proposal.id, { ...input, body: definition.request,
+				expectedProposalVersion: frozen.revision, changeReason: `Integrate completed planning result ${result.id}.` });
+			if (updated?.activeContentHash !== digest || canonicalJson(record(updated.metadata).contentProvenance) !== canonicalJson(provenance)) {
+				deny('The original planning revision remains unbound.');
+			}
+			continue;
+		}
 		if (!proposal) {
 			try { proposal = await store.createGovernanceProposal(null, input); }
 			catch (error) {
