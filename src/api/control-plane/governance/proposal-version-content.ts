@@ -130,12 +130,12 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 		const before = existing === null ? null : repositorySource(existing);
 		// Inbox edits carry only changed prose. Preserve authored fields from the
 		// active proposal, including estimates on a private simulation commit.
-		const prior = input.initial === true || before === null ? {}
+		const prior = input.initial === true ? {}
 			: sourceCommit && sourceCommit !== workspace.baseCommitSha
 				// Validate exact canonical custody, then preserve authored presence:
 				// validator defaults must not change bytes on an identical replay.
 				? parseFrontmatterDocument((await readExactProposal(input.store, input.proposal)).source).frontmatter
-				: parseFrontmatterDocument(before).frontmatter;
+				: before === null ? {} : parseFrontmatterDocument(before).frontmatter;
 		const field = (key: string) => Object.hasOwn(input.update, key) ? input.update[key] : prior[key];
 		const schemaVersion = prior.schemaVersion ?? 'treeseed.proposal/v2';
 		if (schemaVersion !== 'treeseed.proposal/v1' && schemaVersion !== 'treeseed.proposal/v2') throw Object.assign(

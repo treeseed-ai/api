@@ -45,7 +45,7 @@ describe('workday-scoped proposal authoring', () => {
 			objectiveRefs: [{ store: 'treedx', model: 'objective', id: 'delivery', repository: 'repository-1', commit: base, path: 'objectives/delivery.mdx' }] };
 		const source = serializeFrontmatterDocument(definition, 'Agent-authored planning content.');
 		const hash = createHash('sha256').update(source).digest('hex');
-		const proposal = { ...input.proposal, activeContentHash: hash,
+		const proposal = { ...input.proposal, body: definition.request, summary: definition.summary, activeContentHash: hash,
 			metadata: { contentProvenance: { repositoryId: 'repository-1', contentPath: path, commitSha: active, digest: hash } } };
 		client.readRepositoryFile.mockImplementation(async request => {
 			if (request.ref === active) return { resolvedRef: active, file: { content: source, frontmatter: definition } };
