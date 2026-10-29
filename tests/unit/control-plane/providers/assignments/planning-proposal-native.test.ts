@@ -113,6 +113,8 @@ describe('original planning product admission', () => {
 			const retained = await f.snapshot(), audits = (await f.query('SELECT * FROM audit_events ORDER BY id')).rows;
 			await recordAssignmentContentIntegration(store, scope, result, references);
 			expect(await f.snapshot()).toEqual(retained); expect((await f.query('SELECT * FROM audit_events ORDER BY id')).rows).toEqual(audits);
+			expect(retained.head).toBe(before.head); expect(retained.status).toBe(before.status);
+			expect(retained.rows.capacity_provider_assignments).toEqual(before.rows.capacity_provider_assignments);
 			// Another subscribed planner has an admitted exact shared-proposal
 			// revision, not authority to recreate its original creation event.
 			const collaboratorId = 'project/integration-planner';
@@ -137,6 +139,38 @@ describe('original planning product admission', () => {
 				[revisionScope.id, 'controlled-membership', 'team', 'project', 'controlled-provider', 'releaser', 'planning', 'completed',
 					collaboratorId, JSON.stringify(revisionAttempt), JSON.stringify(revisionResult), original.createdAt, original.createdAt]);
 			const revisionReferences = await verifyAssignmentContent(store, revisionScope, revisionResult);
+			const revisionBaseline = await f.snapshot();
+			for (const changed of [
+				{ ...revisionAttempt, workspace: { ...revisionAttempt.workspace, baseCommit: 'f'.repeat(40) } },
+				{ ...revisionAttempt, grant: { ...revisionAttempt.grant, contentRead: [collaboratorRef] } },
+				{ ...revisionAttempt, grant: { ...revisionAttempt.grant, contentWrite: [{ ...frozen, revision: 2 }] } },
+			]) {
+				await f.query('UPDATE capacity_provider_assignments SET assignment_attempt_json=? WHERE id=?', [JSON.stringify(changed), revisionScope.id]);
+				const denied = await f.snapshot();
+				await expect(recordAssignmentContentIntegration(store, { ...revisionScope, assignmentAttempt: changed }, revisionResult, revisionReferences))
+					.rejects.toMatchObject({ code: 'assignment_planning_proposal_invalid' });
+				expect(await f.snapshot()).toEqual(denied);
+			}
+			await f.query('UPDATE capacity_provider_assignments SET assignment_attempt_json=? WHERE id=?', [JSON.stringify(revisionAttempt), revisionScope.id]);
+			for (const [status, version] of [['accepted', 1], ['draft', 2]] as const) {
+				await f.query('UPDATE governance_proposals SET status=?,active_version=?', [status, version]);
+				const denied = await f.snapshot();
+				await expect(recordAssignmentContentIntegration(store, revisionScope, revisionResult, revisionReferences))
+					.rejects.toMatchObject({ code: 'assignment_planning_proposal_invalid' });
+				expect(await f.snapshot()).toEqual(denied);
+			}
+			await f.query("UPDATE governance_proposals SET status='draft',active_version=1");
+			expect(await f.snapshot()).toEqual(revisionBaseline);
+			await f.query(`CREATE FUNCTION reject_planning_revision_event() RETURNS trigger AS $$ BEGIN
+				IF NEW.event_type='proposal.version_published' THEN RAISE EXCEPTION 'controlled revision event interruption'; END IF;
+				RETURN NEW; END; $$ LANGUAGE plpgsql;`);
+			await f.query('CREATE TRIGGER reject_planning_revision_event BEFORE INSERT ON governance_events FOR EACH ROW EXECUTE FUNCTION reject_planning_revision_event();');
+			await expect(recordAssignmentContentIntegration(store, revisionScope, revisionResult, revisionReferences))
+				.rejects.toThrow('controlled revision event interruption');
+			expect((await store.getGovernanceProposal(definition.id))?.activeVersion).toBe(2);
+			expect((await f.query('SELECT id FROM audit_events WHERE target_id=?', [revisionScope.id])).rows).toEqual([]);
+			await f.query('DROP TRIGGER reject_planning_revision_event ON governance_events;');
+			await f.query('DROP FUNCTION reject_planning_revision_event();');
 			await recordAssignmentContentIntegration(store, revisionScope, revisionResult, revisionReferences);
 			const updated = await store.getGovernanceProposal(definition.id);
 			expect(updated).toMatchObject({ activeVersion: 2, activeContentHash: revision.digest, createdById: scope.agentId });
@@ -156,8 +190,8 @@ describe('original planning product admission', () => {
 			await recordAssignmentContentIntegration(store, scope, result, references);
 			expect(await f.snapshot()).toEqual(advanced);
 			expect((await f.query('SELECT * FROM audit_events')).rows).toHaveLength(1);
-			const after = await f.snapshot(); expect(after.head).toBe(before.head); expect(after.status).toBe(before.status);
-			expect(after.rows.capacity_provider_assignments).toEqual(before.rows.capacity_provider_assignments);
+			const after = await f.snapshot(); expect(after.head).toBe(revisionBaseline.head); expect(after.status).toBe(revisionBaseline.status);
+			expect(after.rows.capacity_provider_assignments).toEqual(revisionBaseline.rows.capacity_provider_assignments);
 		} finally { await f.close(); vi.unstubAllEnvs(); }
 	});
 
