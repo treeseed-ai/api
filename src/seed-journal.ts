@@ -487,7 +487,11 @@ export class SeedJournalComposition implements SeedJournal {
       const lease = await this.consumer(handle);
       return new SeedJournalComposition(handle, lease);
     } catch (error) {
-      await handle?.dispose();
+      try {
+        await handle?.dispose();
+      } catch {
+        throw new SeedJournalError('SEED_JOURNAL_FAILED');
+      }
       throw Check.safe(error);
     }
   }
