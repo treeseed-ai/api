@@ -17,6 +17,28 @@ function store(config: Record<string, string> = {}, treeDx: Record<string, strin
 afterEach(() => vi.unstubAllEnvs());
 
 describe('knowledge gateway broker identity', () => {
+	it('authors against the configured protected content ref after a private discussion advances the project cursor', async () => {
+		const privateDiscussion = 'c'.repeat(40);
+		const authority = { config: {}, getProjectTreeDxLibrary: async () => ({
+			instanceId: 'instance', repositoryId: 'repository', contentPath: '.',
+			contentRepositoryRef: privateDiscussion,
+			topology: { contentRepository: { ref: 'refs/remotes/origin/staging' } },
+		}) };
+		const connection = await resolveKnowledgeGatewayConnection(authority,
+			{ projectId: 'project', write: true, authoringPaths: true });
+		expect(connection?.baseRef).toBe('refs/remotes/origin/staging');
+		expect(mint.mock.calls.at(-1)![0].scope.refs).toContain('refs/remotes/origin/staging');
+		// Reading private authoring history remains a distinct exact source.
+		expect((await resolveKnowledgeGatewayConnection(authority, { projectId: 'project', write: false }))?.baseRef)
+			.toBe(privateDiscussion);
+	});
+	it('keeps the existing bound content ref when no distinct protected authoring ref is configured', async () => {
+		const authority = { config: {}, getProjectTreeDxLibrary: async () => ({
+			instanceId: 'instance', repositoryId: 'repository', contentPath: '.', contentRepositoryRef: 'b'.repeat(40),
+		}) };
+		expect((await resolveKnowledgeGatewayConnection(authority,
+			{ projectId: 'project', write: true, authoringPaths: true }))?.baseRef).toBe('b'.repeat(40));
+	});
 	it('grants exact-snapshot indexing without content writes or remote publication only when requested', async () => {
 		const input = { projectId: 'project', write: false, relationPaths: true, readRefs: ['a'.repeat(40)] };
 		await resolveKnowledgeGatewayConnection(store(), input);
