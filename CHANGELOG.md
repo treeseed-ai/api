@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Changed
+- Align API with the manager-compatible owner closure and bounded durable package publication (#644).
+
+### Changed
 
 - Align API with the exact capacity-compatible owner archive closure (#644).
 

@@ -2,18 +2,21 @@
 
 ## Task 3D exact owner compatibility
 
-Under #644 the API consumes one SDK `.19` closure through exact public archives. This slice
-qualifies the existing default API root; the headless seed coordinator is a separate delivery.
+Under #644 the API consumes one SDK `.42` closure through exact public archives. This slice
+selects the existing default API root; the headless seed coordinator is a separate delivery.
 
 | Owner | Version | Source | Archive SHA-256 |
 | --- | --- | --- | --- |
-| SDK | `0.0.0-cordis.19` | `90cf4f3cc62e166685280450c727499defd2af5b` | `93dd549c98aba180306e9b19cc1cbc37494544b2764ed341c531c9af618c6f81` |
-| Deployment | `0.0.0-cordis.79` | `2cf1084843039fafccb8e427fcae913e0a44dffc` | `d02517f4fff3a1dedb3590d3c13bb1ea58a746c7ba6fc1f5227fd5f7c3b0a456` |
-| Identity | `0.0.0-cordis.8` | `cb86258e93337559aa4a248177a20bd2a07fd467` | `a308c71b0da1822e7786121092a05f2496d26614942aaeb459a78531e689cb76` |
-| Admin | `0.0.0-cordis.11` | `fe5c25e4a15fe9312c16ceeead93b684c3ab8580` | `043c05cf734e5b66e60d44fafbff34b15de6af13d98dc14d7a569ba26a51ad97` |
-| UI | `0.0.0-cordis.18` | `e2b9c5e10611c196834fd57ba5358a74304e373c` | `d09e6ed33f7f1bc2f7210208a94f33bbd2a6453d8fe886f75a1f950887223e48` |
+| SDK | `0.0.0-cordis.42` | `afdfac7bdd3c9c1f783362cd1d50324181e1d725` | `0ecfe599916fe8ef364fc4b73203c810981f163109fbe71a0dd4c01a9dfb7bbc` |
+| Deployment | `0.0.0-cordis.126` | `d6695ffa90bff4cf7f0108af00a8a28b242833bc` | `c0d03d85e1dc83921fc1b9d2193b11a5c0fe4f5a5db93d91fcd4fc95eb0e23ca` |
+| Identity | `0.0.0-cordis.9` | `c60dfdbc53ce78ddee3c2f18ec7f91358878d49c` | `2999a78da5c04f6a894c643d49ab3881ff702fb4325d74fec469a4496f034c67` |
+| Admin | `0.0.0-cordis.12` | `dae3d32083b3ed3f4a65908a78e332cb5a38d0d2` | `1ad95ccb6204df57590adc009b17f18670ffccf1146c98dfa165df8ae114f5ac` |
+| UI | `0.0.0-cordis.23` | `d5d33c33791fe8b94aada605dba4aa9392559637` | `7291d35fe8758fd27b23f663dcf1f254bd915b5ae3569dde8c9a2f443e45a14f` |
 
-Every peer pin, installed owner version and vendored archive must match. The existing genuine
+API .12 advances this dependency-only composition without adopting the internal seed draft.
+The built compatibility gate also requires manager-channel 1.1.0-cordis.1 while preserving the
+seven global operations. Admin .12 is accepted. Deployment .126 is the exact combined #1057 candidate, including accepted
+private record custody #1055; its current-head hosted/review gates are required before integration. Every peer pin, installed owner version and vendored archive must match. The existing genuine
 installed-root gate remains required; metadata checks alone cannot establish readiness. Preserve
 Keycloak, mobile-first UI, repository boundaries, historical artifacts, AGPL and the exact #620
 committer policy. Work/model execution remains Task 10. All issues stay open until release.
@@ -206,3 +209,32 @@ The retained NodeApiContainerPlugin.definition/declaration and generic native de
 also name their public SDK contracts explicitly. Historical four-role metadata remains only
 in that compatibility export; the generic service host remains extensible. Hosted artifact
 member diagnostics isolated the remaining variation to container.d.ts, with runtime files unchanged.
+
+## Manager closure qualification checkpoint
+
+The `.10` closure producer `60dd1182123906764f746af5fa037b1a51b5accb` packages 23 exact files/modes;
+archive SHA-256 `bc4df686c80d4b8f42848bf747113afd8b0efd7db41372841d01c057be71324b`.
+Checks/build, exact owner compatibility, 9 regression, 4 integration and 5 unit cases pass.
+An empty-cache script-disabled strict TypeScript/Node consumer executes the installed public
+program (`api10-public-native-program-ok`). These checks establish package compatibility only.
+
+## Genuine installed verification boundary
+
+Previous .10 exchange/drain failures and .11 activation-budget failure remain retained evidence.
+The .11 diagnostic measured 146.631 seconds staging before prepare/activate inside the unchanged
+180-second application window. Neither failed observation establishes installed readiness.
+
+The .12 continuation selects Deployment .126 from immutable producer
+`d6695ffa90bff4cf7f0108af00a8a28b242833bc`, archive SHA-256
+`c0d03d85e1dc83921fc1b9d2193b11a5c0fe4f5a5db93d91fcd4fc95eb0e23ca`.
+It preserves SDK .42, Identity .9, Admin .12 and UI .23. This owner candidate overlaps at most
+eight durable member publications, retains every file/directory fsync, waits for all failure
+cleanup and includes accepted private installation records. Its exact local owner/public archive
+gates pass; final current-head hosted/review gates and genuine API qualification remain required.
+
+Require the actual installed API/Keycloak/database/edge/browser gate locally and on both API
+exact-head hosted runs before acceptance. Metadata/declaration checks cannot substitute for it.
+Keep all assertions and deadlines, repository boundaries, Keycloak and #620 policy unchanged.
+Temporary diagnostic modules are restored byte-for-byte; no permanent process proposal is added.
+Keep earlier owner/API archives immutable. The seed coordinator remains a separate owner delivery;
+all issues stay open and real Work/model execution remains Task 10.
