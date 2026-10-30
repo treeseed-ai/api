@@ -102,6 +102,12 @@ workflow:
   - id: reviewed-predecessor-read-scope
     action: { verifier: api.golden.reviewed-predecessor-read-scope }
     expect: { status: passed }
+  - id: shared-acting-proposal-context
+    action: { verifier: api.golden.shared-acting-proposal-context }
+    expect: { status: passed }
+  - id: shared-acting-proposal-context-native
+    action: { verifier: api.golden.shared-acting-proposal-context-native }
+    expect: { status: passed }
   - id: estimate-branch-contention
     action: { verifier: api.golden.estimate-branch-contention }
     expect: { status: passed }
