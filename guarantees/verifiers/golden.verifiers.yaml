@@ -1351,6 +1351,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/offer-freeze.test.ts
     testName: "preserves explicit integration authority and one exact base when the governed class using the same Releaser handler is renamed"
+  api.golden.execution-source-integration-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/source-integration/authority.test.ts
+    testName: "combines exact retained Git predecessors under source-write authority without granting publication or selecting an identity"
+  api.golden.execution-source-integration-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/source-integration-native.test.ts
+    testName: "admits and replays one source-only integration with two exact reviewed predecessor branches and unchanged prior custody"
   api.golden.execution-predecessor-lineage-unit-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

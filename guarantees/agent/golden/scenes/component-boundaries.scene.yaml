@@ -720,6 +720,12 @@ workflow:
   - id: execution-integration-identity-unit-1
     action: { verifier: api.golden.execution-integration-identity-unit-1 }
     expect: { status: passed }
+  - id: execution-source-integration-unit-1
+    action: { verifier: api.golden.execution-source-integration-unit-1 }
+    expect: { status: passed }
+  - id: execution-source-integration-native-1
+    action: { verifier: api.golden.execution-source-integration-native-1 }
+    expect: { status: passed }
   - id: execution-predecessor-lineage-unit-1
     action: { verifier: api.golden.execution-predecessor-lineage-unit-1 }
     expect: { status: passed }
