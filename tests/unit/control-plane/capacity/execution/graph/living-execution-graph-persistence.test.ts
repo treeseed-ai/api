@@ -126,22 +126,6 @@ it('retires every terminal simulation node before another workday selects its de
 	}
 });
 
-it('attaches newly accepted Decision authority to never-issued work after the estimating workday closes', () => {
-	for (const kind of ['acting', 'reviewing'] as const) for (const status of ['proposed', 'blocked', 'ready', 'stale'] as const) {
-		const desired: ExecutionNode = { ...node('blocked'), kind, pairRole: kind === 'acting' ? 'actor' : 'reviewer' };
-		const old: ExecutionNode = { ...desired, authorityRefs: [], status, workdayId: 'closed-estimation', nodeRevision: 3 };
-		const current = graph(3, [old]), projected = graph(4, [desired]), held = structuredClone({ current, projected });
-		const refreshed = applyOperationalState(current, projected, 4);
-		expect(refreshed.nodes[0]).toEqual({ ...desired, status: 'stale', workdayId: old.workdayId,
-			nodeRevision: 4, graphRevisionCreated: old.graphRevisionCreated, graphRevisionUpdated: 4 });
-		expect(applyOperationalState(refreshed, projected, 5).nodes).toEqual(refreshed.nodes);
-		const selected = graph(6, [{ ...desired, workdayId: 'fresh-decision-workday' }]);
-		expect(applyOperationalState(refreshed, selected, 6).nodes[0]).toMatchObject({
-			status: 'ready', authorityRefs: desired.authorityRefs, workdayId: 'fresh-decision-workday', nodeRevision: 5 });
-		expect({ current, projected }).toEqual(held);
-	}
-});
-
 it('recovers only the one exact governance review returned by an interrupted provider', () => {
 	const reviewer = { ...node('failed'), workItemId: 'proposal-review', kind: 'reviewing' as const,
 		pairRole: null, id: 'review' };

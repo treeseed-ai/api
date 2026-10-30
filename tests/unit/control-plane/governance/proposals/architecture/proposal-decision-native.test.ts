@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { validateDecisionAuthority, validateExecutionAuthorityReceipt } from '../../../../../../src/api/governance/decision-authority.ts';
 import { prepareNativeProposalVoting } from './ready-proposal-fixture.ts';
 import { nativeSubscriberInputs, recordNativeSubscriberInputs, expectNativeSubscriberGraph } from './native-subscriber-inputs.ts';
-import { verifyNativeProposalReconciliation, verifyScopedInboxQuestionGates, verifyNativeAcceptedTeamGrowth } from './proposal-reconciliation-fixture.ts';
+import { verifyNativeProposalReconciliation, verifyScopedInboxQuestionGates, verifyNativeAcceptedTeamGrowth, verifyNativeUnissuedDecisionHandoff } from './proposal-reconciliation-fixture.ts';
 import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { stringify } from 'yaml';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
@@ -352,8 +352,7 @@ describe('native proposal Decision authority', () => {
 				expect(attempt.createdAt).toBe(compileNow); expect(attempt.limits.maximumSeconds).toBe(3); expect(attempt.deadline).toBe(plan.endsAt);
 				for (let retry = 0; retry < 2; retry++) expect(buildAssignmentAttempt(structuredClone(qualifiedInput))).toEqual(frozen);
 				expect(qualifiedInput).toEqual(qualifiedBefore); expect(await readerState()).toEqual(readerBefore);
-				// Genuine native Decision and exact native profiles reach the original
-				// compiler. Offer qualification remains supplied input; this creates
+				// Native Decision and exact profiles reach the original compiler. Offer qualification remains supplied input; this creates
 				// no native enrolled provider, reservation, claim or managed execution.
 			}
 			expect(await listReadyExecutionNodes(f.store, run, readyProject)).toEqual(expectedReady); expect(await f.store.all('SELECT * FROM governance_events ORDER BY id')).toEqual(history);
@@ -482,6 +481,7 @@ describe('native proposal Decision authority', () => {
 				expect(readback.resolvedRef).toBe(retainedContent.commit); expect(object(readback.file).content).toBe(retainedContent.raw);
 			}
 			if (!canonicalSupply) await verifyScopedInboxQuestionGates(f, declaration.id, decisionId); // No live model execution or usage is proved by native admission/claim.
+			if (!canonicalSupply) await verifyNativeUnissuedDecisionHandoff(f, projectId, declaration.id, decisionId, providerId);
 			await verifyNativeAcceptedTeamGrowth(f, projectId, declaration.id, subscriberInputs.subscribers[0]!.definition);
 		} finally {
 			const cleanupErrors: unknown[] = [];

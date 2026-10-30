@@ -1599,6 +1599,15 @@ workflow:
   - id: architecture-living-graph-unit-6
     action: { verifier: api.golden.architecture-living-graph-unit-6 }
     expect: { status: passed }
+  - id: accepted-unissued-authority
+    action: { verifier: api.golden.accepted-unissued-authority }
+    expect: { status: passed }
+  - id: accepted-issued-authority-fence
+    action: { verifier: api.golden.accepted-issued-authority-fence }
+    expect: { status: passed }
+  - id: unapproved-authority-fence
+    action: { verifier: api.golden.unapproved-authority-fence }
+    expect: { status: passed }
   - id: architecture-living-graph-sql-1
     action: { verifier: api.golden.architecture-living-graph-sql-1 }
     expect: { status: passed }
