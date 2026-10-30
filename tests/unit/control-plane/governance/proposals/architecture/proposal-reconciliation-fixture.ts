@@ -1,3 +1,4 @@
+export { verifyNativeUnissuedDecisionHandoff } from './recovery/accepted-unissued-authority-native.ts';
 import assert from 'node:assert/strict';
 export { verifyScopedInboxQuestionGates } from '../../../knowledge/inbox/question-gate-native-contract.ts';
 export { verifyNativeAcceptedTeamGrowth } from './recovery/accepted-team-growth-native.ts';

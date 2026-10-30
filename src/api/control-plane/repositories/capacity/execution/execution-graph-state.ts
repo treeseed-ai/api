@@ -21,7 +21,8 @@ export const digest = (value: unknown): string => `sha256:${createHash('sha256')
 export function applyOperationalState(current: TeamGraph, projected: TeamGraph, revision: number,
 	activeAssignmentNodeIds: ReadonlySet<string> = new Set(),
 	terminalAssignmentStatuses: ReadonlyMap<string, { status: ExecutionNode['status']; nodeRevision: number }> = new Map(),
-	continuationByRun: ReadonlyMap<string, ReadonlySet<string>> = new Map()): TeamGraph {
+	continuationByRun: ReadonlyMap<string, ReadonlySet<string>> = new Map(),
+	issuedNodeIds: ReadonlySet<string> = new Set([...activeAssignmentNodeIds, ...terminalAssignmentStatuses.keys()])): TeamGraph {
 	const priorById = new Map(current.nodes.map((node) => [node.id, node]));
 	const activeIds = new Set(projected.nodes.map((node) => node.id));
 	const terminalProjectionNodeIds = new Set<string>();
@@ -29,10 +30,19 @@ export function applyOperationalState(current: TeamGraph, projected: TeamGraph, 
 		const prior = priorById.get(node.id);
 		// A terminal simulation no longer owns this decision projection. Retire its
 		// candidate and review state; a later selected workday gets a fresh attempt.
-		if (prior?.workdayId && !node.workdayId && node.authorityRefs?.some((reference) => reference.model === 'decision'))
+		if (prior?.workdayId && !node.workdayId && node.authorityRefs?.some((reference) => reference.model === 'decision')) {
+			// Approval may follow estimation closeout. Refresh only never-issued
+			// candidates that have not yet received Decision authority; preflight
+			// must still select the new workday before any execution is admissible.
+			if (['acting', 'reviewing'].includes(node.kind) && !issuedNodeIds.has(node.id)
+				&& ['proposed', 'blocked', 'ready', 'stale'].includes(prior.status)
+				&& !prior.authorityRefs?.some(reference => reference.model === 'decision'))
+				return { ...node, workdayId: prior.workdayId, status: 'stale' as const,
+					nodeRevision: prior.nodeRevision + 1, graphRevisionCreated: prior.graphRevisionCreated, graphRevisionUpdated: revision };
 			return { ...prior, status: 'stale' as const,
 				nodeRevision: prior.status === 'stale' ? prior.nodeRevision : prior.nodeRevision + 1,
 				graphRevisionUpdated: revision };
+		}
 		const terminal = prior ? terminalAssignmentStatuses.get(node.id) : undefined;
 		const continuedTerminal = Boolean(terminal && prior?.workdayId && node.workdayId
 			&& continuationByRun.get(node.workdayId)?.has(prior.workdayId));

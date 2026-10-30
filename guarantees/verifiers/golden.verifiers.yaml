@@ -2821,6 +2821,26 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-contract.test.ts
     testName: "requires exact cross-project relation endpoints and rejects moved commit digest revision path and anchor"
+  api.golden.accepted-unissued-authority:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/accepted-decision-authority.test.ts
+    testName: "attaches newly accepted Decision authority to never-issued work after the estimating workday closes"
+  api.golden.accepted-issued-authority-fence:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/accepted-decision-authority.test.ts
+    testName: "never refreshes retired Decision authority for any issued history or ambiguous operational state"
+  api.golden.unapproved-authority-fence:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/accepted-decision-authority.test.ts
+    testName: "does not manufacture Decision authority before approval"
+  api.golden.accepted-unissued-fixture-parent:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/accepted-unissued-fixture.test.ts
+    testName: "retains a real closed Workday parent for the native unissued Decision handoff and its public observation"
   api.golden.architecture-living-graph-sql-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

@@ -345,7 +345,7 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 			&& graph.nodes.some(node => node.id === edge.toNodeId && node.kind === 'communication')) });
 	const desired = applyOperationalState(scope === 'communication' ? communicationGraph(current) : current,
 		scope === 'communication' ? communicationGraph(base) : base, current.revision + 1,
-		new Set((activeAssignmentRows as Row[]).filter(belongsToCurrentAttempt).map((row: Row) => text(row.execution_node_id)).filter(Boolean)), terminalStatuses, continuationByRun);
+			new Set((activeAssignmentRows as Row[]).filter(belongsToCurrentAttempt).map((row: Row) => text(row.execution_node_id)).filter(Boolean)), terminalStatuses, continuationByRun, issuedNodeIds);
 	if (scope === 'communication') {
 		desired.nodes = [...current.nodes.filter(node => node.kind !== 'communication'), ...desired.nodes].sort((a, b) => a.id.localeCompare(b.id));
 		desired.edges = base.edges;
