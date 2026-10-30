@@ -234,6 +234,56 @@ describe('public workday selection custody', () => {
 		expect(receipt.selectedDemands).toEqual([expect.objectContaining({ sourceId: 'actor',
 			actingAuthority: expect.objectContaining({ executionNodeRevision: 5 }) })]);
 	});
+	it('starts an unchanged selected root after unrelated team graph progress without rewriting its preflight', async () => {
+		const f = fixture(true);
+		let graphRevision = 4;
+		const actor = { ...executionNodeRow({ id: 'actor', kind: 'acting', agentClass: 'engineer',
+			digest: 'source', expectedSeconds: 180, nodeRevision: 4, decisionRevision: 1 }), status: 'stale', workday_id: 'closed-parent' };
+		f.store.preflightCapacityWorkdayRunRequest.mockResolvedValue({ availableSeconds: 7200,
+			projects: [{ id: 'project-sdk', agents: [] }], executionNodeDemands: [], appliedPlan: {} });
+		f.store.all.mockImplementation(async (sql: string) => sql.includes('capacity_provider_team_memberships')
+			? [{ capacity_provider_id: 'provider' }] : sql.includes('FROM execution_nodes node')
+				? [{ ...actor, graph_revision: graphRevision }] : sql.includes('SELECT id,slug FROM projects')
+					? [{ id: 'project-sdk', slug: 'sdk' }] : []);
+		const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', {
+			...input(), executionMode: 'simulation', decisionIds: ['decision'], allocation: { planningPercent: 0 },
+		}), 'actor'), retained = structuredClone(f.stored());
+		expect(receipt.selectedDemands[0].actingAuthority).toMatchObject({ graphRevision: 5, executionNodeRevision: 5 });
+		f.stored().receipt.selectedDemands[0].actingAuthority.graphRevision = 99;
+		await expect(f.service.start('team', { preflightId: receipt.id, preflightDigest: receipt.preflightDigest,
+			idempotencyKey: 'cursor-tamper' }, 'actor')).rejects.toMatchObject({ code: 'workday_preflight_integrity_invalid' });
+		expect(f.store.createCapacityWorkdayRun).not.toHaveBeenCalled();
+		f.stored().receipt.selectedDemands[0].actingAuthority.graphRevision = 5;
+		graphRevision = 9; // Another project's progress changes only the team observation cursor.
+		await expect(f.service.start('team', { preflightId: receipt.id, preflightDigest: receipt.preflightDigest,
+			idempotencyKey: 'unrelated-project-progress' }, 'actor')).resolves.toMatchObject({ acceptedExecutionNodeIds: ['actor'] });
+		expect(f.stored()).toEqual(retained);
+		expect(actor).toMatchObject({ status: 'stale', node_revision: 4, workday_id: 'closed-parent' });
+		expect(f.store.createCapacityWorkdayRun).toHaveBeenCalledTimes(1);
+	});
+	it('still denies changed selected authority, effort, ordering, capacity and operator before any start write', async () => {
+		for (const change of ['node', 'revision', 'source', 'decision', 'effort', 'priority', 'class', 'removed', 'capacity', 'operator']) {
+			const f = fixture(true), row = { graph_revision: 5, priority: 0,
+				...executionNodeRow({ id: 'actor', kind: 'acting', agentClass: 'engineer', digest: 'source', expectedSeconds: 180, nodeRevision: 4, decisionRevision: 1 }) };
+			const projection = { availableSeconds: 7200, projects: [{ id: 'project-sdk', agents: [] }], executionNodeDemands: [row] };
+			f.store.preflightCapacityWorkdayRunRequest.mockResolvedValue(projection);
+			const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', { ...input(),
+				decisionIds: ['decision'], allocation: { planningPercent: 0 } }), 'actor'), retained = structuredClone(f.stored());
+			row.graph_revision = 9;
+			if (change === 'node') row.id = 'replacement';
+			if (change === 'revision') row.node_revision++;
+			if (change === 'source') row.source_ref_json = JSON.stringify({ ...JSON.parse(row.source_ref_json), digest: exactDigest('moved') });
+			if (change === 'decision') row.authority_refs_json = JSON.stringify([{ ...JSON.parse(row.authority_refs_json)[0], revision: 2 }]);
+			if (change === 'effort') row.estimate_json = JSON.stringify({ expectedSeconds: 181, maximumSeconds: 360 });
+			if (change === 'priority') row.priority = 1;
+			if (change === 'class') row.agent_class = 'replacement';
+			if (change === 'removed') projection.executionNodeDemands = [];
+			if (change === 'capacity') projection.availableSeconds--;
+			await expect(f.service.start('team', { preflightId: receipt.id, preflightDigest: receipt.preflightDigest,
+				idempotencyKey: `changed-${change}` }, change === 'operator' ? 'another-operator' : 'actor')).rejects.toMatchObject({ code: 'workday_preflight_stale' });
+			expect(f.stored()).toEqual(retained); expect(f.store.createCapacityWorkdayRun).not.toHaveBeenCalled();
+		}
+	});
 	it('freezes the admission time when an explicit start is omitted', () => {
 		vi.useFakeTimers();
 		try {

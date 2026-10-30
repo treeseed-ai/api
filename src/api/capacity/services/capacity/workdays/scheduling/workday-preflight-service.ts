@@ -214,11 +214,18 @@ export class WorkdayPreflightService {
 		record(runInput.parameters).agentProfilesByProjectId=projection.agentProfilesByProjectId;
 		record(runInput.parameters).groupIds=projection.groupIds;
 		const profileGeneration=integer(appliedPlan.policyRevision,1);
+		// The team graph cursor records observation provenance. Other projects may
+		// advance it without changing any selected node or its accepted authority.
+		const selectedAuthority = selectedDemands.map(demand => {
+			if (!demand.actingAuthority) return demand;
+			const { graphRevision: _cursor, ...authority } = demand.actingAuthority;
+			return { ...demand, actingAuthority: authority };
+		});
 		const state:WorkdayPreflightObservation={
 			profileGeneration, profileDigest:digest({profileId:intent.profileId,policy:appliedPlan.policySnapshot,reportingAgentId:appliedPlan.reportingAgentId,
 				projects:(Array.isArray(projection.projects)?projection.projects.map(record):[]).map(project=>({
 					id:project.id,repositoryId:project.repositoryId,contentRevision:project.contentRevision,agentProfileRevision:project.agentProfileRevision,
-				}))}), demandSetDigest:digest({selectedDemands,objectives:intent.objectiveFilters??[],proposalIds:intent.proposalIds??[],decisionIds:intent.decisionIds??[]}),
+					}))}), demandSetDigest:digest({selectedDemands:selectedAuthority,objectives:intent.objectiveFilters??[],proposalIds:intent.proposalIds??[],decisionIds:intent.decisionIds??[]}),
 			providerCapacityDigest:digest({providerId,membershipTeam:teamId,availableSeconds:projection.availableSeconds??null}),
 			authorizationDigest:digest({teamId,requestedById,profileId:intent.profileId}),
 			reservationDigest:digest([]),

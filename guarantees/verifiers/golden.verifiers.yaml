@@ -5759,3 +5759,19 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/knowledge/inbox/comment-provenance.test.ts
     testName: "keeps proposal summaries available without fetching discarded comment history"
+
+  api.golden.selected-authority-cursor-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/selection-preflight.test.ts
+    testName: "starts an unchanged selected root after unrelated team graph progress without rewriting its preflight"
+  api.golden.selected-authority-freshness-denials:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/selection-preflight.test.ts
+    testName: "still denies changed selected authority, effort, ordering, capacity and operator before any start write"
+  api.golden.selected-authority-public-start:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "starts and replays a nonempty selected workday after unrelated graph progress while preserving exact selected authority and receipt bytes"

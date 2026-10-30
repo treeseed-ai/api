@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { validateDecisionAuthority, validateExecutionAuthorityReceipt } from '../../../../../../src/api/governance/decision-authority.ts';
 import { prepareNativeProposalVoting } from './ready-proposal-fixture.ts';
-import { nativeSubscriberInputs, recordNativeSubscriberInputs, expectNativeSubscriberGraph } from './native-subscriber-inputs.ts';
+import { nativeSubscriberInputs, recordNativeSubscriberInputs, expectNativeSubscriberGraph, expectNativeSelectedDemandDigest } from './native-subscriber-inputs.ts';
 import { verifyNativeProposalReconciliation, verifyScopedInboxQuestionGates, verifyNativeAcceptedTeamGrowth, verifyNativeUnissuedDecisionHandoff } from './proposal-reconciliation-fixture.ts';
 import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { stringify } from 'yaml';
@@ -391,7 +391,7 @@ describe('native proposal Decision authority', () => {
 			expect(object(preflightProjection.agentProfilesByProjectId)[projectId]).toMatchObject({ agents:
 				subscriberInputs.subscribers.map(profile => expect.objectContaining({ definition: profile.definition })) });
 			const hash = (value: unknown) => `sha256:${createHash('sha256').update(canonicalJson(value)).digest('base64url')}`;
-			expect(receipt.intentDigest).toBe(hash(intent)); expect(storedRows[0]!.request_digest).toBe(receipt.intentDigest); expect(receipt.demandSetDigest).toBe(hash({ selectedDemands: receipt.selectedDemands, objectives: [], proposalIds: [], decisionIds: [decisionId] }));
+			expect(receipt.intentDigest).toBe(hash(intent)); expect(storedRows[0]!.request_digest).toBe(receipt.intentDigest); expectNativeSelectedDemandDigest(receipt, actorNode, decisionId);
 			const { preflightDigest, ...payload } = receipt; expect(preflightDigest).toBe(hash(payload));
 			expect(await readerState()).toEqual(preflightBefore); expect(await f.store.all('SELECT * FROM capacity_operation_receipts WHERE resource_id<>? ORDER BY id', [receipt.id])).toEqual(originalReceipts);
 			expect(intent).toEqual(intentBefore); expect(await listReadyExecutionNodes(f.store, run, readyProject)).toEqual(expectedReady); expect(await f.store.all('SELECT * FROM governance_events ORDER BY id')).toEqual(history);

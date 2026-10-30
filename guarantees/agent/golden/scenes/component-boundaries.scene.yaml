@@ -3421,3 +3421,13 @@ workflow:
   - id: inbox-comment-summary-unit
     action: { verifier: api.golden.inbox-comment-summary-unit }
     expect: { status: passed }
+
+  - id: selected-authority-cursor-unit
+    action: { verifier: api.golden.selected-authority-cursor-unit }
+    expect: { status: passed }
+  - id: selected-authority-freshness-denials
+    action: { verifier: api.golden.selected-authority-freshness-denials }
+    expect: { status: passed }
+  - id: selected-authority-public-start
+    action: { verifier: api.golden.selected-authority-public-start }
+    expect: { status: passed }
