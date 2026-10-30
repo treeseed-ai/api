@@ -79,7 +79,7 @@ export class CapacityWorkdayRunService {
 	constructor(private readonly store: WorkdayRunServiceStore) { this.runs = new CapacityWorkdayRunRepository(store); this.writes = new CapacityWorkdayRunWriteRepository(store); }
 
 	preflight(teamId: string, input: JsonRecord) {
-		return this.store.preflightCapacityWorkdayRun(compileCapacityWorkdayRunRecord(teamId, { ...input, status: 'running' }, { id: 'preflight' }));
+		return this.store.preflightCapacityWorkdayRun(compileCapacityWorkdayRunRecord(teamId, { ...input, status: 'running' }, { id: text(input.id, 'preflight') }));
 	}
 
 	async create(teamId: string, input: JsonRecord): Promise<CapacityWorkdayRunRecord> {

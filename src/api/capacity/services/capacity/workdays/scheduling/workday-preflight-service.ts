@@ -17,6 +17,7 @@ import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../.
 import { canonicalJson,sha256 } from '../../../../security.ts';
 import { decodeExecutionNode } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-storage.ts';
 import { readTeamWorkdayProfile } from '../../../../../control-plane/repositories/capacity/workdays/profile-service.ts';
+import { previewWorkdayExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { validateWorkdayContinuation } from './workday-continuation.ts';
 import { validateDecisionAuthority } from '../../../../../governance/decision-authority.ts';
 
@@ -145,6 +146,8 @@ export class WorkdayPreflightService {
 		};
 		const projection=await this.store.preflightCapacityWorkdayRunRequest(teamId,runInput);
 		let nodeRows=Array.isArray(projection.executionNodeDemands)?projection.executionNodeDemands.map(record):[];
+		record(runInput.parameters).agentProfilesByProjectId=projection.agentProfilesByProjectId;
+		record(runInput.parameters).groupIds=projection.groupIds;
 		const selectedDecisions=new Set(intent.decisionIds??[]);
 		const selectedProposals=new Set(intent.proposalIds??[]);
 		if (runInput.executionMode === 'simulation' && (selectedDecisions.size || selectedProposals.size)) {
@@ -184,8 +187,16 @@ export class WorkdayPreflightService {
 			(Array.isArray(project.agents)?project.agents.map(record):[]),
 		]));
 		const planningEnabled=Number(record(runInput.parameters).planningPercent??policy.planningPercent)>0;
-		const selectedDemands=nodeRows.flatMap((entry)=>{
-			const node=decodeExecutionNode(entry) as ExecutionNode;
+		let demandNodes = nodeRows.map(entry => ({ node: decodeExecutionNode(entry) as ExecutionNode, graphRevision: integer(entry.graph_revision,0) }));
+		if (runInput.executionMode === 'simulation' && intent.continueFromWorkdayId) {
+			const graph = await previewWorkdayExecutionGraph(this.store, { id: String(runInput.id), teamId,
+				executionMode: intent.executionMode ?? 'simulation', parameters: { ...record(runInput.parameters),
+					appliedPlan: projection.appliedPlan,
+					scheduledProjectIds: (Array.isArray(projection.projects) ? projection.projects.map(record) : []).map(project => text(project.id)) } });
+			demandNodes = graph.nodes.filter(node => node.workdayId === runInput.id && node.status === 'ready')
+				.map(node => ({ node, graphRevision: graph.revision }));
+		}
+		const selectedDemands=demandNodes.flatMap(({node,graphRevision})=>{
 			const decisionRef=node.authorityRefs?.find((reference)=>reference.model==='decision');
 			if(selectedProposals.size&&node.sourceRef.model==='proposal'&&!selectedProposals.has(node.sourceRef.id)) return [];
 			if(!node.id||selectedDecisions.size&&(!decisionRef||!selectedDecisions.has(decisionRef.id))) return [];
@@ -203,16 +214,12 @@ export class WorkdayPreflightService {
 			return [{id:`execution-node:${node.id}:revision:${node.nodeRevision}`,projectId:node.projectId,sourceType:'execution-node',sourceId:node.id,mode,
 				classSlug:node.agentClass??node.kind,requestedSeconds:integer(node.estimate?.expectedSeconds,1),priority:node.priority??0,
 				...(decisionRef&&typeof decisionRevision==='number'&&typeof sourceDigest==='string'?{actingAuthority:{ decisionId:decisionRef.id,decisionRevision,executionNodeId:node.id,
-					executionNodeRevision:node.nodeRevision,graphRevision:integer(entry.graph_revision,0),sourceDigest }}:{})}];
+					executionNodeRevision:node.nodeRevision,graphRevision,sourceDigest }}:{})}];
 		});
 		const classAccounting=[...new Set(selectedDemands.map((entry)=>entry.classSlug))].sort().map((classSlug)=>({classSlug,
 			allocatedSeconds:selectedDemands.filter((entry)=>entry.classSlug===classSlug).reduce((sum,entry)=>sum+entry.requestedSeconds,0),
 			idleSeconds:0,reservedSeconds:0,activeSeconds:0,releasedSeconds:0,overrunSeconds:0}));
 		const appliedPlan=record(projection.appliedPlan);
-		// Freeze the existing complete profile authority, including every closeout
-		// contributor, before creation can observe a changed group or definition.
-		record(runInput.parameters).agentProfilesByProjectId=projection.agentProfilesByProjectId;
-		record(runInput.parameters).groupIds=projection.groupIds;
 		const profileGeneration=integer(appliedPlan.policyRevision,1);
 		// The team graph cursor records observation provenance. Other projects may
 		// advance it without changing any selected node or its accepted authority.

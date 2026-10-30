@@ -5775,3 +5775,19 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
     testName: "starts and replays a nonempty selected workday after unrelated graph progress while preserving exact selected authority and receipt bytes"
+
+  api.golden.retained-acting-continuation-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/selection-preflight.test.ts
+    testName: "continues only a failed actor after a completed reviewed prefix closes without rewriting prior work"
+  api.golden.retained-acting-continuation-production:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/selection-preflight.test.ts
+    testName: "preserves production continuation selection without projecting simulation custody"
+  api.golden.retained-acting-continuation-projection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/continuation.test.ts
+    testName: "canonical continuation preview retains the approved corrected prefix and exposes only the failed successor without writing workday graph or result history"
