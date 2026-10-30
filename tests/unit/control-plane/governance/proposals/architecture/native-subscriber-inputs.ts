@@ -5,7 +5,8 @@ import { proposalNativeFixture } from './proposal-native-fixture.ts';
 import { loadProposalGroupContributions } from '../../../../../../src/api/capacity/services/capacity/execution/proposal-contributions.ts';
 import assert from 'node:assert/strict';
 import { expect } from 'vitest';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { canonicalJson } from '../../../../../../src/api/capacity/security.ts';
 import { stringify } from 'yaml';
 import { assignmentAttemptSchema, assignmentResultSchema, type ExactEntityReference, type AgentDefinition, type ExecutionNode } from '@treeseed/sdk/agent-capacity';
 import { assignment as original } from '../../../capacity/execution/fixtures/assignment.ts';
@@ -181,4 +182,15 @@ export async function subscriberSourceFixture() {
 		};
 		return { ...f, store, publishCurrent };
 	} catch (error) { await f.close(); throw error; }
+}
+
+/** The exact selected authority excludes only the team observation cursor. */
+export function expectNativeSelectedDemandDigest(receipt: import('@treeseed/sdk/operator-contracts').WorkdayPreflightReceipt,
+	actor: ExecutionNode, decisionId: string) {
+	const selected = { ...receipt.selectedDemands[0]!, actingAuthority: { decisionId,
+		decisionRevision: actor.authorityRefs!.find(ref => ref.model === 'decision')!.revision,
+		executionNodeId: actor.id, executionNodeRevision: actor.nodeRevision, sourceDigest: actor.sourceRef.digest } };
+	expect(receipt.demandSetDigest).toBe(`sha256:${createHash('sha256').update(canonicalJson({
+		selectedDemands: [selected], objectives: [], proposalIds: [], decisionIds: [decisionId],
+	})).digest('base64url')}`);
 }

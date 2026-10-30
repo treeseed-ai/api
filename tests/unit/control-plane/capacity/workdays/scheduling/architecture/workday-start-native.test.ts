@@ -9,6 +9,54 @@ import { listTeamProjectsMethod } from '../../../../../../../src/api/store/proje
 // AUTHORING ONLY: no execution receipt. Native SQL/HTTP controls do not prove
 // separate PostgreSQL connections, actual TreeDX policy or provider consumption.
 describe('first manual and recurring admission through the same public owning path', () => {
+	// Controlled projection input; actual public service, SQL and start writer.
+	it('starts and replays a nonempty selected workday after unrelated graph progress while preserving exact selected authority and receipt bytes', async () => {
+		const f = await workdayStartDatabase();
+		try {
+			const at = f.intent.startsAt;
+			const source = { store: 'treedx', model: 'proposal', id: 'controlled-proposal', revision: 1, digest: `sha256:${'a'.repeat(64)}` };
+			const authority = [{ store: 'treedx', model: 'decision', id: 'controlled-decision', revision: 1, digest: `sha256:${'b'.repeat(64)}` }];
+			await f.query(`INSERT INTO execution_graph_revisions (team_id,revision,rule_revision,changed_source_refs_json,graph_digest,changes_json,created_at)
+				VALUES (?,?,?,?,?,?,?)`, ['team', 1, 1, '[]', 'controlled-initial', '[]', at]);
+			await f.query(`INSERT INTO execution_nodes (id,team_id,project_id,work_item_id,kind,pair_role,source_ref_json,authority_refs_json,
+				rule_revision,node_revision,agent_class,status,estimate_json,required_capabilities_json,requested_permissions_json,workspace,maximum_review_cycles,
+				graph_revision_created,graph_revision_updated,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				['selected-review', 'team', 'project', 'work-item', 'reviewing', 'reviewer', JSON.stringify(source), JSON.stringify(authority),
+					1, 1, 'boundary-planner', 'ready', JSON.stringify({ expectedSeconds: 10, maximumSeconds: 20 }), '[]',
+					JSON.stringify({ content: { read: [], write: [] }, tools: [] }), 'treedx', 2, 1, 1, at, at]);
+			const body = { ...f.intent, planningOnly: false, allocation: { planningPercent: 0 } }, held = structuredClone(body);
+			const planned = await f.publicService.preflight(f.principal, 'team', body);
+			expect(planned.selectedDemands).toEqual([expect.objectContaining({ sourceId: 'selected-review', actingAuthority: {
+				decisionId: 'controlled-decision', decisionRevision: 1, executionNodeId: 'selected-review', executionNodeRevision: 1,
+				graphRevision: 1, sourceDigest: source.digest } })]);
+			const original = (await f.snapshot()).receipts[0];
+			// Supplied unrelated-project observation. Selected node bytes stay exact.
+			await f.query('INSERT INTO projects (id,team_id,slug,name,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?)',
+				['other-project', 'team', 'other-project', 'Other project', '{}', at, at]);
+			await f.query(`INSERT INTO execution_graph_revisions (team_id,revision,rule_revision,changed_source_refs_json,graph_digest,changes_json,created_at)
+				VALUES (?,?,?,?,?,?,?)`, ['team', 2, 1, JSON.stringify([{ ...source, id: 'unrelated-source' }]), 'controlled-unrelated', '[]', at]);
+			const before = await f.snapshot();
+			const refreshed = await f.publicService.preflight(f.principal, 'team', body);
+			expect(refreshed.selectedDemands[0]?.actingAuthority).toMatchObject({ graphRevision: 2, executionNodeRevision: 1 });
+			expect(refreshed.demandSetDigest).toBe(planned.demandSetDigest);
+			expect(refreshed.preflightDigest).not.toBe(planned.preflightDigest);
+			// A real selected revision change is denied before restoring the original
+			// controlled input and starting the ORIGINAL immutable receipt.
+			await f.query('UPDATE execution_nodes SET node_revision=2 WHERE id=?', ['selected-review']);
+			const changed = await f.snapshot();
+			await expect(f.start(planned, 'selected-authority')).rejects.toMatchObject({ code: 'workday_preflight_stale' });
+			expect(await f.snapshot()).toEqual(changed);
+			await f.query('UPDATE execution_nodes SET node_revision=1 WHERE id=?', ['selected-review']);
+			const started = await f.start(planned, 'selected-authority'), after = await f.snapshot();
+			expect(started).toMatchObject({ preflightId: planned.id, preflightDigest: planned.preflightDigest,
+				acceptedExecutionNodeIds: ['selected-review'], assignmentIds: [], reservationIds: [] });
+			expect(after.receipts.find(row => row.id === original?.id)).toEqual(original);
+			expect(after.workdays).toHaveLength(1);
+			for (const field of ['assignments', 'reservations', 'usage', 'ledger'] as const) expect(after[field]).toEqual(before[field]);
+			expect(await f.start(planned, 'selected-authority')).toEqual(started); expect(await f.snapshot()).toEqual(after);
+			expect(body).toEqual(held);
+		} finally { await f.close(); }
+	});
 	it('native owning workday project inventory retains exact team rows excludes completed deletion and remains immutable across concurrent reads', async () => {
 		const f = await workdayStartDatabase(); try {
 			await f.query('INSERT INTO teams (id,slug,name,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?)',
