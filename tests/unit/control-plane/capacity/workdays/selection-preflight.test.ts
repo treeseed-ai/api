@@ -234,6 +234,28 @@ describe('public workday selection custody', () => {
 		expect(receipt.selectedDemands).toEqual([expect.objectContaining({ sourceId: 'actor',
 			actingAuthority: expect.objectContaining({ executionNodeRevision: 5 }) })]);
 	});
+	it('starts an unchanged selected root after unrelated team graph progress without rewriting its preflight', async () => {
+		const f = fixture(true);
+		let graphRevision = 4;
+		const actor = { ...executionNodeRow({ id: 'actor', kind: 'acting', agentClass: 'engineer',
+			digest: 'source', expectedSeconds: 180, nodeRevision: 4, decisionRevision: 1 }), status: 'stale', workday_id: 'closed-parent' };
+		f.store.preflightCapacityWorkdayRunRequest.mockResolvedValue({ availableSeconds: 7200,
+			projects: [{ id: 'project-sdk', agents: [] }], executionNodeDemands: [], appliedPlan: {} });
+		f.store.all.mockImplementation(async (sql: string) => sql.includes('capacity_provider_team_memberships')
+			? [{ capacity_provider_id: 'provider' }] : sql.includes('FROM execution_nodes node')
+				? [{ ...actor, graph_revision: graphRevision }] : sql.includes('SELECT id,slug FROM projects')
+					? [{ id: 'project-sdk', slug: 'sdk' }] : []);
+		const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', {
+			...input(), executionMode: 'simulation', decisionIds: ['decision'], allocation: { planningPercent: 0 },
+		}), 'actor'), retained = structuredClone(f.stored());
+		expect(receipt.selectedDemands[0].actingAuthority).toMatchObject({ graphRevision: 5, executionNodeRevision: 5 });
+		graphRevision = 9; // Another project's progress changes only the team observation cursor.
+		await expect(f.service.start('team', { preflightId: receipt.id, preflightDigest: receipt.preflightDigest,
+			idempotencyKey: 'unrelated-project-progress' }, 'actor')).resolves.toMatchObject({ acceptedExecutionNodeIds: ['actor'] });
+		expect(f.stored()).toEqual(retained);
+		expect(actor).toMatchObject({ status: 'stale', node_revision: 4, workday_id: 'closed-parent' });
+		expect(f.store.createCapacityWorkdayRun).toHaveBeenCalledTimes(1);
+	});
 	it('freezes the admission time when an explicit start is omitted', () => {
 		vi.useFakeTimers();
 		try {
