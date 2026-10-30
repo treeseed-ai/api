@@ -47,3 +47,36 @@ it('does not manufacture Decision authority before approval', () => {
 	const result = graphNode(applyOperationalState(current, projected, 4), 'first', 'actor');
 	expect(result.status).toBe('proposed'); expect(result.authorityRefs?.some(ref => ref.model === 'decision')).toBe(false);
 });
+
+it('re-evaluates Decision conditions after a selected workday closes before acting admission', () => {
+	for (const priorStatus of ['completed', 'stale'] as const) for (const issued of [true, false]) {
+		const projected = graphState(graphProjection()), current = structuredClone(projected);
+		const condition = current.nodes.find(node => node.condition?.conditionType === 'authority')!;
+		Object.assign(condition, { workdayId: 'closed-before-acting', status: priorStatus, nodeRevision: 3 });
+		const actor = graphNode(current, 'first', 'actor');
+		Object.assign(actor, { workdayId: 'closed-before-acting', status: 'stale', nodeRevision: 3 });
+		const held = structuredClone({ current, projected });
+		const next = applyOperationalState(current, projected, 4, new Set(), new Map(), new Map(), new Set(issued ? [actor.id] : []));
+		const resolved = next.nodes.find(node => node.id === condition.id)!;
+		expect(resolved).toEqual({ ...projected.nodes.find(node => node.id === condition.id), nodeRevision: 4,
+			graphRevisionCreated: condition.graphRevisionCreated, graphRevisionUpdated: 4 });
+		expect(resolved).not.toHaveProperty('workdayId');
+		expect(graphNode(next, 'first', 'actor')).toEqual(actor);
+		expect(applyOperationalState(next, projected, 5).nodes).toEqual(next.nodes);
+		expect({ current, projected }).toEqual(held);
+	}
+});
+
+it('does not retain completed authority when current Decision or feedback blocks it', () => {
+	for (const reason of ['not-current', 'unresolved-feedback'] as const) {
+		const source = graphSource(), current = graphState(graphProjection([source]));
+		const old = current.nodes.find(node => node.condition?.conditionType === 'authority')!;
+		Object.assign(old, { workdayId: 'closed-before-acting', status: 'completed', nodeRevision: 3 });
+		if (reason === 'not-current') source.decision!.current = false;
+		else source.feedback = [{ id: 'concern', kind: 'concern', resolved: false, sourceRef: old.sourceRef }];
+		const projected = graphState(graphProjection([source]));
+		const next = applyOperationalState(current, projected, 4), condition = next.nodes.find(node => node.id === old.id)!;
+		expect(condition.status).toBe('blocked'); expect(condition).not.toHaveProperty('workdayId');
+		expect(graphNode(next, 'first', 'actor').status).not.toBe('ready');
+	}
+});
