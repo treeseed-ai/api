@@ -161,6 +161,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/architecture/contributions/shared-proposal-context.test.ts
     testName: "includes exact accepted scope for Git-only work without general content authority"
+  api.golden.shared-acting-proposal-context:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/contributions/shared-proposal-context.test.ts
+    testName: "retains shared exact proposal context for acting and reviewing without importing peer workspace references"
+  api.golden.shared-acting-proposal-context-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/contributions/proposal-source-context-native.test.ts
+    testName: "carries shared objective discussion and exact Git evidence into fresh TreeDX acting and review grants without changing output custody"
   api.golden.reviewed-predecessor-read-scope:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

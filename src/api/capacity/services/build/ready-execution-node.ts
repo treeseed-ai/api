@@ -36,9 +36,12 @@ const array = (value: unknown): unknown[] => {
 };
 const text = (...values: unknown[]): string => values.map((value) => typeof value === 'string' ? value.trim() : '').find(Boolean) ?? '';
 const exactCommit = (...values: unknown[]): string => values.map(text).find((value) => /^[a-f0-9]{40}$/u.test(value)) ?? '';
-const proposalContextRefs = (proposal: Row) => [
+const sharedProposalContextRefs = (proposal: Row) => [
 	...array(proposal.objectiveRefs), ...array(proposal.evidenceRefs),
 	...(proposal.discussionRef ? [proposal.discussionRef] : []),
+];
+const proposalContextRefs = (proposal: Row) => [
+	...sharedProposalContextRefs(proposal),
 	...array(record(proposal.executionPlan).workItems).flatMap(item => array(record(item).contextRefs)),
 ];
 const stable = (value: unknown): string => {
@@ -244,7 +247,9 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 	const workItems = array(record(exact.definition.executionPlan).workItems).map(record);
 	const workItem = workItems.find((candidate) => text(candidate.id) === node.workItemId);
 	if (!workItem) throw new CapacityGovernanceError('execution_node_work_item_missing', `Node ${node.id} work item is missing.`, 409);
-	return canonicalProposalContextRefs(store, { ...node, projectId: sourceProjectId }, array(workItem.contextRefs));
+	return canonicalProposalContextRefs(store, { ...node, projectId: sourceProjectId }, [
+		...array(workItem.contextRefs), ...sharedProposalContextRefs(exact.definition),
+	]);
 }
 
 

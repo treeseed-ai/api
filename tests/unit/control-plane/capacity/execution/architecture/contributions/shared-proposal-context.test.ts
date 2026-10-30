@@ -13,6 +13,32 @@ import { canonicalOfferBuildInput, candidate, gitRef, permissions as grantedPerm
 const sourceRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
  digest: `sha256:${'a'.repeat(64)}`, repository: 'repository', commit: 'b'.repeat(40), path: 'proposals/one.mdx' };
 const permissions = { content: { read: ['proposal', 'decision'], write: [] }, tools: ['source.read'] };
+it('retains shared exact proposal context for acting and reviewing without importing peer workspace references', async () => {
+	const proposal = readyContributionProposal(), item = proposal.executionPlan.workItems[0]!;
+	const own = { store: 'git', model: 'repository', id: 'selected-source', repository: 'treeseed-ai/project', commit: 'c'.repeat(40) };
+	const evidence = { ...own, id: 'historical-source', commit: 'd'.repeat(40) };
+	const objective = { store: 'treedx', model: 'objective', id: 'related', repository: 'repository', commit: 'e'.repeat(40), path: 'objectives/related.mdx' };
+	const discussion = { ...objective, model: 'discussion-message', id: 'planning', path: 'discussion-messages/plan/one.mdx' };
+	const peer = { ...own, id: 'peer-source', repository: 'treeseed-ai/peer', commit: 'f'.repeat(40) };
+	Object.assign(proposal, { objectiveRefs: [objective], evidenceRefs: [evidence], discussionRef: discussion,
+		executionPlan: { workItems: [{ ...item, contextRefs: [own] }, { ...item, id: 'peer-item', contextRefs: [peer] }] } });
+	const content = `---\n${stringify(proposal)}---\n`, exact = { ...sourceRef,
+		digest: `sha256:${createHash('sha256').update(content).digest('hex')}` };
+	gateway.readRepositoryFile.mockResolvedValue({ resolvedRef: exact.commit, file: { content, frontmatter: proposal } });
+	const store = { getGovernanceProposal: async () => ({ id: 'proposal', projectId: 'project', teamId: 'team' }),
+		getProjectTreeDxLibrary: async () => ({ repositoryId: 'repository' }) };
+	const held = structuredClone(proposal);
+	for (const kind of ['acting', 'reviewing']) {
+		const node = { id: `${kind}-selected`, kind, workItemId: item.id, sourceRef: exact, teamId: 'team', projectId: 'project' };
+		const before = structuredClone(node), refs = await workItemContext(store, node as never);
+		expect(refs).toEqual([own, objective, evidence, discussion]);
+		expect(refs).not.toContainEqual(peer);
+		// The selected item's current source remains ahead of historical evidence.
+		expect(refs.find(ref => ref.store === 'git')?.commit).toBe(own.commit);
+		expect(node).toEqual(before);
+	}
+	expect(proposal).toEqual(held);
+});
 it('includes exact accepted scope for Git-only work without general content authority', () => {
 	const exact = structuredClone(candidate), decision = { ...assignmentSource, model: 'decision', id: 'accepted', path: 'decisions/accepted.mdx' };
 	exact.node.requestedPermissions.content.read = [];

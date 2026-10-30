@@ -1,11 +1,73 @@
 import { expect, it, vi } from 'vitest';
 import { proposalNativeFixture } from '../../../../governance/proposals/architecture/proposal-native-fixture.ts';
-import { readyProposal } from '../../../../governance/proposals/architecture/ready-proposal-fixture.ts';
+import { readyContributionProposal, readyProposal } from '../../../../governance/proposals/architecture/ready-proposal-fixture.ts';
 import { workItemContext } from '../../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 import { buildAssignmentAttempt } from '../../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 import { canonicalOfferBuildInput } from '../../fixtures/assignment-attempt-fixtures.ts';
 import { assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
+import { validatePortableContentData } from '@treeseed/sdk/content-validation';
+
+it('carries shared objective discussion and exact Git evidence into fresh TreeDX acting and review grants without changing output custody', async () => {
+	vi.stubEnv('TREESEED_TREEDX_URL', ''); vi.stubEnv('TREESEED_TREEDX_BASE_URL', ''); vi.stubEnv('TREESEED_ENVIRONMENT', 'test');
+	const f = await proposalNativeFixture();
+	try {
+		for (const path of ['', '/objectives/escape.mdx', 'objectives/../notes/escape.mdx', 'discussion-messages/cleanup/../escape.mdx', 'discussion-messages/../../escape.mdx'])
+			expect(() => f.publishContent(path, { id: 'escape' })).toThrow('Unsafe fixture path');
+		const objectiveFile = f.publishContent('objectives/related.mdx', { id: 'related', title: 'Source cleanup diagnostics', summary: 'Preserve retained work and unknown outcomes.' });
+		const discussionFile = f.publishContent('discussion-messages/cleanup/plan.mdx', { id: 'planning', body: 'Inspect the authorized cleanup boundary before changing it.' });
+		const objective = { store: 'treedx' as const, model: 'objective', id: 'related', repository: 'repository', commit: objectiveFile.commit, path: 'objectives/related.mdx' };
+		const discussion = { ...objective, model: 'discussion-message', id: 'planning', commit: discussionFile.commit, path: 'discussion-messages/cleanup/plan.mdx' };
+		const source = { store: 'git' as const, model: 'repository', id: 'software-source', repository: 'treeseed-ai/project', commit: 'c'.repeat(40) };
+		const peer = { ...source, id: 'peer-workspace', repository: 'treeseed-ai/peer', commit: 'd'.repeat(40) };
+		const workspace = { store: 'treedx' as const, model: 'repository', id: 'repository', repository: 'repository', commit: objectiveFile.commit };
+		const definition = readyContributionProposal(), item = definition.executionPlan.workItems[0]!;
+		Object.assign(definition, { objectiveRefs: [objective], evidenceRefs: [source], discussionRef: discussion,
+			executionPlan: { workItems: [{ ...item, workspace: 'treedx', contextRefs: [workspace], requestedPermissions: {
+				content: { read: ['objective', 'discussion-message'], write: ['objective'] }, tools: ['source.read'] } },
+				{ ...item, id: 'peer-contribution', contextRefs: [peer] }] } });
+		expect(validatePortableContentData('proposal', definition).diagnostics).toEqual([]);
+		const frozen = await f.publish(definition), proposalRef = { store: 'treedx' as const, model: 'proposal', id: 'proposal', revision: 1,
+			repository: 'repository', commit: frozen.commit, path: 'proposals/proposal.mdx', digest: `sha256:${frozen.digest}` };
+		const store = { ...f.store, getGovernanceProposal: async () => {
+			const row = await f.store.first("SELECT * FROM governance_proposals WHERE id='proposal'");
+			return row ? { ...row, teamId: row.team_id, projectId: row.project_id } : null;
+		} };
+		const permissions = { content: { read: ['agent', 'proposal', 'decision', 'objective', 'discussion-message'], write: ['objective'] }, tools: ['source.read'] };
+		const definitionFile = f.publishContent('agents/context-author.mdx', { schemaVersion: 'treeseed.agent/v1', id: 'configured/context-author',
+			name: 'Context author', agentClass: 'configured-author', purpose: 'Produce the accepted cleanup contract.', responsibilities: ['Read exact accepted context.'],
+			capabilities: ['architecture-planning'], context: { include: ['assignment-subject'] }, activityProfiles: {
+				acting: { handler: 'writer', permissions, prompt: { system: 'Produce the accepted contract without changing source.' } },
+				reviewing: { handler: 'writer', permissions, prompt: { system: 'Review the exact accepted contract.' } } } });
+		const profileRef = { store: 'treedx' as const, model: 'agent', id: 'configured/context-author', repository: 'repository', commit: definitionFile.commit, path: 'agents/context-author.mdx' };
+		const held = await f.snapshot();
+		for (const kind of ['acting', 'reviewing'] as const) {
+			const input = structuredClone(canonicalOfferBuildInput()), candidate = input.candidate;
+			Object.assign(candidate.node, { kind, pairRole: kind === 'acting' ? 'actor' : 'reviewer', sourceRef: proposalRef, workItemId: item.id, workspace: 'treedx', requestedPermissions: permissions });
+			candidate.effectiveProfile = { ...candidate.effectiveProfile, activity: kind, profileRef, handler: 'writer', permissionCeiling: structuredClone(permissions) } as never;
+			candidate.projectContentRepositoryId = 'repository'; candidate.sourceRepositories = [source.repository];
+			const refs = await workItemContext(store, candidate.node);
+			expect(refs).toEqual([workspace, objective, source, discussion]); expect(refs).not.toContainEqual(peer);
+			candidate.contextRefs = [proposalRef, ...refs];
+			const before = structuredClone(input), issued = buildAssignmentAttempt(input).assignment;
+			expect(issued.contextRefs).toContainEqual(source); expect(issued.contextRefs).not.toContainEqual(peer);
+			expect(issued.grant.sourceRead).toEqual([source.repository]); expect(issued.grant.sourceWrite).toEqual([]);
+			expect(issued.grant.tools).toEqual(['source.read']); expect(issued.workspace.mode).toBe('treedx');
+			expect(issued.grant.contentWrite).toHaveLength(1);
+			expect(issued.grant.contentWrite[0]).toMatchObject({ repository: 'repository', commit: frozen.commit, model: 'objective' });
+			const denied = structuredClone(input);
+			denied.candidate.effectiveProfile.permissionCeiling.content.read = ['agent', 'proposal', 'decision', 'objective'];
+			expect(() => buildAssignmentAttempt(denied)).toThrow('Ready node requests authority outside its effective activity profile.');
+			for (const [reference, file] of [[objective, objectiveFile], [discussion, discussionFile], [profileRef, definitionFile]] as const) {
+				expect(issued.grant.contentRead).toContainEqual(reference);
+				const connection = await resolveKnowledgeGatewayConnection(f.store, { projectId: 'project', write: false, relationPaths: true, readRefs: [reference.commit] });
+				const observed = await connection!.client.readRepositoryFile({ repoId: reference.repository, ref: reference.commit, path: reference.path, encoding: 'utf8', parseFrontmatter: true, allowProtected: true }) as { resolvedRef: string; file: { content: string } };
+				expect(observed.resolvedRef).toBe(reference.commit); expect(observed.file.content).toBe(file.source);
+			}
+			expect(input).toEqual(before); expect(await f.snapshot()).toEqual(held);
+		}
+	} finally { await f.close(); vi.unstubAllEnvs(); }
+});
 
 // Committed native Git, original SQL and the official HTTP reader; configured
 // nodes are controlled inputs. No model execution or authenticated grant claim.

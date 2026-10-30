@@ -3,12 +3,12 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { isolatedPostgres } from '../../../fixtures/isolated-postgres.ts';
 import { parse, stringify } from 'yaml';
 import { splitPostgresSqlStatements } from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
 
-const fixturePath = (path: string) => /^(proposals|decisions|agents|notes)\/[a-z0-9-]+\.mdx$/u.test(path);
+const fixturePath = (path: string) => /^(?:(?:proposals|decisions|agents|notes|objectives)\/[a-z0-9-]+|discussion-messages\/[a-z0-9-]+\/[a-z0-9-]+)\.mdx$/u.test(path);
 
 /** Real owning SQL + official HTTP client + committed native Git bytes.
  * The remote files/read endpoint and library binding are isolated fixtures,
@@ -62,7 +62,7 @@ export async function proposalNativeFixture() {
 			all: async (sql: string, parameters: unknown[] = []) => (await query(sql, parameters)).rows };
 		const publishContent = (path: string, definition: Record<string, unknown>) => {
 			if (!fixturePath(path)) throw new Error('Unsafe fixture path');
-			mkdirSync(join(root, path.split('/')[0]!), { recursive: true });
+			mkdirSync(dirname(join(root, path)), { recursive: true });
 			const source = `---\n${stringify(definition)}---\n`;
 			writeFileSync(join(root, path), source);
 			git('add', path); git('commit', '--quiet', '--allow-empty', '-m', 'Governed fixture input');
