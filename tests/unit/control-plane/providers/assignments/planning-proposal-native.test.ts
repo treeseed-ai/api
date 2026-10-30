@@ -139,6 +139,38 @@ describe('original planning product admission', () => {
 				[revisionScope.id, 'controlled-membership', 'team', 'project', 'controlled-provider', 'releaser', 'planning', 'completed',
 					collaboratorId, JSON.stringify(revisionAttempt), JSON.stringify(revisionResult), original.createdAt, original.createdAt]);
 			const revisionReferences = await verifyAssignmentContent(store, revisionScope, revisionResult);
+			// A standalone-valid narrative is not a complete revision of this
+			// admitted shared plan. Preserve its original product, but never erase
+			// the current plan by adopting it. This does not define per-item
+			// removal consent, automatic merging or a new admission disposition.
+			const { executionPlan: _retainedPlan, ...incompleteDefinition } = definition;
+			const incomplete = f.publishContent(path, incompleteDefinition);
+			const incompleteAttempt = assignmentAttemptSchema.parse({ ...revisionAttempt, id: 'incomplete-planning-assignment' });
+			const incompleteScope = { ...revisionScope, id: incompleteAttempt.id, assignmentAttempt: incompleteAttempt };
+			const incompleteResult = assignmentResultSchema.parse({ ...revisionResult, id: 'incomplete-planning-result',
+				assignmentId: incompleteAttempt.id, references: [{ ...revisionResult.references[0], commit: incomplete.commit }] });
+			await f.query(`INSERT INTO capacity_provider_assignments
+				(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,mode,status,agent_id,
+				assignment_attempt_json,assignment_result_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				[incompleteScope.id, 'controlled-membership', 'team', 'project', 'controlled-provider', 'releaser', 'planning', 'completed',
+					collaboratorId, JSON.stringify(incompleteAttempt), JSON.stringify(incompleteResult), original.createdAt, original.createdAt]);
+			const incompleteReferences = await verifyAssignmentContent(store, incompleteScope, incompleteResult);
+			const incompleteBefore = await f.snapshot();
+			const versionsBefore = (await f.query('SELECT * FROM governance_proposal_versions ORDER BY version')).rows;
+			try { await recordAssignmentContentIntegration(store, incompleteScope, incompleteResult, incompleteReferences); }
+			catch (error) { expect(error).toMatchObject({ code: 'assignment_planning_proposal_invalid' }); }
+			const incompleteAfter = await f.snapshot();
+			expect(incompleteAfter.head).toBe(incompleteBefore.head); expect(incompleteAfter.status).toBe(incompleteBefore.status);
+			expect(incompleteAfter.rows.capacity_provider_assignments).toEqual(incompleteBefore.rows.capacity_provider_assignments);
+			expect(incompleteReferences).toEqual(incompleteResult.references);
+			const incompleteCanonical = await readExactProposal(store, (await store.getGovernanceProposal(definition.id))!);
+			expect(incompleteCanonical.definition.executionPlan, 'Incomplete planning product must not erase the canonical plan')
+				.toEqual(definition.executionPlan);
+			expect(incompleteAfter.rows.governance_proposals, 'Incomplete planning product must not replace the admitted full plan')
+				.toEqual(incompleteBefore.rows.governance_proposals);
+			expect(incompleteAfter.rows.governance_events).toEqual(incompleteBefore.rows.governance_events);
+			expect((await f.query('SELECT * FROM governance_proposal_versions ORDER BY version')).rows).toEqual(versionsBefore);
+			expect((await readExactProposal(store, (await store.getGovernanceProposal(definition.id))!)).definition).toEqual(definition);
 			const revisionBaseline = await f.snapshot();
 			for (const changed of [
 				{ ...revisionAttempt, workspace: { ...revisionAttempt.workspace, baseCommit: 'f'.repeat(40) } },

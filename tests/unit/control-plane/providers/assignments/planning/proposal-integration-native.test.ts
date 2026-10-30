@@ -27,7 +27,11 @@ describe('native planning result projection', () => {
 				capabilities: ['planning'], context: { include: ['project'] }, activityProfiles: { planning: profile } };
 			const definition = { schemaVersion: 'treeseed.proposal/v2', id, projectId, groupIds: ['portfolio-delivery'],
 				title: 'Retrieve reviewed original Git products through MCP', request: 'Route the existing exporter through the shared backend.',
-				summary: 'Preserve source custody without private host exports.', status: 'discussing' };
+				summary: 'Preserve source custody without private host exports.', status: 'discussing',
+				executionPlan: { workItems: [{ id: 'retained-document', activity: 'acting', workspace: 'read-only', review: 'required',
+					maximumReviewCycles: 2, objective: 'Document the authenticated original-product interface.', dependsOn: [],
+					requestedPermissions: { content: { read: ['proposal'], write: [] }, tools: [] },
+					acceptanceCriteria: ['Preserve original assignment and source identity.'] }] } };
 			const refs = object(await f.client.repositories.refs(repository)); assert.ok(Array.isArray(refs.refs));
 			const staging = refs.refs.map(object).find(ref => ref.name === 'refs/heads/staging'); assert.ok(staging);
 			const workspace = object(await f.client.workspaces.create(repository, { baseRef: String(staging.target ?? staging.sha),
@@ -182,6 +186,44 @@ describe('native planning result projection', () => {
 			expect(await f.store.all('SELECT data_json FROM audit_events WHERE target_id=?', [staleAttempt.id])).toEqual(audits);
 			expect(await f.client.repositories.refs(repository)).toEqual(staleRefsBefore);
 			expect((await f.snapshot()).ledger).toEqual(staleBefore.ledger);
+			// A current-source, complete-result product may still contain an
+			// incomplete planning document. Neither concurrent integrator may erase
+			// the admitted plan. No implicit merge/removal policy is asserted.
+			const current = await readExactProposal(f.store, updated);
+			const incompleteWorkspace = object(await f.client.workspaces.create(repository, { baseRef: current.ref.commit,
+				branchName: `refs/heads/${id}-incomplete`, mode: 'writable', allowedPaths: [path] }));
+			workspaceId = String(incompleteWorkspace.workspaceId);
+			const { executionPlan: _retainedPlan, ...incompleteDefinition } = revised;
+			await f.client.files.write(workspaceId, { path, content: `---\n${stringify(incompleteDefinition)}---\n` });
+			const incompleteCommit = object(await f.client.files.commit(workspaceId, { message: 'Controlled incomplete planning product',
+				author: { name: collaborator.name, email: 'planning-fixture@example.invalid' } }));
+			await f.client.workspaces.close(workspaceId);
+			expect(await f.client.workspaces.get(workspaceId)).toMatchObject({ status: 'closed' });
+			const incompleteAttempt = assignmentAttemptSchema.parse({ ...revisionAttempt, id: `assignment-${id}-incomplete`,
+				sourceRef: current.ref, workspace: { ...revisionAttempt.workspace, workspaceId, baseCommit: current.ref.commit },
+				grant: { ...revisionAttempt.grant, contentRead: [revisionRef, current.ref], contentWrite: [current.ref] } });
+			const incompleteResult = assignmentResultSchema.parse({ ...revisionResult, id: `result-${id}-incomplete`,
+				assignmentId: incompleteAttempt.id, references: [{ kind: 'treedx', projectId, repository,
+					commit: String(incompleteCommit.commitSha), path, workspaceId }] });
+			const incompleteRow = completedPlanningRow(incompleteAttempt, incompleteResult, collaboratorId);
+			await f.query(`INSERT INTO capacity_provider_assignments (${Object.keys(incompleteRow).join(',')})
+				VALUES (${Object.keys(incompleteRow).map(() => '?').join(',')})`, Object.values(incompleteRow));
+			const incompleteScope = { ...revisionScope, id: incompleteAttempt.id, assignmentAttempt: incompleteAttempt };
+			const incompleteReferences = await verifyAssignmentContent(f.store, incompleteScope, incompleteResult);
+			const incompleteBefore = await f.snapshot(), incompleteRefsBefore = await f.client.repositories.refs(repository);
+			const versionsBefore = await f.store.all('SELECT * FROM governance_proposal_versions ORDER BY version');
+			const dispositions = await Promise.allSettled([
+				recordAssignmentContentIntegration(f.store, incompleteScope, incompleteResult, incompleteReferences),
+				recordAssignmentContentIntegration(f.peerStore, incompleteScope, incompleteResult, incompleteReferences)]);
+			for (const disposition of dispositions) if (disposition.status === 'rejected') {
+				expect(disposition.reason).toMatchObject({ code: 'assignment_planning_proposal_invalid' });
+			}
+			expect(await f.store.getGovernanceProposal(id), 'Incomplete planning product must not replace the admitted full plan').toEqual(updated);
+			expect((await readExactProposal(f.store, (await f.store.getGovernanceProposal(id))!)).definition).toEqual(revised);
+			expect(await f.store.all('SELECT * FROM governance_proposal_versions ORDER BY version')).toEqual(versionsBefore);
+			expect(incompleteReferences).toEqual(incompleteResult.references);
+			expect(await f.client.repositories.refs(repository)).toEqual(incompleteRefsBefore);
+			expect((await f.snapshot()).ledger).toEqual(incompleteBefore.ledger);
 		} finally {
 			try { if (workspaceId) await f.client.workspaces.close(workspaceId); } finally { await f.close(); }
 		}
