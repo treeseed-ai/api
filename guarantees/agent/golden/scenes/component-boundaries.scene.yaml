@@ -1611,6 +1611,12 @@ workflow:
   - id: accepted-unissued-fixture-parent
     action: { verifier: api.golden.accepted-unissued-fixture-parent }
     expect: { status: passed }
+  - id: closed-workday-source-condition
+    action: { verifier: api.golden.closed-workday-source-condition }
+    expect: { status: passed }
+  - id: closed-workday-authority-denials
+    action: { verifier: api.golden.closed-workday-authority-denials }
+    expect: { status: passed }
   - id: architecture-living-graph-sql-1
     action: { verifier: api.golden.architecture-living-graph-sql-1 }
     expect: { status: passed }
