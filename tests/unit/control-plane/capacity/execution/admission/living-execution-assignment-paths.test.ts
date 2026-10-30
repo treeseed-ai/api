@@ -18,6 +18,7 @@ import * as accounting from '../../../../../../src/api/capacity/services/capacit
 import * as transactions from '../../../../../../src/api/capacity/transaction.ts';
 import { ControlPlaneStore } from '../../../../../../src/api/persistence/store.ts';
 import { createCapacityControlPlane } from '../../../../../../src/api/capacity/control-plane.ts';
+import { CapacityGovernanceError } from '../../../../../../src/api/capacity/database.ts';
 
 describe('living execution TreeDX path authority', () => {
 	it.each([false, true])('replays original authority after a competing synthesis (commit after absence read: %s)', async lateCommit => {
@@ -135,6 +136,40 @@ describe('living execution TreeDX path authority', () => {
 				agentClass: qualified.node.agentClass, priority: 1, readyAt: qualified.readyAt }]);
 			expect(observed.selection.providerUnavailable).toBe(1); expect({ candidates, input }).toEqual(held);
 		}
+	});
+	it('admits a healthy other-project candidate while auditing an invalid predecessor candidate', async () => {
+		const input = canonicalOfferBuildInput();
+		const rejected = { ...input.candidate, node: { ...input.candidate.node, id: 'invalid-rework', projectId: 'project-a', priority: 100 } };
+		const healthy = { ...input.candidate, node: { ...input.candidate.node, id: 'healthy-other-project', projectId: 'project-b', priority: 1 } };
+		const host = new ControlPlaneStore({}, { prepare: () => { throw new Error('Unexpected native SQL in UNIT'); } });
+		host.ensureInitialized = vi.fn(); host.all = vi.fn().mockResolvedValue([]);
+		vi.spyOn(host, 'first').mockImplementation(async <T extends Record<string, unknown>>(query: string) => {
+			const row: Record<string, unknown> = { id: healthy.node.id };
+			return query.startsWith('SELECT node.id') ? row as T : null;
+		});
+		host.listTeamProjects = vi.fn().mockResolvedValue([{ id: 'project-a', slug: 'a' }, { id: 'project-b', slug: 'b' }]);
+		host.getProjectByTeamAndSlug = vi.fn().mockResolvedValue(null); host.getProjectTreeDxLibrary = vi.fn().mockResolvedValue(null);
+		boundary.runs.mockResolvedValue([{ ...input.run, parameters: { ...input.run.parameters, projects: ['project-a', 'project-b'], scheduledProjectIds: ['project-a', 'project-b'] } }]);
+		boundary.ready.mockImplementation(async (_store, _run, project) => [rejected, healthy].filter(candidate => candidate.node.projectId === project.id));
+		boundary.allocation.mockResolvedValue(input.allocationInputs);
+		boundary.admit.mockImplementation(async (_store, value) => {
+			if (value.assignment.nodeId === rejected.node.id) throw new CapacityGovernanceError(
+				'assignment_predecessor_authority_mismatch', 'Every predecessor artifact requires its exact context and read grant.', 409,
+				{ predecessorId: 'prior-result' });
+			return { id: value.assignment.id, assignmentAttempt: value.assignment };
+		});
+		const observed = await assignNextReadyExecutionNode(createCapacityControlPlane(host), input.principal, input.providerSessionId, input.providers, input.now);
+		expect(observed.assignment?.assignmentAttempt?.nodeId).toBe(healthy.node.id);
+		expect(observed.selection.deferredCandidates).toEqual([{
+			runId: input.run.id, nodeId: rejected.node.id, code: 'assignment_predecessor_authority_mismatch',
+			reason: 'Every predecessor artifact requires its exact context and read grant.', details: { predecessorId: 'prior-result' },
+		}]);
+		boundary.allocation.mockRejectedValue(new CapacityGovernanceError(
+			'execution_assignment_authority_mismatch', 'Shared authority context is invalid.', 403));
+		await expect(assignNextReadyExecutionNode(createCapacityControlPlane(host), input.principal,
+			input.providerSessionId, input.providers, input.now)).rejects.toMatchObject({
+			code: 'execution_assignment_authority_mismatch', message: 'Shared authority context is invalid.',
+		});
 	});
 	it('keeps communication admission independent of the ordinary workday slot', () => {
 		const policy = { maximumConcurrency: 1, communicationConcurrency: 2 };
