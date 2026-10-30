@@ -28,9 +28,10 @@ export function applyOperationalState(current: TeamGraph, projected: TeamGraph, 
 	const terminalProjectionNodeIds = new Set<string>();
 	const nodes = projected.nodes.map((node) => {
 		const prior = priorById.get(node.id);
-		// A terminal simulation no longer owns this decision projection. Retire its
-		// candidate and review state; a later selected workday gets a fresh attempt.
-		if (prior?.workdayId && !node.workdayId && node.authorityRefs?.some((reference) => reference.model === 'decision')) {
+		// Retire terminal simulation workloads, not source-derived conditions.
+		// Current authority and feedback must remain evaluable before a fresh start.
+		if (node.kind !== 'condition' && prior?.workdayId && !node.workdayId
+			&& node.authorityRefs?.some((reference) => reference.model === 'decision')) {
 			// Approval may follow estimation closeout. Refresh only never-issued
 			// candidates that have not yet received Decision authority; preflight
 			// must still select the new workday before any execution is admissible.

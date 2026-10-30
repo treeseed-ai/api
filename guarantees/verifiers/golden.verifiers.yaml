@@ -2841,6 +2841,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/accepted-unissued-fixture.test.ts
     testName: "retains a real closed Workday parent for the native unissued Decision handoff and its public observation"
+  api.golden.closed-workday-source-condition:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/accepted-decision-authority.test.ts
+    testName: "re-evaluates Decision conditions after a selected workday closes before acting admission"
+  api.golden.closed-workday-authority-denials:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/accepted-decision-authority.test.ts
+    testName: "does not retain completed authority when current Decision or feedback blocks it"
   api.golden.architecture-living-graph-sql-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

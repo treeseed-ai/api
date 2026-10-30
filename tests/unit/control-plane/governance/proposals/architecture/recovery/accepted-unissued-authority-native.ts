@@ -54,6 +54,30 @@ export async function verifyNativeUnissuedDecisionHandoff(f: Awaited<ReturnType<
 	expect(receipt.selectedDemands).toEqual([expect.objectContaining({ sourceType: 'execution-node', sourceId: actor.id,
 		actingAuthority: expect.objectContaining({ decisionId, executionNodeId: actor.id, executionNodeRevision: refreshed.nodeRevision + 1 }) })]);
 	expect(await service.show(f.principal, 'team', {})).toEqual(before);
+	// Controlled projection from a selected simulation closed BEFORE any acting
+	// attempt. Keep the genuinely published Decision and all estimates unchanged.
+	const condition = before.nodes.find(node => node.sourceRef.id === proposalId && node.condition?.conditionType === 'authority');
+	assert.ok(condition); expect(condition.status).toBe('completed');
+	const parentBefore = await f.store.first('SELECT * FROM capacity_workday_runs WHERE id=?', [closedWorkdayId]);
+	await f.query("UPDATE execution_nodes SET workday_id=?,status='stale' WHERE id IN (?,?)",
+		[closedWorkdayId, actor.id, condition.id]);
+	const retiredActor = await service.node(f.principal, 'team', actor.id);
+	const closedPreview = await reconcileExecutionGraph(f.store, 'team', { plan: true });
+	assert.ok('changes' in closedPreview); expect(closedPreview.changes.changed).toContain(condition.id);
+	expect((await service.node(f.principal, 'team', condition.id)).status).toBe('stale');
+	await Promise.all([reconcileExecutionGraph(f.store, 'team'), reconcileExecutionGraph(f.peerStore!, 'team')]);
+	expect(await service.node(f.principal, 'team', actor.id)).toEqual(retiredActor);
+	const restored = await service.node(f.principal, 'team', condition.id);
+	expect(restored).toMatchObject({ id: condition.id, status: 'completed', authorityRefs: condition.authorityRefs });
+	expect(restored).not.toHaveProperty('workdayId');
+	const restoredGraph = await service.show(f.principal, 'team', {});
+	await reconcileExecutionGraph(f.store, 'team'); expect(await service.show(f.principal, 'team', {})).toEqual(restoredGraph);
+	const restarted = await createWorkdayService(createCapacityControlPlane(f.store)).preflight(f.principal, 'team',
+		{ ...intent, startsAt: new Date().toISOString(), allocation: { planningPercent: 0 } });
+	expect(restarted.selectedDemands).toEqual([expect.objectContaining({ sourceId: actor.id, mode: 'acting',
+		actingAuthority: expect.objectContaining({ decisionId, executionNodeId: actor.id, executionNodeRevision: retiredActor.nodeRevision + 1 }) })]);
+	expect(await service.show(f.principal, 'team', {})).toEqual(restoredGraph);
+	expect(await f.store.first('SELECT * FROM capacity_workday_runs WHERE id=?', [closedWorkdayId])).toEqual(parentBefore);
 	expect({ assignments: await f.store.all('SELECT * FROM capacity_provider_assignments ORDER BY id'),
 		decisions: await f.store.all('SELECT * FROM governance_decisions ORDER BY id'),
 		usage: await f.store.all('SELECT * FROM capacity_usage_actuals ORDER BY id'),
