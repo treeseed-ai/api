@@ -3431,3 +3431,13 @@ workflow:
   - id: selected-authority-public-start
     action: { verifier: api.golden.selected-authority-public-start }
     expect: { status: passed }
+
+  - id: retained-acting-continuation-unit
+    action: { verifier: api.golden.retained-acting-continuation-unit }
+    expect: { status: passed }
+  - id: retained-acting-continuation-production
+    action: { verifier: api.golden.retained-acting-continuation-production }
+    expect: { status: passed }
+  - id: retained-acting-continuation-projection
+    action: { verifier: api.golden.retained-acting-continuation-projection }
+    expect: { status: passed }

@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
+const proposalSources = vi.hoisted(() => vi.fn().mockResolvedValue([]));
+vi.mock('../../../../../src/api/capacity/services/capacity/execution/executable-proposal-source.ts', async original => ({
+	...await original<object>(), loadTeamExecutableProposalSources: proposalSources,
+}));
+import { previewWorkdayExecutionGraph, persistExecutionGraph } from '../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { graphProjection, graphState, graphSource, graphProfiles, graphNode, emptyLivingGraph } from '../execution/graph/architecture/living/living-graph-fixture.ts';
 import pg from 'pg';
+import { readFileSync } from 'node:fs';
 import { assignmentBelongsToRun, validateWorkdayContinuation, workdayContinuationHistory, workdayLineageSql } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-continuation.ts';
 import { workdayStartDatabase } from './scheduling/architecture/workday-start-fixture.ts';
 import { settleCapacityReservationExactlyOnce } from '../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
@@ -14,6 +21,79 @@ const fixture = (rows = [previous]) => ({
 	all: vi.fn(async () => [{ decision_id: 'decision', assignment_attempt_json: '{}' }]),
 });
 describe('settled workday continuation', () => {
+	it('canonical continuation preview retains the approved corrected prefix and exposes only the failed successor without writing workday graph or result history', async () => {
+		const f = await workdayStartDatabase();
+		try {
+			await f.db.exec(readFileSync('drizzle/control-plane/0005_governance_inbox.sql', 'utf8'));
+			const source = graphSource('project'), profiles = graphProfiles(['project']);
+			proposalSources.mockResolvedValue([source]);
+			const projection = graphProjection([source]), current = graphState(projection), at = f.intent.startsAt;
+			for (const definition of Object.values(profiles)) await f.query(`INSERT INTO project_agent_classes
+				(id,team_id,project_id,slug,name,handler_refs_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)`,
+				[definition.id, 'team', 'project', definition.agentClass, definition.name, JSON.stringify({ agents: [definition] }), at, at]);
+			const parentId = 'reviewed-prefix-parent';
+			await f.query(`INSERT INTO capacity_workday_runs (id,team_id,capacity_provider_id,status,execution_kind,execution_mode,trigger_kind,parameters_json,created_at,updated_at)
+				VALUES (?,'team','provider','failed','workday','simulation','manual',?,?,?)`, [parentId,
+					JSON.stringify({ scheduledProjectIds: ['project'], decisionIds: [source.decision!.id], planningPercent: 0 }), at, at]);
+			for (const node of current.nodes) if (node.kind !== 'condition') Object.assign(node, { workdayId: parentId, status: 'stale', nodeRevision: 6 });
+			await persistExecutionGraph(f.store, current, emptyLivingGraph(), { ...projection.revision, graphDigest: current.digest });
+			const actor = graphNode(current, 'first', 'actor'), reviewer = graphNode(current, 'first', 'reviewer'), writer = graphNode(current, 'next', 'actor');
+			const histories = [
+				{ id: 'original-actor', node: actor, revision: 3, status: 'completed', offset: 5000 },
+				{ id: 'request-changes', node: reviewer, revision: 3, status: 'completed', offset: 4000, reviewDisposition: 'request-changes' },
+				{ id: 'corrected-actor', node: actor, revision: 5, status: 'completed', offset: 3000 },
+				{ id: 'approved-review', node: reviewer, revision: 5, status: 'completed', offset: 2000, reviewDisposition: 'approved' },
+				{ id: 'failed-writer', node: writer, revision: 5, status: 'failed', offset: 1000 },
+			];
+			for (const history of histories) {
+				const finished = new Date(Date.parse(at) - history.offset).toISOString();
+				const frozen = assignmentAttemptSchema.parse({ ...structuredClone(assignment), id: history.id, idempotencyKey: history.id,
+					teamId: 'team', projectId: 'project', workdayId: parentId, sourceRef: history.node.sourceRef, authorityRefs: history.node.authorityRefs });
+				const result = assignmentResultSchema.parse({ schemaVersion: 'treeseed.assignment-result/v1', id: `result-${history.id}`,
+					assignmentId: history.id, status: history.status, summary: 'Controlled historical input, not a live execution or charge.',
+					references: [], verification: [], diagnostics: [], usage: { elapsedSeconds: 1 }, completedAt: finished });
+				await f.query(`INSERT INTO capacity_provider_assignments (id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,work_day_id,
+					mode,status,lease_state,attempt_count,decision_id,execution_node_id,execution_node_revision,assignment_attempt_json,assignment_result_json,
+					lifecycle_output_json,completed_at,failed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+					[history.id, 'membership', 'team', 'project', 'provider', profiles[`project:${history.node.agentClass}`]!.id, parentId,
+						'acting', history.status, 'released', 1, source.decision!.id, history.node.id, history.revision, JSON.stringify(frozen), JSON.stringify(result),
+						JSON.stringify({ activityCompletion: { reviewDisposition: history.reviewDisposition } }), history.status === 'completed' ? finished : null,
+						history.status === 'failed' ? finished : null, finished, finished]);
+			}
+			const preflight = await f.publicService.preflight(f.principal, 'team', { ...f.intent, planningOnly: false, allocation: { planningPercent: 0 } }),
+				row = (await f.snapshot()).receipts.find(row => row.resource_id === preflight.id)!;
+			const runInput = JSON.parse(String(row.response_json)).runInput;
+			const capacity = await f.store.preflightCapacityWorkdayRunRequest('team', runInput);
+			expect((capacity.appliedPlan as { id: string }).id).toBe(runInput.id);
+			const run = { id: String(runInput.id), teamId: 'team', executionMode: 'simulation' as const,
+				parameters: { ...runInput.parameters, appliedPlan: capacity.appliedPlan, scheduledProjectIds: ['project'],
+					decisionIds: [source.decision!.id], continueFromWorkdayId: parentId, planningPercent: 0 } };
+			const before = await f.snapshot(), held = structuredClone({ source, current, run });
+			const next = await previewWorkdayExecutionGraph(f.store, run);
+			expect(next.nodes.filter(node => node.workdayId === run.id && node.status === 'ready').map(node => node.id)).toEqual([writer.id]);
+			for (const prefix of [actor, reviewer]) expect(next.nodes.find(node => node.id === prefix.id)).toMatchObject({
+				status: 'completed', nodeRevision: 5, workdayId: run.id, sourceRef: prefix.sourceRef, authorityRefs: prefix.authorityRefs });
+			expect(next.nodes.find(node => node.id === writer.id)).toMatchObject({ status: 'ready', nodeRevision: 7 });
+			expect(await Promise.all([previewWorkdayExecutionGraph(f.store, run), previewWorkdayExecutionGraph(f.store, run)])).toEqual([next, next]);
+			expect(await f.snapshot()).toEqual(before); expect({ source, current, run }).toEqual(held);
+			await f.query("UPDATE capacity_provider_assignments SET lease_state='leased' WHERE id='failed-writer'");
+			const unsettled = await f.snapshot();
+			await expect(previewWorkdayExecutionGraph(f.store, run)).rejects.toMatchObject({ code: 'workday_continuation_unsettled' });
+			expect(await f.snapshot()).toEqual(unsettled);
+			await f.query("UPDATE capacity_provider_assignments SET lease_state='released' WHERE id='failed-writer'");
+			await f.query(`INSERT INTO inbox_items (id,team_id,project_id,kind,title,markdown,status,author_id,author_label,version,
+				repository_id,content_path,commit_sha,digest,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				['blocking-writer-question', 'team', 'project', 'question', 'Controlled blocker', 'Controlled unresolved input',
+					'outstanding', 'operator', 'Operator', 1, source.repository, 'questions/controlled.mdx', source.commit, source.digest,
+					JSON.stringify({ relatedProposals: [source.frontmatter.id], relatedWorkItems: ['next'] }), at, at]);
+			const questioned = await f.snapshot(), questions = await f.all('SELECT * FROM inbox_items ORDER BY id');
+			const blocked = await previewWorkdayExecutionGraph(f.store, run);
+			expect(blocked.nodes.find(node => node.id === writer.id)?.status).toBe('blocked');
+			expect(blocked.nodes.filter(node => node.workdayId === run.id && node.status === 'ready')).toEqual([]);
+			expect(await f.snapshot()).toEqual(questioned); expect(await f.all('SELECT * FROM inbox_items ORDER BY id')).toEqual(questions);
+
+		} finally { proposalSources.mockReset().mockResolvedValue([]); await f.close(); }
+	});
 	it('preserves canonical omitted node authority without admitting foreign decisions or changed source history', () => {
 		const sourceRef = { store: 'postgresql', model: 'workday', id: 'source-workday' };
 		const node = executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1', id: 'planning-node', teamId: 'team', projectId: 'project',

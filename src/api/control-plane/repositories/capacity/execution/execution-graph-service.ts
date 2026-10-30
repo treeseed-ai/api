@@ -3,7 +3,7 @@ export{persistExecutionGraph};
 import { applyOperationalState, recoverIncompleteReviewCycles, reviewCycleLimitReached, recoverInterruptedGovernanceReviews,
 	recoverableGovernanceReviewAttemptHistory, stable, digest, record, text, type TeamGraph } from './execution-graph-state.ts';
 import { graphRevisionSchema, validateAgentDefinitionModel,
-	type AgentDefinition, type ExecutionEdge, type ExecutionNode, type GraphRevision } from '@treeseed/sdk/agent-capacity';
+	type AgentDefinition, type ExecutionEdge, type ExecutionNode, type GraphRevision, type CapacityWorkdayRunRecord } from '@treeseed/sdk/agent-capacity';
 import { projectTeamExecutionGraph } from '../../../../capacity/policy/execution/execution-graph-projector.ts';
 import { projectActiveWorkdays } from '../../../../capacity/policy/execution/workday-execution-projector.ts';
 import { projectCommunicationInvocations, type CommunicationProjectionSource } from '../../../../capacity/policy/execution/communication-execution-projector.ts';
@@ -203,11 +203,12 @@ function visibleGraph(graph: TeamGraph, query: Row): TeamGraph {
 	return { ...graph, nodes, edges: graph.edges.filter((edge) => ids.has(edge.fromNodeId) && ids.has(edge.toNodeId)) };
 }
 
-async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row = {}, scope: 'team' | 'communication' = 'team') {
+async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row = {}, scope: 'team' | 'communication' = 'team',
+	prospective?: Pick<CapacityWorkdayRunRecord, 'id' | 'teamId' | 'parameters' | 'executionMode'>) {
 	const current = await loadGraphSource('projection', () => readGraph(store, teamId));
 	const frozenInvalid = new Set<string>();
 	const assignmentScope = scope === 'communication' ? " AND execution_kind='conversation'" : '';
-	const [sources, profiles, workdays, communications, activeAssignmentRows, terminalAssignmentRows, reviewCycleRows] = await Promise.all([
+	const [sources, profiles, storedWorkdays, communications, activeAssignmentRows, terminalAssignmentRows, reviewCycleRows] = await Promise.all([
 		scope === 'communication' ? Promise.resolve([]) : loadGraphSource('governance', () =>
 			loadTeamExecutableProposalSources(store, teamId, undefined, (source) => frozenInvalid.add(`${source.id}\u0000${source.digest}`))),
 		loadGraphSource('agent_profiles', () => loadProfiles(store, teamId)),
@@ -228,6 +229,7 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 			AND lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='request-changes'
 			AND execution_node_id IS NOT NULL`, [teamId])),
 	]);
+	const workdays = prospective ? [...storedWorkdays, prospective] : storedWorkdays;
 	if (!sources.length && !workdays.length && !communications.length && !current.nodes.length) return body.plan === true
 		? { teamId, baseRevision: current.revision, desiredRevision: current.revision, desiredDigest: current.digest, changes: { added: [], changed: [], completed: [], blocked: [], stale: [], removedEdges: [], addedEdges: [] } }
 		: current;
@@ -371,6 +373,7 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 	}
 	for (const node of desired.nodes) if (frozenNodeIds.has(node.id) && node.status === 'ready') node.status = 'blocked';
 	if (frozenNodeIds.size) desired.digest = digest({ teamId, nodes: desired.nodes, edges: desired.edges });
+	if (prospective) return desired; // Same projection and lineage rules, without a graph or workday write.
 	const changes = graphChanges(current, desired);
 	if (body.plan === true) return { teamId, baseRevision: current.revision, desiredRevision: desired.revision, desiredDigest: desired.digest, changes };
 	if (!hasChanges(changes)) return current.revision
@@ -397,6 +400,14 @@ async function reconcileGraphScope(store: any, teamId: string, body: Row, scope:
 		}
 	}
 	throw new CapacityOperationError(409, 'execution_graph_revision_conflict', 'The execution graph changed concurrently; reconcile again.');
+}
+
+/** Read-only preview for a validated prospective workday; no caller-supplied graph state. */
+export async function previewWorkdayExecutionGraph(store: any,
+	run: Pick<CapacityWorkdayRunRecord, 'id' | 'teamId' | 'parameters' | 'executionMode'>): Promise<TeamGraph> {
+	const graph = await reconcileExecutionGraphOnce(store, run.teamId, {}, 'team', run);
+	if (!('nodes' in graph)) throw new Error('Prospective workday projection did not return a graph');
+	return graph;
 }
 
 export async function reconcileExecutionGraph(store: any, teamId: string, body: Row = {}, ..._trace: unknown[]) { return reconcileGraphScope(store, teamId, body, 'team'); }

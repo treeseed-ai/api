@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { stringify } from 'yaml';
 const contentRead = vi.hoisted(() => vi.fn());
+const previewGraph = vi.hoisted(() => vi.fn());
+vi.mock('../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts', async importOriginal => ({
+	...await importOriginal<object>(), previewWorkdayExecutionGraph: previewGraph,
+}));
+import { decodeExecutionNode } from '../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-storage.ts';
 vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', async importOriginal => ({
 	...await importOriginal<object>(), resolveKnowledgeGatewayConnection: async () => ({ repositoryId: 'library',
 		client: { readRepositoryFile: contentRead } }),
@@ -23,6 +28,7 @@ const executionNodeRow = (value: { id: string; kind: string; agentClass: string;
 });
 function fixture(acceptedDecision = false) {
 	let stored: any; let replay: any;
+	previewGraph.mockReset().mockResolvedValue({ teamId: 'team', revision: 1, nodes: [], edges: [] });
 	// Supplied UNIT authority only; native governance is proved separately.
 	const decision = { id: 'decision', team_id: 'team', project_id: 'project-sdk', proposal_id: 'proposal',
 		proposal_version: 1, proposal_content_hash: 'd'.repeat(64), status: 'accepted', superseded_at: null,
@@ -283,6 +289,55 @@ describe('public workday selection custody', () => {
 				idempotencyKey: `changed-${change}` }, change === 'operator' ? 'another-operator' : 'actor')).rejects.toMatchObject({ code: 'workday_preflight_stale' });
 			expect(f.stored()).toEqual(retained); expect(f.store.createCapacityWorkdayRun).not.toHaveBeenCalled();
 		}
+	});
+	it('continues only a failed actor after a completed reviewed prefix closes without rewriting prior work', async () => {
+		const f = fixture(true), first = f.store.first.getMockImplementation()!;
+		const parent = { id: 'closed-parent', team_id: 'team', capacity_provider_id: 'provider', status: 'failed',
+			execution_kind: 'workday', execution_mode: 'simulation', parameters_json: JSON.stringify({ scheduledProjectIds: ['project-sdk'] }) };
+		const node = (id: string, kind: string, revision: number) => ({
+			...executionNodeRow({ id, kind, agentClass: 'engineer', digest: 'source', expectedSeconds: 180, nodeRevision: revision, decisionRevision: 1 }),
+			status: 'stale', workday_id: parent.id, graph_revision: 9,
+		});
+		const rows = [node('completed-actor', 'acting', 6), node('approved-review', 'reviewing', 7), node('failed-writer', 'acting', 6)];
+		const history = rows.map((row, index) => ({ id: `attempt-${row.id}`, team_id: 'team', work_day_id: parent.id,
+			execution_node_id: row.id, execution_node_revision: index === 1 ? 6 : 5, decision_id: 'decision',
+			status: index === 2 ? 'failed' : 'completed', lease_state: 'released', lease_token: null,
+			assignment_attempt_json: JSON.stringify({ sourceRef: JSON.parse(row.source_ref_json), authorityRefs: JSON.parse(row.authority_refs_json) }),
+			assignment_result_json: JSON.stringify({ id: `result-${row.id}`, status: index === 2 ? 'failed' : 'completed',
+				...(index === 1 ? { completion: { disposition: 'approved' } } : {}), references: [], verification: [] }) }));
+		const retained = structuredClone({ parent, rows, history });
+		// Supplied UNIT projection output. The native integration must exercise
+		// the shared canonical projector and exact historical result custody.
+		previewGraph.mockImplementation(async (_store, run) => ({ teamId: 'team', revision: 10, edges: [],
+			nodes: rows.map((row, index) => ({ ...decodeExecutionNode(row), workdayId: run.id,
+				status: index === 2 ? 'ready' : 'completed', nodeRevision: index === 2 ? 7 : index === 1 ? 6 : 5 })) }));
+		f.store.first.mockImplementation(async (sql, args?: unknown[]) => sql.includes('FROM capacity_workday_runs') && args?.[1] === parent.id ? parent : first(sql));
+		f.store.preflightCapacityWorkdayRunRequest.mockResolvedValue({ availableSeconds: 7200,
+			projects: [{ id: 'project-sdk', agents: [] }], executionNodeDemands: [], appliedPlan: {} });
+		f.store.all.mockImplementation(async (sql: string) => sql.includes('capacity_provider_team_memberships') ? [{ capacity_provider_id: 'provider' }]
+			: sql.includes('FROM capacity_provider_assignments') ? history : sql.includes('FROM execution_nodes node') ? rows
+				: sql.includes('FROM execution_edges') ? [{ from_node_id: 'completed-actor', to_node_id: 'approved-review' },
+					{ from_node_id: 'approved-review', to_node_id: 'failed-writer' }]
+					: sql.includes('SELECT id,slug FROM projects') ? [{ id: 'project-sdk', slug: 'sdk' }] : []);
+		const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', { ...input(),
+			executionMode: 'simulation', decisionIds: ['decision'], allocation: { planningPercent: 0 },
+			continueFromWorkdayId: parent.id }), 'actor');
+		expect(receipt.selectedDemands).toEqual([expect.objectContaining({ sourceId: 'failed-writer', mode: 'acting',
+			actingAuthority: expect.objectContaining({ decisionId: 'decision', executionNodeRevision: 7 }) })]);
+		expect({ parent, rows, history }).toEqual(retained); expect(f.store.createCapacityWorkdayRun).not.toHaveBeenCalled();
+		expect(previewGraph).toHaveBeenCalledWith(f.store, expect.objectContaining({ teamId: 'team',
+			parameters: expect.objectContaining({ continueFromWorkdayId: parent.id, planningPercent: 0 }) }));
+	});
+	it('preserves production continuation selection without projecting simulation custody', async () => {
+		const f = fixture(true), first = f.store.first.getMockImplementation()!, all = f.store.all.getMockImplementation()!;
+		const parent = { id: 'production-parent', team_id: 'team', capacity_provider_id: 'provider', status: 'failed',
+			execution_kind: 'workday', execution_mode: 'production', parameters_json: JSON.stringify({ scheduledProjectIds: ['project-sdk'] }) };
+		f.store.first.mockImplementation(async (sql, args?: unknown[]) => sql.includes('FROM capacity_workday_runs') && args?.[1] === parent.id ? parent : first(sql));
+		f.store.all.mockImplementation(async sql => sql.includes('FROM capacity_provider_assignments') ? [{ decision_id: 'decision' }] : all(sql));
+		const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', { ...input(),
+			executionMode: 'production', decisionIds: ['decision'], continueFromWorkdayId: parent.id }), 'actor');
+		expect(receipt.selectedDemands.map(demand => demand.sourceId)).toEqual(['node-review']);
+		expect(previewGraph).not.toHaveBeenCalled(); expect(f.store.createCapacityWorkdayRun).not.toHaveBeenCalled();
 	});
 	it('freezes the admission time when an explicit start is omitted', () => {
 		vi.useFakeTimers();
