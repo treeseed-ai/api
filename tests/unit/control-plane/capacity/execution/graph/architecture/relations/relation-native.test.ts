@@ -3,6 +3,43 @@ import { graphNode, graphState } from '../living/living-graph-fixture.ts';
 import { relationDatabase, relationCommit, relationPath } from './relation-fixture.ts';
 
 describe('exact dependency intake native HTTP original SQL and public graph reads', () => {
+	it('preserves admitted dotted and slashed work-item identifiers through signed exact intake SQL custody and independent reviewer admission', async () => {
+		const f = await relationDatabase(); try {
+			const ids = ['deployment-tester/simulation-upstream-acceptance', 'sdk.remote-git-ref-operation-contract'];
+			for (const [index, source] of f.sources.entries()) {
+				const plan = source.frontmatter.executionPlan;
+				if (!plan || typeof plan !== 'object' || !('workItems' in plan) || !Array.isArray(plan.workItems)) throw new Error('Controlled work-item inventory required.');
+				const items: unknown[] = plan.workItems, first = items[0], next = items[1];
+				if (!first || typeof first !== 'object' || !('id' in first) || !next || typeof next !== 'object' || !('dependsOn' in next)) throw new Error('Controlled original work-item pair required.');
+				first.id = ids[index]!; next.dependsOn = [ids[index]!];
+			}
+			const link = { ...f.link, from: { ...f.link.from, anchor: `work-item/${ids[0]}` },
+				to: { ...f.link.to, anchor: `work-item/${ids[1]}` } };
+			const setLink = (value: typeof link) => {
+				f.setGraph({ ...f.graph, nodes: [{ node: { ...f.graph.nodes[0]!.node, data: value.from } },
+					{ node: { ...f.graph.nodes[1]!.node, data: value.to } }],
+					edges: [{ ...f.graph.edges[0]!, data: { link: value, ownerPath: relationPath } }] });
+				f.setNote({ resolvedRef: relationCommit, files: [{ path: relationPath, content: f.content,
+					frontmatter: { ...f.note, subjectRefs: [value.from, value.to], links: [value] } }] });
+			};
+			const sources = structuredClone(f.sources), before = await f.snapshot();
+			for (const anchor of ['work-item/a..b', 'work-item/a//b', 'work-item/a/../b', 'work-item/sdk%2Eitem']) {
+				setLink({ ...link, from: { ...link.from, anchor } });
+				await expect(f.load()).rejects.toThrow(); expect(await f.snapshot()).toEqual(before);
+			}
+			setLink(link);
+			const links = await f.load(); expect(links).toEqual([{ from: link.from, to: link.to, sourceRef: f.dependency.sourceRef }]);
+			expect(await f.snapshot()).toEqual(before); expect(f.sources).toEqual(sources);
+			const p = f.project(links), graph = graphState(p); await f.persist(graph, f.empty(), p.revision);
+			expect(await f.service.show(f.principal, 'team', {})).toEqual(graph);
+			const actor = graphNode(graph, ids[1]!, 'actor', 'dependent'), reviewer = graphNode(graph, ids[0]!, 'reviewer', 'precursor');
+			const explanation = await f.service.explain(f.principal, 'team', actor.id);
+			expect(explanation.admission.eligible).toBe(false);
+			expect(explanation.predecessors).toContainEqual(expect.objectContaining({ edge: expect.objectContaining({
+				fromNodeId: reviewer.id, toNodeId: actor.id, provenance: 'treedx-link', sourceRef: f.dependency.sourceRef }), satisfied: false }));
+			expect(f.sources).toEqual(sources);
+		} finally { await f.close(); }
+	});
 	it('loads signed exact relation authority and persists separate project nodes with the independent reviewer gate and note provenance', async () => {
 		const f = await relationDatabase(); try {
 			const before = structuredClone(f.sources), links = await f.load(); expect(links).toEqual([f.dependency]);

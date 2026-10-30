@@ -2426,6 +2426,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/architecture/relations/relation-native.test.ts
     testName: "loads signed exact relation authority and persists separate project nodes with the independent reviewer gate and note provenance"
+  api.golden.execution-work-item-link-grammar-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/living-execution-graph.test.ts
+    testName: "links admitted dotted and slashed work-item identities exactly without aliases or normalization"
+  api.golden.execution-work-item-link-grammar-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/relations/relation-native.test.ts
+    testName: "preserves admitted dotted and slashed work-item identifiers through signed exact intake SQL custody and independent reviewer admission"
   api.golden.architecture-relation-native-2:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

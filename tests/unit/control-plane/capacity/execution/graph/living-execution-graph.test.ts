@@ -180,6 +180,37 @@ describe('proposal-owned living execution graph projection', () => {
 			.toThrow('absent from the selected graph');
 	});
 
+	it('links admitted dotted and slashed work-item identities exactly without aliases or normalization', () => {
+		// Original controlled historical proposal fixtures; no live dependency or agent assignment is created.
+		for (const [priorId, nextId] of [
+			['sdk.remote-git-ref-operation-contract', 'deployment.simulation-origin-materialization'],
+			['deployment-tester/simulation-upstream-acceptance', 'sdk.tester.remote-git-ref-contract-regressions'],
+		]) {
+			const prior = source([workItem({ id: priorId!, agentClass: 'architect', expectedSeconds: 60, maximumSeconds: 90 })]);
+			const base = source([workItem({ id: nextId!, agentClass: 'tester', expectedSeconds: 60, maximumSeconds: 90 })]);
+			const next = { ...base, projectId: 'other', repository: 'fixture/other', path: 'proposals/other.mdx',
+				frontmatter: { ...base.frontmatter, id: 'other-plan', projectId: 'other' } };
+			const endpoint = (candidate: ExecutableProposalSource, id: string) => ({ store: 'treedx' as const, model: 'proposal',
+				id: String(candidate.frontmatter.id), revision: candidate.proposalRevision, digest: candidate.digest,
+				repository: candidate.repository, commit: candidate.commit, path: candidate.path, anchor: `work-item/${id}` });
+			const sourceRef = { store: 'treedx' as const, model: 'note', id: 'controlled-link', repository: next.repository,
+				commit: 'd'.repeat(40), path: 'notes/dependency.md', digest: `sha256:${'e'.repeat(64)}` };
+			const links = [{ from: endpoint(prior, priorId!), to: endpoint(next, nextId!), sourceRef }];
+			const input = { teamId: 'team', revision: 1, sources: [prior, next], dependencyLinks: links,
+				profiles: { ...profiles, 'other:tester': agent('tester'), 'other:reviewer': agent('reviewer') } };
+			const before = structuredClone(input);
+			for (const patch of [{ anchor: `work-item/${priorId}%2Ealias` }, { commit: 'f'.repeat(40) }, { anchor: 'work-item/a/../b' }])
+				expect(() => projectTeamExecutionGraph({ ...input,
+					dependencyLinks: [{ ...links[0]!, from: { ...links[0]!.from, ...patch } }] })).toThrow('absent from the selected graph');
+			const graph = projectTeamExecutionGraph(input);
+			const predecessor = graph.nodes.find(node => node.projectId === 'project' && node.workItemId === priorId && node.pairRole === 'reviewer');
+			const dependent = graph.nodes.find(node => node.projectId === 'other' && node.workItemId === nextId && node.pairRole === 'actor');
+			expect(predecessor).toBeDefined(); expect(dependent).toBeDefined();
+			expect(graph.edges).toContainEqual(expect.objectContaining({ fromNodeId: predecessor!.id, toNodeId: dependent!.id,
+				provenance: 'treedx-link', sourceRef }));
+			expect(input).toEqual(before);
+		}
+	});
 	it('is replay deterministic and contains no provider selection or output taxonomy', () => {
 		const first = projectTeamExecutionGraph({ teamId: 'team', revision: 1, sources: [source()], profiles, createdAt: '2026-09-13T12:00:00.000Z' });
 		const second = projectTeamExecutionGraph({ teamId: 'team', revision: 1, sources: [source()], profiles, createdAt: '2026-09-13T13:00:00.000Z' });
